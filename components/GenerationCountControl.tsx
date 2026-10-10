@@ -64,7 +64,8 @@ export const GenerationCountControl: React.FC<GenerationCountControlProps> = ({ 
     ? Boolean(queueDisabled)
     : Boolean(disabled) || occupied || paused;
   const primaryUnavailable = Boolean(primaryBlocked && unavailableLabel);
-  const showProgress = continuousGenerationEnabled || occupied || paused;
+  const showProgress = continuousGenerationEnabled || paused || waiting.length > 0
+    || total - completed > 1 || Boolean(series && series.total - series.current > 1);
   const hasMenuContent = continuousGenerationEnabled || waiting.length > 0;
   useEffect(() => { if (!hasMenuContent) setOpen(false); }, [hasMenuContent]);
   const intervalInputNumber = Number(intervalValue);

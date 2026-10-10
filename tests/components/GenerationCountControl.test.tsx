@@ -160,7 +160,6 @@ it('关闭连续生成时保留真实忙碌、暂停与系列管理，但不把�
   fireEvent.click(screen.getByRole('button', { name: '暂停生成' })); expect(toggle).toHaveBeenCalledOnce();
   view.rerender(<GenerationCountControl {...props} continuousGenerationEnabled={false} busy onTogglePause={toggle} onQueue={queue} onGenerate={generate} queueState={{ ...state, busy: false, completed: 2, total: 2 }} />);
   expect(screen.getByRole('button', { name: '生成中…' }).getAttribute('aria-disabled')).toBe('true');
-  expect(screen.getByRole('button', { name: '暂停生成' })).toBeTruthy();
 
   view.rerender(<GenerationCountControl {...props} continuousGenerationEnabled={false} onTogglePause={toggle} onQueue={queue} onGenerate={generate} queueState={{ ...state, busy: true, completed: 2, total: 2, paused: true }} />);
   const pausedButton = screen.getByRole('button', { name: '生成' });
@@ -172,12 +171,14 @@ it('关闭连续生成时保留真实忙碌、暂停与系列管理，但不把�
   view.rerender(<GenerationCountControl {...props} continuousGenerationEnabled={false} onTogglePause={toggle} onQueue={queue} onGenerate={generate} series={{ current: 1, total: 3, stopping: false }} />);
   expect(screen.getByRole('button', { name: '生成中…' }).getAttribute('aria-disabled')).toBe('true');
   fireEvent.click(screen.getByRole('button', { name: '暂停生成' })); expect(toggle).toHaveBeenCalledTimes(3);
+  view.rerender(<GenerationCountControl {...props} continuousGenerationEnabled={false} busy onTogglePause={toggle} series={{ current: 2, total: 3, stopping: false }} />);
+  expect(screen.queryByRole('button', { name: '暂停生成' })).toBeNull();
 
   view.rerender(<GenerationCountControl {...props} continuousGenerationEnabled={false} onTogglePause={toggle} onQueue={queue} onGenerate={generate} queueDisabled unavailableLabel="请先选择底图" queueState={state} />);
   expect(screen.getByRole('button', { name: '请先选择底图' })).toBeTruthy();
 });
 
-it('关闭连续生成后单张生成全程不显示队列计数，完成后仍可普通生成', () => {
+it('关闭连续生成后普通单张全程只显示生成主按钮，完成后可再次生成', () => {
   const generate = vi.fn(), queue = vi.fn(), pause = vi.fn();
   const control = { ...props, count: 1, continuousGenerationEnabled: false, onGenerate: generate, onQueue: queue, onTogglePause: pause };
   const view = render(<GenerationCountControl {...control} busy series={{ current: 0, total: 1, stopping: false }}
@@ -186,8 +187,8 @@ it('关闭连续生成后单张生成全程不显示队列计数，完成后仍�
   fireEvent.click(screen.getByRole('button', { name: '生成中…' }));
   expect(generate).not.toHaveBeenCalled();
   expect(queue).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole('button', { name: '暂停生成' }));
-  expect(pause).toHaveBeenCalledOnce();
+  expect(screen.queryByRole('button', { name: '暂停生成' })).toBeNull();
+  expect(screen.queryByRole('button', { name: '继续生成' })).toBeNull();
   view.rerender(<GenerationCountControl {...control} series={{ current: 1, total: 1, stopping: false }}
     queueState={{ busy: false, completed: 1, total: 1, paused: false, pausing: false, waiting: [] }} />);
   expect(screen.queryByText('1/1')).toBeNull();
