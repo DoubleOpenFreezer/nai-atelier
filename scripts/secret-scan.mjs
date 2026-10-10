@@ -31,6 +31,7 @@ const PLACEHOLDER = /^(?:<|\$|your[-_ ]|replace[-_ ]|example[-_ ]|test[-_ ]|dumm
 
 export const isSensitivePath = file => {
   const normalized = file.replaceAll('\\', '/');
+  if (/^local-data\//i.test(normalized)) return true;
   const base = path.posix.basename(normalized).toLowerCase();
   if (['.env.example', '.env.sample', '.dev.vars.example', '.dev.vars.sample'].includes(base)) return false;
   return /^\.env(?:\.|$)/i.test(base)
@@ -72,28 +73,20 @@ export const scanText = (file, text) => {
     const namedValue = match[1] ?? match[2];
     // 带引号或无引号字面量都算；点号成员表达式（process.env.X / config.apiKey）与
     // 大写下划线常量名引用（FALLBACK_API_KEY）是读取引用而非硬编码
-    const looksLikeReference = /^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)+$/.test(namedValue) || (/^[A-Z0-9_]+$/.test(namedValue) && namedValue.includes('_'));
+    const looksLikeReference = match[1] === undefined && (/^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)+$/.test(namedValue) || (/^[A-Z0-9_]+$/.test(namedValue) && namedValue.includes('_')));
     if (fixtureFile || line.includes(ALLOW_MARKER) || PLACEHOLDER.test(namedValue) || looksLikeReference) continue;
     findings.push({ file, line: lineNumberAt(text, match.index), rule: 'named secret with literal value' });
   }
   return findings;
 };
 
-const git = args => execFileSync('git', args, { cwd: root, encoding: 'buffer', maxBuffer: 32 * 1024 * 1024 });
+const git = (args, cwd) => execFileSync('git', args, { cwd, encoding: 'buffer', maxBuffer: 32 * 1024 * 1024, windowsHide: true });
 const splitNull = buffer => buffer.toString('utf8').split('\0').filter(Boolean);
 
-const readIndexFile = file => {
-  try {
-    return git(['show', `:${file}`]);
-  } catch {
-    return null;
-  }
-};
-
-export const scanRepository = ({ staged = false } = {}) => {
+export const scanRepository = ({ staged = false, cwd = root } = {}) => {
   const files = staged
-    ? splitNull(git(['diff', '--cached', '--name-only', '--diff-filter=ACMR', '-z']))
-    : splitNull(git(['ls-files', '-z']));
+    ? splitNull(git(['diff', '--cached', '--name-only', '--diff-filter=ACMR', '-z'], cwd))
+    : splitNull(git(['ls-files', '-z'], cwd));
   const findings = [];
 
   for (const file of files) {
@@ -101,14 +94,21 @@ export const scanRepository = ({ staged = false } = {}) => {
       findings.push({ file, line: 1, rule: 'sensitive filename' });
       continue;
     }
-    let content;
-    try {
-      content = staged ? readIndexFile(file) : readFileSync(path.join(root, file));
-    } catch {
+    let content = staged ? git(['show', `:${file}`], cwd) : readFileSync(path.join(cwd, file));
+    if (content.length > MAX_TEXT_FILE_BYTES) continue;
+    // UTF-16 的零字节不能直接判成二进制；无 BOM 时也检查两种字节序。
+    let text;
+    if (content[0] === 0xff && content[1] === 0xfe) text = content.subarray(2).toString('utf16le');
+    else if (content[0] === 0xfe && content[1] === 0xff) { content = Buffer.from(content.subarray(2)); text = content.swap16().toString('utf16le'); }
+    else if (content.includes(0)) {
+      if (content.length % 2 === 0) {
+        findings.push(...scanText(file, content.toString('utf16le')),
+          ...scanText(file, Buffer.from(content).swap16().toString('utf16le')));
+      }
       continue;
     }
-    if (!content || content.length > MAX_TEXT_FILE_BYTES || content.includes(0)) continue;
-    findings.push(...scanText(file, content.toString('utf8')));
+    else text = content.toString('utf8');
+    findings.push(...scanText(file, text));
   }
   return findings;
 };

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Writable } from 'node:stream';
-import { discoverGatewayTests, nodeTestArguments, runLoggedCommand } from './run.mjs';
+import { discoverGatewayTests, discoverNodeTests, nodeTestArguments, runLoggedCommand, testLogPath } from './run.mjs';
 import { createWorkspace, projectRoot, removeWorkspace, temporaryRoot } from './support/workspace.mjs';
 
 test('Node 入口只发现集中目录的模块与跨模块测试，临时目录不参与发现', () => {
@@ -11,12 +11,12 @@ test('Node 入口只发现集中目录的模块与跨模块测试，临时目录
   try {
     for (const path of ['scripts', 'tests/scripts', 'tests/integration', 'tests/.tmp']) mkdirSync(join(root, path), { recursive: true });
     for (const path of ['scripts/outside.test.mjs', 'tests/scripts/one.test.mjs', 'tests/integration/two.test.mjs', 'tests/.tmp/ignored.test.mjs']) writeFileSync(join(root, path), '');
-    assert.deepEqual(discoverGatewayTests(root), [join(root, 'tests/integration/two.test.mjs'), join(root, 'tests/scripts/one.test.mjs')]);
+    assert.deepEqual(discoverNodeTests(root), [join(root, 'tests/integration/two.test.mjs'), join(root, 'tests/scripts/one.test.mjs')]);
   } finally { removeWorkspace(root); }
 });
 
 test('默认入口包含此前遗漏的密钥保管箱回归，定向参数与隔离预加载一起保留', () => {
-  const files = discoverGatewayTests();
+  const files = discoverNodeTests();
   const vault = join(projectRoot, 'tests/integration/nai-key-vault.test.mjs');
   assert.ok(files.includes(vault));
   assert.ok(files.includes(join(projectRoot, 'tests/integration/media-gateway.test.mjs')));
@@ -25,6 +25,18 @@ test('默认入口包含此前遗漏的密钥保管箱回归，定向参数与�
   assert.ok(args.includes('--import')); assert.ok(args.includes('--test-name-pattern=保存'));
   assert.equal(args.filter(value => value.endsWith('.test.mjs')).length, 1); assert.equal(args.at(-1), vault);
   assert.throws(() => nodeTestArguments(['outside.test.mjs'], files), /不在已发现/);
+});
+
+test('后端入口保留网关与本地服务，桌面／Android／门禁测试仍由完整 Node 入口发现', () => {
+  const all = discoverNodeTests(), gateway = discoverGatewayTests();
+  for (const file of ['tests/integration/media-gateway.test.mjs', 'tests/integration/st-chatu8-bridge.test.mjs', 'tests/scripts/local-server-runtime.test.mjs', 'tests/scripts/pixiv-local.test.mjs']) {
+    assert.ok(gateway.includes(join(projectRoot, file)), file);
+  }
+  for (const file of ['tests/integration/desktop-package.test.mjs', 'tests/integration/android-webview.test.mjs', 'tests/scripts/secret-scan.test.mjs', 'tests/run.test.mjs']) {
+    assert.ok(all.includes(join(projectRoot, file)), file);
+    assert.ok(!gateway.includes(join(projectRoot, file)), file);
+  }
+  assert.ok(nodeTestArguments(['tests/integration/desktop-package.test.mjs']).includes(join(projectRoot, 'tests/integration/desktop-package.test.mjs')));
 });
 
 test('正式测试集中存放，源码目录不能重新散落测试文件', () => {
@@ -50,6 +62,31 @@ test('测试输出同时进入终端与日志，失败退出码不会被日志�
     const code = await runLoggedCommand(['-e', "console.log('synthetic stdout'); console.error('synthetic stderr'); process.exitCode = 7;"], { logPath, cwd: root, output: destination, errors: destination });
     assert.equal(code, 7);
     for (const message of ['synthetic stdout', 'synthetic stderr']) { assert.ok(output.includes(message)); assert.ok(readFileSync(logPath, 'utf8').includes(message)); }
+  } finally { removeWorkspace(root); }
+});
+
+test('同类测试并行运行保留各自完整日志，后端两阶段不会覆盖前一阶段', async () => {
+  const root = createWorkspace('parallel-logs-');
+  const destination = new Writable({ write(_chunk, _encoding, done) { done(); } });
+  try {
+    const paths = await Promise.all([1, 2].map(async marker => {
+      const output = [];
+      const capture = new Writable({ write(chunk, _encoding, done) { output.push(chunk); done(); } });
+      await runLoggedCommand(['--input-type=module', '-e', `import {testLogPath,runLoggedCommand} from ${JSON.stringify(new URL('./run.mjs', import.meta.url).href)}; console.log(testLogPath('unit'));`],
+        { logPath: join(root, `${marker}.log`), cwd: root, output: capture, errors: capture });
+      return Buffer.concat(output).toString().trim();
+    }));
+    assert.notEqual(paths[0], paths[1]);
+    assert.ok(testLogPath('gateway').includes('gateway-'));
+    await Promise.all(paths.map((path, index) => runLoggedCommand(['-e', `console.log('run ${index}');`],
+      { logPath: join(root, path.split(/[\\/]/).at(-1)), cwd: root, output: destination, errors: destination })));
+    for (const [index, path] of paths.entries()) {
+      assert.equal(readFileSync(join(root, path.split(/[\\/]/).at(-1)), 'utf8').trim(), `run ${index}`);
+    }
+    const combined = join(root, 'combined.log');
+    for (const [index, message] of ['Node phase', 'Worker phase'].entries()) await runLoggedCommand(['-e', `console.log('${message}')`],
+      { logPath: combined, append: index > 0, cwd: root, output: destination, errors: destination });
+    assert.equal(readFileSync(combined, 'utf8'), 'Node phase\nWorker phase\n');
   } finally { removeWorkspace(root); }
 });
 

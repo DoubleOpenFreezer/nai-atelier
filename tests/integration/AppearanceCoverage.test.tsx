@@ -4,7 +4,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import ts from 'typescript';
 import { compile } from '@tailwindcss/node';
-import { parse } from 'postcss';
+import { parse, type AtRule, type Node as PostCssNode } from 'postcss';
 import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LanAccessGate } from '../../components/LanAccessGate';
@@ -30,19 +30,29 @@ for (const source of sources) {
   visit(ast);
 }
 let generatedCss: string;
-const declarations = (selector: string) => {
+const declarations = (selector: string, media?: string, source = generatedCss) => {
   const result: Record<string, string> = {};
-  // 按生成后的源码顺序取最终规则；能识别 Tailwind 固定值被无层主题规则覆盖。
-  parse(generatedCss).walkRules(rule => {
-    if (rule.selectors.includes(selector)) rule.walkDecls(decl => { result[decl.prop] = decl.value; });
+  // 只检查指定媒体块的声明，不模拟浏览器层叠或把桌面规则套到手机上。
+  parse(source).walkRules(rule => {
+    const conditions: string[] = [];
+    for (let parent: PostCssNode['parent'] = rule.parent; parent; parent = parent.parent) {
+      if (parent.type === 'atrule') {
+        const atRule = parent as AtRule;
+        if (atRule.name === 'media') conditions.push(atRule.params);
+      }
+    }
+    if (rule.selectors.includes(selector) && conditions.length === (media ? 1 : 0) && (!media || conditions[0] === media)) {
+      for (const node of rule.nodes) if (node.type === 'decl') result[node.prop] = node.value;
+    }
   });
   return result;
 };
+const hasDarkTextColor = (className: string) => /(?<![\w:-])dark:text-(?:(?:slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)-\d{2,3}|white|black|current|transparent)\b/.test(className);
 let systemDark: boolean;
 let systemReduced: boolean;
 beforeAll(async () => {
   const compiler = await compile(css, { base: process.cwd(), onDependency: () => {} });
-  generatedCss = compiler.build(['rounded', 'rounded-xl', 'text-meta', 'text-tiny', 'bg-indigo-600', 'h-10', 'p-3']);
+  generatedCss = compiler.build(['rounded', 'rounded-xl', 'text-meta', 'text-tiny', 'text-mini', 'bg-indigo-600', 'h-10', 'p-3']);
 });
 beforeEach(() => {
   systemDark = false; systemReduced = false;
@@ -57,9 +67,21 @@ describe('全局外观覆盖审计', () => {
     const violations = classes.filter(item => /text-\[[\d.]+px\]|rounded(?:-[a-z]+)?-\[[\d.]+(?:px|rem)\]/.test(item.text));
     expect(violations).toEqual([]);
     // 深色背景下的正文不能仍使用浅色主题的深灰文字；图上白字与语义色另有用途。
-    const darkTextViolations = classes.filter(item => /(?<![\w:-])text-gray-(?:[6-9]00|750|850|950)\b/.test(item.text) && !item.text.includes('dark:text-'));
+    const darkTextViolations = classes.filter(item => /(?<![\w:-])text-gray-(?:[6-9]00|750|850|950)\b/.test(item.text) && !hasDarkTextColor(item.text));
     expect(darkTextViolations).toEqual([]);
     expect(files.length).toBeGreaterThan(70);
+  });
+
+  it('样式静态断言区分媒体块，字号、透明度和悬停色不能冒充暗色文字颜色', () => {
+    const source = '.panel { border-radius: 12px; } @media (min-width: 1024px) { .panel { border-radius: 0; } }';
+    expect(declarations('.panel', undefined, source)['border-radius']).toBe('12px');
+    expect(declarations('.panel', '(min-width: 1024px)', source)['border-radius']).toBe('0');
+    expect(declarations('.panel', '(max-width: 768px)', source)).toEqual({});
+    expect(hasDarkTextColor('text-gray-900 dark:text-sm')).toBe(false);
+    expect(hasDarkTextColor('text-gray-900 hover:dark:text-white')).toBe(false);
+    expect(hasDarkTextColor('text-gray-900 dark:text-opacity-50')).toBe(false);
+    expect(hasDarkTextColor('text-gray-900 dark:text-gray-100')).toBe(true);
+    expect(hasDarkTextColor('text-gray-900 dark:text-blue-300/80')).toBe(true);
   });
 
   it('浮动中性面板全部接入主题材质，图片、拖入提示和语义状态保持独立', () => {
@@ -76,6 +98,8 @@ describe('全局外观覆盖审计', () => {
     expect(declarations('.rounded-xl')['border-radius']).toBe('var(--radius-xl)');
     expect(declarations('.text-meta')['font-size']).toBe('var(--text-meta)');
     expect(declarations('.text-tiny')['font-size']).toBe('var(--text-tiny)');
+    expect(declarations('.text-mini')['font-size']).toBe('var(--text-mini)');
+    expect(declarations(':root')['--text-mini']).toBe('0.5625rem');
     expect(declarations('.bg-indigo-600')['background-color']).toBe('var(--color-indigo-600)');
     expect(declarations('.h-10').height).toBe('calc(var(--spacing) * 10)');
     expect(declarations('.p-3').padding).toBe('calc(var(--spacing) * 3)');
@@ -124,12 +148,13 @@ describe('全局外观覆盖审计', () => {
   });
 
   it('Agent 手机圆角、拖拽强调色与手机详情栏使用主题变量，全屏边界保留直角', () => {
-    expect(declarations('.agent-panel')['border-radius']).toBe('0'); // 桌面贴边，最后规则保持直角。
-    expect(css).toMatch(/\.agent-panel\s*\{[^}]*border-radius: var\(--radius-2xl\) var\(--radius-2xl\) 0 0;/);
-    expect(declarations('.agent-resize-handle-desktop:hover::after').background).toBe('var(--color-indigo-500)');
-    expect(declarations('.mobile-detail-header').background).toBe('var(--nai-toolbar-surface)');
-    expect(declarations('.mobile-detail-footer')['border-top']).toBe('1px solid var(--nai-panel-border)');
-    expect(declarations('.mobile-detail').background).toBe('var(--nai-panel-surface)');
+    expect(declarations('.agent-panel')['border-radius']).toBe('var(--radius-2xl) var(--radius-2xl) 0 0');
+    expect(declarations('.agent-panel', '(min-width: 1024px)')['border-radius']).toBe('0');
+    expect(declarations('.agent-panel--fullscreen')['border-radius']).toBe('0');
+    expect(declarations('.agent-resize-handle-desktop:hover::after', '(min-width: 1024px)').background).toBe('var(--color-indigo-500)');
+    expect(declarations('.mobile-detail-header', '(max-width: 767px)').background).toBe('var(--nai-toolbar-surface)');
+    expect(declarations('.mobile-detail-footer', '(max-width: 767px)')['border-top']).toBe('1px solid var(--nai-panel-border)');
+    expect(declarations('.mobile-detail', '(max-width: 767px)').background).toBe('var(--nai-panel-surface)');
     expect(css).toContain('--nai-scrollbar-size: 6px');
     expect(declarations('*::-webkit-scrollbar').width).toBe('var(--nai-scrollbar-size)');
   });

@@ -54,9 +54,10 @@ npm run test:android
 # 单独验证 AITAG 公开接口，不提交账号或付费请求
 $env:ATELIER_ANDROID_TEST='1'
 $env:ATELIER_ANDROID_LIVE='1'
-npm run test:gateway -- tests/integration/android-webview.test.mjs
+npm run test:node -- tests/integration/android-webview.test.mjs
 Remove-Item Env:ATELIER_ANDROID_TEST,Env:ATELIER_ANDROID_LIVE
-npm run test:gateway
+npm run test:node
+npm run test -- tests/worker
 npm run test:live-sync
 ```
 

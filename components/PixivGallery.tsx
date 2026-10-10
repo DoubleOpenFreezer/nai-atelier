@@ -1125,7 +1125,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, notify, onNa
                   disabled={bookmarking}
                   onClick={() => void handleToggleBookmark(selected)}
                 >
-                  {bookmarking ? <LoaderCircle className="animate-spin" /> : <span className="relative inline-flex h-5 w-5 items-center justify-center"><Heart className={selected.isBookmarked ? 'fill-current' : ''} /><span aria-hidden="true" className="absolute -bottom-1 -right-1 rounded bg-white px-0.5 text-[9px] font-black leading-3 text-blue-600 dark:bg-gray-900">P</span></span>}
+                  {bookmarking ? <LoaderCircle className="animate-spin" /> : <span className="relative inline-flex h-5 w-5 items-center justify-center"><Heart className={selected.isBookmarked ? 'fill-current' : ''} /><span aria-hidden="true" className="absolute -bottom-1 -right-1 rounded bg-white px-0.5 text-mini font-black leading-3 text-blue-600 dark:bg-gray-900">P</span></span>}
                 </IconButton>}
                 sourceTags={selected.tags.length > 0 ? (
                   <TagChipGroup

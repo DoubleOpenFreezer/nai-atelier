@@ -10,8 +10,39 @@ import { computeNaiRuntimeSync, DEFAULT_NAI_RUNTIME, extractNaiCostCalculator, e
 import { estimateNaiBilling } from '../../worker/naiBilling.mjs';
 import { createContext, Script } from 'node:vm';
 import assert from 'node:assert/strict';
+import { pathToFileURL } from 'node:url';
+import { resolve } from 'node:path';
 
 const SOURCE = 'https://novelai.net/image';
+
+export const officialVibeCalculators = bundle => {
+  const vibe = bundle.match(/(?:let |var |,)(\w+)=(\d+);(function (\w+)\((\w+)\)\{return Math\.max\(0,\5-\d+\)\*\1\})/);
+  const encoding = bundle.match(/async getPrice\([^)]*\)\{[\s\S]{0,800}?price:-?\d+\}\}/)?.[0];
+  assert.ok(vibe && encoding, '未识别官方 Vibe 附加费或编码计价函数');
+  const bindings = {};
+  const normalize = encoding.match(/\(0,(\w+)\.(\w+)\)\(/);
+  const registry = encoding.match(/await (\w+)\.get\(/);
+  if (normalize) bindings[normalize[1]] = { [normalize[2]]: value => value };
+  if (registry) (bindings[registry[1]] ||= {}).get = async () => ({ type: 'image' });
+  const context = createContext(bindings, { codeGeneration: { strings: false, wasm: false } });
+  return {
+    extraCost: new Script(`(()=>{let ${vibe[1]}=${vibe[2]};${vibe[3]};return ${vibe[4]}})()`).runInContext(context, { timeout: 1000 }),
+    encoding: new Script(`({${encoding},cached:true,async getEncoding(){return this.cached;}})`).runInContext(context, { timeout: 1000 }),
+  };
+};
+
+export const compareOfficialVibeBilling = async (bundle, billing) => {
+  const official = officialVibeCalculators(bundle);
+  for (const count of [0, billing.freeVibeCount, billing.freeVibeCount + 1, billing.freeVibeCount + 2]) {
+    assert.equal(Math.max(0, count - billing.freeVibeCount) * billing.extraVibeCost, official.extraCost(count), `Vibe 附加费不一致：${count} 个`);
+  }
+  for (const cached of [true, false]) {
+    official.encoding.cached = cached;
+    const result = await official.encoding.getPrice('synthetic-image', null, 'nai-diffusion-4-5-full', {});
+    assert.equal(result.exists, cached);
+    assert.equal(result.price, cached ? 0 : billing.vibeEncodingCost, 'Vibe 编码费用不一致');
+  }
+};
 
 // 仅在显式联网测试中执行提取到的公开计价函数；沙箱不提供文件、网络或进程能力。
 // 生产同步只解析已识别的数值／条件，未知结构继续按健康记录报错。
@@ -62,10 +93,11 @@ const compareOfficialBilling = async (bundle, runtime) => {
     characterReferences: runtime.modelCapabilities[model]?.supportsCharacterReferences,
     charRefInpainting: runtime.modelCapabilities[model]?.supportsCharacterReferenceInpainting,
   }));
-  bind(vibePrice[1], vibePrice[2], count => Math.max(0, count - runtime.billing.freeVibeCount) * runtime.billing.extraVibeCost);
+  const officialVibes = officialVibeCalculators(bundle);
+  bind(vibePrice[1], vibePrice[2], officialVibes.extraCost);
   bind(validate[1], validate[2], () => true);
   bind(inpainting[1], inpainting[2], model => `${model}-inpainting`);
-  bind(encoding[1], encoding[2], { getPrice: async () => ({ exists: true, price: 0 }) });
+  bind(encoding[1], encoding[2], officialVibes.encoding);
   for (const [key, value] of Object.entries(bindings)) context[key] = value;
   // 外部 e 是聚焦裁剪状态；测试已经传入实际裁剪尺寸，不再次执行 Canvas 几何函数。
   context.e = null;
@@ -108,7 +140,7 @@ const compareOfficialBilling = async (bundle, runtime) => {
   return cases.length;
 };
 
-try {
+const main = async () => {
   const html = await fetchNaiRuntimeText(SOURCE);
   const paths = [...new Set([...html.matchAll(/"(\/_next\/static\/chunks\/[^"]+\.js)"/g)].map(m => m[1]))];
   if (!paths.length) {
@@ -153,8 +185,10 @@ try {
     assert.ok(capability.ucPresets.some(preset => preset.id === capability.fixedSettings.ucPresetId), `${model} 未提取固定 UC 预设`);
     console.log(`  ✔ ${model} 固定设置: ${JSON.stringify(capability.fixedSettings)}`);
   }
-  console.log(`\n✔ 全部提取命中，${await compareOfficialBilling(bundle, runtime)} 组计价与官方实际费用调用一致`);
-} catch (error) {
-  console.error('✖ 自检失败：', error.message || error);
-  process.exit(1);
+  await compareOfficialVibeBilling(bundle, runtime.billing);
+  console.log(`\n✔ 全部提取命中，${await compareOfficialBilling(bundle, runtime)} 组计价与官方实际费用调用一致；Vibe 附加费及缓存／新编码费用独立核对通过`);
+};
+
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+  main().catch(error => { console.error('✖ 自检失败：', error.message || error); process.exitCode = 1; });
 }

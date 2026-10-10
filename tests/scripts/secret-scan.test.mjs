@@ -1,6 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { isSensitivePath, scanText } from '../../scripts/secret-scan.mjs';
+import { isSensitivePath, scanRepository, scanText } from '../../scripts/secret-scan.mjs';
+import { execFileSync } from 'node:child_process';
+import { unlinkSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { createWorkspace, removeWorkspace } from '../support/workspace.mjs';
 
 test('secret scanner detects NovelAI and named literal credentials without echoing values', () => {
   const novelAiKey = ['pst', 'A'.repeat(48)].join('-');
@@ -22,6 +26,7 @@ test('secret scanner blocks sensitive filenames but permits templates', () => {
   assert.equal(isSensitivePath('config/.env.production'), true);
   assert.equal(isSensitivePath('certs/private.key'), true);
   assert.equal(isSensitivePath('.env.example'), false);
+  assert.equal(isSensitivePath('local-data/synthetic.txt'), true);
 });
 
 test('密钥扫描拦截 Wrangler 本地变量及环境变体，允许公开示例', () => {
@@ -64,4 +69,32 @@ test('secret scanner detects sk-family variants, hf/gitlab/telegram tokens and u
 test('named secret rule ignores references to env/config lookups', () => {
   const computed = 'export const apiKey = process.env.NOVELAI_API_KEY;';
   assert.deepEqual(scanText('src.ts', computed), []);
+});
+
+test('带引号的常量形状和点号字符串仍是密钥，只有无引号引用豁免', () => {
+  for (const value of ['ABCD_EFGHIJKLMNOPQRSTUVWXYZ', 'abc.def.ghi']) {
+    const source = ['const PASSWORD = ', JSON.stringify(value), ';'].join('');
+    assert.equal(scanText('config.ts', source).length, 1);
+  }
+  assert.deepEqual(scanText('config.ts', 'const API_KEY = CONFIG_API_KEY;'), []);
+});
+
+test('暂存 UTF-16 两种字节序都扫描，跟踪文件读取失败不伪报通过', () => {
+  const root = createWorkspace('secret-scan-');
+  const git = (...args) => execFileSync('git', args, { cwd: root, windowsHide: true, stdio: 'pipe' });
+  try {
+    git('init', '-q');
+    const text = ['PASSWORD = ', JSON.stringify('synthetic-private-value')].join('');
+    writeFileSync(join(root, 'little.txt'), Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(text, 'utf16le')]));
+    writeFileSync(join(root, 'big.txt'), Buffer.concat([Buffer.from([0xfe, 0xff]), Buffer.from(text, 'utf16le').swap16()]));
+    writeFileSync(join(root, 'plain-le.txt'), Buffer.from(text, 'utf16le'));
+    writeFileSync(join(root, 'plain-be.txt'), Buffer.from(text, 'utf16le').swap16());
+    writeFileSync(join(root, 'image.bin'), Buffer.from([0, 1, 2, 3]));
+    git('add', '.');
+    assert.deepEqual(scanRepository({ staged: true, cwd: root }).map(item => item.file), ['big.txt', 'little.txt', 'plain-be.txt', 'plain-le.txt']);
+    unlinkSync(join(root, 'little.txt'));
+    assert.throws(() => scanRepository({ cwd: root }), { code: 'ENOENT' });
+    git('update-index', '--add', '--cacheinfo', `100644,${'1'.repeat(40)},missing.txt`);
+    assert.throws(() => scanRepository({ staged: true, cwd: root }));
+  } finally { removeWorkspace(root); }
 });

@@ -2,11 +2,11 @@
 import { spawn } from 'node:child_process';
 import { createWriteStream, readdirSync, mkdirSync } from 'node:fs';
 import { once } from 'node:events';
-import { dirname, join, relative, resolve } from 'node:path';
+import { basename, dirname, join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createWorkspace, projectRoot, removeWorkspace } from './support/workspace.mjs';
 
-export const discoverGatewayTests = (root = projectRoot) => {
+export const discoverNodeTests = (root = projectRoot) => {
   const files = [];
   const visit = directory => {
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
@@ -20,7 +20,11 @@ export const discoverGatewayTests = (root = projectRoot) => {
   return files.sort();
 };
 
-export const nodeTestArguments = (args, files = discoverGatewayTests()) => {
+// 日常后端回归不夹带桌面／Android 打包与工程工具；完整 Node 入口仍自动发现全部文件。
+export const discoverGatewayTests = (root = projectRoot) => discoverNodeTests(root)
+  .filter(file => !/^(?:desktop-|android-|generate-app-icon\.|gitignore\.|git-hooks\.|secret-scan\.|run\.test\.|node-workspace\.)/.test(basename(file)));
+
+export const nodeTestArguments = (args, files = discoverNodeTests()) => {
   const selected = args.filter(value => value.endsWith('.test.mjs')).map(value => resolve(projectRoot, value));
   if (selected.some(value => !files.includes(value))) throw new Error('指定的 Node 测试不在已发现的测试集合中');
   return ['--test', '--test-concurrency=4', '--import', pathToFileURL(join(projectRoot, 'tests/support/node-environment.mjs')).href,
@@ -28,9 +32,9 @@ export const nodeTestArguments = (args, files = discoverGatewayTests()) => {
 };
 
 /** 同时保留终端反馈与完整日志，原样传播子进程退出码。 */
-export const runLoggedCommand = async (args, { logPath, cwd = projectRoot, env = process.env, output = process.stdout, errors = process.stderr } = {}) => {
+export const runLoggedCommand = async (args, { logPath, append = false, cwd = projectRoot, env = process.env, output = process.stdout, errors = process.stderr } = {}) => {
   mkdirSync(dirname(logPath), { recursive: true });
-  const log = createWriteStream(logPath);
+  const log = createWriteStream(logPath, { flags: append ? 'a' : 'w' });
   await once(log, 'open');
   const child = spawn(process.execPath, args, { cwd, env, windowsHide: true, stdio: ['inherit', 'pipe', 'pipe'] });
   const relay = (stream, destination) => stream.on('data', chunk => { destination.write(chunk); log.write(chunk); });
@@ -41,20 +45,30 @@ export const runLoggedCommand = async (args, { logPath, cwd = projectRoot, env =
   } finally { log.end(); await once(log, 'close'); }
 };
 
+export const testLogPath = mode => join(projectRoot, 'logs', 'tests', `${mode}-${Date.now()}-${process.pid}.log`);
+
 const main = async () => {
   const [mode = 'unit', ...extra] = process.argv.slice(2);
   const modes = {
-    unit: () => [join(projectRoot, 'node_modules/vitest/vitest.mjs'), 'run', ...extra],
-    gateway: () => nodeTestArguments(extra),
-    'live-sync': () => [join(projectRoot, 'tests/live/nai-live-sync.mjs'), ...extra],
+    unit: () => [[join(projectRoot, 'node_modules/vitest/vitest.mjs'), 'run', ...extra]],
+    node: () => [nodeTestArguments(extra)],
+    gateway: () => extra.some(value => value.endsWith('.test.mjs')) ? [nodeTestArguments(extra)] : [
+      nodeTestArguments(extra, discoverGatewayTests()),
+      [join(projectRoot, 'node_modules/vitest/vitest.mjs'), 'run', 'tests/worker'],
+    ],
+    'live-sync': () => [[join(projectRoot, 'tests/live/nai-live-sync.mjs'), ...extra]],
   };
-  if (!modes[mode]) throw new Error('测试类型应为 unit、gateway 或 live-sync');
-  const args = modes[mode]();
-  const logPath = join(projectRoot, 'logs', 'tests', `${mode}.log`);
-  const runRoot = mode === 'gateway' ? createWorkspace('run-') : undefined;
+  if (!modes[mode]) throw new Error('测试类型应为 unit、node、gateway 或 live-sync');
+  const commands = modes[mode]();
+  const logPath = testLogPath(mode);
+  const runRoot = ['gateway', 'node'].includes(mode) ? createWorkspace('run-') : undefined;
   console.log(`测试完整日志：${relative(projectRoot, logPath)}`);
   try {
-    process.exitCode = await runLoggedCommand(args, { logPath, env: { ...process.env, ...(runRoot ? { NAI_TEST_RUN_DIR: runRoot, NAI_NO_BROWSER: '1', NAI_NO_DESKTOP_SHORTCUT: '1' } : {}) } });
+    for (const [index, args] of commands.entries()) {
+      const code = await runLoggedCommand(args, { logPath, append: index > 0,
+        env: { ...process.env, ...(runRoot ? { NAI_TEST_RUN_DIR: runRoot, NAI_NO_BROWSER: '1', NAI_NO_DESKTOP_SHORTCUT: '1' } : {}) } });
+      process.exitCode ||= code;
+    }
   } finally { if (runRoot) removeWorkspace(runRoot); }
 };
 

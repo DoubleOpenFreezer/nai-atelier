@@ -71,15 +71,15 @@ npm run build:desktop
 ## 发布验证
 
 ```powershell
-npm run test:gateway
-npm run test -- tests/components/DesktopLauncherManager.test.ts
+npm run test:node
+npm run test -- tests/worker tests/components/DesktopLauncherManager.test.ts
 npm run build:desktop:dir
 $env:NAI_DESKTOP_TEST_EXE = "$PWD\release\win-unpacked\NAI Atelier.exe"
-npm run test:gateway -- tests/integration/desktop-package.test.mjs
+npm run test:node -- tests/integration/desktop-package.test.mjs
 Remove-Item Env:NAI_DESKTOP_TEST_EXE
 ```
 
-明确指定构建应用时，集成测试才执行；普通 gateway 回归跳过该项。测试在 `tests/.tmp` 新建合成工作区，只保存合成 Prompt 和 2×2 PNG，验证空工坊、D1／R2 持久化、词库可写、没有 Node/npm 的 PATH、端口冲突、更新任务阻挡／请求冻结、正常退出与 IPC 断开回收，不读取真实工坊或调用付费生成。原生安装检查测试使用构建缓存中已有的 NSIS 编译器及独立 GUID 的 HKCU 合成注册表，验证缺失／过旧／就绪运行库、缺失 DLL 和 Pixiv 协议归属；不更改真实系统运行库。无 Windows 或缓存编译器时该项跳过，不联网取得测试工具。
+明确指定构建应用时，集成测试才执行；普通 Node 回归跳过该项。测试在 `tests/.tmp` 新建合成工作区，只保存合成 Prompt 和 2×2 PNG，验证空工坊、D1／R2 持久化、词库可写、没有 Node/npm 的 PATH、端口冲突、更新任务阻挡／请求冻结、正常退出与 IPC 断开回收，不读取真实工坊或调用付费生成。原生安装检查测试使用构建缓存中已有的 NSIS 编译器及独立 GUID 的 HKCU 合成注册表，验证缺失／过旧／就绪运行库、缺失 DLL 和 Pixiv 协议归属；不更改真实系统运行库。无 Windows 或缓存编译器时该项跳过，不联网取得测试工具。
 
 另需实际运行安装器，选择含中文和空格的目录，打开应用并核对窗口渲染，验证卸载登记、程序清理、数据保留与重装恢复。环境变量 `NAI_DESKTOP_DATA_DIR`、`NAI_DESKTOP_SELF_TEST`、`NAI_DESKTOP_PORT` 仅供开发验证隔离工作区、输出本次页面渲染报告／截图和指定起始端口；自检短暂显示本次测试窗口后自动退出，必须等到业务导航与设置入口出现才能通过。日常使用无需设置。分别记录 Windows 10、Windows 11 的实测范围，不能以一个系统的成功启动冒充两个系统都已真机验收。
 

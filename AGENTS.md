@@ -62,7 +62,8 @@ AI 不得只机械修改用户明确指出的单个位置。开始实现前，�
 | `npm run dev:local` | 本地完整服务（Worker + D1/R2） |
 | `npm run build` | 完整构建（tsc + vite + worker 打包） |
 | `npm run test -- <文件或目录>` | Vitest 定向测试，省略路径则运行全部 |
-| `npm run test:gateway` | 自动发现 Node 测试：网关 / st-chatu8 桥 / Pixiv / 本地服务 |
+| `npm run test:gateway` | 后端回归：网关 / st-chatu8 桥 / Pixiv / 本地服务 Node 测试 + Worker 测试 |
+| `npm run test:node -- <文件>` | 定向 Node 回归；省略文件则运行全部 Node 测试，含桌面 / Android / 工程工具 |
 | `npm run test:live-sync` | 显式联网验证官方常量提取，不进入默认离线测试 |
 | `node scripts/bump-version.mjs <级别>` | 版本递增，见下方版本规则 |
 
@@ -77,11 +78,11 @@ AI 不得只机械修改用户明确指出的单个位置。开始实现前，�
 
 验证的目的是建立信心与防止倒退，而非制造漫长的等待与心流中断。AI 必须根据改动风险实行**分级验证（Pragmatic Verification）**：
 
-提交时的 pre-commit 钩子已统一执行暂存区密钥扫描、ESLint 错误检查与 TypeScript 类型检查。AI 在提交前不得重复手动运行这三项；仅在排查对应失败时单独执行。
+提交时的 pre-commit 钩子已统一执行暂存区密钥扫描，并在隔离的暂存快照执行 ESLint 错误检查与 TypeScript 类型检查，只复用已安装依赖。未暂存改动不参与门禁，快照不复制私人数据或缓存。AI 在提交前不得重复手动运行这三项；仅在排查对应失败时单独执行。
 
 1. **分级验证梯度**：
    - **普通 UI / 样式 / 局部逻辑**：执行精准静态代码自审与受影响范围的定向单元测试（Vitest）；TypeScript 检查由 pre-commit 统一完成。若改动没有对应的可执行逻辑测试，不得为了形式完整而运行无关测试。追求 1~3 分钟内的敏捷反馈闭环。**严禁**为了简单样式改动、响应式断点微调或局部文案修改，动辄启动全套构建打包 + Headless 真实浏览器模拟，造成 20~30 分钟的冗长等待与心流中断。
-   - **网关 / Worker / Pixiv / st-chatu8 桥 / 本地备份逻辑**：执行 `npm run test:gateway`；纯前端改动不得惯性运行该测试集。
+   - **网关 / Worker 共用协议或计价逻辑**：执行 `npm run test:gateway`，覆盖后端 Node 与 Worker 测试，不夹带桌面／Android 打包和工程工具。**Pixiv / st-chatu8 桥 / 本地备份等独立模块**：优先 `npm run test:node -- <对应测试文件>`；涉及共同入口或跨模块行为时再运行完整后端回归。桌面／Android／门禁工具按对应文件定向验证，完整 Node 回归用 `npm run test:node`。纯前端改动不得惯性运行后端测试集。
    - **复杂全流程 / 核心状态机 / 破坏性重构**：当涉及复杂 Canvas 蒙版绘制与坐标回贴算法、多端数据同步协议、跨系统数据迁移或破坏性重构时，才采用全套构建 + 端到端真机/浏览器像素级验收。
 2. **防范盲目写反逻辑与单测假阳性**：
    - 单测不能只断言节点存在。在处理 Tailwind 响应式断点（如 `hidden lg:flex` vs `lg:hidden`）或条件展示时，必须具备精确的代码自审意识与逻辑推演能力，严防逻辑倒置。

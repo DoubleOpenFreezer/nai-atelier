@@ -7,7 +7,7 @@
 
   **[简体中文](./README.md) · [繁體中文](./README.zh-TW.md) · [English](./README.en.md) · [日本語](./README.ja.md) · [한국어](./README.ko.md)**
 
-  [![Version](https://img.shields.io/badge/version-1.61.4-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.61.5-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4%20%7C%20V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据主权与备份)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网创作体验)
@@ -403,7 +403,8 @@ flowchart TD
 | `npm run dev:local` | 启动完整本地服务（前端 + Worker + 网关 + 词库） |
 | `npm run update:tags` | 从 GitHub 更新并重新编译中英 Tag 分片 |
 | `npm run test -- <路径>` | Vitest 快速定向测试 |
-| `npm run test:gateway` | 网关、桥接与本地后端集成测试 |
+| `npm run test:gateway` | 网关、桥接与本地后端 Node 回归 + Worker 测试 |
+| `npm run test:node -- <文件>` | 定向 Node 回归；省略文件运行全部（含桌面、Android 与工程工具） |
 | `npm run test:live-sync` | 显式联网验证 NovelAI 官方常量提取 |
 | `node scripts/bump-version.mjs patch` | 规范化版本号递增 |
 
