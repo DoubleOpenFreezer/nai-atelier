@@ -1,7 +1,7 @@
 // LAN access, anlas budget, admin endpoints, NAI proxy (generate/upload),
 // chains and artists CRUD.
 // Moved verbatim from worker/index.ts during the domain split; behavior unchanged.
-import { LAN_ACCESS_COOKIE } from '../sharedWhitelist.mjs';
+import { LAN_ACCESS_COOKIE, CODEX_MEDIA_HOSTS } from '../sharedWhitelist.mjs';
 import { MEDIA_VARIANTS, validateMediaSource } from '../mediaValidation';
 import { normalizeChainTags } from '../../services/chainTags';
 import { DEFAULT_IMAGE_TAGGER_MODEL, findImageTaggerModel } from '../../services/imageTaggerModels.mjs';
@@ -907,6 +907,16 @@ export const handleMediaRequest = async (request: Request, env: Env, url: URL) =
   }
 
   const target = validated.internal ? new URL(validated.source, url.origin).toString() : validated.source;
+  if (!validated.internal && CODEX_MEDIA_HOSTS.includes(new URL(target).hostname)) {
+    const response = await fetch(target, { redirect: 'manual', headers: { Accept: 'image/*' }, signal: AbortSignal.any([request.signal, AbortSignal.timeout(45_000)]) });
+    const contentType = response.headers.get('content-type') || '';
+    if (!response.ok || !contentType.startsWith('image/')) {
+      await response.body?.cancel();
+      return error('法典图片读取失败', response.status >= 400 ? response.status : 502);
+    }
+    const bytes = await readLimitedImageBody(response);
+    return new Response(bytes, { headers: { 'Content-Type': contentType, 'Cache-Control': 'private, max-age=3600', 'X-Content-Type-Options': 'nosniff' } });
+  }
   return new Response(null, {
     status: 302,
     headers: {

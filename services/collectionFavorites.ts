@@ -8,6 +8,7 @@ import { importDanbooruCoverAsDataUrl } from './danbooruCoverImport';
 import { getCollectionTags } from './inspirationUtils';
 import { externalImageDrafts } from './externalImageTags';
 import { createUuid } from './id';
+import { readCodexImageFile, readCodexImageMetadata } from './codexService';
 
 export interface CollectionImage {
   imageUrl: string;
@@ -226,7 +227,13 @@ export async function toggleCollectionTarget(target: CollectionTarget): Promise<
       }
       const now = Date.now();
       let imageUrl = image.imageUrl;
-      if (image.sourceType === 'pixiv' && /^https:\/\/i\.pximg\.net\//i.test(imageUrl)) imageUrl = (await api.uploadFile(await importPixivImageAsFile(imageUrl), 'inspirations')).url;
+      let codexMetadata: Awaited<ReturnType<typeof readCodexImageMetadata>> = null;
+      if (image.sourceType === 'codex' || image.sourceType === 'codex-community') {
+        const file = await readCodexImageFile(imageUrl);
+        codexMetadata = await readCodexImageMetadata(file);
+        imageUrl = (await api.uploadFile(file, 'inspirations')).url;
+      }
+      else if (image.sourceType === 'pixiv' && /^https:\/\/i\.pximg\.net\//i.test(imageUrl)) imageUrl = (await api.uploadFile(await importPixivImageAsFile(imageUrl), 'inspirations')).url;
       else if (/^https:\/\/cdn\.donmai\.us\//i.test(imageUrl)) imageUrl = await importDanbooruCoverAsDataUrl(imageUrl);
       else if (imageUrl.startsWith('blob:')) {
         const response = await fetch(imageUrl);
@@ -238,7 +245,7 @@ export async function toggleCollectionTarget(target: CollectionTarget): Promise<
       const item: Inspiration = {
         id: createUuid(), userId: owner!.id, username: owner!.username,
         title: image.title || target.title || '未命名收藏', imageUrl,
-        prompt: reverse?.prompt || image.prompt || '', negativePrompt: image.negativePrompt || '', params: image.params,
+        prompt: reverse?.prompt || (codexMetadata?.prompt ?? image.prompt ?? ''), negativePrompt: codexMetadata?.negativePrompt ?? image.negativePrompt ?? '', params: codexMetadata?.params || image.params,
         sourceType: image.sourceType || target.sourceType || 'other', sourceId: image.sourceId || target.sourceId,
         sourceUrl: image.sourceUrl || target.sourceUrl, tags: [],
         analysis: { ...image.analysis, ...(reverse ? { imageTagger: reverse } : {}), ...(!image.imageUrl.startsWith('data:') ? { collectionOriginalUrl: image.imageUrl } : {}), ...(image.imageId === undefined ? {} : { collectionImageId: image.imageId }), ...(target.getGroup ? { collectionGroupSize: images.length } : {}) },

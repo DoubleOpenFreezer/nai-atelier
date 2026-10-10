@@ -415,7 +415,7 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
   }, []);
   const renderCollectionCard = (group: Inspiration[]) => {
     const item = group[0]; const ids = group.map(image => image.id);
-    const isGroup = group.length > 1 || Boolean(item.sourceId && (item.sourceType === 'aitag' || item.sourceType === 'pixiv') && Number(item.analysis?.collectionGroupSize) > 1);
+    const isGroup = group.length > 1 || Boolean(item.sourceId && ['aitag', 'pixiv', 'codex', 'codex-community'].includes(item.sourceType || '') && Number(item.analysis?.collectionGroupSize) > 1);
     const title = isGroup ? item.title.replace(/ · \d+$/, '') : item.title;
     const selectedCount = ids.filter(id => selectedIds.has(id)).length;
     const selected = selectedCount === ids.length;

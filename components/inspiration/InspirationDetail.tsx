@@ -146,7 +146,7 @@ export const InspirationDetail: React.FC<Props> = ({
       const payload: PendingImportData = {
         prompt: draft.prompt || '',
         negativePrompt: draft.negativePrompt || '',
-        params: draft.params || DEFAULT_PARAMS,
+        params: { ...DEFAULT_PARAMS, ...draft.params },
         mode: 'replace',
         targetMode: 'text-to-image',
         sourceInspirationId: draft.id,
@@ -170,7 +170,7 @@ export const InspirationDetail: React.FC<Props> = ({
         mode: 'image-edit',
         prompt: draft.prompt || '',
         negativePrompt: draft.negativePrompt || '',
-        params: draft.params || DEFAULT_PARAMS,
+        params: { ...DEFAULT_PARAMS, ...draft.params },
         baseImageUrl: draft.imageUrl,
         sourceInspirationId: draft.id,
         imageEditOperation: operation,

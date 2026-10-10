@@ -47,7 +47,7 @@ interface ParamsViewerProps {
     /** 收藏详情按实验室顺序分区展示；其他入口仍展示全部。 */
     section?: 'params' | 'characters' | 'characterReference' | 'vibe';
     /** 生成参数 */
-    params: NAIParams;
+    params: Partial<NAIParams>;
     /** 正面提示词（可选展示） */
     prompt?: string;
     /** 负面提示词（可选展示） */
@@ -126,10 +126,10 @@ export const ParamsViewer: React.FC<ParamsViewerProps> = ({
                     </svg>
                     {t("生成参数")}</label>
                 <div className="grid grid-cols-2 gap-2">
-                    <ParamItem label={t("模型")} value={getNaiModelDisplayLabel(params.model)} />
-                    <ParamItem label={t("分辨率")} value={`${params.width} × ${params.height}`} />
-                    <ParamItem label={t("生成步数")} value={params.steps} />
-                    <ParamItem label={t("引导强度 (CFG)")} value={params.scale} />
+                    <ParamItem label={t("模型")} value={params.model ? getNaiModelDisplayLabel(params.model) : '-'} />
+                    <ParamItem label={t("分辨率")} value={`${params.width ?? '-'} × ${params.height ?? '-'}`} />
+                    <ParamItem label={t("生成步数")} value={params.steps ?? '-'} />
+                    <ParamItem label={t("引导强度 (CFG)")} value={params.scale ?? '-'} />
                     <ParamItem
                         label={t("采样器")}
                         value={typeof params.sampler === 'string' && params.sampler ? params.sampler.replace(/_/g, ' ') : '-'}
@@ -137,7 +137,7 @@ export const ParamsViewer: React.FC<ParamsViewerProps> = ({
                     <ParamItem label={t("随机种子")} value={params.seed ?? '随机'} />
                     <ParamItem
                         label={t("画质增强")}
-                        value={params.qualityToggle ? t('开启') : t('关闭')}
+                        value={params.qualityToggle === undefined ? '-' : params.qualityToggle ? t('开启') : t('关闭')}
                     />
                     <ParamItem
                         label={t("负面预设")}
@@ -149,7 +149,7 @@ export const ParamsViewer: React.FC<ParamsViewerProps> = ({
                     />
                     <ParamItem
                         label={t("多样性 (Variety+)")}
-                        value={params.variety ? t('开启') : t('关闭')}
+                        value={params.variety === undefined ? '-' : params.variety ? t('开启') : t('关闭')}
                     />
                     {params.transparent && (
                         <ParamItem label={t("透明背景")} value={params.alphaMode === 'premultiplied' ? '预乘 Alpha' : 'Straight Alpha'} />

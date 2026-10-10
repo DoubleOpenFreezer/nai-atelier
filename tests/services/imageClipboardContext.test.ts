@@ -28,6 +28,11 @@ beforeEach(() => {
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe('主动复制图片的会话内生成配置', () => {
+  it('法典部分配置按原样关联复制图片，不补齐未记录参数或角色', async () => {
+    const partial = { prompt: 'known prompt', params: { steps: 12 } };
+    await rememberCopiedImage(beginImageClipboardCopy(), image(), image(), partial);
+    expect(await getCopiedImageData(file(image()))).toEqual(partial);
+  });
   it('复制关联尚未完成时立刻粘贴也能取得角色配置', async () => {
     const pending = rememberCopiedImage(beginImageClipboardCopy(), image(), image(), generationData);
     expect(await getCopiedImageData(file(image()))).toEqual(generationData);

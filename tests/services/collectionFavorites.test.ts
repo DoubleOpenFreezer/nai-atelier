@@ -2,12 +2,13 @@
 import { beforeEach, expect, it, vi } from 'vitest';
 import type { Inspiration, LocalGenItem, User } from '../../types';
 
-const mocks = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), put: vi.fn(), uploadFile: vi.fn(), historyPage: vi.fn(), historyFavorites: vi.fn(), workFavorite: vi.fn(), pixivImport: vi.fn(), danbooruImport: vi.fn() }));
+const mocks = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), put: vi.fn(), uploadFile: vi.fn(), historyPage: vi.fn(), historyFavorites: vi.fn(), workFavorite: vi.fn(), pixivImport: vi.fn(), danbooruImport: vi.fn(), codexFile: vi.fn(), codexMetadata: vi.fn() }));
 vi.mock('../../services/api', async original => ({ ...await original<typeof import('../../services/api')>(), api: { get: mocks.get, post: mocks.post, put: mocks.put, uploadFile: mocks.uploadFile } }));
 vi.mock('../../services/localHistory', () => ({ localHistory: { getPage: mocks.historyPage, setFavorite: vi.fn(), setFavorites: mocks.historyFavorites } }));
 vi.mock('../../services/aitagService', async original => ({ ...await original<typeof import('../../services/aitagService')>(), aitagService: { setFavorite: mocks.workFavorite } }));
 vi.mock('../../services/pixivService', () => ({ importPixivImageAsFile: mocks.pixivImport }));
 vi.mock('../../services/danbooruCoverImport', () => ({ importDanbooruCoverAsDataUrl: mocks.danbooruImport }));
+vi.mock('../../services/codexService', () => ({ readCodexImageFile: mocks.codexFile, readCodexImageMetadata: mocks.codexMetadata }));
 
 const user: User = { id: 'test-owner', username: 'test', role: 'admin', createdAt: 1 };
 let stored: Inspiration[];
@@ -24,6 +25,29 @@ beforeEach(() => {
   mocks.historyPage.mockResolvedValue({ items: [], count: 0 });
   mocks.historyFavorites.mockResolvedValue(1); mocks.workFavorite.mockResolvedValue({});
   mocks.uploadFile.mockResolvedValue({ url: '/api/assets/inspirations/saved.png' });
+  mocks.codexFile.mockReset().mockResolvedValue(new File(['synthetic'], 'source.png', { type: 'image/png' }));
+  mocks.codexMetadata.mockReset().mockResolvedValue(null);
+});
+
+it.each(['codex', 'codex-community'] as const)('%s 收藏存原件和真实参数，分组补齐不重复保存已有页', async sourceType => {
+  const service = await import('../../services/collectionFavorites'); await service.loadCollection(user);
+  mocks.codexMetadata.mockResolvedValue({ prompt: '', negativePrompt: '', params: { steps: 12, characters: [{ id: 'role', prompt: 'girl', x: 0.2, y: 0.8 }] } });
+  const first = { sourceType, sourceId: 'book:entry', imageId: 'first.png', imageUrl: 'https://assets.quicktagcloud.com/originals/book/first.png', prompt: 'editorial prompt', analysis: { codex: { note: 'source note' } } };
+  await service.toggleCollectionTarget(first);
+  expect(stored[0]).toMatchObject({ prompt: '', params: { steps: 12 }, imageUrl: '/api/assets/inspirations/saved.png', analysis: { codex: { note: 'source note' } } });
+  expect(stored[0].params?.width).toBeUndefined(); expect(stored[0].params?.sampler).toBeUndefined();
+  const group = { ...first, groupSize: 2, getGroup: async () => [first, { ...first, imageId: 'second.png', imageUrl: 'https://assets.quicktagcloud.com/originals/book/second.png' }] };
+  expect(service.collectionTargetActive(group)).toBe(false);
+  await service.toggleCollectionTarget(group);
+  expect(stored).toHaveLength(2); expect(mocks.uploadFile).toHaveBeenCalledTimes(2);
+  expect(service.collectionTargetActive(group)).toBe(true);
+});
+it('法典图片保存失败不创建收藏记录，重试成功；非 NAI 图片只保存已知文字', async () => {
+  const service = await import('../../services/collectionFavorites'); await service.loadCollection(user);
+  const image = { sourceType: 'codex' as const, sourceId: 'book:entry', imageId: 'image.png', imageUrl: 'https://assets.quicktagcloud.com/images/book/image.jpg', prompt: 'known text' };
+  mocks.uploadFile.mockRejectedValueOnce(new Error('保存失败'));
+  await expect(service.toggleCollectionTarget(image)).rejects.toThrow('保存失败'); expect(stored).toEqual([]);
+  await service.toggleCollectionTarget(image); expect(stored[0].prompt).toBe('known text'); expect(stored[0].params).toBeUndefined();
 });
 
 it('只读汇总全部旧历史收藏与 AITag 组内图片，不复制原图或写入旧资料', async () => {

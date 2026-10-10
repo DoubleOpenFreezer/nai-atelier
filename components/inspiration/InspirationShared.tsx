@@ -1,6 +1,6 @@
 import { t, getLanguage } from '../../services/i18n';
 import React from 'react';
-import { Bot, History, Image, Sparkles, Upload } from 'lucide-react';
+import { BookOpen, Bot, History, Image, Sparkles, Upload, Users } from 'lucide-react';
 import { Inspiration, InspirationSourceType, NAIParams, User } from '../../types';
 import { normalizeInspirationTags } from '../../services/inspirationUtils';
 import { DanbooruIcon, PixivIcon } from '../PlatformIcons';
@@ -19,6 +19,8 @@ export const sourceIcon = (source?: InspirationSourceType) => {
   if (source === 'aitag') return Sparkles;
   if (source === 'danbooru') return DanbooruIcon;
   if (source === 'pixiv') return PixivIcon;
+  if (source === 'codex') return BookOpen;
+  if (source === 'codex-community') return Users;
   if (source === 'upload') return Upload;
   if (source === 'agent') return Bot;
   return Image;

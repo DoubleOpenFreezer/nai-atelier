@@ -22,6 +22,25 @@ export { extractNovelAiMetadataFromPng, extractNovelAiStealthMetadataFromRgba } 
 /** 用于跨组件传递待导入数据的 SessionStorage Key */
 export const IMPORT_SESSION_KEY = 'nai_pending_import';
 
+/** 外部素材只投递用户选中的字段，不用默认参数冒充原图配置。 */
+export interface PromptFragmentImport {
+    mode: 'prompt-fragments';
+    prompt?: string;
+    negativePrompt?: string;
+    characters?: CharacterParams[];
+    replace?: boolean;
+    params?: Partial<NAIParams>;
+    importSettings?: boolean;
+    importSeed?: boolean;
+    importModel?: boolean;
+}
+
+export interface BaseImageImport {
+    mode: 'base-image';
+    baseImageUrl: string;
+    imageEditOperation: import('../types').ImageEditOperation;
+}
+
 /** 安全的 ID 生成器回退 */
 const safeUUID = createUuid;
 

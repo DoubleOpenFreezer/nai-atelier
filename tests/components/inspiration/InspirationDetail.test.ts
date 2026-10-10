@@ -59,6 +59,16 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
+it('法典收藏保留部分配置，送入实验室时才补齐可执行默认值', async () => {
+  const item: Inspiration = { ...mockItem, sourceType: 'codex', params: { steps: 12 } };
+  render(React.createElement(InspirationDetail, { item, items: [item], currentUser: mockUser, notify: vi.fn(), onClose: vi.fn(), onRefresh: vi.fn(async () => {}) }));
+  expect(JSON.parse(screen.getByTestId('params-viewer').dataset.params!)).toEqual({ steps: 12 });
+  fireEvent.click(screen.getByRole('button', { name: '导入实验室' }));
+  await waitFor(() => expect(db.markInspirationUsed).toHaveBeenCalledWith(item.id));
+  expect(JSON.parse(sessionStorage.getItem(IMPORT_SESSION_KEY)!).params).toEqual({ ...DEFAULT_PARAMS, steps: 12 });
+  expect(item.params).toEqual({ steps: 12 });
+});
+
 it('添加标签可复用其他作品的原名，回车后不重复生成标签，并保留已有标签', async () => {
   const items = [mockItem, { ...mockItem, id: 'other', tags: ['逆光', '雨天'] }];
   render(React.createElement(InspirationDetail, { item: mockItem, items, currentUser: mockUser, notify: vi.fn(), onClose: vi.fn(), onRefresh: vi.fn(async () => {}) }));

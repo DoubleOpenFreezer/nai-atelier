@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { PromptChain } from '../../types';
 import { createLabImageEditDraft } from '../../services/labWorkspace';
-import { appendTagsToImageEditDraft, buildImageEditMetadataPatch, buildImageEditPresetPatch, canSaveLabModeToLibrary, LabPresetImportOptions, mergePresetSettings } from '../../services/labModeTools';
+import { appendTagsToImageEditDraft, buildImageEditMetadataPatch, buildImageEditPresetPatch, buildPromptFragmentPatch, canSaveLabModeToLibrary, LabPresetImportOptions, mergePresetSettings } from '../../services/labModeTools';
 
 const params = {
   width: 832,
@@ -12,6 +12,24 @@ const params = {
   qualityToggle: true,
   ucPreset: 4,
 };
+
+describe('外部片段取用', () => {
+  const current = { prompt: 'scene', negativePrompt: 'bad', params: { ...params, seed: 77, model: 'nai-diffusion-4-5-full', characters: [{ id: 'old', prompt: 'old role', x: 0.2, y: 0.8 }] } };
+  it('追加保留权重、顺序、重复词、负面和参数', () => {
+    const patch = buildPromptFragmentPatch(current, { mode: 'prompt-fragments', prompt: '{{artist:a}}, scene' });
+    expect(patch).toEqual({ prompt: 'scene, {{artist:a}}, scene' });
+  });
+  it('替换只有角色时保留全局词和参考，设置不隐式导入 Seed 或模型', () => {
+    const character = { id: 'new', prompt: '', negativePrompt: 'hat', x: 0.5, y: 0.5 };
+    const patch = buildPromptFragmentPatch(current, { mode: 'prompt-fragments', characters: [character], replace: true, importSettings: true, params: { steps: 20, seed: 88, model: 'nai-diffusion-5-full-high' } });
+    expect(patch.prompt).toBeUndefined(); expect(patch.negativePrompt).toBeUndefined();
+    expect(patch.params).toMatchObject({ steps: 20, width: params.width, seed: 77, model: current.params.model, characters: [character] });
+  });
+  it('明确勾选时才能更新 Seed 和模型，空字段可清空，缺失 Seed 保持原值', () => {
+    expect(buildPromptFragmentPatch(current, { mode: 'prompt-fragments', replace: true, prompt: '', importSeed: true, importModel: true, params: { seed: 88, model: 'nai-diffusion-5-full-high' } })).toMatchObject({ prompt: '', params: { seed: 88, model: 'nai-diffusion-5-full-high' } });
+    expect(buildPromptFragmentPatch(current, { mode: 'prompt-fragments', importSeed: true, params: {} })).toEqual({});
+  });
+});
 
 const preset: PromptChain = {
   id: 'preset-1',

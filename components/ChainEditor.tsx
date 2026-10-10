@@ -16,7 +16,7 @@ import { InlineCloudQueueStatus, useCloudQueueStatus } from './CloudQueueStatus'
 import { isCloudQueueTaskActive } from '../services/cloudQueue';
 import { localHistory } from '../services/localHistory';
 import { api } from '../services/api';
-import { extractMetadata, parseNovelAIMetadata, IMPORT_SESSION_KEY, PendingImportData, extractRawMetadataFromJsonText } from '../services/metadataService';
+import { extractMetadata, parseNovelAIMetadata, IMPORT_SESSION_KEY, PendingImportData, PromptFragmentImport, BaseImageImport, extractRawMetadataFromJsonText } from '../services/metadataService';
 import { ChainEditorParams } from './ChainEditorParams';
 import { ChainEditorPreview } from './ChainEditorPreview';
 import { ImagePreviewActions } from './ImagePreviewActions';
@@ -30,7 +30,7 @@ import { SmartImage } from './SmartImage';
 import { createUuid } from '../services/id';
 import { VibeManager } from './VibeManager';
 import { CharacterReferenceManager } from './CharacterReferenceManager';
-import { appendTagsToImageEditDraft, buildImageEditMetadataPatch, buildImageEditPresetPatch, canSaveLabModeToLibrary, LabPresetImportOptions, mergePresetSettings } from '../services/labModeTools';
+import { appendTagsToImageEditDraft, buildImageEditMetadataPatch, buildImageEditPresetPatch, buildPromptFragmentPatch, canSaveLabModeToLibrary, LabPresetImportOptions, mergePresetSettings } from '../services/labModeTools';
 import { normalizeVibeSelections } from '../services/vibeUtils';
 import { LabPageLayouts } from '../services/appearancePreferences';
 import { isActiveOpusSubscription, useNovelaiUsage } from '../services/naiUsage';
@@ -579,7 +579,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         if (!raw) return;
 
         try {
-            const data = JSON.parse(raw) as PendingImportData;
+            const data = JSON.parse(raw) as PendingImportData | PromptFragmentImport | BaseImageImport;
             // 清除标志位，防止重复消费
             sessionStorage.removeItem(IMPORT_SESSION_KEY);
             // 应用数据到当前编辑器
@@ -1322,7 +1322,28 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
      * 从外部投递的数据（历史/灵感页面的一键导入）中加载参数
      * 由 useEffect 在检测到 sessionStorage 中的 nai_pending_import 时调用
      */
-    const applyImportData = (data: PendingImportData) => {
+    const applyImportData = (data: PendingImportData | PromptFragmentImport | BaseImageImport) => {
+        if (data.mode === 'base-image') {
+            void createEditDraftFromSource(data.imageEditOperation, data.baseImageUrl, 'upload', undefined,
+                activeEditDraft?.prompt ?? finalPrompt, activeEditDraft?.negativePrompt ?? negativePrompt,
+                activeEditDraft?.params ?? params).catch(error => notify(error instanceof Error ? error.message : '底图读取失败', 'error'));
+            return;
+        }
+        if (data.mode === 'prompt-fragments' || data.mode === 'append-prompt') {
+            const fragment: PromptFragmentImport = data.mode === 'prompt-fragments' ? data : { mode: 'prompt-fragments', prompt: data.prompt };
+            if (activeEditOperation && activeEditDraft) {
+                const patch = buildPromptFragmentPatch(activeEditDraft, fragment);
+                updateEditDraft(activeEditOperation, { ...patch, promptSource: 'custom' });
+            } else {
+                const patch = buildPromptFragmentPatch({ prompt: basePrompt, negativePrompt, params }, fragment);
+                if (patch.prompt !== undefined) setBasePrompt(patch.prompt);
+                if (patch.negativePrompt !== undefined) setNegativePrompt(patch.negativePrompt);
+                if (patch.params) setParams(patch.params);
+            }
+            markChange();
+            notify('已取用所选内容到当前模式');
+            return;
+        }
         if (data.mode === 'image-edit' && data.baseImageUrl) {
             const operation = data.imageEditOperation || 'image-to-image';
             const source = data.sourceInspirationId ? 'inspiration' : (data.parentHistoryId ? 'history' : 'upload');
@@ -1342,12 +1363,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         }
         if (data.targetMode === 'text-to-image') {
             updateWorkspace(previous => ({ ...previous, activeMode: 'text-to-image' }));
-        }
-        if (data.mode === 'append-prompt') {
-            setBasePrompt(current => mergePromptFields(current, data.prompt));
-            markChange();
-            notify('已把灵感 Prompt 追加到全局提示词。');
-            return;
         }
         if (data.mode === 'prompt-only') {
             setBasePrompt(data.prompt || '');

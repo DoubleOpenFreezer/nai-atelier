@@ -1,5 +1,6 @@
 import { MEDIA_VARIANTS, validateMediaSource } from './mediaValidation';
 import { LAN_ACCESS_COOKIE } from './sharedWhitelist.mjs';
+import { fetchCodexData } from './codexRemote.mjs';
 import {
   json, error, addColumnIfMissing, INIT_SQL,  type Env, type WorkerContext, type RouteContext,
 } from './routes/types';
@@ -30,6 +31,11 @@ export default {
 
     if (!isLanAuthorized && path.startsWith('/api/')) {
       return lanAccessRequired();
+    }
+
+    if (path === '/api/codex/data') {
+      if (method !== 'GET') return error('法典仅支持读取', 405);
+      return fetchCodexData(url.searchParams.get('url') || '', fetch, request.signal);
     }
 
     if (path === '/api/media') {

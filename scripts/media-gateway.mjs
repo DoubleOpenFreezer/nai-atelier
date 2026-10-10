@@ -16,7 +16,8 @@ import { ProxyAgent, fetch as undiciFetch } from 'undici';
 import { PromptAgentService } from './prompt-agent.mjs';
 import { StChatu8Bridge, installSillyTavernBridgeExtension } from './st-chatu8-bridge.mjs';
 import { ImageTaggerService } from './image-tagger.mjs';
-import { MEDIA_REMOTE_HOSTS, LAN_ACCESS_COOKIE } from '../worker/sharedWhitelist.mjs';
+import { MEDIA_REMOTE_HOSTS, CODEX_MEDIA_HOSTS, LAN_ACCESS_COOKIE } from '../worker/sharedWhitelist.mjs';
+import { fetchCodexData } from '../worker/codexRemote.mjs';
 import { DEFAULT_NAI_BILLING, estimateNaiBilling, isNaiBillingRules } from '../worker/naiBilling.mjs';
 import { normalizeCloudQueueCount } from '../worker/cloudQueueNumbers.mjs';
 import { getCloudQueueGenerationUrl } from '../worker/cloudQueueTarget.mjs';
@@ -3669,6 +3670,21 @@ const serveDistFile = async (req, res, url) => {
         return sendJson(res, Number(error.status) || 502, payload);
       }
     }
+    if (url.pathname === '/api/codex/data') {
+      if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
+      if (req.method !== 'GET') return sendJson(res, 405, { error: '法典仅支持读取' });
+      const controller = new AbortController();
+      const abort = () => { if (!res.writableEnded) controller.abort(); };
+      res.once('close', abort);
+      try {
+        const response = await fetchCodexData(url.searchParams.get('url') || '', remoteFetch, controller.signal);
+        const bytes = Buffer.from(await response.arrayBuffer());
+        res.writeHead(response.status, Object.fromEntries(response.headers));
+        res.end(bytes);
+      } catch { if (!res.destroyed) sendJson(res, 502, { error: '法典连接失败，请稍后重试' }); }
+      finally { res.off('close', abort); }
+      return;
+    }
     if (url.pathname === '/__internal/aitag-fetch') return handleAitagRemoteRequest(req, res, url, lanSecret, remoteFetch);
     if (url.pathname === '/__internal/danbooru-fetch') return handleDanbooruRemoteRequest(req, res, url, lanSecret, remoteFetch, danbooruResponseCache, danbooruLimiter, danbooruDiskCache);
     if (url.pathname === '/api/generation-job') {
@@ -3856,10 +3872,10 @@ const serveDistFile = async (req, res, url) => {
             const host = originalUrl.hostname.toLowerCase();
             isProxyRequiredOriginal = originalUrl.protocol === 'https:'
               && (!originalUrl.port || originalUrl.port === '443')
-              && (host === PIXIV_IMAGE_HOST || host === AITAG_IMAGE_HOST || host === 'aitag.win');
+              && (host === PIXIV_IMAGE_HOST || host === AITAG_IMAGE_HOST || host === 'aitag.win' || CODEX_MEDIA_HOSTS.includes(host));
           } catch {}
         }
-        // 防盗链图床（Pixiv、AITag）原图不能 302 直出（浏览器不会带官方 Referer），由网关带 Referer 代理。
+        // 防盗链图床及法典原图经网关返回，避免 Referer 缺失或跨域阻断配置读取与图片取用。
         if (validated.type === 'local' || (validated.type === 'remote' && !isProxyRequiredOriginal)) {
           const location = validated.type === 'local'
             ? new URL(validated.source, `http://${req.headers.host || 'localhost'}`).toString()

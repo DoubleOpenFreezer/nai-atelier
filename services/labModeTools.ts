@@ -1,6 +1,21 @@
 import { GenerationMode, LabImageEditDraft, NAIParams, PromptChain } from '../types';
 import { compilePrompt, mergePromptFields } from './promptUtils';
 import { resolveTransparentWeight } from './transparentBackground.mjs';
+import type { PromptFragmentImport } from './metadataService';
+
+export function buildPromptFragmentPatch(current: { prompt: string; negativePrompt: string; params: NAIParams }, data: PromptFragmentImport) {
+  const patch: Partial<typeof current> = {};
+  const join = (before: string, value: string) => data.replace ? value : [before.trim(), value.trim()].filter(Boolean).join(', ');
+  if (data.prompt !== undefined) patch.prompt = join(current.prompt, data.prompt);
+  if (data.negativePrompt !== undefined) patch.negativePrompt = join(current.negativePrompt, data.negativePrompt);
+  let params = current.params;
+  if (data.characters !== undefined) params = { ...params, characters: data.replace ? data.characters : [...(params.characters || []), ...data.characters] };
+  if (data.importSettings && data.params) params = mergePresetSettings(params, data.params, data.prompt);
+  if (data.importSeed && data.params?.seed !== undefined) params = { ...params, seed: data.params.seed };
+  if (data.importModel && data.params?.model) params = { ...params, model: data.params.model };
+  if (params !== current.params) patch.params = params;
+  return patch;
+}
 
 export interface LabPresetImportOptions {
   importBasePrompt: boolean;
@@ -35,7 +50,7 @@ export const buildImageEditMetadataPatch = (
   promptSource: 'custom',
 });
 
-export const mergePresetSettings = (current: NAIParams, imported?: NAIParams, importedPrompt = ''): NAIParams => ({
+export const mergePresetSettings = (current: NAIParams, imported?: Partial<NAIParams>, importedPrompt = ''): NAIParams => ({
   ...current,
   steps: imported?.steps ?? current.steps,
   scale: imported?.scale ?? current.scale,

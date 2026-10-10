@@ -7,6 +7,14 @@ import { copyTagText } from '../../services/externalImageTags';
 
 vi.mock('../../services/externalImageTags', () => ({ copyTagText: vi.fn(async () => undefined) }));
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
+it('来源只记录部分参数时展示已知值，不把缺失分辨率或开关冒充配置', () => {
+  render(<ParamsViewer params={{ steps: 12 }} section="params" />);
+  expect(screen.getByRole('button', { name: '查看生成步数完整值' }).textContent).toBe('12');
+  expect(screen.getByRole('button', { name: '查看分辨率完整值' }).textContent).toBe('- × -');
+  for (const label of ['模型', '引导强度 (CFG)', '画质增强', '多样性 (Variety+)']) {
+    expect(screen.getByRole('button', { name: `查看${label}完整值` }).textContent).toBe('-');
+  }
+});
 it('历史参考参数不把当前估算价格冒充当时的实际扣费', () => {
   const params = { width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler_ancestral', characterReferences: { enabled: true, slots: [{ assetId: 'ref', type: 'character' as const, strength: 1, fidelity: 1 }] } };
   render(<ParamsViewer params={params} />);

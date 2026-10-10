@@ -5,6 +5,7 @@ import { runHandler } from './node-http';
 import { json } from '../worker/routes/types';
 import { thumbnailResponse } from './image';
 import { resolveNaiGatewayUrl } from '../worker/naiConnection.mjs';
+import { fetchCodexData } from '../worker/codexRemote.mjs';
 import { createMobileGenerationJobs, rememberNaiSubscription } from './generationJobs';
 import { AITAG_BROWSER_HEADERS } from 'mobile:remote';
 import {
@@ -63,6 +64,10 @@ export async function queuePreferences(authorization: string, next?: any) {
 }
 export async function mobileGateway(request: Request): Promise<Response | null> {
   const url = new URL(request.url), path = url.pathname, authorization = request.headers.get('authorization') || '';
+  if (path === '/api/codex/data') {
+    if (request.method !== 'GET') return json({ error: '法典仅支持读取' }, 405);
+    return fetchCodexData(url.searchParams.get('url') || '', nativeFetch, request.signal);
+  }
   if (path === '/api/novelai-runtime') return json(getNaiRuntime());
   if (path === '/api/novelai-subscription') {
     const gatewayUrl = await mobileNaiGatewayUrl(authorization);

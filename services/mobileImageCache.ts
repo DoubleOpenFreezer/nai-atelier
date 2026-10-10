@@ -1,3 +1,5 @@
+import { MEDIA_REMOTE_HOSTS } from '../worker/sharedWhitelist.mjs';
+
 const DB_NAME = 'nai-mobile-image-cache';
 const DB_VERSION = 2;
 const THUMBNAIL_STORE = 'thumbnails';
@@ -398,7 +400,7 @@ export const canUseMediaGateway = (source: string) => {
   if (source.startsWith('/api/assets/') || /^\/api\/(?:local-history\/[^/]+\/image|inspirations\/[^/]+\/image|vibes\/[^/]+\/(?:image|thumbnail)|character-references\/[^/]+\/(?:image|thumbnail)|integrations\/st-chatu8\/history\/[a-f0-9]{64}\/image)(?:\?.*)?$/i.test(source)) return true;
   try {
     const url = new URL(source, getBaseOrigin());
-    return url.protocol === 'https:' && ['ai-img.10118899.xyz', 'aitag.win', 'cdn.donmai.us', 'i.pximg.net'].includes(url.hostname.toLowerCase());
+    return url.protocol === 'https:' && [...MEDIA_REMOTE_HOSTS, 'i.pximg.net'].includes(url.hostname.toLowerCase());
   } catch { return false; }
 };
 

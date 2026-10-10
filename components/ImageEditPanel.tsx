@@ -62,7 +62,7 @@ interface ImageEditPanelProps {
   onNegativePromptChange: (value: string) => void;
   onPromptSource: (source: LabImageEditDraft['promptSource']) => void;
   onDraftChange: (patch: Partial<LabImageEditDraft> & { maskData?: string }) => void;
-  onBaseImageChange: (dataUrl: string, source: ImageEditBaseImageSource, parentHistoryId?: string, meta?: { prompt?: string; negativePrompt?: string; params?: import('../types').NAIParams }) => void | Promise<void>;
+  onBaseImageChange: (dataUrl: string, source: ImageEditBaseImageSource, parentHistoryId?: string, meta?: { prompt?: string; negativePrompt?: string; params?: Partial<import('../types').NAIParams> }) => void | Promise<void>;
   onCanvasChange: (imageData: string, maskData?: string) => void | Promise<void>;
   onGenerate: (request: ImageEditRequest, options?: { params: NAIParams; onApproved?: () => Promise<void>; agent?: boolean; count?: number; placement?: GenerationPlacement }) => Promise<PromptAgentGenerationResult | void>;
   onAgentGenerateReady?: (generate: (draft: PromptAgentDraft, onApproved?: () => Promise<void>, count?: number, placement?: GenerationPlacement) => Promise<PromptAgentGenerationResult | boolean>) => void;

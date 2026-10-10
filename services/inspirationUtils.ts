@@ -41,7 +41,7 @@ export const rememberCollectionFolder = (id?: string) => {
 };
 
 export const sourceLabel = (source?: InspirationSourceType) => ({
-  history: '生成历史', aitag: 'AITag', danbooru: 'Danbooru', pixiv: 'Pixiv', upload: '手动上传', agent: '创作助手', artist: '画师库', character: '角色库', chain: '风格预设', other: '其他来源',
+  history: '生成历史', aitag: 'AITag', danbooru: 'Danbooru', pixiv: 'Pixiv', codex: '法典书目', 'codex-community': '共创广场', upload: '手动上传', agent: '创作助手', artist: '画师库', character: '角色库', chain: '风格预设', other: '其他来源',
 }[source || 'other'] || '其他来源');
 
 // 旧版自动来源 Tag 只在读取时隐藏，来源字段与私人存储保持原样。
@@ -49,7 +49,7 @@ export const getCollectionTags = (item: Pick<Inspiration, 'tags' | 'sourceType'>
   normalizeInspirationTags(item.tags || []).filter(tag => tag !== sourceLabel(item.sourceType));
 
 export const collectionGroupKey = (item: Inspiration) => JSON.stringify(
-  item.sourceId && (item.sourceType === 'aitag' || item.sourceType === 'pixiv')
+  item.sourceId && ['aitag', 'pixiv', 'codex', 'codex-community'].includes(item.sourceType || '')
     ? [item.userId, item.sourceType, item.sourceId] : ['image', item.id]
 );
 
@@ -61,8 +61,8 @@ export const groupCollectionItems = (items: Inspiration[]): Inspiration[][] => {
     if (group) group.push(item); else groups.set(key, [item]);
   }
   return Array.from(groups.values(), group => group.sort((a, b) =>
-    String(a.analysis?.collectionImageId ?? a.analysis?.externalSourcePage ?? a.imageUrl).localeCompare(
-      String(b.analysis?.collectionImageId ?? b.analysis?.externalSourcePage ?? b.imageUrl), undefined, { numeric: true }
+    String(a.analysis?.externalSourcePage ?? a.analysis?.collectionImageId ?? a.imageUrl).localeCompare(
+      String(b.analysis?.externalSourcePage ?? b.analysis?.collectionImageId ?? b.imageUrl), undefined, { numeric: true }
     )
   ));
 };

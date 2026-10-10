@@ -288,7 +288,7 @@ export interface Artist {
 }
 
 // Inspiration Gallery Types
-export type InspirationSourceType = 'history' | 'aitag' | 'danbooru' | 'pixiv' | 'upload' | 'agent' | 'artist' | 'character' | 'chain' | 'other';
+export type InspirationSourceType = 'history' | 'aitag' | 'danbooru' | 'pixiv' | 'codex' | 'codex-community' | 'upload' | 'agent' | 'artist' | 'character' | 'chain' | 'other';
 
 export interface InspirationBoard {
   id: string;
@@ -308,7 +308,7 @@ export interface Inspiration {
   imageUrl: string; // Base64 Data URI
   prompt: string;
   negativePrompt?: string;
-  params?: NAIParams; // 完整生成参数（含 characters），可选字段兼容旧数据
+  params?: Partial<NAIParams>; // 仅保存已记录的生成参数（含 characters），兼容缺少字段的来源与旧数据
   boardId?: string;
   notes?: string;
   tags?: string[];

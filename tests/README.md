@@ -40,6 +40,11 @@ npm run test:node -- --test-name-pattern="同步健康记录" tests/integration/
 # 显式联网检查，不包含在上面的离线回归中
 npm run test:live-sync
 
+# 法典：显式读取当前全部书目与共创广场，校验发布清单和代表图链接
+$env:CODEX_LIVE_TEST='1'
+npm run test -- tests/live/codex-live.test.ts
+Remove-Item Env:CODEX_LIVE_TEST
+
 # 显式 Android 检查：先启动隔离模拟器，不向真实手机写测试资料
 $env:ANDROID_SERIAL='emulator-5556'
 npm run test:android

@@ -2,6 +2,7 @@ import { t, useLanguage } from '../services/i18n';
 import React, { ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   Brush,
+  BookOpen,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
@@ -29,7 +30,7 @@ import { DanbooruIcon, PixivIcon } from './PlatformIcons';
 
 const GlobalSettings = React.lazy(() => import('./GlobalSettings').then(module => ({ default: module.GlobalSettings })));
 
-type AppView = 'list' | 'characters' | 'edit' | 'library' | 'aitag' | 'danbooru' | 'pixiv' | 'inspiration' | 'history' | 'playground';
+type AppView = 'list' | 'characters' | 'edit' | 'library' | 'aitag' | 'danbooru' | 'pixiv' | 'codex' | 'inspiration' | 'history' | 'playground';
 type SettingsSection = 'home' | 'appearance' | 'generation' | 'novelai' | 'agent' | 'maintenance';
 
 interface LayoutProps {
@@ -59,6 +60,7 @@ const icons = {
   character: CircleUserRound,
   artist: Brush,
   tag: Tag,
+  codex: BookOpen,
   danbooru: DanbooruIcon,
   pixiv: PixivIcon,
   resources: FolderOpen,
@@ -120,6 +122,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
       { id: 'library', label: '画师库', icon: icons.artist },
       { id: 'characters', label: '角色库', icon: icons.character },
       { id: 'aitag', label: 'AITag', icon: icons.tag },
+      { id: 'codex', label: '法典', icon: icons.codex },
       { id: 'danbooru', label: 'Danbooru', icon: icons.danbooru },
       { id: 'pixiv', label: 'Pixiv', icon: icons.pixiv },
       { id: 'inspiration', label: '收藏库', icon: icons.inspiration },
@@ -160,6 +163,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
     { id: 'library', label: '画师库', icon: icons.artist },
     { id: 'characters', label: '角色库', icon: icons.character },
     { id: 'aitag', label: 'AITag', icon: icons.tag },
+    { id: 'codex', label: '法典', icon: icons.codex },
     { id: 'danbooru', label: 'Danbooru', icon: icons.danbooru },
     { id: 'pixiv', label: 'Pixiv', icon: icons.pixiv },
     { id: 'inspiration', label: '收藏库', icon: icons.inspiration },
