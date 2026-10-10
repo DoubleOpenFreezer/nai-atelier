@@ -138,6 +138,14 @@ class LocalHistoryService {
         return () => this.listeners.delete(listener);
     }
 
+    /**
+     * 后台任务已把结果写入历史（不经本页 add）：只广播变更让各视图刷新，
+     * 不能在本页重复入库。
+     */
+    notifyBackgroundSaved(id?: string) {
+        this.emit({ type: 'add', id });
+    }
+
     private notifyListeners(change: LocalHistoryChange) {
         this.listeners.forEach(listener => listener(change));
     }

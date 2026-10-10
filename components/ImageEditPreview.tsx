@@ -4,6 +4,7 @@ import { ImageEditOperation } from '../types';
 import { ChainEditorPreview } from './ChainEditorPreview';
 import type { CollectionTarget } from '../services/collectionFavorites';
 import type { ImageGenerationData } from '../services/imageClipboardContext';
+import type { GenerationCountControlProps } from './GenerationCountControl';
 
 interface ImageEditPreviewProps {
   operation: ImageEditOperation;
@@ -12,6 +13,7 @@ interface ImageEditPreviewProps {
   generationCostLabel: string;
   isGenerating?: boolean;
   generationProgress?: { step: number; total: number } | null;
+  generationCountControl?: GenerationCountControlProps;
   isLoading?: boolean;
   canGenerate?: boolean;
   generationDisabled?: boolean;
@@ -33,7 +35,7 @@ interface ImageEditPreviewProps {
 const getOperationLabel = (operation: ImageEditOperation) => operation === 'image-to-image' ? '图生图' : operation === 'inpaint' ? '局部重绘' : '扩图';
 
 export const ImageEditPreview: React.FC<ImageEditPreviewProps> = ({
-  operation, image, error, generationCostLabel, isGenerating = false, generationProgress, isLoading = false,
+  operation, image, error, generationCostLabel, isGenerating = false, generationProgress, generationCountControl, isLoading = false,
   canGenerate, generationDisabled, unavailableLabel,
   onGenerate, onOpenLightbox, getDownloadFilename, generationData, favorite, canNavigateHistory, historyLabel, onPreviousHistory, onNextHistory,
   canManageHistoryGroup, onRemoveCurrentHistory, onClearHistoryGroup,
@@ -48,6 +50,7 @@ export const ImageEditPreview: React.FC<ImageEditPreviewProps> = ({
       <ChainEditorPreview
         isGenerating={isGenerating}
         generationProgress={generationProgress}
+        generationCountControl={generationCountControl}
         handleGenerate={onGenerate}
         errorMsg={t(error)}
         generatedImage={image}

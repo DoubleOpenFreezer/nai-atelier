@@ -1,5 +1,5 @@
 import { AGENT_TOOL_GROUPS, agentOutputLimit, agentTokenUsage, agentStopInfo, createAgentRunBudget, boundAgentToolResult, compactAuditEntries, isProjectImagePath, localTimeInfo, publicAgentToolContent } from './agent-runtime.mjs';
-import { normalizeAgentGenerationResult, agentOperationError } from '../services/agentOperation.mjs';
+import { normalizeAgentGenerationResult, agentOperationError, validateGenerationCount, validateGenerationPlacement } from '../services/agentOperation.mjs';
 import { AgentLocalImages } from './agent-local-images.mjs';
 import { AgentUiBridge } from './agent-ui-bridge.mjs';
 import { createAgentPageTools, isAgentPageTool } from './agent-page-tools.mjs';
@@ -691,7 +691,7 @@ const baseSystemPrompt = `你是 NAI Atelier 的创作助手。你的职责不�
 1. 按当前实际 NovelAI 生图模型编写提示词，不按聊天模型判断：V5 Full/Curated 使用 Tag 与自然语言混合，简单概念与可靠身份/画风保留 Tag，复杂动作、关系、空间和场景细节可用具体自然语言，不强制全句子；V4/V4.5 默认使用逗号分隔的英文 Tag。具体策略以实时上下文或 get_lab_state 的 modelProfile.project.promptStrategy 为准。给用户的解释与思考跟随本次交流语言，生图提示词产物按策略及用户要求编写；不能把项目默认写法冒充官方能力限制。
 2. 先理解用户意图，必要时读取历史原图和元数据、搜索 Tag、风格串、角色、收藏、AITag、Vibe 或角色参考图，再调用修改工具。项目里已有的数据绝不能要求用户重新描述或手工复制。
 3. 保留用户没有要求修改的内容。修改提示词或参数前先读取实验室当前模型，并通过 search_novelai_docs 查找适用规则；官方模型事实优先于下方项目经验，不得凭记忆编造模型能力。
-4. 用户明确要求“生成、出图、跑一张、试试看”等操作时，修改完成后调用 request_generation；否则不要擅自消耗 Anlas。
+4. 用户明确要求“生成、出图、跑一张、试试看”等操作时，修改完成后调用 request_generation；默认 count=1，只有用户明确指定多张时才传对应 count，项目会逐张生成并保存。不得拆成多个工具调用绕过整轮确认，不得自行追加张数或失败重试。只有用户明确要求排队时传 placement=end，明确要求当前图片之后插队时传 placement=next；省略仍立即生成，遇到忙碌不擅自排队。end 等前序任务完成；next 在当前图片保存后执行插入任务，再继续原任务剩余图片。按 requestedCount、completedCount、historyIds 报告完整或部分结果；否则不要擅自消耗 Anlas。
 5. request_generation 只发出待确认请求，不能声称图片已经生成。
 6. 当用户要求参考上一张/最近一张生成图时，先调用 list_generation_history，再调用 inspect_generation_image。没有真正收到图片时不得声称看过图片。
 6.1 用户要求复用历史配置时，调用 reuse_generation_history 一次带入完整文本、角色、模块及参数，再用业务工具只修改用户要求的字段；不要逐个点击页面搬运配置。历史记录、工作草稿与页面已应用状态必须区分。仅查看历史不能说已填入实验室。生成前读取 get_lab_state 核对，用户要求出图就调用 request_generation 等待确认与实际结果；查资料只补与本次修改相关的事实，已有事实不要重复读取。
@@ -2047,7 +2047,12 @@ export class PromptAgentService {
       const pending = this.pendingConfirmations.get(requestId);
       if (!pending || pending.sessionId !== sessionId || pending.expiresAt <= Date.now() || pending.approved || pending.executing) throw Object.assign(new Error('确认请求已过期或已被处理'), { status: 409 });
       if (payload.accepted === true && pending.keyHash !== undefined && (payload.keyHash || '') !== pending.keyHash) { this.cancelPendingConfirmations(sessionId, { outcome: 'blocked', code: 'key_changed', error: 'NovelAI Key 已变化，请重新提出请求' }); throw Object.assign(new Error('NovelAI Key 已变化，请重新提出请求'), { status: 403 }); }
-      if (payload.accepted === true) { pending.approved = true; const run = this.runs.get(sessionId); if (run) run.state.status = 'executing'; }
+      if (payload.accepted === true) {
+        pending.approved = true;
+        // 确认超时只限制等待用户的阶段，已批准的连续生成由任务生命周期收束。
+        if (pending.operation.action === 'request_generation') clearTimeout(pending.timer);
+        const run = this.runs.get(sessionId); if (run) run.state.status = 'executing';
+      }
       else {
         clearTimeout(pending.timer);
         this.pendingConfirmations.delete(requestId);
@@ -2082,6 +2087,7 @@ export class PromptAgentService {
     this.uiBridge.cancel(sessionId);
     for (const [requestId, pending] of this.pendingConfirmations) {
       if (pending.sessionId !== sessionId) continue;
+      if (reason.code === 'target_changed' && pending.approved && pending.operation.action === 'request_generation') continue;
       clearTimeout(pending.timer);
       this.pendingConfirmations.delete(requestId);
       pending.resolve({ accepted: false, result: { success: false, ...reason } });
@@ -2097,7 +2103,7 @@ export class PromptAgentService {
       const settle = result => {
         if (run) run.state.status = 'running';
         const receipt = result.result || {};
-        void this.appendAuditLog(sessionId, { type: 'confirmation_outcome', runId: run?.state.runId, action: operation.action, accepted: result.accepted, receipt: { success: receipt.success ?? result.accepted, outcome: receipt.outcome || (result.accepted ? 'succeeded' : 'blocked'), ...(receipt.code ? { code: text(receipt.code).slice(0, 60) } : {}), ...(receipt.error ? { error: text(receipt.error).slice(0, 500) } : {}), ...(receipt.historySaved !== undefined ? { historySaved: receipt.historySaved === true, historyId: text(receipt.historyId).slice(0, 200) } : {}) } }).catch(() => {});
+        void this.appendAuditLog(sessionId, { type: 'confirmation_outcome', runId: run?.state.runId, action: operation.action, accepted: result.accepted, receipt: { success: receipt.success ?? result.accepted, outcome: receipt.outcome || (result.accepted ? 'succeeded' : 'blocked'), ...(receipt.code ? { code: text(receipt.code).slice(0, 60) } : {}), ...(receipt.error ? { error: text(receipt.error).slice(0, 500) } : {}), ...(receipt.historySaved !== undefined ? { historySaved: receipt.historySaved === true, historyId: text(receipt.historyId).slice(0, 200) } : {}), ...(receipt.requestedCount ? { requestedCount: receipt.requestedCount, completedCount: receipt.completedCount } : {}) } }).catch(() => {});
         resolve(result);
       };
       const timer = setTimeout(() => { this.pendingConfirmations.delete(requestId); settle({ accepted: false, result: { success: false, outcome: 'blocked', code: 'confirmation_timeout', error: '等待确认超时，本次操作未提交' } }); }, timeout);
@@ -3070,17 +3076,19 @@ export class PromptAgentService {
         },
       },
       {
-        name: 'request_generation', label: '请求生成', description: '用户明确要求出图时调用。前端将显示费用与二次确认，工具本身不会直接扣费。',
-        parameters: Type.Object({ reason: Type.Optional(Type.String()) }),
+        name: 'request_generation', label: '请求生成', description: '用户明确要求出图时调用，count 默认 1，仅在用户指定多张时设置。用户明确要求排队时 placement=end，插到当前图片之后时 placement=next；省略仍是立即生成，忙碌不自动排队。end 等前序任务完成；next 等当前图片保存后执行新任务，再继续原任务余量。固定草稿逐张生成、保存并回传真实历史 ID，前端确认整轮费用。',
+        parameters: Type.Object({ reason: Type.Optional(Type.String()), count: Type.Optional(Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER })), placement: Type.Optional(Type.Union([Type.Literal('end'), Type.Literal('next')])) }),
         execute: async (_id, args) => {
+          const count = validateGenerationCount(args.count);
+          const placement = validateGenerationPlacement(args.placement);
           if (draft.target?.mode !== undefined && draft.target.mode !== 'text-to-image' && (!draft.editContext?.baseImageAvailable || draft.target.mode !== 'image-to-image' && !draft.editContext?.maskAvailable)) throw new Error('编辑模式缺少底图或蒙版，请先在当前画布准备后再请求生成');
-          const { requestId, promise: confirmation } = this.createConfirmation(project?.agentSessionId, { action: 'request_generation', resourceId: '', payload: { draft: structuredClone(draft) } });
-          emit({ type: 'action', action: { kind: 'request_generation', patch: { reason: text(args.reason).slice(0, 300), requestId } }, draft: structuredClone(draft) });
+          const { requestId, promise: confirmation } = this.createConfirmation(project?.agentSessionId, { action: 'request_generation', resourceId: '', payload: { draft: structuredClone(draft), count, ...(placement ? { placement } : {}) } });
+          emit({ type: 'action', action: { kind: 'request_generation', patch: { reason: text(args.reason).slice(0, 300), requestId, count, ...(placement ? { placement } : {}) } }, draft: structuredClone(draft) });
           const result = await confirmation;
-          if (!result.accepted || result.result?.success === false) throw agentOperationError(result.result?.error || '生图请求未完成，请核对实际回执', result.result?.code || 'generation_failed', result.result?.outcome || 'failed');
-          const historyId = typeof result.result?.historyId === 'string' && result.result.historySaved === true ? result.result.historyId.slice(0, 200) : '';
-          const displayImages = historyId && contextData.clientSettings?.autoShowGenerated !== false ? [{ kind: 'history', id: historyId, path: `/api/local-history/${encodeURIComponent(historyId)}/image`, title: '本次生成结果' }] : [];
-          return { content: jsonText({ ok: true, confirmed: true, result: result.result, ...(displayImages.length ? { displayImages } : {}) }), details: result.result };
+          if ((!result.accepted || result.result?.success === false) && !result.result?.completedCount) throw agentOperationError(result.result?.error || '生图请求未完成，请核对实际回执', result.result?.code || 'generation_failed', result.result?.outcome || 'failed');
+          const historyIds = result.result?.historyIds || (typeof result.result?.historyId === 'string' && result.result.historySaved === true ? [result.result.historyId] : []);
+          const displayImages = contextData.clientSettings?.autoShowGenerated !== false ? historyIds.map(id => ({ kind: 'history', id, path: `/api/local-history/${encodeURIComponent(id)}/image`, title: '本次生成结果' })) : [];
+          return { content: jsonText({ ok: result.accepted && result.result?.success !== false, confirmed: result.accepted, result: result.result, ...(displayImages.length ? { displayImages } : {}) }), details: result.result };
         },
       },
     ].map(tool => ({ ...tool, execute: async (...args) => {

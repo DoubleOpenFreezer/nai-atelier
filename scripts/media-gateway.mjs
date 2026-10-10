@@ -1,3 +1,5 @@
+import { GenerationTasks, DEFAULT_GENERATION_INTERVAL_SECONDS, MAX_GENERATION_INTERVAL_SECONDS, validateGenerationInterval } from '../worker/generationTasks.mjs';
+import { createDesktopGenerationJobs, handleGenerationJobRequest } from './generation-gateway.mjs';
 import { normalizeLanguage, translate } from '../locales/index.mjs';
 import { execFile as nodeExecFile } from 'node:child_process';
 import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
@@ -57,6 +59,11 @@ const CLOUD_QUEUE_URL = '';
 const CLOUD_QUEUE_POLL_INTERVAL = 1000;
 const CLOUD_QUEUE_WAIT_TIMEOUT = 300_000;
 const CLOUD_QUEUE_STATUS_TTL = 5 * 60 * 1000;
+// 公共队列记录按 Key 指纹 + taskId 组合隔离：同一 taskId 在不同 Key 下互不覆盖，
+// 状态查询与取消也不会串到别的 Key 的在途 controller。
+const CLOUD_QUEUE_TERMINAL_PHASES = new Set(['completed', 'cancelled', 'error']);
+const CLOUD_QUEUE_TERMINAL_LIMIT = 256;
+const cloudQueueTaskKey = (keyHash, taskId) => `${keyHash}\u0000${taskId}`;
 // 与 worker 共享的基础白名单（单一来源 worker/sharedWhitelist.mjs）；
 // 网关额外允许 i.pximg.net，见 getValidatedSource 内注释。
 const ALLOWED_REMOTE_HOSTS = new Set(MEDIA_REMOTE_HOSTS);
@@ -129,6 +136,7 @@ export const normalizeCloudQueuePreferences = value => {
     greeting: String(value?.greeting || '正在生成中～').trim().slice(0, 15),
     showGreeting: value?.showGreeting !== false,
     serviceUrl,
+    generationIntervalSeconds: Number.isFinite(value?.generationIntervalSeconds) && value.generationIntervalSeconds >= 0 && value.generationIntervalSeconds <= MAX_GENERATION_INTERVAL_SECONDS && Math.round(value.generationIntervalSeconds * 10) / 10 === value.generationIntervalSeconds ? value.generationIntervalSeconds : DEFAULT_GENERATION_INTERVAL_SECONDS,
   };
 };
 
@@ -221,27 +229,61 @@ const readQueueJson = async response => {
 };
 
 export class CloudQueueCoordinator {
-  constructor(requestRemote, baseUrl = CLOUD_QUEUE_URL, { waitTimeoutMs = CLOUD_QUEUE_WAIT_TIMEOUT, pollIntervalMs = CLOUD_QUEUE_POLL_INTERVAL } = {}) {
+  constructor(requestRemote, baseUrl = CLOUD_QUEUE_URL, { waitTimeoutMs = CLOUD_QUEUE_WAIT_TIMEOUT, pollIntervalMs = CLOUD_QUEUE_POLL_INTERVAL, statusTtlMs = CLOUD_QUEUE_STATUS_TTL, terminalLimit = CLOUD_QUEUE_TERMINAL_LIMIT, now = Date.now } = {}) {
     this.requestRemote = requestRemote;
     this.baseUrl = baseUrl ? normalizeCloudQueueServiceUrl(baseUrl, { allowEmpty: true }) : '';
     this.clientId = randomUUID();
     this.tasks = new Map();
     this.waitTimeoutMs = waitTimeoutMs;
     this.pollIntervalMs = pollIntervalMs;
+    this.statusTtlMs = statusTtlMs;
+    this.terminalLimit = terminalLimit;
+    this.now = now;
   }
 
-  update(taskId, patch) {
-    const previous = this.tasks.get(taskId) || { taskId };
-    const next = { ...previous, ...patch, updatedAt: Date.now() };
-    this.tasks.set(taskId, next);
-    for (const [id, status] of this.tasks) {
-      if (Date.now() - status.updatedAt > CLOUD_QUEUE_STATUS_TTL) this.tasks.delete(id);
+  // 只清理终态：waiting/generating/preparing/joining/ready 等活动记录无论多久都必须保留，
+  // 否则在途任务会失去状态与 controller；终态按 TTL 加数量上限有界清理。
+  prune(at = this.now()) {
+    const terminals = [];
+    for (const [key, status] of this.tasks) {
+      if (CLOUD_QUEUE_TERMINAL_PHASES.has(status.phase)) terminals.push([key, status]);
     }
+    for (const [key, status] of terminals) {
+      if (at - status.updatedAt > this.statusTtlMs) this.tasks.delete(key);
+    }
+    const retained = terminals.filter(([key]) => this.tasks.has(key));
+    if (retained.length > this.terminalLimit) {
+      retained.sort((left, right) => left[1].updatedAt - right[1].updatedAt);
+      for (const [key] of retained.slice(0, retained.length - this.terminalLimit)) this.tasks.delete(key);
+    }
+  }
+
+  // 每次排队入口都新建一条记录：同 Key 同 taskId 仍在途时明确拒绝，
+  // 避免新请求覆盖在途 controller 或把取消串到别的任务上。新记录从零开始，
+  // 不能沿用上一次遗留的 cleanupError 等终态信息。
+  claim(keyHash, taskId, patch = {}) {
+    const key = cloudQueueTaskKey(keyHash, taskId);
+    const previous = this.tasks.get(key);
+    if (previous && !CLOUD_QUEUE_TERMINAL_PHASES.has(previous.phase)) {
+      throw Object.assign(new Error('该排队任务仍在进行中，请勿重复提交'), { status: 409, code: 'QUEUE_TASK_IN_USE' });
+    }
+    const next = { ...patch, taskId, keyHash, updatedAt: this.now() };
+    this.tasks.set(key, next);
+    this.prune();
     return next;
   }
 
-  get(taskId) {
-    return this.tasks.get(taskId) || null;
+  update(keyHash, taskId, patch) {
+    const key = cloudQueueTaskKey(keyHash, taskId);
+    const previous = this.tasks.get(key) || { taskId, keyHash };
+    const next = { ...previous, ...patch, taskId, keyHash, updatedAt: this.now() };
+    this.tasks.set(key, next);
+    this.prune();
+    return next;
+  }
+
+  get(keyHash, taskId) {
+    return this.tasks.get(cloudQueueTaskKey(keyHash, taskId)) || null;
   }
 
   async post(path, body, serviceUrl = this.baseUrl, signal) {
@@ -254,23 +296,23 @@ export class CloudQueueCoordinator {
     }));
   }
 
-  async join({ apiKey, taskId, greeting = '', showGreeting = true, serviceUrl = this.baseUrl, signal }) {
+  async join({ apiKey, keyHash: keyHashHint, taskId, greeting = '', showGreeting = true, serviceUrl = this.baseUrl, signal }) {
     const queueUrl = normalizeCloudQueueServiceUrl(serviceUrl);
-    const keyHash = createHash('sha256').update(apiKey).digest('hex');
+    const keyHash = keyHashHint || createHash('sha256').update(apiKey).digest('hex');
     const userId = this.clientId;
     const common = { key_hash: keyHash, user_id: userId, task_id: taskId };
     const timeoutSignal = AbortSignal.timeout(this.waitTimeoutMs);
     const queueSignal = AbortSignal.any([timeoutSignal, ...(signal ? [signal] : [])]);
     let joinAttempted = false;
     let lockToken = null;
-    this.update(taskId, { phase: 'joining', position: null, queueSize: null, greeting: null, cancelable: true });
+    this.update(keyHash, taskId, { phase: 'joining', position: null, queueSize: null, greeting: null, cancelable: true });
     try {
       queueSignal.throwIfAborted();
       joinAttempted = true;
       const joined = await this.post('/join-queue', { ...common, greeting: String(greeting).trim().slice(0, 15) || null }, queueUrl, queueSignal);
       lockToken = joined.lock_token || null;
       queueSignal.throwIfAborted();
-      this.update(taskId, {
+      this.update(keyHash, taskId, {
         phase: joined.position === 0 && lockToken ? 'ready' : 'waiting',
         position: normalizeCloudQueueCount(joined.position),
         queueSize: normalizeCloudQueueCount(joined.queue_size),
@@ -286,10 +328,10 @@ export class CloudQueueCoordinator {
         lockToken = status.lock_token || null;
         queueSignal.throwIfAborted();
         if (status.is_my_turn && status.lock_token) {
-          this.update(taskId, { phase: 'ready', position: 0, queueSize: normalizeCloudQueueCount(status.queue_size), cancelable: true });
+          this.update(keyHash, taskId, { phase: 'ready', position: 0, queueSize: normalizeCloudQueueCount(status.queue_size), cancelable: true });
           return { ...common, lockToken: status.lock_token, serviceUrl: queueUrl };
         }
-        this.update(taskId, {
+        this.update(keyHash, taskId, {
           phase: 'waiting',
           position: normalizeCloudQueueCount(status.position),
           queueSize: normalizeCloudQueueCount(status.queue_size),
@@ -320,7 +362,7 @@ export class CloudQueueCoordinator {
       return null;
     } catch (error) {
       const cleanupError = '公共队列退出或释放失败，请检查队列状态';
-      this.update(lock.task_id, { cleanupError });
+      this.update(lock.key_hash, lock.task_id, { cleanupError });
       console.warn(`[公共队列] ${lock.task_id} 清理失败（未重试）：${error.message}`);
       return cleanupError;
     }
@@ -1641,9 +1683,42 @@ const recoverPendingVibeEncodings = async workerPort => {
   }
 };
 
+const generationTasks = new GenerationTasks();
+export const handleGenerationTaskRequest = async (req, res, lanSecret, tasks = generationTasks, { preferences, saveInterval, jobs } = {}) => {
+  if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
+  const key = keyHashFromAuthorization(String(req.headers.authorization || ''));
+  if (!key) return sendJson(res, 401, { error: '缺少 NovelAI API Key', code: 'missing_key' });
+  const token = String(req.headers['x-nai-generation-task'] || '');
+  try {
+    if (preferences) tasks.setInterval(key, preferences.generationIntervalSeconds);
+    const placement = req.headers['x-nai-generation-placement'];
+    const count = req.headers['x-nai-generation-count'] === undefined ? 1 : Number(req.headers['x-nai-generation-count']);
+    if (req.method === 'POST' && placement) return sendJson(res, 200, { success: true, ...tasks.enqueue(key, token, placement, count) });
+    if (req.method === 'POST') { tasks.reserve(key, token, count); return sendJson(res, 200, { success: true, ...tasks.status(key, token) }); }
+    else if (req.method === 'PUT') return sendJson(res, 200, { success: true, ...tasks.renew(key, token, req.headers['x-nai-generation-completed'] === undefined ? undefined : Number(req.headers['x-nai-generation-completed']), req.headers['x-nai-generation-prepare'] === '1') });
+    else if (req.method === 'DELETE') {
+      if (jobs?.has(key, token)) jobs.cancel(key, token);
+      else tasks.cancel(key, token);
+    }
+    else if (req.method === 'GET') return sendJson(res, 200, tasks.snapshot(key));
+    else if (req.method === 'PATCH') {
+      const action = req.headers['x-nai-generation-action'];
+      if (action === 'interval') {
+        const seconds = validateGenerationInterval(Number(req.headers['x-nai-generation-interval']));
+        await saveInterval?.(seconds);
+        return sendJson(res, 200, tasks.setInterval(key, seconds));
+      }
+      if (!['pause', 'resume'].includes(action)) return sendJson(res, 400, { error: '生成队列操作无效', code: 'invalid_generation_queue' });
+      return sendJson(res, 200, tasks.pause(key, action === 'pause'));
+    }
+    else return sendJson(res, 405, { error: 'Method not allowed' });
+    return sendJson(res, 200, { success: true });
+  } catch (error) { return sendJson(res, error.status || 500, { error: error.message, code: error.code, ...(error.outcome ? { outcome: error.outcome } : {}) }); }
+};
+
 export const handleGenerateRequest = async (req, res, lanSecret, workerPort, cloudQueue, queuePreferences, requestRemote, {
   generationTimeoutMs = 300_000, settleGeneration = settleSuccessfulNovelAiGeneration,
-  prepareBilling = prepareNovelAiBilling,
+  prepareBilling = prepareNovelAiBilling, tasks = generationTasks,
 } = {}) => {
   if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
   if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
@@ -1659,16 +1734,27 @@ export const handleGenerateRequest = async (req, res, lanSecret, workerPort, clo
   const showQueueGreeting = queuePreferences.showGreeting !== false;
   const requestController = new AbortController();
   let queueLock = null;
+  let finishGeneration;
   let requestAborted = false;
+  let generationSubmitted = false;
   let responseCompleted = false;
   const abortRequest = () => {
-    if (responseCompleted || res.writableEnded) return;
+    if (responseCompleted || res.writableEnded || generationSubmitted && !generationProxyUrl) return;
     requestAborted = true;
     requestController.abort(new DOMException('用户已取消排队', 'AbortError'));
   };
   req.once('aborted', abortRequest);
   res.once('close', abortRequest);
-  if (queueEnabled) cloudQueue.update(queueTaskId, { phase: 'preparing', proxy: Boolean(generationProxyUrl), cancelable: true, controller: requestController, keyHash });
+  if (queueEnabled) {
+    // 同 Key 同 taskId 仍在途时明确拒绝，避免覆盖在途 controller 或把取消串到别的任务。
+    try {
+      cloudQueue.claim(keyHash, queueTaskId, { phase: 'preparing', proxy: Boolean(generationProxyUrl), cancelable: true, controller: requestController });
+    } catch (error) {
+      req.off('aborted', abortRequest);
+      res.off('close', abortRequest);
+      return sendJson(res, Number(error.status) || 409, { error: error.message, code: error.code });
+    }
+  }
   const releaseQueue = async () => {
     const lock = queueLock;
     queueLock = null;
@@ -1676,10 +1762,12 @@ export const handleGenerateRequest = async (req, res, lanSecret, workerPort, clo
   };
   const queueHeaders = () => queueEnabled ? {
     'X-Nai-Queue-Task-Id': queueTaskId,
-    ...(cloudQueue.get(queueTaskId)?.cleanupError ? { 'X-Nai-Queue-Cleanup-Failed': '1' } : {}),
+    ...(cloudQueue.get(keyHash, queueTaskId)?.cleanupError ? { 'X-Nai-Queue-Cleanup-Failed': '1' } : {}),
   } : {};
 
   try {
+    if (queuePreferences.generationIntervalSeconds !== undefined) tasks.setInterval(keyHash, queuePreferences.generationIntervalSeconds);
+    finishGeneration = tasks.enter(keyHash, String(req.headers['x-nai-generation-task'] || ''));
     const rawBody = await readRequestBody(req, GENERATION_REQUEST_LIMIT);
     let payload;
     try { payload = JSON.parse(rawBody.toString('utf8')); } catch { return sendJson(res, 400, { error: '生图请求不是有效 JSON' }); }
@@ -1790,20 +1878,22 @@ export const handleGenerateRequest = async (req, res, lanSecret, workerPort, clo
     if (queueEnabled && !generationProxyUrl) {
       queueLock = await cloudQueue.join({
         apiKey: authorization.slice(7).trim(),
+        keyHash,
         taskId: queueTaskId,
         greeting: queueGreeting,
         showGreeting: showQueueGreeting,
         serviceUrl: queuePreferences.serviceUrl,
         signal: requestController.signal,
       });
-      cloudQueue.update(queueTaskId, { phase: 'generating', position: 0, cancelable: false, controller: requestController });
+      cloudQueue.update(keyHash, queueTaskId, { phase: 'generating', position: 0, cancelable: false, controller: requestController });
       await delay(1000, requestController.signal);
     }
-    if (generationProxyUrl) cloudQueue.update(queueTaskId, { phase: 'waiting', position: null, queueSize: null, cancelable: true });
+    if (generationProxyUrl) cloudQueue.update(keyHash, queueTaskId, { phase: 'waiting', position: null, queueSize: null, cancelable: true });
     const billing = await prepareBilling({ payload: settlementPayload, authorization, requestRemote, signal: requestController.signal });
     // 排队耗时不占用上游生成时限；持锁直到响应体完整接收。
     const generationSignal = AbortSignal.any([requestController.signal, AbortSignal.timeout(generationTimeoutMs)]);
     generationSignal.throwIfAborted();
+    generationSubmitted = true;
     const response = resolvedVibeEncodings && !generationProxyUrl
       ? await generateWithVibeCacheRetry(
         payload,
@@ -1814,7 +1904,7 @@ export const handleGenerateRequest = async (req, res, lanSecret, workerPort, clo
       )
       : await fetchNovelAiGeneration(payload, authorization, generationSignal, requestRemote, generationProxyUrl || NAI_GENERATE_URL);
     generationSignal.throwIfAborted();
-    if (generationProxyUrl) cloudQueue.update(queueTaskId, { phase: 'generating', cancelable: false });
+    if (generationProxyUrl) cloudQueue.update(keyHash, queueTaskId, { phase: 'generating', cancelable: false });
     const responseBody = Buffer.from(await response.arrayBuffer());
     let estimatedCost, anlasBudget, accountingFailed = false;
     if (response.ok) {
@@ -1825,7 +1915,6 @@ export const handleGenerateRequest = async (req, res, lanSecret, workerPort, clo
         accountingFailed = true;
       }
     }
-    await releaseQueue();
     const headers = {
       'Content-Type': response.headers.get('content-type') || 'application/octet-stream',
       'Cache-Control': 'private, no-store',
@@ -1839,18 +1928,22 @@ export const handleGenerateRequest = async (req, res, lanSecret, workerPort, clo
     const contentDisposition = response.headers.get('content-disposition');
     if (contentLength) headers['Content-Length'] = contentLength;
     if (contentDisposition) headers['Content-Disposition'] = contentDisposition;
-    if (queueEnabled) cloudQueue.update(queueTaskId, {
+    // 先交付成品：公共队列 complete/leave 的往返不阻塞图片，但内部在途锁仍持到清理结束。
+    responseCompleted = true;
+    if (!res.destroyed) {
+      res.writeHead(response.status, headers);
+      res.end(responseBody);
+    }
+    await releaseQueue();
+    if (queueEnabled) cloudQueue.update(keyHash, queueTaskId, {
       phase: response.ok ? 'completed' : 'error',
       error: response.ok ? undefined : `NovelAI 请求失败 (${response.status})`,
       cancelable: false, controller: null,
     });
-    if (res.destroyed) return;
-    res.writeHead(response.status, headers);
-    responseCompleted = true;
-    return res.end(responseBody);
+    return;
   } catch (error) {
     await releaseQueue();
-    if (queueEnabled) cloudQueue.update(queueTaskId, {
+    if (queueEnabled) cloudQueue.update(keyHash, queueTaskId, {
       phase: requestAborted || error?.name === 'AbortError' ? 'cancelled' : 'error',
       error: requestAborted ? '已取消排队' : (error.message || '队列服务不可用'),
       cancelable: false,
@@ -1874,7 +1967,20 @@ export const handleGenerateRequest = async (req, res, lanSecret, workerPort, clo
       code: timedOut ? 'NAI_PROXY_TIMEOUT' : 'NAI_PROXY_UNREACHABLE',
     });
   } finally {
+    // 公共队列释放结束后才放下生成锁，否则下一张会提前抢到公共锁。
     await releaseQueue();
+    // 活动记录不会被 TTL 清理，参数校验失败等提前返回也必须收尾，避免永久占用 taskId。
+    if (queueEnabled) {
+      const record = cloudQueue.get(keyHash, queueTaskId);
+      if (record && !CLOUD_QUEUE_TERMINAL_PHASES.has(record.phase)) {
+        cloudQueue.update(keyHash, queueTaskId, {
+          phase: requestAborted ? 'cancelled' : 'error',
+          error: requestAborted ? '已取消排队' : (record.error || '排队请求未完成'),
+          cancelable: false, controller: null,
+        });
+      }
+    }
+    finishGeneration?.();
     req.off('aborted', abortRequest);
     res.off('close', abortRequest);
   }
@@ -1882,7 +1988,7 @@ export const handleGenerateRequest = async (req, res, lanSecret, workerPort, clo
 
 export const handleGenerateStreamRequest = async (req, res, lanSecret, workerPort, cloudQueue, queuePreferences, requestRemote, {
   generationTimeoutMs = 300_000, settleGeneration = settleSuccessfulNovelAiGeneration,
-  prepareBilling = prepareNovelAiBilling,
+  prepareBilling = prepareNovelAiBilling, tasks = generationTasks,
 } = {}) => {
   if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
   if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
@@ -1896,21 +2002,32 @@ export const handleGenerateStreamRequest = async (req, res, lanSecret, workerPor
   const queueTaskId = /^[a-zA-Z0-9-]{8,80}$/.test(requestedTaskId) ? requestedTaskId : randomUUID();
   const requestController = new AbortController();
   let queueLock = null;
+  let finishGeneration;
   let requestAborted = false;
+  let generationSubmitted = false;
   let responseCompleted = false;
   const abortRequest = () => {
-    if (responseCompleted || res.writableEnded) return;
+    if (responseCompleted || res.writableEnded || generationSubmitted && !generationProxyUrl) return;
     requestAborted = true;
     requestController.abort(new DOMException('用户已取消排队', 'AbortError'));
   };
   req.once('aborted', abortRequest);
   res.once('close', abortRequest);
-  if (queueEnabled) cloudQueue.update(queueTaskId, { phase: 'preparing', proxy: Boolean(generationProxyUrl), cancelable: true, controller: requestController, keyHash });
+  if (queueEnabled) {
+    // 同 Key 同 taskId 仍在途时明确拒绝，避免覆盖在途 controller 或把取消串到别的任务。
+    try {
+      cloudQueue.claim(keyHash, queueTaskId, { phase: 'preparing', proxy: Boolean(generationProxyUrl), cancelable: true, controller: requestController });
+    } catch (error) {
+      req.off('aborted', abortRequest);
+      res.off('close', abortRequest);
+      return sendJson(res, Number(error.status) || 409, { error: error.message, code: error.code });
+    }
+  }
   const releaseQueue = async () => {
     const lock = queueLock;
     queueLock = null;
     await cloudQueue.release(lock, requestController.signal.aborted);
-    const cleanupError = cloudQueue.get(queueTaskId)?.cleanupError;
+    const cleanupError = cloudQueue.get(keyHash, queueTaskId)?.cleanupError;
     if (cleanupError && !res.destroyed) {
       if (res.headersSent) res.write(`\nevent: nai_queue_cleanup_error\ndata: ${JSON.stringify({ message: cleanupError })}\n\n`);
       else {
@@ -1921,6 +2038,8 @@ export const handleGenerateStreamRequest = async (req, res, lanSecret, workerPor
   };
 
   try {
+    if (queuePreferences.generationIntervalSeconds !== undefined) tasks.setInterval(keyHash, queuePreferences.generationIntervalSeconds);
+    finishGeneration = tasks.enter(keyHash, String(req.headers['x-nai-generation-task'] || ''));
     const rawBody = await readRequestBody(req, GENERATION_REQUEST_LIMIT);
     let payload;
     try { payload = JSON.parse(rawBody.toString('utf8')); } catch { return sendJson(res, 400, { error: '生图请求不是有效 JSON' }); }
@@ -1947,23 +2066,25 @@ export const handleGenerateStreamRequest = async (req, res, lanSecret, workerPor
     if (queueEnabled && !generationProxyUrl) {
       queueLock = await cloudQueue.join({
         apiKey: authorization.slice(7).trim(),
+        keyHash,
         taskId: queueTaskId,
         greeting: String(queuePreferences.greeting || '').slice(0, 15),
         showGreeting: queuePreferences.showGreeting !== false,
         serviceUrl: queuePreferences.serviceUrl,
         signal: requestController.signal,
       });
-      cloudQueue.update(queueTaskId, { phase: 'generating', position: 0, cancelable: false, controller: requestController });
+      cloudQueue.update(keyHash, queueTaskId, { phase: 'generating', position: 0, cancelable: false, controller: requestController });
       await delay(1000, requestController.signal);
     }
-    if (generationProxyUrl) cloudQueue.update(queueTaskId, { phase: 'waiting', position: null, queueSize: null, cancelable: true });
+    if (generationProxyUrl) cloudQueue.update(keyHash, queueTaskId, { phase: 'waiting', position: null, queueSize: null, cancelable: true });
     const billing = await prepareBilling({ payload: settlementPayload, authorization, requestRemote, signal: requestController.signal });
 
     const generationSignal = AbortSignal.any([requestController.signal, AbortSignal.timeout(generationTimeoutMs)]);
     generationSignal.throwIfAborted();
+    generationSubmitted = true;
     const upstream = await fetchNovelAiGenerationStream(payload, authorization, generationSignal, requestRemote, generationProxyUrl || NAI_GENERATE_STREAM_URL);
     generationSignal.throwIfAborted();
-    if (generationProxyUrl) cloudQueue.update(queueTaskId, { phase: 'generating', cancelable: false });
+    if (generationProxyUrl) cloudQueue.update(keyHash, queueTaskId, { phase: 'generating', cancelable: false });
     if (!upstream.ok) {
       const upstreamError = new Error(await upstream.text() || `NovelAI HTTP ${upstream.status}`);
       upstreamError.status = upstream.status;
@@ -1989,14 +2110,14 @@ export const handleGenerateStreamRequest = async (req, res, lanSecret, workerPor
     while (true) {
       const { done, value } = await reader.read();
       observer.push(decoder.decode(value, { stream: !done }));
-      if (value?.byteLength) res.write(Buffer.from(value.buffer, value.byteOffset, value.byteLength));
+      if (value?.byteLength && !res.destroyed) res.write(Buffer.from(value.buffer, value.byteOffset, value.byteLength));
       if (done) break;
     }
     observer.finish();
 
     if (!finalSeen) {
       const message = upstreamErrorSeen ? 'NovelAI 流式生成失败' : '流式响应结束但没有最终图片';
-      if (queueEnabled) cloudQueue.update(queueTaskId, { phase: 'error', error: message, cancelable: false, controller: null });
+      if (queueEnabled) cloudQueue.update(keyHash, queueTaskId, { phase: 'error', error: message, cancelable: false, controller: null });
       res.write(`\nevent: error\ndata: ${JSON.stringify({ message })}\n\n`);
       await releaseQueue();
       responseCompleted = true;
@@ -2018,14 +2139,14 @@ export const handleGenerateStreamRequest = async (req, res, lanSecret, workerPor
       res.write(`\nevent: nai_usage_error\ndata: ${JSON.stringify({ message: accountingError?.message || '本地用量结算失败' })}\n\n`);
     }
     await releaseQueue();
-    if (queueEnabled) cloudQueue.update(queueTaskId, { phase: 'completed', cancelable: false, controller: null });
+    if (queueEnabled) cloudQueue.update(keyHash, queueTaskId, { phase: 'completed', cancelable: false, controller: null });
     responseCompleted = true;
     return res.end();
   } catch (error) {
     await releaseQueue();
     const cancelled = requestAborted || error?.name === 'AbortError';
     const message = cancelled ? '已取消排队' : (error?.message || '流式生成失败');
-    if (queueEnabled) cloudQueue.update(queueTaskId, { phase: cancelled ? 'cancelled' : 'error', error: message, cancelable: false, controller: null });
+    if (queueEnabled) cloudQueue.update(keyHash, queueTaskId, { phase: cancelled ? 'cancelled' : 'error', error: message, cancelable: false, controller: null });
     if (res.headersSent) {
       if (!res.destroyed) {
         res.write(`\nevent: error\ndata: ${JSON.stringify({ message })}\n\n`);
@@ -2038,7 +2159,20 @@ export const handleGenerateStreamRequest = async (req, res, lanSecret, workerPor
     if (cancelled) return sendJson(res, 499, { error: message, code: 'QUEUE_CANCELLED' });
     return sendJson(res, Number(error.status) || (error?.name === 'TimeoutError' ? 504 : 502), { error: message, code: error.code });
   } finally {
+    // 公共队列释放结束后才放下生成锁，否则下一张会提前抢到公共锁。
     if (queueLock) await releaseQueue();
+    // 活动记录不会被 TTL 清理，参数校验失败等提前返回也必须收尾，避免永久占用 taskId。
+    if (queueEnabled) {
+      const record = cloudQueue.get(keyHash, queueTaskId);
+      if (record && !CLOUD_QUEUE_TERMINAL_PHASES.has(record.phase)) {
+        cloudQueue.update(keyHash, queueTaskId, {
+          phase: requestAborted ? 'cancelled' : 'error',
+          error: requestAborted ? '已取消排队' : (record.error || '排队请求未完成'),
+          cancelable: false, controller: null,
+        });
+      }
+    }
+    finishGeneration?.();
     req.off('aborted', abortRequest);
     res.off('close', abortRequest);
   }
@@ -2855,6 +2989,7 @@ const serveDistFile = async (req, res, url) => {
   collectorReset = styleCollector.worker('session', { session: '' }).catch(() => {});
   await collectorReset;
   const cloudQueue = new CloudQueueCoordinator(remoteFetch);
+  const tasks = new GenerationTasks();
   const imageTagger = new ImageTaggerService(remoteFetch, {
     loadPreference: () => requestWorkerJson('/api/internal/image-tagger/preferences', internalWorkerRequest, workerPort, { headers: { 'x-nai-tagger-control': 'true' } }),
     savePreference: body => requestWorkerJson('/api/internal/image-tagger/preferences', internalWorkerRequest, workerPort, { method: 'PUT', body, headers: { 'x-nai-tagger-control': 'true' } }),
@@ -2866,6 +3001,31 @@ const serveDistFile = async (req, res, url) => {
     if (resolved.migrated) await saveCloudQueuePreferences(cloudQueueStore);
     return { keyHash, preferences: resolved.preferences };
   };
+  const generationJobs = createDesktopGenerationJobs({
+    tasks, workerPort, gatewayUrl: () => `http://127.0.0.1:${server.address().port}`,
+    readCleanup: job => job.lastQueueTaskId ? cloudQueue.get(job.key, job.lastQueueTaskId)?.cleanupError : undefined,
+    estimate: async (job, fresh) => {
+      const authorization = job.context.authorization;
+      if (fresh) {
+        try {
+          const response = await fetchNovelAiSubscription(authorization, AbortSignal.timeout(30_000), remoteFetch);
+          if (!response.ok) throw new Error('账号额度刷新失败');
+          cacheNovelAiSubscription(authorization, sanitizeNovelAiSubscription(await response.json()));
+        } catch {
+          throw Object.assign(new Error('无法核实当前额度，已停止后续生成'), { code: 'quota_refresh_failed', status: 503 });
+        }
+      }
+      const subscription = novelAiSubscriptions.get(authorization);
+      if (!subscription && !fresh) return job.approvedCost;
+      if (!subscription) throw Object.assign(new Error('无法核实当前额度，已停止后续生成'), { code: 'quota_refresh_failed', status: 503 });
+      const payload = job.descriptor.payload, p = payload.parameters;
+      const priced = { ...payload, parameters: { ...p,
+        ...(p._local_character_references?.enabled ? { director_reference_images_cached: p._local_character_references.slots } : {}),
+        ...(p._local_vibes?.enabled ? { reference_image_multiple_cached: p._local_vibes.slots } : {}),
+      } };
+      return estimateNovelAiGenerationCost(priced, subscription.usage?.isNegative === true, subscription.active === true && subscription.tier >= 3);
+    },
+  });
   const cache = new ThumbnailCache();
   // 图库浏览预热：feed/搜索返回后后台抓取缩略图写盘，滚动时缓存命中秒出。
   const thumbnailPreWarmer = createThumbnailPreWarmer({
@@ -3380,6 +3540,7 @@ const serveDistFile = async (req, res, url) => {
       if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
       try {
         const body = JSON.parse((await readRequestBody(req, 4096)).toString('utf8') || '{}');
+        if (body.generationIntervalSeconds !== undefined) validateGenerationInterval(body.generationIntervalSeconds);
         const result = await localBackupService.startBackup(body);
         return sendJson(res, 200, result);
       } catch (error) {
@@ -3495,13 +3656,31 @@ const serveDistFile = async (req, res, url) => {
     }
     if (url.pathname === '/__internal/aitag-fetch') return handleAitagRemoteRequest(req, res, url, lanSecret, remoteFetch);
     if (url.pathname === '/__internal/danbooru-fetch') return handleDanbooruRemoteRequest(req, res, url, lanSecret, remoteFetch, danbooruResponseCache, danbooruLimiter, danbooruDiskCache);
+    if (url.pathname === '/api/generation-job') {
+      if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
+      const scope = await getCloudQueueScope(req);
+      tasks.setInterval(scope.keyHash, scope.preferences.generationIntervalSeconds);
+      return handleGenerationJobRequest(req, res, generationJobs, {
+        allowed: request => hasValidLanCookie(request, lanSecret), keyHash: keyHashFromRequest,
+        readBody: readRequestBody, sendJson, host: getForwardHost,
+        ip: request => normalizeIp(request.socket.remoteAddress),
+      });
+    }
+    if (url.pathname === '/api/generation-task') {
+      if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
+      const scope = await getCloudQueueScope(req);
+      return handleGenerationTaskRequest(req, res, lanSecret, tasks, { preferences: scope.preferences, jobs: generationJobs, saveInterval: async seconds => {
+        cloudQueueStore.accounts[scope.keyHash] = { ...resolveCloudQueuePreferences(cloudQueueStore, scope.keyHash).preferences, generationIntervalSeconds: seconds };
+        await saveCloudQueuePreferences(cloudQueueStore);
+      } });
+    }
     if (url.pathname === '/api/generate') {
       const { preferences } = await getCloudQueueScope(req);
-      return handleGenerateRequest(req, res, lanSecret, workerPort, cloudQueue, preferences, remoteFetch);
+      return handleGenerateRequest(req, res, lanSecret, workerPort, cloudQueue, preferences, remoteFetch, { tasks });
     }
     if (url.pathname === '/api/generate-stream') {
       const { preferences } = await getCloudQueueScope(req);
-      return handleGenerateStreamRequest(req, res, lanSecret, workerPort, cloudQueue, preferences, remoteFetch);
+      return handleGenerateStreamRequest(req, res, lanSecret, workerPort, cloudQueue, preferences, remoteFetch, { tasks });
     }
     if (url.pathname === '/api/novelai-subscription') {
       if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
@@ -3551,8 +3730,8 @@ const serveDistFile = async (req, res, url) => {
       if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
       const keyHash = keyHashFromRequest(req);
       if (!keyHash) return sendJson(res, 401, { error: '缺少 NovelAI API Key' });
-      const status = cloudQueue.get(url.searchParams.get('taskId') || '');
-      if (!status || status.keyHash !== keyHash) return sendJson(res, 404, { error: '排队任务不存在' });
+      const status = cloudQueue.get(keyHash, url.searchParams.get('taskId') || '');
+      if (!status) return sendJson(res, 404, { error: '排队任务不存在' });
       const { controller, keyHash: _keyHash, ...safeStatus } = status;
       return sendJson(res, 200, safeStatus);
     }
@@ -3562,11 +3741,11 @@ const serveDistFile = async (req, res, url) => {
       const keyHash = keyHashFromRequest(req);
       if (!keyHash) return sendJson(res, 401, { error: '缺少 NovelAI API Key' });
       const body = await readJsonBody(req, 4096);
-      const status = cloudQueue.get(String(body.taskId || ''));
-      if (status && status.keyHash !== keyHash) return sendJson(res, 404, { error: '排队任务不存在' });
-      if (!status?.cancelable || !status.controller) return sendJson(res, 409, { error: '当前任务已不能取消' });
+      const status = cloudQueue.get(keyHash, String(body.taskId || ''));
+      if (!status) return sendJson(res, 404, { error: '排队任务不存在' });
+      if (!status.cancelable || !status.controller) return sendJson(res, 409, { error: '当前任务已不能取消' });
       status.controller.abort(new DOMException('用户已取消排队', 'AbortError'));
-      cloudQueue.update(status.taskId, { phase: 'cancelled', cancelable: false, controller: null });
+      cloudQueue.update(keyHash, status.taskId, { phase: 'cancelled', cancelable: false, controller: null });
       return sendJson(res, 200, { status: 'ok' });
     }
     const vibeEncodeMatch = url.pathname.match(/^\/api\/vibes\/([^/]+)\/encodings$/);
@@ -3713,6 +3892,7 @@ const serveDistFile = async (req, res, url) => {
     void handleRequest(req, res).catch(error => sendJson(res, 500, { error: error.message || '请求失败' })).finally(() => activeHandlers.delete(req));
   });
   server.on('close', () => {
+    generationJobs.close();
     void imageTagger.pauseDownload();
     styleCollector.shutdown();
     proxyAgent?.close().catch(() => {});
@@ -3720,7 +3900,7 @@ const serveDistFile = async (req, res, url) => {
   });
   // close 可能等待 SSE 连接，先同步结束监听再进入 HTTP 关闭流程。
   const closeServer = server.close.bind(server);
-  server.close = (...args) => { void imageTagger.pauseDownload(); styleCollector.shutdown(); for (const subscriber of collectorSubscribers) subscriber.end(); return closeServer(...args); };
+  server.close = (...args) => { generationJobs.close(); void imageTagger.pauseDownload(); styleCollector.shutdown(); for (const subscriber of collectorSubscribers) subscriber.end(); return closeServer(...args); };
   const exitCollector = () => styleCollector.shutdown();
   process.once('exit', exitCollector);
   server.once('close', () => process.off('exit', exitCollector));
@@ -3738,7 +3918,7 @@ const serveDistFile = async (req, res, url) => {
   });
 
   server.prepareUpdate = () => {
-    if (activeWrites.size || activeHandlers.size || localBackupService.status.running || promptAgent.activeAgents.size || promptAgent.startingAgents.size
+    if (tasks.size || activeWrites.size || activeHandlers.size || localBackupService.status.running || promptAgent.activeAgents.size || promptAgent.startingAgents.size
       || styleCollector.run || imageTagger.busy || imageTagger.changing || imageTagger.download || stChatu8Bridge.historySyncPromise || historyIndexStatus.running) {
       throw new Error('生成、Agent、收集、备份或数据写入仍在进行，请完成并关闭收集模式后再安装');
     }

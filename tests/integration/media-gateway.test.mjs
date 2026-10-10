@@ -851,12 +851,14 @@ test('cloud queue preferences default to empty service URL and disabled when ser
     greeting: '我的队列',
     showGreeting: false,
     serviceUrl: '',
+    generationIntervalSeconds: 2,
   });
   assert.deepEqual(normalizeCloudQueuePreferences({ enabled: true, greeting: '我的队列', showGreeting: false, serviceUrl: 'https://custom-queue.example' }), {
     enabled: true,
     greeting: '我的队列',
     showGreeting: false,
     serviceUrl: 'https://custom-queue.example',
+    generationIntervalSeconds: 2,
   });
 });
 

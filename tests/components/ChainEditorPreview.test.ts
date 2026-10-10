@@ -166,11 +166,11 @@ describe('生成后的操作恢复', () => {
     const view = render(React.createElement(ImageEditPreview, props));
     const button = screen.getByRole('button', { name: /^生成.*免费$/ }) as HTMLButtonElement;
     expect(button.disabled).toBe(false);
-    expect(button.className).toContain('hidden lg:flex');
+    expect(button.parentElement?.className).toContain('hidden lg:flex');
     fireEvent.click(button);
     expect(onGenerate).toHaveBeenCalledTimes(1);
     view.rerender(React.createElement(ImageEditPreview, { ...props, canGenerate: false }));
-    expect((screen.getByRole('button', { name: '请先选择底图' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByRole('button', { name: '请先选择底图' }).getAttribute('aria-disabled') === 'true' || (screen.getByRole('button', { name: '请先选择底图' }) as HTMLButtonElement).disabled).toBe(true);
   });
 });
 
@@ -210,3 +210,46 @@ vi.mock('../../services/collectionFavorites', async original => ({
   subscribeCollection: () => () => {}, collectionRevision: () => 0, collectionTargetActive: () => false,
   toggleCollectionTarget: vi.fn(async () => true), syncHistoryCollectionFavorites: vi.fn(async () => {}),
 }));
+
+it.each(['text-to-image', 'image-to-image', 'inpaint', 'outpaint'] as const)('%s 忙碌时主按钮直接加入队列，空闲恢复生成，画布未就绪不允许入队', operation => {
+  const generate = vi.fn(), queue = vi.fn();
+  const control = { count: 1, onCountChange: vi.fn(), series: null, onStop: vi.fn(), onQueue: queue, queueDisabled: false };
+  const element = (busy: boolean, ready: boolean, cloud: boolean) => {
+    const common = { isGenerating: cloud, generationDisabled: busy || !ready, generationCountControl: { ...control, queueDisabled: !ready }, generationCostLabel: '免费', unavailableLabel: !ready ? '请先选择底图' : busy ? '此 Key 正在生成' : undefined };
+    return operation === 'text-to-image'
+      ? React.createElement(ChainEditorPreview, { ...common, handleGenerate: generate, errorMsg: null, generatedImage: null, previewImage: undefined,
+        setLightboxImg: vi.fn(), isOwner: false, isUploading: false, handleSavePreview: vi.fn(), handleUploadCover: vi.fn(), getDownloadFilename: () => 'test.png' })
+      : React.createElement(ImageEditPreview, { ...common, operation, image: null, error: null, onGenerate: generate, onOpenLightbox: vi.fn(), getDownloadFilename: () => 'test.png' });
+  };
+  const view = render(element(true, true, false));
+  const button = screen.getByRole('button', { name: /加入队列/ }) as HTMLButtonElement;
+  expect(button.disabled).toBe(false); fireEvent.click(button);
+  expect(queue).toHaveBeenCalledWith('end'); expect(generate).not.toHaveBeenCalled();
+  emitCloudQueueStatus({ taskId: 'synthetic-primary-queue', phase: 'waiting' });
+  view.rerender(element(true, true, true));
+  expect((screen.getByRole('button', { name: /加入队列/ }) as HTMLButtonElement).disabled).toBe(false);
+  emitCloudQueueStatus({ taskId: 'synthetic-primary-queue', phase: 'completed' });
+  view.rerender(element(false, true, false));
+  fireEvent.click(screen.getByRole('button', { name: /生成.*免费/ })); expect(generate).toHaveBeenCalledOnce();
+  view.rerender(element(true, false, false));
+  expect(screen.queryByRole('button', { name: '加入队列' })).toBeNull();
+  expect(screen.getByRole('button', { name: '请先选择底图' }).getAttribute('aria-disabled')).toBe('true');
+});
+
+
+it.each(['text-to-image', 'image-to-image', 'inpaint', 'outpaint'] as const)('%s 连续生成在云排队期间仍能停止后续，停止中禁止重复操作', operation => {
+  emitCloudQueueStatus({ taskId: 'synthetic-series', phase: 'waiting' });
+  const stop = vi.fn();
+  const control = { count: 3, onCountChange: vi.fn(), series: { current: 1, total: 3, stopping: false }, onStop: stop };
+  const common = { isGenerating: true, generationCountControl: control, generationCostLabel: '免费' };
+  const element = (stopping: boolean) => operation === 'text-to-image'
+    ? React.createElement(ChainEditorPreview, { ...common, generationCountControl: { ...control, series: { ...control.series, stopping } }, handleGenerate: vi.fn(), errorMsg: null, generatedImage: null, previewImage: undefined,
+      setLightboxImg: vi.fn(), isOwner: false, isUploading: false, handleSavePreview: vi.fn(), handleUploadCover: vi.fn(), getDownloadFilename: () => 'test.png' })
+    : React.createElement(ImageEditPreview, { ...common, operation, image: null, error: null, generationCountControl: { ...control, series: { ...control.series, stopping } }, onGenerate: vi.fn(), onOpenLightbox: vi.fn(), getDownloadFilename: () => 'test.png' });
+  const view = render(element(false));
+  const button = screen.getByRole('button', { name: '暂停生成' }) as HTMLButtonElement;
+  expect(button.disabled).toBe(false); fireEvent.click(button); expect(stop).toHaveBeenCalledOnce();
+  expect(screen.getByText('0/3')).toBeTruthy();
+  view.rerender(element(true));
+  expect((screen.getByRole('button', { name: '暂停生成' }) as HTMLButtonElement).disabled).toBe(true);
+});

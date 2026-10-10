@@ -43,7 +43,8 @@ interface PromptAgentOverlayControllerProps {
     apiKey: string;
     onRunStart: (snapshot: PromptAgentDraft) => void;
     onFinalDraft: (draft: PromptAgentDraft, reviewOnly?: boolean) => void;
-    onRequestGeneration: (draft: PromptAgentDraft, reason?: string, onApproved?: () => Promise<void>) => Promise<boolean | PromptAgentGenerationResult>;
+    onRequestGeneration: (draft: PromptAgentDraft, reason?: string, onApproved?: () => Promise<void>, count?: number, placement?: 'end' | 'next') => Promise<boolean | PromptAgentGenerationResult>;
+    onGenerationInterrupted?: () => void;
     canUndo: boolean;
     onUndo: () => void;
     tagAssistEnabled: boolean;
@@ -59,6 +60,7 @@ export const PromptAgentOverlayController: React.FC<PromptAgentOverlayController
     onRunStart,
     onFinalDraft,
     onRequestGeneration,
+    onGenerationInterrupted,
     canUndo,
     onUndo,
     tagAssistEnabled,
@@ -90,10 +92,8 @@ export const PromptAgentOverlayController: React.FC<PromptAgentOverlayController
             apiKey={apiKey}
             onRunStart={onRunStart}
             onFinalDraft={onFinalDraft}
-            onRequestGeneration={async (nextDraft, reason, onApproved) => {
-                const started = await onRequestGeneration(nextDraft, reason, onApproved);
-                return started;
-            }}
+            onRequestGeneration={onRequestGeneration}
+            onGenerationInterrupted={onGenerationInterrupted}
             canUndo={canUndo}
             onUndo={onUndo}
             tagAssistEnabled={tagAssistEnabled}

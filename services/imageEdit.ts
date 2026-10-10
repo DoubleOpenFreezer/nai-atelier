@@ -745,8 +745,8 @@ export const prepareImageEdit = async (edit: {
   };
 };
 
-/** 将 NovelAI 编辑结果按预处理的羽化蒙版合成回原图，Focused 结果会先缩回原选区。 */
-export const composeImageEditResult = async (result: Blob, prepared: PreparedImageEdit) => {
+/** 将 NovelAI 编辑结果按预处理的羽化蒙版合成回原图，Focused 结果会先缩回原选区；只消费原图、羽化蒙版与聚焦几何。 */
+export const composeImageEditResult = async (result: Blob, prepared: Pick<PreparedImageEdit, 'originalImage' | 'compositeMask' | 'focusedGeometry'>) => {
   if (!prepared.compositeMask) return result;
   const baseBitmap = await loadBitmap(prepared.originalImage);
   const resultBitmap = await loadBitmap(result);

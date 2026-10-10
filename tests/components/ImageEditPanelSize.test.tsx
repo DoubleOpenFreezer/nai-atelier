@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ImageEditPanel, ImageEditRequest } from '../../components/ImageEditPanel';
+import { ImageEditPanel } from '../../components/ImageEditPanel';
 import { DEFAULT_LAB_PAGE_LAYOUTS } from '../../services/appearancePreferences';
 import { createLabImageEditDraft } from '../../services/labWorkspace';
 import { DEFAULT_NAI_RUNTIME } from '../../services/naiRuntime';
@@ -29,22 +29,26 @@ vi.mock('../../components/ImageEditPreview', () => ({ ImageEditPreview: (props: 
 
 const params = { model: 'nai-diffusion-5-full', width: 1024, height: 1024, steps: 28, scale: 5, sampler: 'k_euler_ancestral',
   seed: 123, useCoords: true, characters: [{ id: 'c1', prompt: 'girl', negativePrompt: 'bad hands', x: 0.2, y: 0.8 }] };
-const onGenerate = vi.fn(async (_request: ImageEditRequest, _options?: { params: NAIParams; onApproved?: () => Promise<void>; agent: true }) => true);
+// 生成入口的真实签名返回「后台任务结果 | void」，mock 不返回布尔。
+type ImageEditGenerate = NonNullable<React.ComponentProps<typeof ImageEditPanel>['onGenerate']>;
+const onGenerate = vi.fn<ImageEditGenerate>(async () => undefined);
 const onCanvasChange = vi.fn();
+const onGenerateBar = vi.fn();
 const onAgentGenerateReady = vi.fn();
 const drawImage = vi.fn();
-const Harness = ({ patch = {}, operation = 'image-to-image' }: { patch?: Partial<LabImageEditDraft>; operation?: ImageEditOperation }) => {
+const Harness = ({ patch = {}, operation = 'image-to-image', generationUnavailableLabel }: { patch?: Partial<LabImageEditDraft>; operation?: ImageEditOperation; generationUnavailableLabel?: string }) => {
   const [draft, setDraft] = useState(() => createLabImageEditDraft(operation, 'scene', 'negative', params, patch));
   const [bar, setBar] = useState({ costLabel: '', unavailableLabel: '' });
   return <><output data-testid="mobile-cost">{bar.costLabel}</output><output data-testid="mobile-status">{bar.unavailableLabel || '生成'}</output>
     <ImageEditPanel baseImage="original-image" previewImage={null} operation={operation} draft={draft}
+      generationUnavailableLabel={generationUnavailableLabel}
       layout={DEFAULT_LAB_PAGE_LAYOUTS[operation]} tagAssistEnabled={false} apiKey="" notify={vi.fn()}
       generationCostLabel={(_operation, _focused, context) => `${context?.width}×${context?.height}`}
       onPromptChange={vi.fn()} onNegativePromptChange={vi.fn()} onPromptSource={vi.fn()}
       onDraftChange={value => setDraft(previous => ({ ...previous, ...value }))}
       onBaseImageChange={vi.fn()} onCanvasChange={onCanvasChange} onGenerate={onGenerate} onAgentGenerateReady={onAgentGenerateReady}
-      onGenerateBarChange={value => setBar(previous => previous.costLabel === value.costLabel && previous.unavailableLabel === (value.unavailableLabel || '')
-        ? previous : { costLabel: value.costLabel, unavailableLabel: value.unavailableLabel || '' })}
+      onGenerateBarChange={value => { onGenerateBar(value); setBar(previous => previous.costLabel === value.costLabel && previous.unavailableLabel === (value.unavailableLabel || '')
+        ? previous : { costLabel: value.costLabel, unavailableLabel: value.unavailableLabel || '' }); }}
       onOpenLightbox={vi.fn()} getDownloadFilename={() => 'fixture.png'} />
   </>;
 };
@@ -61,7 +65,7 @@ const expectSize = (size: string) => {
 
 beforeEach(() => {
   state.freeMaxArea = DEFAULT_NAI_RUNTIME.freeMaxArea; state.width = 1664; state.height = 2432;
-  onGenerate.mockClear(); onCanvasChange.mockClear(); onAgentGenerateReady.mockClear(); drawImage.mockClear();
+  onGenerate.mockClear(); onGenerateBar.mockClear(); onCanvasChange.mockClear(); onAgentGenerateReady.mockClear(); drawImage.mockClear();
   vi.stubGlobal('fetch', vi.fn(() => { throw new Error('测试禁止真实网络请求'); }));
   vi.stubGlobal('createImageBitmap', vi.fn(async () => ({ width: state.width, height: state.height, close: vi.fn() })));
   vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => ({ drawImage, clearRect: vi.fn(), fillRect: vi.fn() }) as unknown as CanvasRenderingContext2D);
@@ -138,8 +142,9 @@ describe('图生图输出尺寸与提交副本', () => {
     render(<Harness patch={{ imageToImageSizeMode: 'custom' }} />); await ready();
     const generate = onAgentGenerateReady.mock.calls.at(-1)![0];
     const agentDraft = { basePrompt: 'agent scene', subjectPrompt: '', modules: [], negativePrompt: 'agent negative', params } as PromptAgentDraft;
-    await act(async () => { expect(await generate(agentDraft)).toBe(true); });
+    await act(async () => { expect(await generate(agentDraft, undefined, 3)).toBe(true); });
     const [request, options] = onGenerate.mock.calls[0];
+    expect(options?.count).toBe(3);
     expect(request).toMatchObject({ image: 'data:image/png;base64,1024x1024', prompt: 'agent scene', negativePrompt: 'agent negative' });
     expect(options?.params).toEqual(request.params);
     expect(options?.params.characters?.[0].x).toBeCloseTo(0.5 + (0.2 - 0.5) * 1664 / 2432);
@@ -152,3 +157,27 @@ vi.mock('../../services/collectionFavorites', async original => ({
   subscribeCollection: () => () => {}, collectionRevision: () => 0, collectionTargetActive: () => false,
   toggleCollectionTarget: vi.fn(async () => true), syncHistoryCollectionFavorites: vi.fn(async () => {}),
 }));
+
+ it('其他页面占用 Key 时桌面与手机都显示忙碌，仍能准备尺寸，释放后恢复生成', async () => {
+  const view = render(<Harness generationUnavailableLabel="此 Key 正在生成" />);
+  await waitFor(() => expect(screen.getByTestId('mobile-status').textContent).toBe('此 Key 正在生成'));
+  expect(screen.getByTestId('desktop-status').textContent).toBe('此 Key 正在生成');
+  expect((screen.getByText('生成测试图片') as HTMLButtonElement).disabled).toBe(true);
+  choose('free');
+  await waitFor(() => expectSize('832×1216'));
+  expect(onGenerate).not.toHaveBeenCalled();
+  view.rerender(<Harness />); await ready();
+  expect((screen.getByText('生成测试图片') as HTMLButtonElement).disabled).toBe(false);
+});
+
+it('真实画布提交尚未结束时仍能为新任务捕获副本，移动端队列入口不沿用普通按钮禁用逻辑', async () => {
+  let release!: (value: Awaited<ReturnType<ImageEditGenerate>>) => void;
+  onGenerate.mockImplementationOnce(() => new Promise(resolve => { release = resolve; }));
+  render(<Harness />); await ready();
+  fireEvent.click(screen.getByRole('button', { name: '生成测试图片' })); await waitFor(() => expect(onGenerate).toHaveBeenCalledOnce());
+  const bar = onGenerateBar.mock.calls.at(-1)![0]; expect(bar.canQueue).toBe(true);
+  await act(async () => { bar.queue('next'); }); await waitFor(() => expect(onGenerate).toHaveBeenCalledTimes(2));
+  expect(onGenerate.mock.calls[1][1]).toMatchObject({ agent: false, placement: 'next', params: { width: 1664, height: 2432 } });
+  expect(onGenerate.mock.calls[1][0]).toMatchObject({ image: 'data:image/png;base64,1664x2432', prompt: 'scene', negativePrompt: 'negative' });
+  await act(async () => { release(undefined); });
+});

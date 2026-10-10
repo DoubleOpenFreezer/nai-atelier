@@ -31,7 +31,32 @@ public class AtelierPlugin extends Plugin {
     final Map<String,RequestJob> connections = new ConcurrentHashMap<>();
     final java.util.concurrent.atomic.AtomicInteger backgroundTasks=new java.util.concurrent.atomic.AtomicInteger();
     final android.os.Handler taskHandler=new android.os.Handler(android.os.Looper.getMainLooper());
-    final Runnable stopTask=()->{if(backgroundTasks.get()==0)getContext().stopService(new Intent(getContext(),AtelierTaskService.class));};
+    final Runnable stopTask=()->{if(backgroundTasks.get()==0&&!AtelierTaskService.hasGenerationTasks())getContext().stopService(new Intent(getContext(),AtelierTaskService.class));};
+    /** 前台服务的唯一推进点：任务集合与在途网络请求变化后同步通知与 CPU 保活。 */
+    boolean syncTaskService(){
+        taskHandler.removeCallbacks(stopTask);
+        Intent intent=new Intent(getContext(),AtelierTaskService.class);
+        if(backgroundTasks.get()==0&&!AtelierTaskService.hasGenerationTasks()){getContext().stopService(intent);return true;}
+        try{
+            // 服务已在运行时普通启动即可，避免后台再次触发前台服务启动限制。
+            if(AtelierTaskService.running)getContext().startService(intent);else getContext().startForegroundService(intent);
+            return true;
+        }catch(RuntimeException e){android.util.Log.w("NAIAtelier","系统未允许后台任务保活");return false;}
+    }
+    @PluginMethod public void backgroundJob(PluginCall call) {
+        switch(call.getString("action","retain")){
+            case "reset": AtelierTaskService.clearJobs(); break;
+            case "release": AtelierTaskService.releaseJob(call.getString("id","")); break;
+            default: AtelierTaskService.retainJob(call.getString("id",""));
+        }
+        if(!syncTaskService()&&"retain".equals(call.getString("action","retain"))){
+            AtelierTaskService.releaseJob(call.getString("id",""));
+            call.reject("系统未允许后台生成，请回到前台后再试");return;
+        }
+        JSObject result=new JSObject();result.put("active",AtelierTaskService.generationTasks.size());call.resolve(result);
+    }
+    // 退出工坊时释放保活与唤醒锁；不做常驻服务，系统回收后也不残留任务状态。
+    @Override protected void handleOnDestroy() {AtelierTaskService.clearJobs();syncTaskService();}
     final OkHttpClient httpClient=new OkHttpClient.Builder().connectTimeout(30,TimeUnit.SECONDS).readTimeout(300,TimeUnit.SECONDS).build();
     final Map<String,CompletableFuture<JSObject>> localRequests = new ConcurrentHashMap<>();
     final Set<String> inspectedBackups=ConcurrentHashMap.newKeySet();
@@ -123,7 +148,7 @@ public class AtelierPlugin extends Plugin {
     }
     @PluginMethod public void http(PluginCall call) {
       String id=call.getString("id");RequestJob job=new RequestJob();connections.put(id,job);
-      boolean background=call.getBoolean("background",false);if(background){backgroundTasks.incrementAndGet();taskHandler.removeCallbacks(stopTask);try{getContext().startForegroundService(new Intent(getContext(),AtelierTaskService.class));}catch(RuntimeException e){android.util.Log.w("NAIAtelier","系统未允许后台任务保活");}}
+      boolean background=call.getBoolean("background",false);if(background){backgroundTasks.incrementAndGet();syncTaskService();}
       run(call,network,()->{
         String url=call.getString("url");Call connection=null;
         try {
@@ -147,7 +172,7 @@ public class AtelierPlugin extends Plugin {
             event(id,"end",new JSObject());return head;
             }
         }catch(Exception e){JSObject error=new JSObject();error.put("error",e.getMessage());event(id,"error",error);throw e;}
-        finally {connections.remove(id,job);if(background&&backgroundTasks.decrementAndGet()==0)taskHandler.postDelayed(stopTask,30000);}
+        finally {connections.remove(id,job);if(background&&backgroundTasks.decrementAndGet()==0){if(AtelierTaskService.hasGenerationTasks())syncTaskService();else taskHandler.postDelayed(stopTask,30000);}}
     });}
     @PluginMethod public void tagger(PluginCall call) {run(call,network,()-> tagger.handle(call));}
     @PluginMethod public void saveFile(PluginCall call) {

@@ -48,4 +48,6 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <!-- 生成间隔与保存期间的有限保活；仅跟随后台任务，任务结束立即释放。 -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
 </manifest>

@@ -8,7 +8,7 @@ import { DanbooruGallery } from '../../components/DanbooruGallery';
 import { GenHistory } from '../../components/GenHistory';
 import { getArtistDictionaryPage, getCharacterDictionaryPage } from '../../services/tagDictionary';
 import { danbooruService } from '../../services/danbooruService';
-import { generateImage } from '../../services/naiService';
+import { startGenerationJob } from '../../services/generationJob';
 
 const originalScrollTo = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollTo');
 
@@ -20,7 +20,8 @@ vi.mock('../../services/localHistory', () => ({ localHistory: {
   getBrowseOrder: vi.fn(async () => ({ ids: [], models: [], sources: [] })),
   getPage: vi.fn(async () => ({ items: [], count: 0, hasMore: false })),
 } }));
-vi.mock('../../services/naiService', () => ({ generateImage: vi.fn() }));
+// 生图的唯一接缝是后台任务提交：断言这些入口不会意外投递生成任务。
+vi.mock('../../services/generationJob', async importOriginal => ({ ...await importOriginal<typeof import('../../services/generationJob')>(), startGenerationJob: vi.fn() }));
 vi.mock('../../services/tagDictionary', async importOriginal => ({
   ...await importOriginal<typeof import('../../services/tagDictionary')>(),
   getArtistDictionaryPage: vi.fn(async () => ({ entries: [], total: 12, page: 0, pageCount: 1 })),
@@ -73,7 +74,7 @@ describe('资料目录工具栏行为', () => {
     for (const name of ['更多', '复制历史', '任务队列', '画师配置', '批量导入画师', '切换到基准图预览']) {
       expect(screen.queryByRole('button', { name })).toBeNull();
     }
-    expect(generateImage).not.toHaveBeenCalled();
+    expect(startGenerationJob).not.toHaveBeenCalled();
   });
 
   it('角色范围、排序与收藏集中筛选，抽卡设置独立且不会启动生成', async () => {
@@ -94,7 +95,7 @@ describe('资料目录工具栏行为', () => {
     const settings = screen.getByRole('dialog', { name: '角色抽卡设置' });
     fireEvent.change(within(settings).getByRole('combobox', { name: '数量' }), { target: { value: '24' } });
     expect((within(settings).getByRole('combobox', { name: '数量' }) as HTMLSelectElement).value).toBe('24');
-    expect(generateImage).not.toHaveBeenCalled();
+    expect(startGenerationJob).not.toHaveBeenCalled();
   });
 
   it('Danbooru 合并筛选仍保留输入 Tag，重置只撤掉追加条件', async () => {

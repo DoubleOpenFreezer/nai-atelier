@@ -14,6 +14,7 @@ export const native = registerPlugin<{
   share(options: Reply): Promise<void>;
   clipboard(options: Reply): Promise<Reply>;
   openUrl(options: Reply): Promise<void>;
+  backgroundJob(options: { action: 'retain' | 'release' | 'reset'; id?: string }): Promise<{ active: number }>;
   saveFile(options: Reply): Promise<void>;
   backup(options: Reply): Promise<Reply>;
   respond(options: Reply): Promise<void>;

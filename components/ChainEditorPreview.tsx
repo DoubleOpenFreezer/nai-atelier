@@ -7,6 +7,7 @@ import { OriginalImage } from './SmartImage';
 import { InlineCloudQueueStatus, useCloudQueueStatus } from './CloudQueueStatus';
 import { isCloudQueueTaskActive } from '../services/cloudQueue';
 import { ImagePreviewActions } from './ImagePreviewActions';
+import { GenerationCountControl, type GenerationCountControlProps } from './GenerationCountControl';
 import type { CollectionTarget } from '../services/collectionFavorites';
 import type { ImageGenerationData } from '../services/imageClipboardContext';
 
@@ -33,6 +34,7 @@ interface ChainEditorPreviewProps {
     onRemoveCurrentHistory?: () => void;
     onClearHistoryGroup?: () => void;
     generationCostLabel: string;
+    generationCountControl?: GenerationCountControlProps;
     transparentPreview?: boolean;
     generationProgress?: { step: number; total: number } | null;
     unavailableLabel?: string;
@@ -68,6 +70,7 @@ export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
     onRemoveCurrentHistory,
     onClearHistoryGroup,
     generationCostLabel,
+    generationCountControl,
     transparentPreview = false,
     generationProgress = null,
     unavailableLabel,
@@ -80,6 +83,7 @@ export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
 }) => {
   useLanguage();
     const queueStatus = useCloudQueueStatus();
+    const queueAction = Boolean(generationCountControl?.onQueue && !generationCountControl.queueDisabled && (isGenerating || generationDisabled));
 
     return (
         <div className="chain-editor-preview w-full lg:w-1/2 flex flex-col bg-gray-100 dark:bg-black/20 order-1 lg:order-2 border-b lg:border-b-0 border-gray-200 dark:border-gray-800 lg:shrink-0">
@@ -167,15 +171,11 @@ export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
                 <div className="mt-4 flex flex-none flex-col items-center">
                     {errorMsg && <div role="alert" className="mb-2 w-full max-w-sm rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-center text-xs text-red-600 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300">{errorMsg}</div>}
                     {showQueueStatus && queueStatus && <InlineCloudQueueStatus generationProgress={generationProgress} className="mb-2 w-full max-w-xs flex-shrink-0" />}
-                    {!(showQueueStatus && isCloudQueueTaskActive(queueStatus)) && <button
-                        data-agent-action="business" onClick={handleGenerate}
-                        disabled={isGenerating || generationDisabled}
-                        className={`generation-action-button flex h-11 w-full max-w-xs items-center justify-center gap-2 rounded-xl px-4 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50 ${isGenerating ? 'generation-action-button--loading' : ''} ${hideGenerateButtonOnMobile ? 'hidden lg:flex' : ''}`}
-                    >
-                        <ImageIcon aria-hidden="true" className="relative z-[1] h-4 w-4 shrink-0" strokeWidth={2.2} />
-                        <span>{isGenerating ? generationProgress ? t("生成中 {0}/{1}", [generationProgress.step, generationProgress.total]) : t("生成中…") : unavailableLabel || t("生成")}</span>
-                        {!isGenerating && !unavailableLabel && generationCostLabel && <span className="generation-action-button__cost">{generationCostLabel}</span>}
+                    <div className={`flex max-w-full items-stretch justify-center gap-2 ${hideGenerateButtonOnMobile ? 'hidden lg:flex' : ''}`}>
+                    {generationCountControl ? <GenerationCountControl {...generationCountControl} onGenerate={handleGenerate} costLabel={generationCostLabel} unavailableLabel={unavailableLabel} busy={queueAction || isGenerating} disabled={isGenerating || generationDisabled} /> : !(showQueueStatus && isCloudQueueTaskActive(queueStatus)) && <button data-agent-action="business" onClick={handleGenerate} disabled={isGenerating || generationDisabled} className="generation-action-button flex h-11 flex-1 items-center justify-center gap-2 rounded-xl px-3 text-sm font-semibold disabled:opacity-50">
+                      <ImageIcon aria-hidden="true" className="h-4 w-4" /><span>{isGenerating ? t("生成中…") : unavailableLabel || t("生成")}</span>{!isGenerating && !unavailableLabel && <span className="generation-action-button__cost">{generationCostLabel}</span>}
                     </button>}
+                    </div>
                 </div>
             </div>
         </div>

@@ -1,266 +1,285 @@
 // @vitest-environment jsdom
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { CharacterParams, ImageEditOperation, NAIParams } from '../../types';
-import { api } from '../../services/api';
-import { getCurrentCloudQueueStatus, emitCloudQueueStatus } from '../../services/cloudQueue';
-import { generateImage, generateImageEdit, generateImageStream, generateImageEditStream } from '../../services/naiService';
-import { prepareImageEdit, PreparedImageEdit } from '../../services/imageEdit';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { GenerationJobDescriptor } from '../../services/generationJob';
+import { hashNaiApiKey } from '../../services/anlasBudget';
+import { prepareImageEdit, type PreparedImageEdit } from '../../services/imageEdit';
+import { buildGenerationJobDescriptor, type GenerationJobDescriptorInput } from '../../services/naiService';
+import type { CharacterParams, ImageEditOperation, NAIParams, PromptModule } from '../../types';
 
-vi.mock('../../services/anlasBudget', () => ({ hashNaiApiKey: vi.fn(async () => 'test-key-hash') }));
-vi.mock('../../services/api', () => ({
-  api: { postBinary: vi.fn(), postBinaryDetailed: vi.fn(), postSse: vi.fn() },
-  isQueueCancelledError: () => false,
-}));
 vi.mock('../../services/naiRuntime', async importOriginal => {
-  const actual = await importOriginal<typeof import('../../services/naiRuntime')>();
+  const actual = await importOriginal<Record<string, unknown>>();
   return { ...actual, getNaiRuntimeConfig: vi.fn(async () => actual.DEFAULT_NAI_RUNTIME) };
 });
-vi.mock('jszip', () => ({ default: { loadAsync: vi.fn(async () => ({ files: {
-  'image.png': { dir: false, async: async () => new Uint8Array([1, 2, 3]) },
-} })) } }));
-vi.mock('../../services/imageEdit', async importOriginal => ({
-  ...await importOriginal<typeof import('../../services/imageEdit')>(),
-  prepareImageEdit: vi.fn(async () => ({ image: 'data:image/png;base64,AQID', mask: 'data:image/png;base64,AQID', requestWidth: 832, requestHeight: 1216, sourceWidth: 832, sourceHeight: 1216 })),
-  composeImageEditResult: vi.fn(async (blob: Blob) => blob),
-}));
-
-const params: NAIParams = {
-  model: 'nai-diffusion-4-5-full', width: 832, height: 1216, steps: 28,
-  scale: 5, sampler: 'k_euler_ancestral', qualityToggle: false, ucPreset: 0,
-};
-
-it('四个生图入口直接提交，不附加费用上限拦截', async () => {
-  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ enabled: false }))));
-  const edit = { operation: 'inpaint' as const, image: 'data:image/png;base64,AQID', mask: 'data:image/png;base64,AQID', strength: 1, noise: 0 };
-  await generateImage('test-key', '', '', params);
-  await generateImageEdit('test-key', '', '', params, edit);
-  await generateImageStream('test-key', '', '', params, undefined, false);
-  await generateImageEditStream('test-key', '', '', params, edit, undefined, false);
-  for (const call of [...vi.mocked(api.postBinary).mock.calls, ...vi.mocked(api.postBinaryDetailed).mock.calls, ...vi.mocked(api.postSse).mock.calls]) expect(call[2]).not.toHaveProperty('X-Nai-Anlas-Max-Cost');
+// 预处理依赖真实画布；这里只替换像素处理，保留全部坐标换算与校验逻辑。
+vi.mock('../../services/imageEdit', async importOriginal => {
+  const actual = await importOriginal<Record<string, unknown>>();
+  return { ...actual, prepareImageEdit: vi.fn() };
 });
+
+const PNG_DATA_URL = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+const PNG_BYTES = Uint8Array.from(atob(PNG_DATA_URL.split(',')[1]), character => character.charCodeAt(0));
+const MODEL = 'nai-diffusion-4-5-full';
+
+const promptModule: PromptModule = { id: 'm1', name: '风格', content: 'detail', isActive: true };
+const character: CharacterParams = { id: 'c1', prompt: 'blue hair, blue dress', negativePrompt: 'red hair', x: 0.5, y: 0.5 };
+const positionedCharacter: CharacterParams = { id: 'c1', prompt: 'blue hair, blue dress', negativePrompt: 'red hair', x: 0.42, y: 0.62 };
+const pausedCharacter: CharacterParams = { id: 'c2', enabled: false, prompt: 'paused character', negativePrompt: 'paused', x: 0.9, y: 0.9 };
+const emptyCharacter: CharacterParams = { id: 'c3', prompt: '   ', negativePrompt: 'empty', x: 0.1, y: 0.1 };
+
+const baseParams = (): NAIParams => ({
+  model: MODEL, width: 832, height: 1216, steps: 28,
+  scale: 5, sampler: 'k_euler_ancestral', qualityToggle: true, ucPreset: 1,
+});
+
+const prepared = (overrides: Partial<PreparedImageEdit> = {}): PreparedImageEdit => ({
+  image: PNG_DATA_URL, mask: PNG_DATA_URL,
+  originalImage: new Blob([PNG_BYTES], { type: 'image/png' }),
+  compositeMask: new Blob([PNG_BYTES], { type: 'image/png' }),
+  requestWidth: 832, requestHeight: 1216, sourceWidth: 832, sourceHeight: 1216,
+  ...overrides,
+});
+
+interface CharacterCaption { char_caption: string; centers: { x: number; y: number }[] }
+interface PayloadParameters {
+  seed?: number;
+  extra_noise_seed?: number;
+  stream?: string;
+  n_samples: number;
+  negative_prompt: string;
+  qualityPresetId: string;
+  ucPresetId: string;
+  width: number;
+  height: number;
+  image?: string;
+  mask?: string;
+  strength?: number;
+  inpaintImg2ImgStrength?: number;
+  _local_edit_operation?: string;
+  _local_focused_inpainting?: boolean;
+  v4_prompt: { caption: { base_caption: string; char_captions: CharacterCaption[] }; use_coords: boolean; use_order: boolean };
+  v4_negative_prompt: { caption: { base_caption: string; char_captions: CharacterCaption[] } };
+}
+
+const readParameters = (descriptor: GenerationJobDescriptor): PayloadParameters =>
+  descriptor.payload.parameters as unknown as PayloadParameters;
+
+const textDescriptor = (overrides: Partial<GenerationJobDescriptorInput> = {}) => buildGenerationJobDescriptor({
+  operation: 'text-to-image', prompt: 'base scene', negative: 'global negative',
+  params: baseParams(), approvedCost: 12, history: {}, ...overrides,
+});
+
+const editDescriptor = (operation: ImageEditOperation, overrides: Partial<GenerationJobDescriptorInput> = {}) =>
+  buildGenerationJobDescriptor({
+    operation, prompt: 'base scene', negative: 'global negative', params: baseParams(), approvedCost: 12, history: {},
+    edit: { image: PNG_DATA_URL, mask: PNG_DATA_URL, strength: 0.7, noise: 0.1 }, ...overrides,
+  });
 
 beforeEach(() => {
   vi.clearAllMocks();
-  sessionStorage.clear();
-  localStorage.clear();
-  sessionStorage.setItem('nai_api_key', 'test-key');
-  emitCloudQueueStatus(null);
-  vi.stubGlobal('URL', class extends URL {
-    static createObjectURL = vi.fn(() => 'blob:test-result');
-  });
-  vi.mocked(api.postBinary).mockResolvedValue(new Blob(['zip']));
-  vi.mocked(api.postBinaryDetailed).mockResolvedValue({ blob: new Blob(['zip']), estimatedCost: 0 });
-  vi.mocked(api.postSse).mockImplementation(async (_path, _payload, _headers, onEvent) => {
-    onEvent({ event: 'final', data: { image: 'AQID', seed: 123 } });
-    return { estimatedCost: 0 };
-  });
+  vi.mocked(prepareImageEdit).mockImplementation(async () => prepared());
 });
 
-afterEach(() => {
-  emitCloudQueueStatus(null);
-  vi.restoreAllMocks();
-  vi.unstubAllGlobals();
-});
-
-const characters = [
-  { id: 'c1', prompt: 'girl, blue hair, blue dress', negativePrompt: 'red hair', x: 0.5, y: 0.5 },
-  { id: 'c2', prompt: 'boy, black hair, white shirt', negativePrompt: 'blue hair', x: 0.1, y: 0.2 },
-];
-type CharacterPayload = { parameters: {
-  v4_prompt: { caption: { char_captions: { char_caption: string; centers: { x: number; y: number }[] }[] }; use_coords: boolean };
-  v4_negative_prompt: { caption: { base_caption: string; char_captions: { char_caption: string; centers: { x: number; y: number }[] }[] } };
-} };
-const lastCharacterPayload = (stream: boolean) => (stream
-  ? vi.mocked(api.postSse).mock.calls.at(-1)![1]
-  : (vi.mocked(api.postBinaryDetailed).mock.calls.at(-1) || vi.mocked(api.postBinary).mock.calls.at(-1))![1]) as CharacterPayload;
-
-describe('编辑模式完整角色请求与历史坐标', () => {
-  it.each(['text-to-image', 'image-to-image', 'inpaint', 'outpaint'] as const)('Medium %s 普通／流式结果记录实际固定参数，不污染草稿', async operation => {
-    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ enabled: false }))));
-    const original = { ...params, model: 'nai-diffusion-5-full-medium', steps: 35, sampler: 'k_euler', cfgRescale: 0.6, ucPresetId: 'light', characters };
-    const snapshot = structuredClone(original);
-    for (const stream of [false, true]) {
-      const edit = { operation: operation as ImageEditOperation, image: 'data:image/png;base64,AQID', mask: 'data:image/png;base64,AQID', strength: 1, noise: 0 };
-      const result = operation === 'text-to-image'
-        ? await (stream ? generateImageStream : generateImage)('test-key', '1girl', 'custom global negative', original)
-        : await (stream ? generateImageEditStream : generateImageEdit)('test-key', '1girl', 'custom global negative', original, edit);
-      expect(result.params).toMatchObject({ model: original.model, steps: 14, sampler: 'k_euler_ancestral', cfgRescale: 0, ucPresetId: 'heavy' });
-      expect(result.params.characters?.map(character => character.negativePrompt)).toEqual(['', '']);
-      expect(lastCharacterPayload(stream).parameters.v4_negative_prompt.caption.base_caption).not.toContain('custom global negative');
-    }
-    expect(original).toEqual(snapshot);
-  });
-
-  it.each([
-    ['text-to-image', false], ['text-to-image', true], ['image-to-image', false], ['image-to-image', true],
-    ['inpaint', false], ['inpaint', true], ['outpaint', false], ['outpaint', true],
-  ] as const)('%s（stream=%s）请求与返回的历史参数记录同一透明权重，旧草稿不变', async (operation, stream) => {
-    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ enabled: false }))));
-    const original: NAIParams = { ...params, model: 'nai-diffusion-5-full', transparent: true };
-    const prompt = '1girl, 2.1::transparent background::';
-    const edit = { operation: operation as ImageEditOperation, image: 'data:image/png;base64,AQID', mask: 'data:image/png;base64,AQID', strength: 0.8, noise: 0 };
-    const result = operation === 'text-to-image'
-      ? stream ? await generateImageStream('test-key', prompt, '', original) : await generateImage('test-key', prompt, '', original)
-      : stream ? await generateImageEditStream('test-key', prompt, '', original, edit) : await generateImageEdit('test-key', prompt, '', original, edit);
-    const payload = lastCharacterPayload(stream) as CharacterPayload & { input: string };
-    expect(payload.input).toBe('1girl, 2.1::transparent background::, has alpha');
-    expect(result.params.transparentWeight).toBe(2.1);
-    expect(original.transparentWeight).toBeUndefined();
-  });
-  it.each([
-    ['text-to-image', false], ['text-to-image', true], ['image-to-image', false], ['image-to-image', true],
-    ['inpaint', false], ['inpaint', true], ['outpaint', false], ['outpaint', true],
-  ] as const)('%s（stream=%s）按有效角色校验上限，结果不保存空项与停用项，草稿不变', async (operation, stream) => {
-    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ enabled: false }))));
-    const original: NAIParams & { characters: CharacterParams[] } = { ...params, characters: [characters[0],
-      ...Array.from({ length: 6 }, (_, index) => ({ ...characters[1], id: `paused-${index}`, enabled: false })),
-      { ...characters[1], id: 'empty', prompt: '  ' },
-    ] };
-    const edit = { operation: operation as ImageEditOperation, image: 'data:image/png;base64,AQID', mask: 'data:image/png;base64,AQID', strength: 1, noise: 0 };
-    const generate = (input: NAIParams) => operation === 'text-to-image'
-      ? (stream ? generateImageStream : generateImage)('test-key', '', '', input)
-      : (stream ? generateImageEditStream : generateImageEdit)('test-key', '', '', input, edit);
-    const result = await generate(original);
-    expect(lastCharacterPayload(stream).parameters.v4_prompt.caption.char_captions).toEqual([{ char_caption: characters[0].prompt, centers: [{ x: 0.5, y: 0.5 }] }]);
-    expect(result.params.characters).toEqual([characters[0]]);
-    expect(result.params.useCoords).toBe(false);
-    expect(original.characters).toHaveLength(8);
-    expect(original.characters[1].enabled).toBe(false);
-    await expect(generate({ ...original, characters: original.characters.map(character => ({ ...character, enabled: true })) })).rejects.toThrow('停用或删除多余角色');
-  });
-  it.each([false, true])('扩图 stream=%s 发给接口的是当前文字；删除全局、角色及关闭预设后确实全空', async stream => {
-    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ enabled: false }))));
-    const cleared = { ...params, qualityToggle: false, qualityPresetId: 'none', ucPreset: 4, ucPresetId: 'none', characters: [] };
-    const generate = stream ? generateImageEditStream : generateImageEdit;
-    const edit = { operation: 'outpaint' as const, image: 'data:image/png;base64,AQID', mask: 'data:image/png;base64,AQID', strength: 1, noise: 0 };
-    await generate('test-key', 'new landscape', 'new negative', { ...cleared, characters }, edit);
-    const before = (stream ? vi.mocked(api.postSse) : vi.mocked(api.postBinaryDetailed)).mock.calls.at(-1)![1] as { input: string; parameters: Record<string, any> };
-    expect(before.input).toBe('new landscape');
-    expect(before.parameters.v4_prompt.caption.base_caption).toBe('new landscape');
-    expect(before.parameters.v4_prompt.caption.char_captions).toHaveLength(2);
-    await generate('test-key', '', '', cleared, edit);
-    const after = (stream ? vi.mocked(api.postSse) : vi.mocked(api.postBinaryDetailed)).mock.calls.at(-1)![1] as { input: string; parameters: Record<string, any> };
-    expect(after.input).toBe('');
-    expect(after.parameters.negative_prompt).toBe('');
-    expect(after.parameters.v4_prompt.caption).toEqual({ base_caption: '', char_captions: [] });
-    expect(after.parameters.v4_negative_prompt.caption).toEqual({ base_caption: '', char_captions: [] });
-  });
-  it.each(['nai-diffusion-4-full', 'nai-diffusion-4-5-full', 'nai-diffusion-5-full'])('%s 三种编辑模式普通／流式保留角色正负词及自动构图', async model => {
-    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ enabled: false }))));
-    const original = { ...params, model, characters, useCoords: false };
-    const expectedCharacters = model.startsWith('nai-diffusion-5-') ? characters : [characters[0], { ...characters[1], y: 0.3 }];
-    const snapshot = structuredClone(original);
-    for (const operation of ['image-to-image', 'inpaint', 'outpaint'] as const) for (const stream of [false, true]) {
-      const result = await (stream ? generateImageEditStream : generateImageEdit)('test-key', 'base scene', 'global negative', original,
-        { operation, image: 'data:image/png;base64,AQID', mask: 'data:image/png;base64,AQID', strength: 0.7, noise: 0 });
-      const payload = lastCharacterPayload(stream).parameters;
-      expect(payload.v4_prompt.caption.char_captions).toEqual(expectedCharacters.map(character => ({ char_caption: character.prompt, centers: [{ x: character.x, y: character.y }] })));
-      expect(payload.v4_negative_prompt.caption.char_captions).toEqual(expectedCharacters.map(character => ({ char_caption: character.negativePrompt, centers: [{ x: character.x, y: character.y }] })));
-      expect(payload.v4_prompt.use_coords).toBe(false);
-      expect(result.params.characters).toEqual(expectedCharacters);
-    }
-    expect(original).toEqual(snapshot);
-  });
-
-  it.each([false, true])('Focused（stream=%s）只换算请求坐标，历史保存整图尺寸与角色位置', async stream => {
-    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ enabled: false }))));
-    vi.mocked(prepareImageEdit).mockResolvedValueOnce({
-      image: 'data:image/png;base64,AQID', requestWidth: 832, requestHeight: 1216,
-      sourceWidth: 1536, sourceHeight: 2048, originalImage: new Blob(),
-      focusedGeometry: { crop: { x: 512, y: 512, width: 512, height: 768 }, inner: { x: 544, y: 544, width: 448, height: 704 }, requestWidth: 832, requestHeight: 1216, fullSizeMask: true },
-    } as PreparedImageEdit);
-    const original = { ...params, width: 1536, height: 2048, characters, useCoords: true };
-    const result = await (stream ? generateImageEditStream : generateImageEdit)('test-key', 'base scene', '', original,
-      { operation: 'inpaint', image: 'data:image/png;base64,AQID', strength: 1, noise: 0, focused: true });
-    const payload = lastCharacterPayload(stream).parameters;
-    expect(payload.v4_prompt.use_coords).toBe(true);
-    expect(payload.v4_prompt.caption.char_captions[0].centers[0].x).toBeCloseTo(0.5);
-    expect(payload.v4_prompt.caption.char_captions[0].centers[0].y).toBe(0.7);
-    expect(payload.v4_negative_prompt.caption.char_captions[0].centers).toEqual(payload.v4_prompt.caption.char_captions[0].centers);
-    expect(result.params).toMatchObject({ width: 1536, height: 2048, characters });
-    expect(result.requestWidth).toBe(832);
-    expect(result.requestHeight).toBe(1216);
-    expect(original.characters).toEqual(characters);
-  });
-
-  it.each([false, true])('扩图（stream=%s）按原图与四边扩展换算定位，重复请求不累加', async stream => {
-    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ enabled: false }))));
-    const original = { ...params, characters, useCoords: true };
-    for (let attempt = 0; attempt < 2; attempt++) {
-      vi.mocked(prepareImageEdit).mockResolvedValueOnce({ image: 'data:image/png;base64,AQID', originalImage: new Blob(),
-        requestWidth: 1024, requestHeight: 1408, sourceWidth: 1024, sourceHeight: 1408 });
-      const result = await (stream ? generateImageEditStream : generateImageEdit)('test-key', 'base scene', '', original,
-        { operation: 'outpaint', image: 'data:image/png;base64,AQID', strength: 1, noise: 0,
-          expansion: { top: 0, right: 0, bottom: 192, left: 192 } });
-      const payload = lastCharacterPayload(stream).parameters;
-      expect(payload.v4_prompt.caption.char_captions[0].centers[0].x).toBe(0.5);
-      expect(payload.v4_prompt.caption.char_captions[0].centers[0].y).toBe(0.5);
-      expect(result.params.characters?.[0]).toMatchObject(payload.v4_prompt.caption.char_captions[0].centers[0]);
-      expect(result.params).toMatchObject({ width: 1024, height: 1408 });
-    }
-    expect(original.characters).toEqual(characters);
-  });
-});
-
-describe('成图交付与辅助排队轮询', () => {
-  it.each([
-    ['text-to-image', false], ['text-to-image', true],
-    ['image-to-image', false], ['image-to-image', true],
-    ['inpaint', false], ['inpaint', true],
-    ['outpaint', false], ['outpaint', true],
-  ] as const)('%s（stream=%s）不等待在途轮询，迟到响应也不能覆盖下一张任务', async (operation, stream) => {
-    let respond!: (response: Response) => void;
-    const fetchMock = vi.fn((url: string | URL | Request) => {
-      if (String(url).includes('/preferences')) return Promise.resolve(new Response(JSON.stringify({ enabled: true, serviceUrl: 'https://queue.test' })));
-      return new Promise<Response>(resolve => { respond = resolve; });
+describe('文生图描述符', () => {
+  it('按模型设置构建生成 payload，并原样带上历史来源与授权费用', async () => {
+    const draft = { ...baseParams(), characters: [positionedCharacter, pausedCharacter, emptyCharacter] };
+    const snapshot = structuredClone(draft);
+    const descriptor = await textDescriptor({
+      params: draft, approvedCost: 25,
+      history: { basePrompt: 'chain base', subjectPrompt: 'subject text', modules: [promptModule],
+        sourceChainId: 'chain-1', sourceChainName: 'Chain One', sourceChainType: 'style' },
     });
-    vi.stubGlobal('fetch', fetchMock);
-    const edit = { operation: operation as ImageEditOperation, image: 'data:image/png;base64,AQID', mask: 'data:image/png;base64,AQID', strength: 0.6, noise: 0.1 };
-    const result = operation === 'text-to-image'
-      ? await (stream ? generateImageStream : generateImage)('test-key', '1girl', '', params)
-      : await (stream ? generateImageEditStream : generateImageEdit)('test-key', '1girl', '', params, edit);
-    // 状态 fetch 至今没有返回；旧实现会在 finally 等待，无法交付成图。
-    expect(result.image).toBe('blob:test-result');
-    expect(result.blob.size).toBe(3);
-    const oldTaskId = getCurrentCloudQueueStatus()!.taskId;
-    expect(getCurrentCloudQueueStatus()?.phase).toBe('completed');
-    emitCloudQueueStatus({ taskId: 'next-task', phase: 'preparing' }, 'test-key');
-    respond(new Response(JSON.stringify({ taskId: oldTaskId, phase: 'waiting' })));
-    // 等待辅助响应解析结束，确认它没有让旧任务重新出现。
-    await new Promise(resolve => setTimeout(resolve, 0));
-    expect(getCurrentCloudQueueStatus()?.taskId).toBe('next-task');
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(vi.mocked(api.postBinary).mock.calls.length + vi.mocked(api.postBinaryDetailed).mock.calls.length + vi.mocked(api.postSse).mock.calls.length).toBe(1);
+    const parameters = readParameters(descriptor);
+
+    expect(descriptor.payload.action).toBe('generate');
+    expect(descriptor.payload.model).toBe(MODEL);
+    expect(descriptor.payload.input).toBe('base scene, very aesthetic, masterpiece, no text');
+    expect(parameters.n_samples).toBe(1);
+    expect(parameters).toMatchObject({ width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler_ancestral' });
+    expect(parameters.qualityPresetId).toBe('standard');
+    expect(parameters.ucPresetId).toBe('light');
+    expect(parameters.negative_prompt).toBe('lowres, artistic error, scan artifacts, worst quality, bad quality, jpeg artifacts, multiple views, very displeasing, too many watermarks, negative space, blank page, global negative');
+    expect(parameters.v4_prompt).toEqual({
+      caption: { base_caption: 'base scene, very aesthetic, masterpiece, no text',
+        char_captions: [{ char_caption: 'blue hair, blue dress', centers: [{ x: 0.5, y: 0.7 }] }] },
+      use_coords: false,
+      use_order: true,
+    });
+    expect(parameters.v4_negative_prompt.caption.char_captions).toEqual([{ char_caption: 'red hair', centers: [{ x: 0.5, y: 0.7 }] }]);
+
+    expect(descriptor.randomSeed).toBe(true);
+    expect('seed' in parameters).toBe(false);
+    expect(descriptor.stream).toBe(false);
+    expect(descriptor.approvedCost).toBe(25);
+    expect(descriptor.history).toMatchObject({ prompt: 'base scene', negativePrompt: 'global negative',
+      basePrompt: 'chain base', subjectPrompt: 'subject text',
+      sourceChainId: 'chain-1', sourceChainName: 'Chain One', sourceChainType: 'style' });
+    expect(descriptor.history.modules).toEqual([promptModule]);
+    // 历史只保留启用且非空的角色，并按非 freeform 模型吸附坐标；其余草稿字段不变。
+    expect(descriptor.history.params).toEqual({ ...draft, useCoords: false, characters: [{ ...positionedCharacter, x: 0.5, y: 0.7 }] });
+    expect('edit' in descriptor.history).toBe(false);
+    expect('composition' in descriptor).toBe(false);
+    expect('editMask' in descriptor).toBe(false);
+    // 草稿只读：模型设置与随机种子都不回写
+    expect(draft).toEqual(snapshot);
+  });
+
+  it('固定 seed 关闭随机种子并原样发送；seed 未设或为 -1 时交给后端抽取', async () => {
+    const fixed = readParameters(await textDescriptor({ params: { ...baseParams(), seed: 123 } }));
+    expect(fixed.seed).toBe(123);
+    expect((await textDescriptor({ params: { ...baseParams(), seed: 123 } })).randomSeed).toBe(false);
+
+    const unset = await textDescriptor();
+    expect(unset.randomSeed).toBe(true);
+    expect('seed' in readParameters(unset)).toBe(false);
+
+    const minusOne = await textDescriptor({ params: { ...baseParams(), seed: -1 } });
+    expect(minusOne.randomSeed).toBe(true);
+    expect('seed' in readParameters(minusOne)).toBe(false);
+
+    const forced = await textDescriptor({ params: { ...baseParams(), seed: 123 }, forceEmptySeed: true });
+    expect(forced.randomSeed).toBe(true);
+    expect('seed' in readParameters(forced)).toBe(false);
+    expect(forced.history.params.seed).toBeUndefined();
+  });
+
+  it('流式只改 payload 的 stream 标记，不改变历史结果', async () => {
+    const descriptor = await textDescriptor({ stream: true });
+    expect(descriptor.stream).toBe(true);
+    expect(readParameters(descriptor).stream).toBe('sse');
+    expect(descriptor.history.prompt).toBe('base scene');
+  });
+
+  it('固定档位模型记录空负面词与固定参数，V5 历史保留自由角色坐标', async () => {
+    const descriptor = await textDescriptor({
+      params: { ...baseParams(), model: 'nai-diffusion-5-full-medium', characters: [positionedCharacter, pausedCharacter] },
+    });
+    expect(descriptor.history.negativePrompt).toBe('');
+    expect(descriptor.history.params).toMatchObject({ model: 'nai-diffusion-5-full-medium', steps: 14, sampler: 'k_euler_ancestral', ucPresetId: 'heavy', cfgRescale: 0 });
+    expect(descriptor.history.params.characters).toEqual([{ ...positionedCharacter, negativePrompt: '', x: 0.42, y: 0.62 }]);
+    // 共享 payload 类型把 input 标为可选：先确认类型再断言，不做盲目属性访问。
+    const { input } = descriptor.payload;
+    if (typeof input !== 'string') throw new Error('描述符缺少 input');
+    expect(input.startsWith('base scene')).toBe(true);
+    expect(readParameters(descriptor).negative_prompt).not.toContain('global negative');
   });
 });
 
-describe('四模式普通／流式请求保留创作者参数', () => {
+describe('编辑描述符', () => {
   it.each([
-    ['text-to-image', false], ['text-to-image', true], ['image-to-image', false], ['image-to-image', true],
-    ['inpaint', false], ['inpaint', true], ['outpaint', false], ['outpaint', true],
-  ] as const)('%s（stream=%s）不压步数、不隐藏参考、不额外读取模式设置', async (operation, stream) => {
-    const fetchMock = vi.fn(async (_url: string | URL | Request) => new Response(JSON.stringify({ enabled: false })));
-    vi.stubGlobal('fetch', fetchMock);
-    const original: NAIParams = { ...params, steps: 40, width: 1536, height: 1536, seed: 123,
-      characterReferences: { enabled: true, slots: [{ assetId: 'saved-ref', type: 'character', strength: 0.8, fidelity: 1 }] } };
-    const snapshot = structuredClone(original);
-    const edit = { operation: operation as ImageEditOperation, image: 'data:image/png;base64,AQID', mask: 'data:image/png;base64,AQID', strength: 0.35, noise: 0.1 };
-    const result = operation === 'text-to-image'
-      ? await (stream ? generateImageStream : generateImage)('test-key', '1girl', '', original)
-      : await (stream ? generateImageEditStream : generateImageEdit)('test-key', '1girl', '', original, edit);
-    const sent = lastCharacterPayload(stream).parameters as CharacterPayload['parameters'] & {
-      steps: number; width: number; height: number; _local_character_references: unknown; strength?: number; inpaintImg2ImgStrength?: number;
-    };
-    expect(sent.steps).toBe(40);
-    expect(sent._local_character_references).toEqual(original.characterReferences);
-    expect(result.params.steps).toBe(40);
-    if (operation === 'text-to-image') expect([sent.width, sent.height]).toEqual([1536, 1536]);
-    else {
-      expect([sent.width, sent.height]).toEqual([832, 1216]);
-      expect(operation === 'image-to-image' ? sent.strength : sent.inpaintImg2ImgStrength).toBe(0.35);
-    }
-    expect(original).toEqual(snapshot);
-    expect(fetchMock).toHaveBeenCalledOnce();
-    expect(String(fetchMock.mock.calls[0][0])).toContain('/preferences');
+    ['image-to-image', 'img2img', MODEL],
+    ['inpaint', 'infill', `${MODEL}-inpainting`],
+    ['outpaint', 'infill', `${MODEL}-inpainting`],
+  ] as const)('%s 随机 seed 交给后端每张重抽，不带 seed 与 extra_noise_seed', async (operation, action, model) => {
+    const descriptor = await editDescriptor(operation);
+    const parameters = readParameters(descriptor);
+    expect(descriptor.payload.action).toBe(action);
+    expect(descriptor.payload.model).toBe(model);
+    expect(descriptor.randomSeed).toBe(true);
+    expect('seed' in parameters).toBe(false);
+    expect('extra_noise_seed' in parameters).toBe(false);
+    expect(parameters._local_edit_operation).toBe(operation);
+    expect(parameters.image).toBe(PNG_DATA_URL.split(',')[1]);
+    expect(parameters.mask).toBe(PNG_DATA_URL.split(',')[1]);
+    expect(operation === 'image-to-image' ? parameters.strength : parameters.inpaintImg2ImgStrength).toBe(0.7);
+    expect(descriptor.editMask).toBe(PNG_DATA_URL);
+    expect(descriptor.composition?.originalImage.startsWith('data:image/png;base64,')).toBe(true);
+    expect(descriptor.composition?.compositeMask.startsWith('data:image/png;base64,')).toBe(true);
+    expect(descriptor.composition && 'focusedGeometry' in descriptor.composition).toBe(false);
+  });
+
+  it('固定 seed 同时发送 seed 与 seed-1 的噪声种子，forceEmptySeed 可强制随机', async () => {
+    const fixed = readParameters(await editDescriptor('inpaint', { params: { ...baseParams(), seed: 123 } }));
+    expect(fixed.seed).toBe(123);
+    expect(fixed.extra_noise_seed).toBe(122);
+    expect((await editDescriptor('inpaint', { params: { ...baseParams(), seed: 123 } })).randomSeed).toBe(false);
+    expect((await editDescriptor('inpaint', { params: { ...baseParams(), seed: -1 } })).randomSeed).toBe(true);
+
+    const forced = await editDescriptor('inpaint', { params: { ...baseParams(), seed: 123 }, forceEmptySeed: true });
+    const forcedParameters = readParameters(forced);
+    expect(forced.randomSeed).toBe(true);
+    expect('seed' in forcedParameters).toBe(false);
+    expect('extra_noise_seed' in forcedParameters).toBe(false);
+  });
+
+  it('图生图整图无蒙版：不带 composition、不带蒙版参数与顶层 editMask', async () => {
+    vi.mocked(prepareImageEdit).mockResolvedValueOnce(prepared({ mask: undefined, compositeMask: undefined }));
+    const descriptor = await editDescriptor('image-to-image', {
+      edit: { image: PNG_DATA_URL, strength: 0.6, noise: 0 },
+      history: { edit: { baseImageSource: 'upload', parentHistoryId: 'h-1' } },
+    });
+    expect('composition' in descriptor).toBe(false);
+    expect('editMask' in descriptor).toBe(false);
+    expect('mask' in descriptor.payload.parameters).toBe(false);
+    expect(descriptor.history.edit).toMatchObject({ baseImageSource: 'upload', parentHistoryId: 'h-1', maskAvailable: false, fullSizeMask: false });
+  });
+
+  it('补全历史编辑 metadata：请求尺寸、蒙版可用性、预估费用与 Key 指纹', async () => {
+    const descriptor = await editDescriptor('inpaint', { apiKey: 'test-key', estimatedCost: 12.5, history: { edit: { baseImageSource: 'clipboard' } } });
+    expect(descriptor.history.edit).toMatchObject({
+      operation: 'inpaint', requestWidth: 832, requestHeight: 1216,
+      maskAvailable: true, fullSizeMask: true, estimatedCost: 12.5,
+      settlementStatus: 'estimated', baseImageSource: 'clipboard',
+    });
+    expect(descriptor.history.edit?.keyHash).toBe(await hashNaiApiKey('test-key'));
+
+    const anonymous = await editDescriptor('inpaint');
+    expect(anonymous.history.edit?.keyHash).toBeUndefined();
+    expect(anonymous.history.edit?.estimatedCost).toBeUndefined();
+    expect(anonymous.history.edit?.maskAvailable).toBe(true);
+  });
+
+  it('编辑历史负面词取实际生效值：固定档位模型为空，其余等于输入', async () => {
+    expect((await editDescriptor('image-to-image')).history.negativePrompt).toBe('global negative');
+    const fixed = await editDescriptor('inpaint', { params: { ...baseParams(), model: 'nai-diffusion-5-full-medium' } });
+    expect(fixed.payload.model).toBe('nai-diffusion-5-full-medium-inpainting');
+    expect(fixed.history.negativePrompt).toBe('');
+    expect(readParameters(fixed).negative_prompt).not.toContain('global negative');
+  });
+
+  it('Focused 裁剪只改请求坐标，历史保留整图尺寸与角色位置', async () => {
+    vi.mocked(prepareImageEdit).mockResolvedValueOnce(prepared({
+      requestWidth: 832, requestHeight: 1216, sourceWidth: 1536, sourceHeight: 2048,
+      originalImage: new Blob([PNG_BYTES], { type: 'image/png' }),
+      compositeMask: new Blob([PNG_BYTES], { type: 'image/png' }),
+      focusedGeometry: { crop: { x: 768, y: 1024, width: 768, height: 1024 }, inner: { x: 800, y: 1056, width: 704, height: 960 },
+        requestWidth: 832, requestHeight: 1216, fullSizeMask: true },
+    }));
+    const descriptor = await editDescriptor('inpaint', {
+      params: { ...baseParams(), width: 1536, height: 2048, useCoords: true, characters: [{ ...character, x: 0.5, y: 0.5 }] },
+      edit: { image: PNG_DATA_URL, mask: PNG_DATA_URL, strength: 1, noise: 0, focused: true },
+    });
+    const parameters = readParameters(descriptor);
+    expect([parameters.width, parameters.height]).toEqual([832, 1216]);
+    expect(parameters._local_focused_inpainting).toBe(true);
+    expect(parameters.v4_prompt.use_coords).toBe(true);
+    expect(parameters.v4_prompt.caption.char_captions[0].centers[0]).toEqual({ x: 0.1, y: 0.1 });
+    expect(parameters.v4_negative_prompt.caption.char_captions[0].centers).toEqual(parameters.v4_prompt.caption.char_captions[0].centers);
+    expect(descriptor.composition?.focusedGeometry).toEqual({ crop: { x: 768, y: 1024, width: 768, height: 1024 },
+      inner: { x: 800, y: 1056, width: 704, height: 960 }, requestWidth: 832, requestHeight: 1216, fullSizeMask: true });
+    expect(descriptor.history.params.width).toBe(1536);
+    expect(descriptor.history.params.height).toBe(2048);
+    expect(descriptor.history.params.characters).toEqual([{ ...character, x: 0.5, y: 0.5 }]);
+    expect(descriptor.history.edit?.requestWidth).toBe(832);
+    expect(descriptor.history.edit?.requestHeight).toBe(1216);
+  });
+});
+
+describe('能力校验', () => {
+  it('模型不支持 Vibe 时拒绝提交', async () => {
+    await expect(textDescriptor({
+      params: { ...baseParams(), model: 'nai-diffusion-5-full',
+        vibes: { enabled: true, normalizeStrengths: false, slots: [{ vibeId: 'v1', encodingId: 'e1', informationExtracted: 0.9, strength: 0.6 }] } },
+    })).rejects.toThrow('暂不支持 Vibe Transfer');
+  });
+
+  it('角色数超过模型上限时拒绝提交', async () => {
+    const characters = Array.from({ length: 7 }, (_, index) => ({ id: `c${index}`, prompt: `char ${index}`, x: 0.5, y: 0.5 }));
+    await expect(textDescriptor({ params: { ...baseParams(), characters } })).rejects.toThrow('最多支持 6 个角色提示词');
+  });
+
+  it('角色参考超过数量上限时拒绝提交', async () => {
+    const slots = Array.from({ length: 5 }, (_, index) => ({ assetId: `a${index}`, type: 'character' as const, strength: 0.6, fidelity: 1 }));
+    await expect(textDescriptor({ params: { ...baseParams(), characterReferences: { enabled: true, slots } } }))
+      .rejects.toThrow('一次最多使用 4 个角色参考');
   });
 });

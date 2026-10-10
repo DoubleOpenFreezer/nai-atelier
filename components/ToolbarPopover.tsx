@@ -9,14 +9,14 @@ import { isTopmostModal, useModalA11y } from './useModalA11y';
 export const TOOLBAR_FIELD_CLASS = 'mobile-touch mt-1.5 h-10 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm font-normal text-gray-800 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100';
 export const TOOLBAR_MENU_CLASS = 'mobile-touch flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800 [&>svg]:h-4 [&>svg]:w-4 [&>svg]:flex-none';
 
-export function getToolbarPopoverPosition(anchor: { left: number; width: number; bottom: number }, panelWidth: number, viewportWidth: number, viewportHeight: number) {
+export function getToolbarPopoverPosition(anchor: { left: number; width: number; bottom: number; top?: number }, panelWidth: number, viewportWidth: number, viewportHeight: number, above = false) {
   const width = Math.min(panelWidth, Math.max(0, viewportWidth - 24));
   const left = Math.min(Math.max(anchor.left + anchor.width / 2, width / 2 + 12), viewportWidth - width / 2 - 12);
-  const top = Math.min(anchor.bottom + 8, Math.max(12, viewportHeight - 96));
-  return { left, top, width, maxHeight: Math.max(0, viewportHeight - top - 12) };
+  const top = above ? Math.max(12, Math.min((anchor.top ?? anchor.bottom) - 8, viewportHeight - 12)) : Math.min(anchor.bottom + 8, Math.max(12, viewportHeight - 96));
+  return { left, top, width, maxHeight: Math.max(0, above ? top - 12 : viewportHeight - top - 12) };
 }
 
-const PopoverSurface: React.FC<{ title: string; position: ReturnType<typeof getToolbarPopoverPosition>; onClose: () => void; children: React.ReactNode }> = ({ title, position, onClose, children }) => {
+const PopoverSurface: React.FC<{ title: string; position: ReturnType<typeof getToolbarPopoverPosition>; above?: boolean; compact?: boolean; onClose: () => void; children: React.ReactNode }> = ({ title, position, above, compact, onClose, children }) => {
   useLanguage();
   const panelRef = useModalA11y<HTMLDivElement>(true);
   useEffect(() => {
@@ -26,7 +26,7 @@ const PopoverSurface: React.FC<{ title: string; position: ReturnType<typeof getT
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
   }, [onClose, panelRef]);
-  return <div ref={panelRef} role="dialog" aria-modal="true" aria-label={title} style={position} className="appearance-panel fixed z-[1801] -translate-x-1/2 overflow-y-auto rounded-xl border border-gray-200 bg-white p-4 shadow-xl dark:border-gray-800 dark:bg-gray-900">{children}</div>;
+  return <div ref={panelRef} role="dialog" aria-modal="true" aria-label={title} style={position} className={`appearance-panel fixed z-[1801] -translate-x-1/2 ${above ? '-translate-y-full' : ''} overflow-y-auto rounded-xl border border-gray-200 bg-white ${compact ? 'p-1.5' : 'p-4'} shadow-xl dark:border-gray-800 dark:bg-gray-900`}>{children}</div>;
 };
 
 /** 桌面弹层以按钮为中心，并脱离工作区裁切和隔离层。 */
@@ -34,9 +34,11 @@ export const AnchoredToolbarPopover: React.FC<{
   anchorRef: React.RefObject<HTMLElement | null>;
   title: string;
   width?: number;
+  above?: boolean;
+  compact?: boolean;
   onClose: () => void;
   children: React.ReactNode;
-}> = ({ anchorRef, title, width = 384, onClose, children }) => {
+}> = ({ anchorRef, title, width = 384, above = false, compact = false, onClose, children }) => {
   useLanguage();
   const [position, setPosition] = useState({ left: 0, top: 0, width: 0, maxHeight: 0 });
   useLayoutEffect(() => {
@@ -44,7 +46,7 @@ export const AnchoredToolbarPopover: React.FC<{
       if (window.innerWidth < 768) { onClose(); return; }
       const anchor = anchorRef.current;
       if (!anchor) return;
-      const next = getToolbarPopoverPosition(anchor.getBoundingClientRect(), width, window.innerWidth, window.innerHeight);
+      const next = getToolbarPopoverPosition(anchor.getBoundingClientRect(), width, window.innerWidth, window.innerHeight, above);
       setPosition(previous => Object.keys(next).every(key => previous[key as keyof typeof next] === next[key as keyof typeof next]) ? previous : next);
     };
     update();
@@ -60,10 +62,10 @@ export const AnchoredToolbarPopover: React.FC<{
       window.removeEventListener('resize', update);
       window.removeEventListener('scroll', update, true);
     };
-  }, [anchorRef, width, onClose]);
+  }, [anchorRef, width, above, onClose]);
   return <ImagePreviewPortal>
     <div className="fixed inset-0 z-[1800]" onClick={onClose} />
-    <PopoverSurface title={title} position={position} onClose={onClose}>{children}</PopoverSurface>
+    <PopoverSurface title={title} position={position} above={above} compact={compact} onClose={onClose}>{children}</PopoverSurface>
   </ImagePreviewPortal>;
 };
 
@@ -75,9 +77,10 @@ export const ToolbarPopover: React.FC<{
   count?: number | ((mobile: boolean) => number);
   active?: boolean;
   width?: number;
+  above?: boolean;
   className?: string;
   children: React.ReactNode | ((close: () => void, mobile: boolean) => React.ReactNode);
-}> = ({ label = '筛选', title, icon = <Filter />, count = 0, active, width, className = '', children }) => {
+}> = ({ label = '筛选', title, icon = <Filter />, count = 0, active, width, above, className = '', children }) => {
   useLanguage();
   const anchorRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
@@ -98,6 +101,6 @@ export const ToolbarPopover: React.FC<{
     <ToolbarButton onClick={() => setOpen(value => !value)} aria-label={`${t(label)}${countValue > 0 ? ` ${countValue}` : ''}`} aria-expanded={open} aria-haspopup="dialog" title={title} className={`mobile-touch !px-2.5 md:!px-3 ${(active ?? countValue > 0) ? '!border-indigo-300 !bg-indigo-50 !text-indigo-600 dark:!border-indigo-700 dark:!bg-indigo-950/40 dark:!text-indigo-300' : ''}`}>
       {icon}<span className="hidden sm:inline">{t(label)}{countValue > 0 ? ` ${countValue}` : ''}</span>
     </ToolbarButton>
-    {open && (mobile ? <ImagePreviewPortal><MobileBottomSheet open title={title} onClose={close}>{content}</MobileBottomSheet></ImagePreviewPortal> : <AnchoredToolbarPopover anchorRef={anchorRef} title={title} width={width} onClose={close}>{content}</AnchoredToolbarPopover>)}
+    {open && (mobile ? <ImagePreviewPortal><MobileBottomSheet open title={title} onClose={close}>{content}</MobileBottomSheet></ImagePreviewPortal> : <AnchoredToolbarPopover anchorRef={anchorRef} title={title} width={width} above={above} onClose={close}>{content}</AnchoredToolbarPopover>)}
   </div>;
 };

@@ -583,42 +583,14 @@ export async function handleSettingsRoute(ctx: RouteContext): Promise<Response |
   }
 
   // --- NAI Proxy ---
-  if (path === '/api/generate' && method === 'POST') {
-    const body = await request.json();
-    const clientAuth = request.headers.get('Authorization');
-    if (!clientAuth) {
-      return error('Missing API Key', 401);
-    }
-    const naiRes = await fetch("https://image.novelai.net/ai/generate-image", { method: "POST", headers: { "Content-Type": "application/json", "Authorization": clientAuth }, body: JSON.stringify(body) });
-    if (!naiRes.ok) {
-      const errText = await naiRes.text();
-      return error(errText, naiRes.status);
-    }
-    const blob = await naiRes.blob();
-    return new Response(blob, { headers: { 'Content-Type': 'application/zip' } });
-  }
-
-  if (path === '/api/generate-stream' && method === 'POST') {
-    const body = await request.json();
-    const clientAuth = request.headers.get('Authorization');
-    if (!clientAuth) return error('Missing API Key', 401);
-    const naiRes = await fetch('https://image.novelai.net/ai/generate-image-stream', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': clientAuth,
-        'Accept': 'text/event-stream',
-      },
-      body: JSON.stringify(body),
-    });
-    if (!naiRes.ok) return error(await naiRes.text(), naiRes.status);
-    return new Response(naiRes.body, {
-      headers: {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'private, no-store',
-        'X-Accel-Buffering': 'no',
-      },
-    });
+  if (path === '/api/generate' || path === '/api/generate-stream' || path === '/api/generation-task' || path === '/api/generation-job') {
+    if (!request.headers.get('Authorization')) return error('Missing API Key', 401);
+    // 本地 Worker 入口也必须回到工坊网关；独立 Worker 不能绕过集中任务锁。
+    if (!env.AITAG_LOCAL_PROXY_URL) return json({ error: '请通过工坊后端生成，当前入口未配置统一生成服务', code: 'generation_backend_required' }, 503);
+    if (request.headers.get('X-Nai-Generation-Forwarded') === '1') return json({ error: '生成服务尚未就绪，请重启工坊后端', code: 'generation_backend_required' }, 503);
+    const forwarded = new Request(new URL(path, env.AITAG_LOCAL_PROXY_URL), request);
+    forwarded.headers.set('X-Nai-Generation-Forwarded', '1');
+    return fetch(forwarded);
   }
 
   // --- File Upload ---

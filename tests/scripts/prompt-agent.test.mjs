@@ -1051,3 +1051,69 @@ test('页面导出按当前会话实际字节保存，不覆盖已有文件且�
   assert.notEqual(first.path, second.path); assert.deepEqual(await readFile(first.path), buffer);
   delivered = false; await assert.rejects(save.execute('t3', { exportId: 'browser-export', directory }), /实际导出副本/);
 }));
+
+
+test('助手连续生成传递指定张数，保留部分结果并展示真实历史图片', () => isolated(async service => {
+  service.activeAgents.set('s', { agent: {}, emit() {} });
+  let action;
+  const tools = service.createTools({ params: {} }, {}, event => {
+    action = event.action;
+    const requestId = action.patch.requestId;
+    assert.equal(service.pendingConfirmations.get(requestId).operation.payload.count, 3);
+    service.controlSession('s', 'confirm', '', { requestId, accepted: true });
+    service.controlSession('s', 'finalize', '', { requestId, success: false, result: {
+      success: false, historySaved: false, outcome: 'cancelled', code: 'user_stopped', error: '已停止', requestedCount: 3, completedCount: 2, historyIds: ['first', 'second'],
+    } });
+  }, { agentSessionId: 's' });
+  const tool = tools.find(tool => tool.name === 'request_generation');
+  assert.equal(tool.parameters.properties.count.type, 'integer');
+  const result = JSON.parse((await tool.execute('t', { count: 3 })).content[0].text);
+  assert.equal(action.patch.count, 3);
+  assert.equal(result.ok, false); assert.equal(result.confirmed, true);
+  assert.equal(result.result.requestedCount, 3); assert.equal(result.result.completedCount, 2);
+  assert.deepEqual(result.displayImages.map(image => image.id), ['first', 'second']);
+  for (const count of [0, -1, 1.5, Infinity, '3']) await assert.rejects(tool.execute('t', { count }), error => error.code === 'invalid_generation_count');
+}));
+
+test('已批准的生图不再受等待确认超时影响，单张默认值仍为 1', () => isolated(async service => {
+  service.activeAgents.set('s', { agent: {}, emit() {} });
+  const operation = service.createConfirmation('s', { action: 'request_generation', payload: { count: 2 } }, 5);
+  service.controlSession('s', 'confirm', '', { requestId: operation.requestId, accepted: true });
+  service.cancelPendingConfirmations('s', { outcome: 'blocked', code: 'target_changed', error: '切换目标' });
+  assert.ok(service.pendingConfirmations.has(operation.requestId));
+  await new Promise(resolve => setTimeout(resolve, 15));
+  assert.ok(service.pendingConfirmations.has(operation.requestId));
+  service.controlSession('s', 'finalize', '', { requestId: operation.requestId, success: true, result: { success: true, historySaved: true, requestedCount: 2, historyIds: ['one', 'two'] } });
+  assert.equal((await operation.promise).result.completedCount, 2);
+  let count;
+  const tools = service.createTools({ params: {} }, {}, event => {
+    count = event.action.patch.count;
+    service.controlSession('s', 'confirm', '', { requestId: event.action.patch.requestId, accepted: false });
+  }, { agentSessionId: 's' });
+  await assert.rejects(tools.find(tool => tool.name === 'request_generation').execute('t', {}));
+  assert.equal(count, 1);
+}));
+
+test('切换目标保留已批准生成，任务明确中断仍取消后续执行', () => isolated(async service => {
+  service.activeAgents.set('s', { agent: {}, emit() {} });
+  const operation = service.createConfirmation('s', { action: 'request_generation', payload: { count: 3 } });
+  service.controlSession('s', 'confirm', '', { requestId: operation.requestId, accepted: true });
+  service.cancelPendingConfirmations('s');
+  assert.equal((await operation.promise).result.code, 'task_interrupted');
+  assert.equal(service.pendingConfirmations.has(operation.requestId), false);
+}));
+
+test('助手仅在显式排队时传递队列位置，待确认恢复保留位置；非法参数拒绝', () => isolated(async service => {
+  service.activeAgents.set('s', { agent: {}, emit() {} }); let action;
+  const tools = service.createTools({ params: {} }, {}, event => {
+    action = event.action; const requestId = action.patch.requestId;
+    assert.equal(service.pendingConfirmations.get(requestId).operation.payload.placement, action.patch.placement);
+    service.controlSession('s', 'confirm', '', { requestId, accepted: true });
+    service.controlSession('s', 'finalize', '', { requestId, success: true, result: { success: true, historySaved: true, requestedCount: 1, historyIds: ['synthetic-saved'] } });
+  }, { agentSessionId: 's' });
+  const tool = tools.find(tool => tool.name === 'request_generation');
+  for (const placement of ['end', 'next']) { await tool.execute('t', { placement }); assert.equal(action.patch.placement, placement); }
+  assert.match(tool.description, /next 等当前图片保存后执行新任务，再继续原任务余量/);
+  await tool.execute('t', {}); assert.equal(action.patch.placement, undefined);
+  await assert.rejects(tool.execute('t', { placement: 'interrupt' }), error => error.code === 'invalid_generation_queue');
+}));

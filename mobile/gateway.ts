@@ -1,18 +1,23 @@
+import { GenerationTasks, validateGenerationInterval } from '../worker/generationTasks.mjs';
 import { native, bytesToBase64 } from './native';
 import { db } from './storage';
 import { runHandler } from './node-http';
 import { json } from '../worker/routes/types';
 import { thumbnailResponse } from './image';
+import { createMobileGenerationJobs, rememberNaiSubscription } from './generationJobs';
 import { AITAG_BROWSER_HEADERS } from 'mobile:remote';
 import {
   getNaiRuntime, applyNaiRuntimeOverride, computeNaiRuntimeSync, fetchNaiRuntimeText,
-  sanitizeNovelAiSubscription, cacheNovelAiSubscription, CloudQueueCoordinator,
+  sanitizeNovelAiSubscription, CloudQueueCoordinator,
   normalizeCloudQueuePreferences, keyHashFromAuthorization,
-  handleGenerateRequest, handleGenerateStreamRequest, handleVibeEncodeRequest,
+  handleGenerateRequest, handleGenerateStreamRequest, handleGenerationTaskRequest, handleVibeEncodeRequest,
   recoverPendingVibeEncodings,
 } from 'mobile:gateway';
 
+const tasks = new GenerationTasks();
 const queue = new CloudQueueCoordinator((...args: any[]) => fetch(args[0], args[1]));
+// 后台有限任务与手动／助手入口共用同一份单并发、暂停与间隔状态；这里只持有任务，不建持久表。
+const generationJobs = createMobileGenerationJobs({ tasks, queue });
 export async function readSetting<T>(key: string, fallback: T): Promise<T> {
   const row = await db.prepare('SELECT value FROM settings WHERE key=?').bind(key).first<{ value: string }>();
   try { return row ? JSON.parse(row.value) : fallback; } catch { return fallback; }
@@ -21,6 +26,8 @@ export async function writeSetting(key: string, value: unknown) { await db.prepa
 export async function initMobileRuntime() {
   const cached = await readSetting('mobile_nai_runtime', null);
   if (cached) applyNaiRuntimeOverride(cached);
+  // 页面重载后内存任务已经丢失：清掉上一页残留的保活与唤醒锁，不恢复旧任务。
+  await native.backgroundJob({ action: 'reset' }).catch(() => {});
   await recoverPendingVibeEncodings(0);
   // 记住的 Key 先进入工坊，官方同步在后台完成。
   setTimeout(() => refreshRuntime().catch(console.warn), 1000);
@@ -47,6 +54,7 @@ export async function queuePreferences(authorization: string, next?: any) {
   const old = normalizeCloudQueuePreferences(await readSetting(key, {}));
   if (next === undefined) return old;
   if (!hash) throw new Error('请先配置 NovelAI API Key');
+  if (next.generationIntervalSeconds !== undefined) validateGenerationInterval(next.generationIntervalSeconds);
   const value = normalizeCloudQueuePreferences({ ...old, ...next });
   if (next.enabled === true && !value.serviceUrl) throw new Error('请先填写公共队列服务地址');
   await writeSetting(key, value); return value;
@@ -57,22 +65,33 @@ export async function mobileGateway(request: Request): Promise<Response | null> 
   if (path === '/api/novelai-subscription') {
     const response = await fetch('https://image.novelai.net/user/subscription', { headers: { authorization }, signal: request.signal });
     if (!response.ok) return response;
-    const subscription = sanitizeNovelAiSubscription(await response.json()); cacheNovelAiSubscription(authorization, subscription); return json(subscription);
+    const subscription = sanitizeNovelAiSubscription(await response.json()); rememberNaiSubscription(authorization, subscription); return json(subscription);
   }
   if (path === '/api/generation-queue/preferences') return json(await queuePreferences(authorization, request.method === 'PUT' ? await request.json() : undefined));
-  if (path === '/api/generation-queue/status') { const item = queue.get(url.searchParams.get('taskId')); return item?.keyHash === keyHashFromAuthorization(authorization) ? json({ ...item, controller: undefined, keyHash: undefined }) : json({ error: '排队任务不存在' }, 404); }
+  if (path === '/api/generation-queue/status') { const keyHash = keyHashFromAuthorization(authorization); const item = queue.get(keyHash, url.searchParams.get('taskId') || ''); return item ? json({ ...item, controller: undefined, keyHash: undefined }) : json({ error: '排队任务不存在' }, 404); }
   if (path === '/api/generation-queue/cancel') {
-    const body = await request.json(), item = queue.get(body.taskId);
-    if (item?.keyHash !== keyHashFromAuthorization(authorization)) return json({ error: '排队任务不存在' }, 404);
+    const keyHash = keyHashFromAuthorization(authorization);
+    const body = await request.json(), item = queue.get(keyHash, body.taskId);
+    if (!item) return json({ error: '排队任务不存在' }, 404);
     if (!item.cancelable || !item.controller) return json({ error: '当前任务已不能取消' }, 409);
     item.controller.abort(new DOMException('已取消', 'AbortError'));
-    queue.update(body.taskId, { phase: 'cancelled', cancelable: false, controller: null });
+    queue.update(keyHash, body.taskId, { phase: 'cancelled', cancelable: false, controller: null });
     return json({ status: 'ok' });
+  }
+  if (path === '/api/generation-job') {
+    const preferences = await queuePreferences(authorization);
+    const keyHash = keyHashFromAuthorization(authorization);
+    if (keyHash) tasks.setInterval(keyHash, preferences.generationIntervalSeconds);
+    return generationJobs.handle(request);
+  }
+  if (path === '/api/generation-task') {
+    const preferences = await queuePreferences(authorization);
+    return runHandler(request, (req, res) => handleGenerationTaskRequest(req, res, '', tasks, { preferences, jobs: generationJobs.jobs, saveInterval: (seconds: number) => queuePreferences(authorization, { generationIntervalSeconds: seconds }) }));
   }
   if (path === '/api/generate' || path === '/api/generate-stream') {
     const prefs = await queuePreferences(authorization);
     const handler = path.endsWith('-stream') ? handleGenerateStreamRequest : handleGenerateRequest;
-    return runHandler(request, (req, res) => handler(req, res, '', 0, queue, prefs, (...args: any[]) => fetch(args[0], args[1])));
+    return runHandler(request, (req, res) => handler(req, res, '', 0, queue, prefs, (...args: any[]) => fetch(args[0], args[1]), { tasks }));
   }
   const encode = path.match(/^\/api\/vibes\/([^/]+)\/encodings$/);
   if (encode && request.method === 'POST') return runHandler(request, (req, res) => handleVibeEncodeRequest(req, res, '', 0, decodeURIComponent(encode[1]), (...args: any[]) => fetch(args[0], args[1])));

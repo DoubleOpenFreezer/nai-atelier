@@ -63,7 +63,7 @@ export const isQueueCancelledError = (error: unknown): boolean => {
 };
 
 /** 401 时按结构化 code 通知全局 LAN 解锁流程。 */
-const notifyLanAccessRequired = (res: Response) => {
+export const notifyLanAccessRequired = (res: Response) => {
   if (res.status !== 401 || typeof window === 'undefined') return;
   void res.clone().json().then(payload => {
     const code = (payload as Record<string, unknown> | null)?.code;
@@ -77,20 +77,11 @@ const handleResponse = async (res: Response) => {
     return res.json();
 };
 
-interface BinaryRequestOptions {
+interface StreamRequestOptions {
   /** 与本次生图所用 Key 对应的哈希，用于防止切 Key 后预算事件串号。 */
   budgetKeyHash?: string;
-}
-
-interface StreamRequestOptions extends BinaryRequestOptions {
   /** 调用方离开当前视图时中止流传输。 */
   signal?: AbortSignal;
-}
-
-interface BinaryResponseDetails {
-  blob: Blob;
-  estimatedCost?: number;
-  remaining?: number;
 }
 
 export interface ParsedSseEvent {
@@ -209,28 +200,6 @@ export const api = {
     
     const res = await fetch(`${API_BASE}${endpoint}`, options);
     return handleResponse(res);
-  },
-  
-  // Binary response for images
-  postBinaryDetailed: async (endpoint: string, data: any, headers?: Record<string, string>, options: BinaryRequestOptions = {}): Promise<BinaryResponseDetails> => {
-    const res = await fetch(`${API_BASE}${endpoint}`, {
-      method: 'POST',
-      headers: getHeaders(headers),
-      body: JSON.stringify(data),
-    });
-    notifyLanAccessRequired(res);
-    notifyQueueCleanupFailed(res, headers);
-    if (!res.ok) throw await parseErrorResponse(res);
-    if (res.headers.get('x-nai-anlas-accounting-failed') === '1') reportNaiAccountingError(options.budgetKeyHash);
-    const remaining = res.headers.get('x-nai-anlas-remaining');
-    if (remaining !== null) emitBudgetChanged(Number(remaining), options.budgetKeyHash);
-    const spent = res.headers.get('x-nai-anlas-estimated-spent') ?? res.headers.get('x-nai-anlas-spent');
-    const parsedCost = spent === null || spent.trim() === '' ? NaN : Number(spent);
-    return { blob: await res.blob(), estimatedCost: Number.isFinite(parsedCost) && parsedCost >= 0 ? parsedCost : undefined, remaining: remaining === null ? undefined : Number(remaining) };
-  },
-
-  postBinary: async (endpoint: string, data: any, headers?: Record<string, string>, options: BinaryRequestOptions = {}) => {
-    return (await api.postBinaryDetailed(endpoint, data, headers, options)).blob;
   },
 
   postSse: async (

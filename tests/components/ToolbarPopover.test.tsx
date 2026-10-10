@@ -38,6 +38,10 @@ describe('工具栏弹层位置与连续操作', () => {
     expect(position.top + position.maxHeight).toBe(388);
     expect(position.maxHeight).toBeGreaterThan(0);
   });
+  it('贴底生成栏向上展开，保留可用高度与屏幕左右边界', () => {
+    expect(getToolbarPopoverPosition({ left: 950, width: 44, top: 746, bottom: 790 }, 280, 1000, 800, true))
+      .toEqual({ left: 848, top: 738, width: 280, maxHeight: 726 });
+  });
 
   it('筛选内容脱离工作区隔离层，修改后标记数量且关闭不丢失条件', () => {
     const { container } = render(<div className="agent-stage"><div className="workspace-content"><FilterExample /></div></div>);

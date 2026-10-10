@@ -20,7 +20,7 @@ await mkdir(path.join(stage, 'public'), { recursive: true });
 await cp(path.join(root, 'public/app-icon.png'), path.join(stage, 'public/app-icon.png'));
 const sources = {};
 for (const name of ['scripts/prompt-agent.mjs', 'scripts/novelai-agent-knowledge.mjs', 'scripts/agent-runtime.mjs', 'scripts/agent-local-images.mjs', 'scripts/agent-ui-bridge.mjs', 'scripts/agent-page-tools.mjs', 'services/agentLabSync.mjs', 'services/agentOperation.mjs', 'services/agentThinking.mjs', 'services/agentConnection.mjs', 'PROJECT_AGENT.md', 'package.json']) sources[name] = await readFile(path.join(root, name), 'utf8');
-const gatewayExports = ['getNaiRuntime','applyNaiRuntimeOverride','computeNaiRuntimeSync','fetchNaiRuntimeText','sanitizeNovelAiSubscription','cacheNovelAiSubscription','CloudQueueCoordinator','normalizeCloudQueuePreferences','keyHashFromAuthorization','handleGenerateRequest','handleGenerateStreamRequest','handleVibeEncodeRequest','selectPreciseReferenceCanvas','recoverPendingVibeEncodings','sendJson','hasValidLanCookie'];
+const gatewayExports = ['getNaiRuntime','applyNaiRuntimeOverride','computeNaiRuntimeSync','fetchNaiRuntimeText','sanitizeNovelAiSubscription','cacheNovelAiSubscription','fetchNovelAiSubscription','estimateNovelAiGenerationCost','CloudQueueCoordinator','normalizeCloudQueuePreferences','keyHashFromAuthorization','handleGenerationTaskRequest','handleGenerateRequest','handleGenerateStreamRequest','handleVibeEncodeRequest','selectPreciseReferenceCanvas','recoverPendingVibeEncodings','sendJson','hasValidLanCookie'];
 const gatewaySource = extractAndroidShared(path.join(root, 'scripts/media-gateway.mjs'), gatewayExports,
   `import { createHash,createHmac,randomUUID,randomBytes,timingSafeEqual } from '/mobile/shims/crypto.mjs';
 import { Buffer } from 'buffer';
@@ -30,6 +30,7 @@ import { readRequestBody,requestWorkerJson,requestWorkerBuffer } from '/mobile/n
 import { DEFAULT_NAI_BILLING,estimateNaiBilling,isNaiBillingRules } from '/worker/naiBilling.mjs';
 import { LAN_ACCESS_COOKIE } from '/worker/sharedWhitelist.mjs';
 import { normalizeCloudQueueCount } from '/worker/cloudQueueNumbers.mjs';
+import { GenerationTasks, DEFAULT_GENERATION_INTERVAL_SECONDS, MAX_GENERATION_INTERVAL_SECONDS, validateGenerationInterval } from '/worker/generationTasks.mjs';
 import { getCloudQueueGenerationUrl } from '/worker/cloudQueueTarget.mjs';
 import { prepareMobileReference } from '/mobile/image';`, {
     readRequestBody: '', requestWorkerJson: '', requestWorkerBuffer: '',
@@ -53,6 +54,11 @@ export async function handleAgent(req,res,url,promptAgent,getCloudQueueScope) {
   ${agentBranch}
 }`;
 const remote=extractAndroidShared(path.join(root,'scripts/media-gateway.mjs'),['classifyAitagRemoteTarget','classifyDanbooruRemoteTarget','AITAG_BROWSER_HEADERS']);
+// 后台任务的成图解析、图片原料校验与历史 multipart 表单复用同一份实现；只排除依赖 sharp 的回贴。
+const generationOutput=extractAndroidShared(path.join(root,'scripts/generation-output.mjs'),
+  ['generationImageBytes','readGenerationResponse','generationHistoryForm'],
+  `import JSZip from 'jszip';
+import { Buffer } from 'buffer';`);
 const pixivLogin=extractAndroidShared(path.join(root,'scripts/pixiv-web-login.mjs'),['PixivWebLoginOrchestrator'],
 `import {createHash,randomBytes} from '/mobile/shims/crypto.mjs';
 import {PIXIV_APP_CLIENT_ID,PIXIV_APP_CLIENT_SECRET,PIXIV_HASH_SECRET,PIXIV_OAUTH_TOKEN_URL,PIXIV_USER_AGENT} from '/scripts/pixiv-local.mjs';
@@ -86,6 +92,7 @@ await build(mergeConfig(config, {
       if (id === '\0mobile:agent-sources') return 'export default ' + JSON.stringify(sources);
       if (id === '\0mobile:agent-routes') return agentRoutes;
       if (id === '\0mobile:remote') return remote;
+      if (id === '\0mobile:generation-output') return generationOutput;
       if (id === '\0mobile:pixiv-login') return pixivLogin;
       if (id === '\0mobile:dictionary-generator') return dictionaryGenerator;
     },

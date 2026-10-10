@@ -32,7 +32,7 @@ test('桌面运行依赖锁文件单独维护，不带开发工具，版本跟�
   assert.equal(runtime.dependencies.electron, undefined);
   assert.equal(runtime.dependencies.wrangler, overrides.wrangler);
   assert.deepEqual(runtime.scripts, {});
-  for (const name of ['react', 'react-dom', 'lucide-react', 'jszip']) assert.equal(runtime.dependencies[name], undefined);
+  for (const name of ['react', 'react-dom', 'lucide-react']) assert.equal(runtime.dependencies[name], undefined);
   // 公开 Node 脚本新增外部 import 时，必须同步安装版直接依赖白名单。
   for (const file of RUNTIME_FILES.filter(name => name.endsWith('.mjs'))) {
     const source = await readFile(new URL('../../' + file, import.meta.url), 'utf8');

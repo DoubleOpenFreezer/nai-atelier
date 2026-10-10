@@ -218,6 +218,9 @@ export interface PromptAgentGenerationResult {
   outcome?: 'succeeded' | 'cancelled' | 'blocked' | 'failed';
   code?: string;
   error?: string;
+  requestedCount?: number;
+  completedCount?: number;
+  historyIds?: string[];
 }
 
 export interface PromptAgentDraft {
@@ -238,7 +241,7 @@ export type PromptAgentAction =
   | { kind: 'set_character_references'; patch: { characterReferences: NAIParams['characterReferences']; vibes?: NAIParams['vibes'] } }
   | { kind: 'set_params'; patch: { params: NAIParams } }
   | { kind: 'set_vibes'; patch: { vibes: NAIParams['vibes'] } }
-  | { kind: 'request_generation'; patch: { reason?: string; requestId?: string } }
+  | { kind: 'request_generation'; patch: { reason?: string; requestId?: string; count?: number; placement?: 'end' | 'next' } }
   | { kind: 'set_client_preferences'; patch: { themeMode?: 'light' | 'dark' | 'system'; safeMode?: boolean; safeModeStartup?: boolean; imageLayout?: 'masonry' | 'portrait' | 'square'; imageColumns?: 'auto' | 1 | 2 | 3; mobileCacheLimit?: 0 | 25 | 50 | 100 } }
   | { kind: 'manage_artist_favorite'; patch: { name: string; favorite: boolean } }
   | { kind: 'navigate_view'; patch: { view: 'list' | 'characters' | 'library' | 'aitag' | 'inspiration' | 'history' | 'playground'; id?: string } }

@@ -298,7 +298,7 @@ describe('PromptAgentPanel 顶栏前端布局规范', () => {
     view.rerender(panelElement(false, { draft, onRequestGeneration: latestGenerate, onFinalDraft: latestApply }));
     act(() => { emit({ type: 'action', action: { kind: 'request_generation', patch: { requestId: 'latest' } }, draft }); });
     await waitFor(() => expect(controls).toHaveBeenCalledWith('session-1', 'finalize', 'latest', expect.objectContaining({ success: true })));
-    expect(latestGenerate).toHaveBeenCalledWith(draft, undefined, expect.any(Function)); expect(oldGenerate).not.toHaveBeenCalled();
+    expect(latestGenerate).toHaveBeenCalledWith(draft, undefined, expect.any(Function), undefined, undefined); expect(oldGenerate).not.toHaveBeenCalled();
     await act(async () => { emit({ type: 'done', draft, draftChanged: true, status: 'completed', message: '完成', provider: 'deepseek', model: 'deepseek-chat' }); finish(); });
     expect(latestApply).toHaveBeenCalledWith(draft, false); expect(oldApply).not.toHaveBeenCalled();
   });
@@ -370,16 +370,17 @@ describe('PromptAgentPanel 顶栏前端布局规范', () => {
     await waitFor(() => expect(screen.getByText('失败 · 查询本机时间与时区')).toBeTruthy());
   });
   it('自动中止显示具体原因，不应用草稿也不补已完成文案', async () => {
-    stubServices(); const apply = vi.fn();
+    stubServices(); const apply = vi.fn(), interrupted = vi.fn();
     vi.spyOn(promptAgentService, 'run').mockImplementation(async (input, onEvent) => {
       onEvent({ type: 'action', action: { kind: 'update_prompts', patch: { basePrompt: '未完成草稿' } } });
       onEvent({ type: 'done', status: 'aborted', stopReason: 'turn_limit', error: '本次任务达到连续执行上限，可以继续。', draft: { ...input.draft, basePrompt: '未完成草稿' }, message: '', provider: 'deepseek', model: 'deepseek-chat' });
     });
-    renderPanel(false, { onFinalDraft: apply });
+    renderPanel(false, { onFinalDraft: apply, onGenerationInterrupted: interrupted });
     const box = screen.getByRole('textbox', { name: '任务要求' }); await waitFor(() => expect((box as HTMLTextAreaElement).disabled).toBe(false));
     fireEvent.change(box, { target: { value: '修改提示词' } }); fireEvent.click(screen.getByRole('button', { name: '执行' }));
     expect(await screen.findByText('本次任务达到连续执行上限，可以继续。')).toBeTruthy();
     expect(apply).not.toHaveBeenCalled(); expect(screen.queryByText('已完成。')).toBeNull();
+    expect(interrupted).toHaveBeenCalledOnce();
   });
 
   it('重新打开会话仍显示停止原因，恢复草稿完成后进入正常应用', async () => {
@@ -548,4 +549,69 @@ describe('PromptAgentPanel 顶栏前端布局规范', () => {
     expect(screen.queryByText(/注入开|注入关|内置默认/)).toBeNull();
     expect(screen.getByText('deepseek-chat')).toBeTruthy();
   });
+
+it.each(['completed', 'aborted', 'failed'] as const)('面板关闭不停止已批准生成，后台 %s 事件按实际任务状态处理', async status => {
+  stubServices();
+  let emit!: Parameters<typeof promptAgentService.run>[1]; let finish!: () => void;
+  vi.spyOn(promptAgentService, 'run').mockImplementation(async (_input, onEvent) => {
+    emit = onEvent; await new Promise<void>(resolve => { finish = resolve; });
+  });
+  const stop = vi.fn(); const view = renderPanel(false, { onGenerationInterrupted: stop });
+  const input = screen.getByRole('textbox', { name: '任务要求' });
+  await waitFor(() => expect((input as HTMLTextAreaElement).disabled).toBe(false));
+  fireEvent.change(input, { target: { value: '合成后台任务' } }); fireEvent.click(screen.getByRole('button', { name: '执行' }));
+  await waitFor(() => expect(emit).toBeTypeOf('function'));
+  view.rerender(panelElement(false, { open: false, onGenerationInterrupted: stop }));
+  expect(stop).not.toHaveBeenCalled();
+  await act(async () => {
+    emit({ type: 'done', status, message: '', provider: 'synthetic', model: 'synthetic-model', draft: { basePrompt: '', subjectPrompt: '', negativePrompt: '', modules: [], params: {} as NAIParams } });
+    finish();
+  });
+  expect(stop).toHaveBeenCalledTimes(status === 'completed' ? 0 : 1);
+});
+
+it('Agent 面板转交整轮张数并回传部分结果，不把停止误报成全成功', async () => {
+  stubServices(); const controls = vi.spyOn(promptAgentService, 'control').mockResolvedValue(undefined);
+  vi.spyOn(promptAgentService, 'run').mockImplementation(async (_input, onEvent) => {
+    onEvent({ type: 'action', action: { kind: 'request_generation', patch: { requestId: 'series', count: 3 } } });
+  });
+  const generate = vi.fn(async (_draft: unknown, _reason: unknown, approve: () => Promise<void>, count?: number) => {
+    expect(count).toBe(3); await approve();
+    return { success: false, historySaved: false, outcome: 'cancelled' as const, code: 'user_stopped', error: '已停止', requestedCount: 3, completedCount: 1, historyIds: ['actual-image'] };
+  });
+  renderPanel(false, { onRequestGeneration: generate });
+  await waitFor(() => expect((screen.getByRole('textbox', { name: '任务要求' }) as HTMLTextAreaElement).disabled).toBe(false));
+  fireEvent.change(screen.getByRole('textbox', { name: '任务要求' }), { target: { value: '连续生成三张' } });
+  fireEvent.click(screen.getByRole('button', { name: '执行' }));
+  await waitFor(() => expect(controls).toHaveBeenCalledWith('session-1', 'finalize', 'series', expect.objectContaining({ success: false, result: expect.objectContaining({ requestedCount: 3, completedCount: 1, historyIds: ['actual-image'] }) })));
+});
+
+it('批准后切换编辑器，后台中断仍停止原生成并回传实际部分结果', async () => {
+  stubServices(); const controls = vi.spyOn(promptAgentService, 'control').mockResolvedValue(undefined);
+  let emit!: Parameters<typeof promptAgentService.run>[1]; let finish!: () => void; let generated!: () => void;
+  vi.spyOn(promptAgentService, 'run').mockImplementation(async (_input, onEvent) => {
+    emit = onEvent;
+    onEvent({ type: 'action', action: { kind: 'request_generation', patch: { requestId: 'background-series', count: 2 } } });
+    await new Promise<void>(resolve => { finish = resolve; });
+  });
+  const generate = vi.fn(async (_draft: unknown, _reason: unknown, approve: () => Promise<void>) => {
+    await approve(); await new Promise<void>(resolve => { generated = resolve; });
+    return { success: false, historySaved: false, outcome: 'cancelled' as const, requestedCount: 2, completedCount: 1, historyIds: ['actual-image'] };
+  });
+  const originalStop = vi.fn(), otherStop = vi.fn();
+  const view = renderPanel(false, { onRequestGeneration: generate, onGenerationInterrupted: originalStop });
+  const input = screen.getByRole('textbox', { name: '任务要求' });
+  await waitFor(() => expect((input as HTMLTextAreaElement).disabled).toBe(false));
+  fireEvent.change(input, { target: { value: '合成两张' } }); fireEvent.click(screen.getByRole('button', { name: '执行' }));
+  await waitFor(() => expect(generated).toBeTypeOf('function'));
+  view.rerender(panelElement(false, { open: false, onRequestGeneration: generate, onGenerationInterrupted: otherStop }));
+  expect(originalStop).not.toHaveBeenCalled();
+  await act(async () => {
+    emit({ type: 'done', status: 'aborted', message: '', provider: 'synthetic', model: 'synthetic-model', draft: { basePrompt: '', subjectPrompt: '', negativePrompt: '', modules: [], params: {} as NAIParams } });
+    generated(); finish();
+  });
+  expect(originalStop).toHaveBeenCalledOnce(); expect(otherStop).not.toHaveBeenCalled();
+  await waitFor(() => expect(controls).toHaveBeenCalledWith('session-1', 'finalize', 'background-series', expect.objectContaining({ success: false, result: expect.objectContaining({ completedCount: 1, historyIds: ['actual-image'] }) })));
+});
+
 });

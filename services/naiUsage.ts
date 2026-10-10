@@ -132,7 +132,7 @@ const stopUsageDriver = () => {
   }
 };
 
-const requestNovelaiSubscription = (apiKey: string): Promise<NovelaiSubscriptionInfo> => {
+export const requestNovelaiSubscription = (apiKey: string): Promise<NovelaiSubscriptionInfo> => {
   const existing = inFlightUsageRequests.get(apiKey);
   if (existing) return existing;
 

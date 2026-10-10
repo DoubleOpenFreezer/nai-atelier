@@ -12,16 +12,6 @@ describe('SSE parser', () => {
     expect(events.some(event => event.type === NAI_ACCOUNTING_ERROR_EVENT)).toBe(true);
     vi.unstubAllGlobals();
   });
-  it('ZIP 成品的记账错误单独提示，不抛生图失败或伪造零费用', async () => {
-    const events: Event[] = [];
-    vi.stubGlobal('window', { dispatchEvent: (event: Event) => { events.push(event); return true; } });
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('zip', { headers: { 'X-Nai-Anlas-Accounting-Failed': '1' } })));
-    const result = await api.postBinaryDetailed('/generate', {});
-    expect(await result.blob.text()).toBe('zip');
-    expect(result.estimatedCost).toBeUndefined();
-    expect(events.some(event => event.type === NAI_ACCOUNTING_ERROR_EVENT)).toBe(true);
-    vi.unstubAllGlobals();
-  });
   it('POST 流透传取消信号，保留已有逐帧解析', async () => {
     const controller = new AbortController();
     const fetchMock = vi.fn().mockResolvedValue(new Response('event: result\ndata: {"index":0}\n\n'));

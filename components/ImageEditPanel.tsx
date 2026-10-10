@@ -1,5 +1,7 @@
+import type { GenerationPlacement } from '../services/generationTask';
 import { t, useLanguage } from '../services/i18n';
-import type { PromptAgentDraft, NAIParams } from '../types';
+import type { GenerationCountControlProps } from './GenerationCountControl';
+import type { PromptAgentDraft, PromptAgentGenerationResult, NAIParams } from '../types';
 import { agentOperationError } from '../services/agentOperation.mjs';
 import React, { useEffect, useId, useRef, useState } from 'react';
 import { ImageEditBaseImageSource, ImageEditCanvasExpansion, ImageEditOperation, LabImageEditDraft, LocalGenItem } from '../types';
@@ -47,7 +49,9 @@ interface ImageEditPanelProps {
   maskData?: string;
   generationCostLabel: (operation: ImageEditOperation, focused: boolean, context?: { width: number; height: number; focusedRect?: { x: number; y: number; width: number; height: number } | null; minimumContextArea?: number }) => string;
   isGenerating?: boolean;
+  generationUnavailableLabel?: string;
   generationProgress?: { step: number; total: number } | null;
+  generationCountControl?: GenerationCountControlProps;
   safeMode?: boolean;
   tagAssistEnabled: boolean;
   forceEmptySeed?: boolean;
@@ -60,8 +64,8 @@ interface ImageEditPanelProps {
   onDraftChange: (patch: Partial<LabImageEditDraft> & { maskData?: string }) => void;
   onBaseImageChange: (dataUrl: string, source: ImageEditBaseImageSource, parentHistoryId?: string, meta?: { prompt?: string; negativePrompt?: string; params?: import('../types').NAIParams }) => void | Promise<void>;
   onCanvasChange: (imageData: string, maskData?: string) => void | Promise<void>;
-  onGenerate: (request: ImageEditRequest, options?: { params: NAIParams; onApproved?: () => Promise<void>; agent: true }) => Promise<boolean | void>;
-  onAgentGenerateReady?: (generate: (draft: PromptAgentDraft, onApproved?: () => Promise<void>) => Promise<boolean>) => void;
+  onGenerate: (request: ImageEditRequest, options?: { params: NAIParams; onApproved?: () => Promise<void>; agent?: boolean; count?: number; placement?: GenerationPlacement }) => Promise<PromptAgentGenerationResult | void>;
+  onAgentGenerateReady?: (generate: (draft: PromptAgentDraft, onApproved?: () => Promise<void>, count?: number, placement?: GenerationPlacement) => Promise<PromptAgentGenerationResult | boolean>) => void;
   latestTextToImageItem?: LocalGenItem;
   onOpenLightbox: (image: string | null) => void;
   getDownloadFilename: () => string;
@@ -75,7 +79,7 @@ interface ImageEditPanelProps {
   onRemoveCurrentHistory?: () => void;
   onClearHistoryGroup?: () => void;
   /** 移动端悬浮生成栏状态变更回调：父组件据此驱动右下角悬浮胶囊按钮（每次渲染都会回调，内容不变时父组件自行去重）。 */
-  onGenerateBarChange?: (bar: { generate: () => void; costLabel: string; canGenerate: boolean; unavailableLabel?: string }) => void;
+  onGenerateBarChange?: (bar: { generate: () => void; queue: (placement: GenerationPlacement) => void; costLabel: string; canGenerate: boolean; canQueue: boolean; unavailableLabel?: string }) => void;
 }
 
 type MaskSnapshot = {
@@ -125,6 +129,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
   onCanvasChange,
   onGenerate,
   onAgentGenerateReady,
+  generationCountControl,
   latestTextToImageItem,
   onOpenLightbox,
   getDownloadFilename,
@@ -138,6 +143,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
   onRemoveCurrentHistory,
   onClearHistoryGroup,
   isGenerating = false,
+  generationUnavailableLabel,
   generationProgress,
   safeMode = false,
   onGenerateBarChange,
@@ -215,7 +221,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
   // 隐藏画布挂载即存在；只有真正载入底图（width/height 有效）且未在加载时才允许生成，
   // 否则无底图时也会点亮生成按钮，点击后才报尺寸错误。
   const pendingOutpaint = operation === 'outpaint' && !isSameOutpaintExpansion(expansion, draft.appliedExpansion || emptyExpansion);
-  const unavailableLabel = isImportingImage || isBaseImageLoading ? '读取图片中…'
+  const canvasUnavailableLabel = (isImportingImage || isBaseImageLoading ? '读取图片中…'
     : isApplyingOutpaint ? '应用画布扩展中…'
     : isLoading ? '画布加载中…'
     : !baseImage || !state.width || !state.height ? '请先选择底图'
@@ -225,7 +231,8 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
     : outputDimensionError ? '请调整输出尺寸'
     : operation === 'inpaint' && focused && (!state.focusedRect || state.focusedRect.width < 2 || state.focusedRect.height < 2) ? '请先框选区域'
     : operation !== 'image-to-image' && !hasMask ? '请先涂画重绘区域'
-    : undefined;
+    : undefined);
+  const unavailableLabel = generationUnavailableLabel || canvasUnavailableLabel;
   const canGenerate = !isGenerating && !unavailableLabel;
 
   // 每次渲染同步移动端悬浮生成栏入口，保证 ChainEditor 拿到的费用标签与预览卡一致；
@@ -234,13 +241,15 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
     if (!onGenerateBarChange) return;
     onGenerateBarChange({
       generate: () => { void submit(); },
+      queue: placement => { void submit(undefined, undefined, undefined, placement); },
       costLabel: generationCostLabel(operation, focused, { ...outputSize, focusedRect: state.focusedRect, minimumContextArea }),
       canGenerate,
+      canQueue: !canvasUnavailableLabel,
       unavailableLabel,
     });
   });
 
-  useEffect(() => { onAgentGenerateReady?.((draft, onApproved) => submit(draft, onApproved)); });
+  useEffect(() => { onAgentGenerateReady?.((draft, onApproved, count, placement) => submit(draft, onApproved, count, placement)); });
 
   const snapshot = (): MaskSnapshot | null => {
     const canvas = maskCanvasRef.current;
@@ -954,7 +963,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
     notify(`已将底图规范化为 ${targetWidth} × ${targetHeight}`, 'success');
   };
 
-  const submit = async (override?: PromptAgentDraft, onApproved?: () => Promise<void>): Promise<boolean> => {
+  const submit = async (override?: PromptAgentDraft, onApproved?: () => Promise<void>, count?: number, placement?: GenerationPlacement): Promise<PromptAgentGenerationResult | boolean> => {
     const stop = (message: string, code: string) => {
       setError(message);
       if (override) throw agentOperationError(message, code);
@@ -962,7 +971,8 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
     };
     if (isApplyingOutpaint || applyingOutpaintRef.current || importingImageRef.current || isLoading) return stop('底图或画布正在加载，请等待完成后再生成', 'canvas_busy');
     if (pendingOutpaint) return stop('画布扩展已调整，请先应用后再生成', 'outpaint_pending');
-    if (inFlightRef.current || isGenerating) return stop('已有图片正在生成，请等待完成', 'generation_busy');
+    if (!placement && generationUnavailableLabel) return stop(generationUnavailableLabel, 'generation_busy');
+    if (!placement && (inFlightRef.current || isGenerating)) return stop('已有图片正在生成，请等待完成', 'generation_busy');
     if (!baseImage || !state.width || !state.height) return stop('请先选择或上传一张底图再生成', 'missing_base_image');
     const imageCanvas = imageCanvasRef.current;
     const maskCanvas = maskCanvasRef.current;
@@ -989,7 +999,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
       return stop(operation === 'outpaint' ? '请先设置画布扩展并点击「应用画布扩展」，或手动绘制扩图蒙版' : '请先在蒙版上涂画需要重绘的区域', 'missing_mask');
     }
     setError(null);
-    inFlightRef.current = true;
+    if (!placement) inFlightRef.current = true;
     try {
       let requestCanvas = imageCanvas;
       let outputParams = requestParams;
@@ -1031,10 +1041,10 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
       prompt: override ? [override.basePrompt, override.subjectPrompt, ...override.modules.filter(module => module.isActive).map(module => module.content)].filter(Boolean).join(', ') : draft.prompt,
       negativePrompt: override?.negativePrompt ?? draft.negativePrompt,
       promptSource: override ? 'custom' : draft.promptSource,
-      }, override ? { params: outputParams, onApproved, agent: true } : undefined);
-      return result === true;
+      }, override || placement ? { params: outputParams, onApproved, agent: Boolean(override), count, placement } : undefined);
+      return result ?? true;
     } finally {
-      inFlightRef.current = false;
+      if (!placement) inFlightRef.current = false;
     }
   };
 
@@ -1245,6 +1255,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
           canGenerate={canGenerate}
           unavailableLabel={unavailableLabel}
           generationProgress={generationProgress}
+          generationCountControl={generationCountControl}
           onOpenLightbox={onOpenLightbox}
           getDownloadFilename={getDownloadFilename}
           generationData={generationData} favorite={favorite}

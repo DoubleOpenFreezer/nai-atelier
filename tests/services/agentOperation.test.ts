@@ -11,3 +11,9 @@ it('生成成功和历史保存分别核实，不使用失败回执里的历史 
   expect(normalizeAgentGenerationResult({ success: true, historySaved: true, historyId: 'exact' })).toEqual({ success: true, historySaved: true, historyId: 'exact', outcome: 'succeeded' });
   expect(normalizeAgentGenerationResult({ success: false, historySaved: true, historyId: 'stale' })).not.toHaveProperty('historyId');
 });
+it('连续生成失败或停止时保留已保存的结果，完成张数按真实历史 ID 核对', () => {
+  expect(normalizeAgentGenerationResult({ success: false, historySaved: false, outcome: 'cancelled', requestedCount: 5, completedCount: 5, historyIds: ['first', 'first', 'second'], historyId: 'stale' })).toMatchObject({
+    success: false, outcome: 'cancelled', requestedCount: 5, completedCount: 2, historyId: 'second', historyIds: ['first', 'second'],
+  });
+  expect(normalizeAgentGenerationResult({ success: true, historySaved: true, requestedCount: 3, historyIds: ['first'] })).toMatchObject({ success: false, completedCount: 1 });
+});

@@ -142,24 +142,6 @@ describe('cloud queue key scoping', () => {
     }
   });
 
-  it('ZIP 响应释放失败时仍交付图片并保留警告', async () => {
-    sessionStorage.setItem('nai_api_key', 'key-a');
-    emitCloudQueueStatus(waitingStatus('task-a'), 'key-a');
-    const fetchMock = vi.fn().mockResolvedValue(new Response('image', { headers: {
-      'X-Nai-Queue-Task-Id': 'task-a', 'X-Nai-Queue-Cleanup-Failed': '1',
-    } }));
-    vi.stubGlobal('fetch', fetchMock);
-    const blob = await api.postBinary('/generate', {}, { Authorization: 'Bearer key-a' });
-    const image = await new Promise(resolve => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result);
-      reader.readAsText(blob);
-    });
-    expect(image).toBe('image');
-    expect(getCurrentCloudQueueStatus()?.cleanupError).toContain('释放失败');
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-  });
-
   it('SSE 释放失败事件不丢弃 final、不发起重试', async () => {
     sessionStorage.setItem('nai_api_key', 'key-a');
     emitCloudQueueStatus(waitingStatus('task-a'), 'key-a');

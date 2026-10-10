@@ -74,4 +74,30 @@ public class AtelierAndroidTest {
         try{com.getcapacitor.JSObject result=tagger.infer(model,png.toByteArray(),0.35,0.75);assertEquals("safe",result.getJSONObject("rating").getString("name"));assertEquals("synthetic_character",result.getJSONArray("character").getJSONObject(0).getString("name"));assertEquals(0,result.getJSONArray("general").length());}
         finally{java.lang.reflect.Field field=AtelierTagger.class.getDeclaredField("session");field.setAccessible(true);ai.onnxruntime.OrtSession session=(ai.onnxruntime.OrtSession)field.get(tagger);if(session!=null)session.close();}
     }
+    @Test public void backgroundJobsRetainAndReleaseByIdentity(){
+        AtelierTaskService.clearJobs();
+        try{
+            assertFalse(AtelierTaskService.hasGenerationTasks());
+            assertEquals(1,AtelierTaskService.retainJob("synthetic-job-a"));
+            // 同一任务重复保留不叠加，避免重复投递把保活计数抬高。
+            assertEquals(1,AtelierTaskService.retainJob("synthetic-job-a"));
+            assertEquals(2,AtelierTaskService.retainJob("synthetic-job-b"));
+            assertTrue(AtelierTaskService.hasGenerationTasks());
+            // 释放未知任务不得减少其他任务仍在使用的保活。
+            assertEquals(2,AtelierTaskService.releaseJob("synthetic-job-unknown"));
+            assertEquals(1,AtelierTaskService.releaseJob("synthetic-job-a"));
+            assertTrue(AtelierTaskService.hasGenerationTasks());
+            assertEquals(0,AtelierTaskService.releaseJob("synthetic-job-b"));
+            assertFalse(AtelierTaskService.hasGenerationTasks());
+            // Key 指纹不同、任务标识相同的两个后台任务不能共用同一条保活。
+            AtelierTaskService.clearJobs();
+            String separator=String.valueOf((char)0);
+            assertEquals(1,AtelierTaskService.retainJob("synthetic-key-a"+separator+"synthetic-token"));
+            assertEquals(2,AtelierTaskService.retainJob("synthetic-key-b"+separator+"synthetic-token"));
+            assertEquals(1,AtelierTaskService.releaseJob("synthetic-key-a"+separator+"synthetic-token"));
+            assertTrue(AtelierTaskService.hasGenerationTasks());
+            assertEquals(0,AtelierTaskService.releaseJob("synthetic-key-b"+separator+"synthetic-token"));
+            assertFalse(AtelierTaskService.hasGenerationTasks());
+        }finally{AtelierTaskService.clearJobs();}
+    }
 }

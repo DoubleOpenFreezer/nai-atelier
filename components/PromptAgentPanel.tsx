@@ -33,7 +33,8 @@ interface PromptAgentPanelProps {
   apiKey: string;
   onRunStart: (snapshot: PromptAgentDraft) => void;
   onFinalDraft: (draft: PromptAgentDraft, reviewOnly?: boolean) => void;
-  onRequestGeneration: (draft: PromptAgentDraft, reason?: string, onApproved?: () => Promise<void>) => Promise<boolean | PromptAgentGenerationResult> | void;
+  onRequestGeneration: (draft: PromptAgentDraft, reason?: string, onApproved?: () => Promise<void>, count?: number, placement?: 'end' | 'next') => Promise<boolean | PromptAgentGenerationResult> | void;
+  onGenerationInterrupted?: () => void;
   onUndo: () => void;
   canUndo: boolean;
   tagAssistEnabled: boolean;
@@ -251,6 +252,8 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
   currentDraftRef.current = props.draft;
   const currentPropsRef = useRef(props);
   currentPropsRef.current = props;
+  const generationInterruptRef = useRef<(() => void) | undefined>(undefined);
+  const interruptGeneration = () => (generationInterruptRef.current || currentPropsRef.current.onGenerationInterrupted)?.();
   useEffect(() => {
     if (!props.open) return;
     const update = (event: Event) => setPageRead((event as CustomEvent<AgentPageSnapshot>).detail);
@@ -455,6 +458,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
         delay = isRunning ? 2000 : 10000;
         if (isRunning) setRunning(true);
         else if (wasRunning && ['completed', 'failed', 'aborted', 'interrupted'].includes(String(task.status))) {
+          if (task.status !== 'completed') interruptGeneration();
           setRunning(false);
           const history = await promptAgentService.getSession(activeSessionId).catch(() => []);
           if (!disposed) setMessages([...history.map(item => ({ ...item })), ...(task.error ? [{ id: 'task-error-' + (task.runId || activeSessionId), role: 'error' as const, text: task.error }] : [])]);
@@ -628,17 +632,21 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
               try {
                 assertApprovalTarget();
                 // 流持续期间页面可切换模型／模式，回调必须读取最新编辑器，不能沿用发送时的闭包。
-                const success = await currentPropsRef.current.onRequestGeneration(event.draft || currentDraftRef.current, generationAction.patch.reason, async () => {
+                const generationProps = currentPropsRef.current;
+                generationInterruptRef.current = generationProps.onGenerationInterrupted;
+                const success = await generationProps.onRequestGeneration(event.draft || currentDraftRef.current, generationAction.patch.reason, async () => {
                   assertApprovalTarget();
                   await promptAgentService.control(activeSessionId, 'confirm', requestId, { requestId, accepted: true });
                   approved = true;
-                });
+                }, generationAction.patch.count, generationAction.patch.placement);
                 const receipt = normalizeAgentGenerationResult(success);
                 await promptAgentService.control(activeSessionId, approved ? 'finalize' : 'confirm', requestId, { requestId, accepted: false, success: receipt.success, result: receipt });
                 if (!receipt.success && receipt.outcome !== 'cancelled') setMessages(previous => [...previous, { id: crypto.randomUUID(), role: 'error', text: receipt.error || '生成失败' }]);
               } catch (error) {
                 await promptAgentService.control(activeSessionId, approved ? 'finalize' : 'confirm', requestId, { requestId, accepted: false, success: false, result: agentGenerationFailure(error) }).catch(() => {});
                 setMessages(previous => [...previous, { id: crypto.randomUUID(), role: 'error', text: error instanceof Error ? error.message : '生成失败' }]);
+              } finally {
+                generationInterruptRef.current = undefined;
               }
             })();
           }
@@ -690,6 +698,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
         autoShowGenerated: displayPreferences.autoShowGenerated,
         tagAssistEnabled: props.tagAssistEnabled, splitPromptFields: props.splitPromptFields ?? false,
       } } }, event => {
+        if (event.type === 'error' || event.type === 'done' && event.status && event.status !== 'completed') interruptGeneration();
         if (!uiActiveRef.current) return;
         if (event.runId) setTaskSnapshot(previous => ({ ...previous, runId: event.runId }));
         if (event.type === 'response_start') {
@@ -843,7 +852,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
   };
 
   const reportControlError = (error: unknown) => setMessages(previous => [...previous, { id: crypto.randomUUID(), role: 'error', text: error instanceof Error ? error.message : '任务控制失败，请检查电脑连接后重试' }]);
-  const stopTask = async () => { try { await promptAgentService.control(activeSessionId, 'abort'); } catch (error) { reportControlError(error); } };
+  const stopTask = async () => { interruptGeneration(); try { await promptAgentService.control(activeSessionId, 'abort'); } catch (error) { reportControlError(error); } };
   const openAgentSettings = () => window.dispatchEvent(new CustomEvent('nai-open-global-settings', { detail: { section: 'agent' } }));
   const addAttachments = async (files: FileList | readonly File[] | null) => {
     if (!files || attachmentLoadingRef.current || !sessionReady || running || !supportsImages) return;
@@ -905,7 +914,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
 
     <section className="relative flex min-w-0 flex-1 flex-col">
       {runtimeWarning && <p role="status" className="border-b border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">{runtimeWarning}</p>}
-      {(taskSnapshot.pending || []).filter(item => !item.approved).map(item => <div key={item.requestId} className="flex flex-wrap items-center gap-2 border-b border-amber-200 p-2 text-xs dark:border-amber-900 dark:text-gray-300"><span className="min-w-0 flex-1">{t("任务等待你确认：{0}", [item.operation.action])}</span><button type="button" className="mobile-touch px-2 text-indigo-600 dark:text-indigo-300" onClick={() => handleConfirmedAction({ type: 'action', action: item.operation.action === 'request_generation' ? { kind: 'request_generation', patch: { requestId: item.requestId, reason: '接续上次请求' } } : { kind: 'request_project_action', patch: { ...item.operation, requestId: item.requestId, title: '接续项目操作？', consequence: JSON.stringify(item.operation) } }, draft: item.operation.payload.draft as PromptAgentDraft | undefined })}>{t("查看并决定")}</button></div>)}
+      {(taskSnapshot.pending || []).filter(item => !item.approved).map(item => <div key={item.requestId} className="flex flex-wrap items-center gap-2 border-b border-amber-200 p-2 text-xs dark:border-amber-900 dark:text-gray-300"><span className="min-w-0 flex-1">{t("任务等待你确认：{0}", [item.operation.action])}</span><button type="button" className="mobile-touch px-2 text-indigo-600 dark:text-indigo-300" onClick={() => handleConfirmedAction({ type: 'action', action: item.operation.action === 'request_generation' ? { kind: 'request_generation', patch: { requestId: item.requestId, reason: '接续上次请求', count: item.operation.payload.count as number | undefined, placement: item.operation.payload.placement as 'end' | 'next' | undefined } } : { kind: 'request_project_action', patch: { ...item.operation, requestId: item.requestId, title: '接续项目操作？', consequence: JSON.stringify(item.operation) } }, draft: item.operation.payload.draft as PromptAgentDraft | undefined })}>{t("查看并决定")}</button></div>)}
       {modelsLoaded && !activeModel && <div className="flex flex-wrap items-center gap-2 border-b border-indigo-200 bg-indigo-50 p-3 text-xs text-indigo-700 dark:border-indigo-900 dark:bg-indigo-950/40 dark:text-indigo-200"><span className="min-w-0 flex-1">{models.length ? t("模型不可用，请重新选择") : t("请接入模型服务")}</span><button type="button" onClick={models.length ? () => setShowModelMenu(true) : openAgentSettings} className="mobile-touch rounded-lg bg-indigo-600 px-3 text-white">{models.length ? t("选择模型") : t("接入 API")}</button></div>}
       {/* 顶栏与状态栏合流为单行（节省约 36px 空间） */}
       <header className="border-b border-gray-200 bg-white pt-[env(safe-area-inset-top)] dark:border-gray-800 dark:bg-gray-900">

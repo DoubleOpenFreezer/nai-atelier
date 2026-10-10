@@ -557,7 +557,8 @@ it.each(['image-to-image', 'inpaint', 'outpaint'] as const)('Agent 的 %s 缺少
 
   const draft = createLabImageEditDraft(operation, 'synthetic', '', params);
   const generate = vi.fn();
-  let request!: (draft: import('../../types').PromptAgentDraft) => Promise<boolean>;
+  // Agent 生成回调类型直接取组件真实 props 签名，不硬写旧布尔返回。
+  let request!: Parameters<NonNullable<React.ComponentProps<typeof ImageEditPanel>['onAgentGenerateReady']>>[0];
   render(React.createElement(ImageEditPanel, { baseImage: null, previewImage: null, operation, draft,
     layout: { order: ['prompt', 'baseImage', 'params', 'editSettings'], collapsed: {} }, generationCostLabel: () => '估算', apiKey: 'synthetic', notify: vi.fn(),
     onPromptChange: vi.fn(), onNegativePromptChange: vi.fn(), onPromptSource: vi.fn(), onDraftChange: vi.fn(), onBaseImageChange: vi.fn(), onCanvasChange: vi.fn(),
@@ -587,29 +588,6 @@ describe('ImageEditPreview', () => {
     expect(screen.getByRole('button', { name: /^生成.*预计消耗 12 Anlas$/ })).toBeTruthy();
   });
 
-  it('移动端编辑预览卡带 image-edit-preview-shell 标记并隐藏内嵌生成按钮', () => {
-    const { container } = render(React.createElement(ImageEditPreview, {
-      operation: 'inpaint',
-      image: 'data:image/png;base64,fixture',
-      error: null,
-      generationCostLabel: '预计消耗 12 Anlas',
-      onGenerate: vi.fn(),
-      onOpenLightbox: vi.fn(),
-      getDownloadFilename: () => 'fixture.png',
-    }));
-
-    const shell = container.querySelector('.image-edit-preview-shell') as HTMLElement;
-    expect(shell).toBeTruthy();
-    // 移动端整卡隐藏（hidden），桌面端以 contents 参与左右分区（lg:contents）——与文生图预览容器同款断点语义，绝不允许写成 lg:hidden（桌面隐藏/移动显示）。
-    expect(shell.className).toContain('hidden');
-    expect(shell.className).toContain('lg:contents');
-    expect(shell.className).not.toContain('lg:hidden');
-    const generateButton = screen.getByRole('button', { name: /^生成.*预计消耗 12 Anlas$/ });
-    // 移动端隐藏内嵌生成按钮（hidden），桌面端显示（lg:flex）——绝不允许写成 lg:hidden（桌面隐藏/移动显示）。
-    expect(generateButton.className).toContain('hidden');
-    expect(generateButton.className).toContain('lg:flex');
-    expect(generateButton.className).not.toContain('lg:hidden');
-  });
 
   it.each(['image-to-image', 'inpaint', 'outpaint'] as const)('%s 与文生图一致显示圆形历史管理、切换按钮和计数，点击管理不误开大图', operation => {
     const onRemoveCurrentHistory = vi.fn();

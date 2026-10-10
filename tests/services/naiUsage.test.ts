@@ -6,6 +6,7 @@ import {
   isNovelaiSubscriptionActive,
   isNovelaiSubscriptionInactive,
   NOVELAI_USAGE_REFRESH_EVENT,
+  requestNovelaiSubscription,
   useNovelaiUsage,
 } from '../../services/naiUsage';
 
@@ -52,6 +53,22 @@ describe('useNovelaiUsage', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+  });
+
+  it('后台直接刷新不依赖已卸载界面，合并在途请求且失败不返回旧额度', async () => {
+    const key = 'synthetic-background-key';
+    let release!: (value: Response) => void;
+    const fetchMock = vi.fn().mockImplementationOnce(() => new Promise<Response>(resolve => { release = resolve; }))
+      .mockResolvedValueOnce(errorResponse('synthetic failure'))
+      .mockResolvedValueOnce(responseFor({ active: true, tier: 3 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const first = requestNovelaiSubscription(key), second = requestNovelaiSubscription(key);
+    expect(first).toBe(second); expect(fetchMock).toHaveBeenCalledOnce();
+    release(responseFor({ active: true, tier: 3, usage: { percent: 50 } }));
+    expect(await first).toMatchObject({ usage: { percent: 50 } });
+    await expect(requestNovelaiSubscription(key)).rejects.toThrow('synthetic failure');
+    expect(await requestNovelaiSubscription(key)).toMatchObject({ tier: 3 });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
   it('新实例从同 Key 缓存显示额度时，生成前校验也能取得该快照', async () => {

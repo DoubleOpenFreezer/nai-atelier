@@ -7,7 +7,7 @@
 
   **[简体中文](./README.md) · [繁體中文](./README.zh-TW.md) · [English](./README.en.md) · [日本語](./README.ja.md) · [한국어](./README.ko.md)**
 
-  [![Version](https://img.shields.io/badge/version-1.58.1-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.59.0-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4%20%7C%20V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据主权与备份)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网创作体验)
@@ -191,6 +191,10 @@ flowchart LR
 ---
 
 ### 🧪 生图实验室：四大创作模式
+
+- **同 Key 单并发**：所有页面、浏览器标签页、连接同一电脑工坊的手机及 Agent 共用后端限制。忙碌时普通请求明确拒绝，主生成按钮变为「加入队列」；箭头菜单可「排到下一位」、查看位置或取消等待项。插队等当前图片保存后执行，再继续原任务余量，普通追加排在队尾。跨端取消准确显示已取消，不同 Key 独立，独立工坊之间不协调。
+- **指定张数与后台生成**：四模式共用整队「已保存／总张数」暂停／继续按钮，以及当前批次张数和费用的生成按钮。确认后由运行设备后台持有固定配置并逐张生成、回贴和保存；手机局域网页面冻结不影响电脑执行，APK 使用任务全程前台服务与 CPU 保活。回前台补查进度和最新结果，页面不重复生图或入库。暂停先保存当前图片；准备阶段可正常继续，不再卡「暂停中」。费用上涨等待确认剩余消耗，不自动解除用户暂停；换 Key、额度核实或生成／保存失败停止，不自动重试。已生成但未保存的图片仍可下载，记账与公共队列清理异常单独提示。关闭／刷新发起页停止后续，不恢复任务；断电或系统强杀不保证在途结果。Agent 回传请求数、实际保存数和历史 ID。
+- **请求间隔**：生成箭头菜单的「生成间隔」默认 2.0 秒，可设 0.0～3600.0 秒，精度 0.1 秒；每张保存后等待再发送下一次请求，第一张不延迟，暂停期间经过的时间计入间隔。设置按 Key 保存，排队、插队、各页面、同一工坊的手机和 Agent 共用后端计时，0 秒只关闭额外等待。官方限流或失败仍停止，不自动重试；此默认缓冲不属于官方安全阈值。
 
 实验室是实际调参生图的主控台，支持四大创作模式，通过 NovelAI 或自行配置的兼容中转获得生成结果：
 

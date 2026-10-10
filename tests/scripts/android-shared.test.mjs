@@ -30,3 +30,23 @@ test('手机共用生图处理器包含通用中转分支，构建注入地址�
   assert.match(build, /import \{ getCloudQueueGenerationUrl \} from '\/worker\/cloudQueueTarget\.mjs'/);
   assert.match(build, /import \{ normalizeCloudQueueCount \} from '\/worker\/cloudQueueNumbers\.mjs'/);
 });
+
+ test('Android 共用任务租约接口及协调器，不遗漏后端单并发依赖', async () => {
+   const { readFile } = await import('node:fs/promises');
+   const source = extractAndroidShared(join(projectRoot, 'scripts/media-gateway.mjs'), ['handleGenerationTaskRequest', 'handleGenerateRequest', 'handleGenerateStreamRequest']);
+   assert.match(source, /tasks\.enter\(keyHash/); assert.match(source, /tasks\.reserve\(key, token, count\)/); assert.match(source, /finishGeneration\?\.\(\)/);
+   const build = await readFile(join(projectRoot, 'scripts/build-android.mjs'), 'utf8');
+   assert.match(build, /'handleGenerationTaskRequest'/);
+   assert.match(build, /import \{ GenerationTasks, DEFAULT_GENERATION_INTERVAL_SECONDS, MAX_GENERATION_INTERVAL_SECONDS, validateGenerationInterval \} from '\/worker\/generationTasks\.mjs'/);
+ });
+
+test('Android 共用间隔设置与校验，旧公共队列设置更新不丢间隔', async () => {
+  const url = new URL('../../worker/generationTasks.mjs', import.meta.url).href;
+  const source = extractAndroidShared(join(projectRoot, 'scripts/media-gateway.mjs'), ['normalizeCloudQueuePreferences'], `import { DEFAULT_GENERATION_INTERVAL_SECONDS, MAX_GENERATION_INTERVAL_SECONDS } from '${url}';`);
+  const mobile = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
+  assert.equal(mobile.normalizeCloudQueuePreferences({}).generationIntervalSeconds, 2);
+  assert.equal(mobile.normalizeCloudQueuePreferences({ generationIntervalSeconds: 0, enabled: false }).generationIntervalSeconds, 0);
+  assert.equal(mobile.normalizeCloudQueuePreferences({ generationIntervalSeconds: 8, greeting: '手机' }).generationIntervalSeconds, 8);
+  assert.equal(mobile.normalizeCloudQueuePreferences({ generationIntervalSeconds: 0.5 }).generationIntervalSeconds, 0.5);
+  assert.equal(mobile.normalizeCloudQueuePreferences({ generationIntervalSeconds: 0.55 }).generationIntervalSeconds, 2);
+});

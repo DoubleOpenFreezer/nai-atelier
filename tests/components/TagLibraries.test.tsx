@@ -10,7 +10,7 @@ import { CharacterLibrary } from '../../components/CharacterLibrary';
 import type { PromptChain } from '../../types';
 import { IMPORT_SESSION_KEY } from '../../services/metadataService';
 import { operateAgentPage, readAgentPage } from '../../services/agentWorkspace';
-import { generateImage } from '../../services/naiService';
+import { startGenerationJob } from '../../services/generationJob';
 import { copySharedImage, downloadSharedImage } from '../../services/imageSharing';
 vi.mock('../../services/imageSharing', async original => ({ ...await original<typeof import('../../services/imageSharing')>(), copySharedImage: vi.fn(async () => {}), downloadSharedImage: vi.fn(async () => {}) }));
 import {
@@ -45,7 +45,8 @@ vi.mock('../../services/collectionFavorites', async original => ({
 }));
 
 // 只用合成目录和浏览器内存存储；禁止真实生图或网络图片读取。
-vi.mock('../../services/naiService', () => ({ generateImage: vi.fn() }));
+// 生图的唯一接缝是后台任务提交：这里断言目录操作不会意外投递生成任务。
+vi.mock('../../services/generationJob', async importOriginal => ({ ...await importOriginal<typeof import('../../services/generationJob')>(), startGenerationJob: vi.fn() }));
 const confirmAction = vi.hoisted(() => vi.fn(async () => true));
 vi.mock('../../components/ConfirmDialog', () => ({ useConfirmDialog: () => confirmAction }));
 vi.mock('../../components/DanbooruCover', () => ({ DanbooruCover: ({ tag, fixedSrc, kind, notify, onFavoriteChange }: any) =>
@@ -241,7 +242,7 @@ describe.each<Kind>(['artist', 'character'])('%s 目录只负责 Tag 取用', ki
     act(() => { pending = operateAgentPage({ action: 'check', snapshotId: current.snapshotId, controlId: card.id, checked: true }); }); await pending;
     expect(readAgentPage({ controlId: card.id }).controls[0].pressed).toBe(true);
     fireEvent.keyDown(screen.getByRole('button', { name: card.label }), { key: ' ' });
-    current = readAgentPage({ controlId: card.id }); expect(current.controls[0].pressed).toBe(false); expect(generateImage).not.toHaveBeenCalled();
+    current = readAgentPage({ controlId: card.id }); expect(current.controls[0].pressed).toBe(false); expect(startGenerationJob).not.toHaveBeenCalled();
   });
   it.each([1280, 390])('宽度 %s 保留核心入口，不藏起旧测试功能', async width => {
     const { container } = renderLibrary(kind, width);
@@ -257,7 +258,7 @@ describe.each<Kind>(['artist', 'character'])('%s 目录只负责 Tag 取用', ki
     for (const name of ['更多', '画师配置', '任务队列', '复制历史', '批量导入画师', '生成预览', '重新生成', '设为固定封面']) {
       expect(screen.queryByRole('button', { name })).toBeNull();
     }
-    expect(generateImage).not.toHaveBeenCalled();
+    expect(startGenerationJob).not.toHaveBeenCalled();
     expect(fetch).not.toHaveBeenCalled();
   });
 
@@ -270,7 +271,7 @@ describe.each<Kind>(['artist', 'character'])('%s 目录只负责 Tag 取用', ki
     fireEvent.click(screen.getByRole('button', { name: '复制全部' }));
     await waitFor(() => expect(copy).toHaveBeenCalledWith(`${kind === 'artist' ? 'artist:' : ''}${entriesFor(kind)[0].name}`));
     expect(localStorage.getItem('nai_copy_history')).toBe('保留的旧记录');
-    expect(generateImage).not.toHaveBeenCalled();
+    expect(startGenerationJob).not.toHaveBeenCalled();
   });
 
   it('抽卡后收藏筛选退出抽卡，并显示完整收藏清单', async () => {
@@ -350,7 +351,7 @@ it('自定义角色保留创建入口，画师选择仍能送往实验室', asyn
   expect(JSON.parse(sessionStorage.getItem(IMPORT_SESSION_KEY)!)).toMatchObject({ prompt: 'artist:sample_artist_a', mode: 'append-prompt' });
   expect(artistView.navigate).toHaveBeenCalledOnce();
   expect(screen.queryByRole('button', { name: '复制全部' })).toBeNull();
-  expect(generateImage).not.toHaveBeenCalled();
+  expect(startGenerationJob).not.toHaveBeenCalled();
 });
 
 it.each([1280, 390])('宽度 %s 角色大图、手机详情与新建窗口覆盖侧栏，关闭不改资料', async width => {
@@ -395,7 +396,7 @@ it('角色送往独立槽位时默认 AI 构图，目录不强制站位', async 
   expect(imported.params.characters.map((character: { prompt: string; x: number; y: number }) => ({ prompt: character.prompt, x: character.x, y: character.y })))
     .toEqual(fixtures.characters.map(character => ({ prompt: character.name, x: 0.5, y: 0.5 })));
   expect(view.navigate).toHaveBeenCalledOnce();
-  expect(generateImage).not.toHaveBeenCalled();
+  expect(startGenerationJob).not.toHaveBeenCalled();
 });
 
 it('自定义角色卡片信息编辑不选中条目，抽卡结果随名称更新', async () => {
@@ -418,7 +419,7 @@ it('自定义角色卡片信息编辑不选中条目，抽卡结果随名称更�
   p.rerender(<CharacterLibrary chains={[{ ...custom, name: '新的角色名称' }]} onCreate={p.onCreate} onSelect={p.onSelect} onDelete={vi.fn()} onUpdateChain={p.onUpdateChain} onNavigateToPlayground={p.navigate} notify={vi.fn()} />);
   expect(screen.getByRole('heading', { name: '新的角色名称' })).toBeTruthy();
   expect(screen.queryByRole('heading', { name: custom.name })).toBeNull();
-  expect(generateImage).not.toHaveBeenCalled();
+  expect(startGenerationJob).not.toHaveBeenCalled();
 });
 
 it.each<Kind>(['artist', 'character'])('%s 手机卡片爱心常驻，长按或收藏不改变所选 Tag', async kind => {
@@ -464,7 +465,7 @@ it.each([
   await waitFor(() => expect(p.onDelete).toHaveBeenCalledWith(custom.id));
   expect(card.getAttribute('aria-pressed')).toBe('false');
   expect(p.onSelect).not.toHaveBeenCalled();
-  expect(generateImage).not.toHaveBeenCalled();
+  expect(startGenerationJob).not.toHaveBeenCalled();
 });
 
 it('自定义角色删除失败保留选择和详情且只提示失败，重试成功关闭详情并清除选择', async () => {

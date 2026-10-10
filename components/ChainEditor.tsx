@@ -1,13 +1,17 @@
 import { t, useLanguage, getLanguage } from '../services/i18n';
 import { ImageLightbox } from './ImageLightbox';
 import { agentDraftFingerprint } from '../services/promptAgentCoordinator';
-import { agentOperationError, agentGenerationFailure, normalizeAgentGenerationResult } from '../services/agentOperation.mjs';
+import { agentOperationError, agentGenerationFailure, normalizeAgentGenerationResult, validateGenerationCount, validateGenerationPlacement } from '../services/agentOperation.mjs';
+import { approveGenerationSeries, beginGenerationSeries, getGenerationSeriesSession, getQueuedGenerationSeries, stopGenerationSeriesSession, subscribeGenerationSeries, type GenerationSeriesSession } from '../services/generationSeries';
+import { cancelGenerationJob, type GenerationJobDescriptor } from '../services/generationJob';
+import { getGenerationQueue, setGenerationQueuePaused, setGenerationInterval, type GenerationPlacement, type GenerationQueueSnapshot } from '../services/generationTask';
+import { GenerationCountControl } from './GenerationCountControl';
 import { AgentDraftReview } from './AgentDraftReview';
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { GenerationMode, ImageEditMetadata, ImageEditOperation, PromptChain, PromptModule, CharacterParams, NAIParams, LocalGenItem, PromptAgentDraft, PromptAgentGenerationResult, LabImageEditDraft, LabWorkspaceSession } from '../types';
 import { compilePrompt, mergePromptFields } from '../services/promptUtils';
-import { generateImage, generateImageEdit, generateImageEditStream, generateImageStream } from '../services/naiService';
+import { buildGenerationJobDescriptor } from '../services/naiService';
 import { InlineCloudQueueStatus, useCloudQueueStatus } from './CloudQueueStatus';
 import { isCloudQueueTaskActive } from '../services/cloudQueue';
 import { localHistory } from '../services/localHistory';
@@ -31,7 +35,7 @@ import { normalizeVibeSelections } from '../services/vibeUtils';
 import { LabPageLayouts } from '../services/appearancePreferences';
 import { isActiveOpusSubscription, useNovelaiUsage } from '../services/naiUsage';
 import { applyNaiModelSettings, getRuntimeNaiModelInfo, isNaiMediumModel } from '../services/naiModels';
-import { estimateImageEditCost, estimateV45GenerationCost, applyEstimatorRuntime, formatGenerationCostLabel, hashNaiApiKey, useAnlasBudget } from '../services/anlasBudget';
+import { estimateImageEditCost, estimateV45GenerationCost, applyEstimatorRuntime, formatGenerationCostLabel, useAnlasBudget } from '../services/anlasBudget';
 import { cleanupLabWorkspaceAssets, consumeEditorSessionDiscarded, createLabImageEditDraft, createLabWorkspaceSession, dataUrlToWorkspaceAsset, deleteLabWorkspaceAsset, getLabWorkspaceAssetId, getLabWorkspaceSessionKey, LAB_DEFAULT_PARAMS, openLabWorkspaceSession, readLabWorkspaceAsset, saveLabWorkspaceSession, saveLabWorkspaceAsset, blobToDataUrl, getLabModeLabel, normalizeParams } from '../services/labWorkspace';
 import { DEFAULT_NAI_RUNTIME, useNaiRuntime, isNaiRuntimeSyncUnhealthy, describeNaiRuntimeSyncProblem } from '../services/naiRuntime';
 import { splitNovelAiPrompt } from '../services/promptImport';
@@ -113,9 +117,10 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         ? `${describeNaiRuntimeSyncProblem(naiRuntimeConfig)}，费用估算与免费档判断可能过期，继续生成可能意外消耗共享 Anlas`
         : '';
     const activeModelInfo = getRuntimeNaiModelInfo(params.model, naiRuntimeConfig || DEFAULT_NAI_RUNTIME);
+    const [generationCount, setGenerationCount] = useState(1);
     const estimatedAnlasCost = estimateV45GenerationCost(params, opusSubscriptionActive, opusUsageExhausted);
     const costStatusLabel = !novelaiSubscription ? novelaiSubscriptionLoading ? '费用确认中…' : '费用未知' : undefined;
-    const generationCostLabel = costStatusLabel || formatGenerationCostLabel(estimatedAnlasCost, params.model);
+    const generationCostLabel = costStatusLabel || formatGenerationCostLabel(estimatedAnlasCost * generationCount, params.model);
 
     // --- New: Subject/Variable Prompt State ---
     const [subjectPrompt, setSubjectPrompt] = useState('');
@@ -169,7 +174,69 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
 
     // --- Generation State ---
     const [apiKey, setApiKey] = useState(() => sessionStorage.getItem('nai_api_key') || localStorage.getItem('nai_api_key') || '');
-    const [isGenerating, setIsGenerating] = useState(false);
+    const [isImageGenerating, setIsGenerating] = useState(false);
+
+    const [generationSeries, setGenerationSeries] = useState(() => getGenerationSeriesSession(chain.id)?.progress || null);
+    const [queuedGenerations, setQueuedGenerations] = useState(() => getQueuedGenerationSeries(chain.id));
+    const generationSeriesRef = useRef(getGenerationSeriesSession(chain.id));
+    // 后台任务的观察态：过程预览、成图、费用确认都来自后端状态，不靠本页逐张回调。
+    const lastSeriesStreamImageRef = useRef<string | undefined>(undefined);
+    const currentGenerationStepsRef = useRef(0);
+    const awaitingApprovalRef = useRef('');
+    const connectionNoticeRef = useRef('');
+    const activeEditOperationRef = useRef<ImageEditOperation | null>(null);
+    const promptJobApprovalRef = useRef<(session: GenerationSeriesSession, awaiting: { cost: number; completedCount: number; requestedCount: number }) => Promise<void>>(async () => {});
+    const latestGenerationStateRef = useRef({ apiKey, subscription: novelaiStatus });
+    latestGenerationStateRef.current = { apiKey, subscription: novelaiStatus };
+    const isGenerating = isImageGenerating || generationSeries !== null;
+    const [queueState, setQueueState] = useState<GenerationQueueSnapshot | null>(null);
+    const [pausePending, setPausePending] = useState(false);
+    const [intervalPending, setIntervalPending] = useState(false);
+    const intervalRevisionRef = useRef(0);
+    useEffect(() => {
+      setQueueState(null);
+      setPausePending(false);
+      setIntervalPending(false);
+      intervalRevisionRef.current++;
+      if (!apiKey) return;
+      let cancelled = false, reading = false;
+      const refresh = async () => {
+        if (reading) return; reading = true;
+        const revision = intervalRevisionRef.current;
+        try { const status = await getGenerationQueue(apiKey); if (!cancelled && revision === intervalRevisionRef.current && Number.isSafeInteger(status.total) && typeof status.paused === 'boolean') setQueueState(status); }
+        catch { /* 保留最后已知进度，接口异常由提交与暂停操作明确提示。 */ }
+        finally { reading = false; }
+      };
+      void refresh(); const timer = setInterval(() => { void refresh(); }, 1000);
+      return () => { cancelled = true; clearInterval(timer); };
+    }, [apiKey]);
+    const toggleQueuePause = async () => {
+      if (pausePending) return;
+      setPausePending(true);
+      try {
+        const state = queueState || await getGenerationQueue(apiKey);
+        if (typeof state.paused !== 'boolean') throw new Error('后端尚未支持暂停队列，请重启工坊后再试');
+        const next = await setGenerationQueuePaused(apiKey, !state.paused);
+        if (latestGenerationStateRef.current.apiKey === apiKey) setQueueState(next);
+      } catch (error) { if (latestGenerationStateRef.current.apiKey === apiKey) notify((error as Error).message, 'error'); }
+      finally { if (latestGenerationStateRef.current.apiKey === apiKey) setPausePending(false); }
+    };
+    const changeGenerationInterval = async (seconds: number) => {
+      if (intervalPending || !apiKey) return;
+      const revision = ++intervalRevisionRef.current;
+      setIntervalPending(true);
+      try {
+        const next = await setGenerationInterval(apiKey, seconds);
+        if (latestGenerationStateRef.current.apiKey === apiKey && revision === intervalRevisionRef.current) setQueueState(next);
+      } catch (error) { if (latestGenerationStateRef.current.apiKey === apiKey) notify((error as Error).message, 'error'); }
+      finally { if (latestGenerationStateRef.current.apiKey === apiKey && revision === intervalRevisionRef.current) { intervalRevisionRef.current++; setIntervalPending(false); } }
+    };
+    const externalGenerationBusy = Boolean(queueState?.busy) && !isGenerating;
+    const generationUnavailableLabel = externalGenerationBusy ? t("此 Key 正在生成") : undefined;
+    const stopGenerationSeries = React.useCallback(() => {
+        if (!generationSeriesRef.current) return;
+        stopGenerationSeriesSession(generationSeriesRef.current);
+    }, []);
     const [isSwitchingMode, setIsSwitchingMode] = useState(false);
     const modeTransitionRef = useRef(false);
     const [generationProgress, setGenerationProgress] = useState<{ step: number; total: number } | null>(null);
@@ -194,6 +261,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     const [imageEditBaseImage, setImageEditBaseImage] = useState<string | null>(null);
     const [imageEditBaseVersion, setImageEditBaseVersion] = useState(0);
     const [imageEditPreviewImage, setImageEditPreviewImage] = useState<string | null>(null);
+    const lastSeriesPreviewRef = useRef<string | undefined>(undefined);
     const workspaceKey = getLabWorkspaceSessionKey(chain.id);
     const workspaceFallback = createLabWorkspaceSession(chain.basePrompt || '', String(chain.variableValues?.subject || ''), chain.negativePrompt || '', normalizeParams(chain.params), Object.fromEntries((chain.modules || []).map(module => [module.id, module.isActive])));
     // 首次进入编辑模式也带上完整风格模块；之后各模式沿用自己的独立草稿。
@@ -203,10 +271,12 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     const [workspaceSession, setWorkspaceSession] = useState<LabWorkspaceSession>(() => openLabWorkspaceSession(workspaceKey, workspaceFallback));
     const [imageEditMaskData, setImageEditMaskData] = useState<string | undefined>();
   const imageEditGenerateFnRef = useRef<(() => void) | null>(null);
-  const [imageEditGenerateBar, setImageEditGenerateBar] = useState<{ costLabel: string; canGenerate: boolean; unavailableLabel?: string } | null>(null);
-  const handleImageEditGenerateBarChange = React.useCallback((bar: { generate: () => void; costLabel: string; canGenerate: boolean; unavailableLabel?: string }) => {
+  const imageEditQueueFnRef = useRef<((placement: GenerationPlacement) => void) | null>(null);
+  const [imageEditGenerateBar, setImageEditGenerateBar] = useState<{ costLabel: string; canGenerate: boolean; canQueue: boolean; unavailableLabel?: string } | null>(null);
+  const handleImageEditGenerateBarChange = React.useCallback((bar: { generate: () => void; queue: (placement: GenerationPlacement) => void; costLabel: string; canGenerate: boolean; canQueue: boolean; unavailableLabel?: string }) => {
     imageEditGenerateFnRef.current = bar.generate;
-    setImageEditGenerateBar(previous => previous && previous.costLabel === bar.costLabel && previous.canGenerate === bar.canGenerate && previous.unavailableLabel === bar.unavailableLabel ? previous : { costLabel: bar.costLabel, canGenerate: bar.canGenerate, unavailableLabel: bar.unavailableLabel });
+    imageEditQueueFnRef.current = bar.queue;
+    setImageEditGenerateBar(previous => previous && previous.costLabel === bar.costLabel && previous.canGenerate === bar.canGenerate && previous.canQueue === bar.canQueue && previous.unavailableLabel === bar.unavailableLabel ? previous : { costLabel: bar.costLabel, canGenerate: bar.canGenerate, canQueue: bar.canQueue, unavailableLabel: bar.unavailableLabel });
   }, []);
     const [imageEditBaseLoading, setImageEditBaseLoading] = useState(false);
     const maskSaveRevisionRef = useRef(0);
@@ -226,8 +296,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     const [mobileEditorTab, setMobileEditorTab] = useState<'global' | 'character' | 'params'>('global');
     const [agentProposal, setAgentProposal] = useState<PromptAgentDraft | null>(null);
     const agentTargetRef = useRef<PromptAgentDraft['target']>(undefined);
-    const agentEditGenerateRef = useRef<((draft: PromptAgentDraft, onApproved?: () => Promise<void>) => Promise<boolean>) | null>(null);
-    const agentGenerationReceiptRef = useRef<string | undefined>(undefined);
+    const agentEditGenerateRef = useRef<((draft: PromptAgentDraft, onApproved?: () => Promise<void>, count?: number, placement?: GenerationPlacement) => Promise<PromptAgentGenerationResult | boolean>) | null>(null);
     const [agentUndoSnapshot, setAgentUndoSnapshot] = useState<PromptAgentDraft | null>(null);
     const editorRevisionRef = useRef(0);
     const agentRunRevisionRef = useRef(0);
@@ -284,6 +353,12 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     const activeGenerationMode = workspaceSession.activeMode;
     const canSaveActiveModeToLibrary = canSaveLabModeToLibrary(activeGenerationMode);
     const activeEditOperation = activeGenerationMode === 'text-to-image' ? null : activeGenerationMode;
+    activeEditOperationRef.current = activeEditOperation;
+    const generationCountControl = { count: generationCount, onCountChange: setGenerationCount, series: generationSeries, onStop: stopGenerationSeries, queueState, onTogglePause: () => { void toggleQueuePause(); }, pausePending,
+        intervalSeconds: queueState?.intervalSeconds, onIntervalChange: (seconds: number) => { void changeGenerationInterval(seconds); }, intervalPending: intervalPending || !apiKey,
+        onQueue: (placement: GenerationPlacement) => { void (activeEditOperation ? imageEditQueueFnRef.current?.(placement) : handleGenerate(placement)); },
+        queued: queueState ? queueState.waiting.map(task => ({ id: task.token, progress: { current: task.completed, total: task.total, position: task.position, stopping: false }, onCancel: () => { const local = queuedGenerations.find(session => session.token === task.token); if (local) stopGenerationSeriesSession(local); else void cancelGenerationJob(apiKey, task.token).catch(error => notify(error.message, 'error')); } })) : queuedGenerations.map(session => ({ id: session.token, progress: session.progress, onCancel: () => stopGenerationSeriesSession(session) })),
+        queueDisabled: !apiKey || imageEditBaseLoading || Boolean(activeEditOperation && !imageEditGenerateBar?.canQueue) };
     const activeEditDraft = activeEditOperation ? workspaceSession.edits[activeEditOperation] : null;
     const activeLabLayout = labPageLayouts[activeGenerationMode];
     const latestTextToImageItem = previewHistory.find(item => !item.edit);
@@ -320,7 +395,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         // 历史请求可能晚于本次生成完成；合并新结果，不能把预览拉回请求时的旧图。
         setPreviewHistory(previous => [...new Map([...history, ...previous].map(item => [item.id, item])).values()]
             .sort((a, b) => b.createdAt - a.createdAt));
-        if (targetSourceChainId === 'playground' || selectionRevision !== previewSelectionRevisionRef.current) return;
+        if (getGenerationSeriesSession(chain.id)?.lastSavedItem || targetSourceChainId === 'playground' || selectionRevision !== previewSelectionRevisionRef.current) return;
         setPreviewIndex(0);
         if (history.length > 0) {
             setPreviewMode('history');
@@ -512,6 +587,9 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             const nextValue = event instanceof CustomEvent
                 ? String(event.detail || '')
                 : (sessionStorage.getItem('nai_api_key') || localStorage.getItem('nai_api_key') || '');
+            if (generationSeriesRef.current && nextValue !== generationSeriesRef.current.key) {
+                stopGenerationSeriesSession(generationSeriesRef.current);
+            }
             setApiKey(nextValue);
         };
         window.addEventListener('nai-api-key-changed', syncApiKey);
@@ -707,7 +785,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 if (resolveRevision !== editBaseResolveRevisionRef.current || !mountedRef.current) return;
             }
             // 底图在左侧「底图与导入」展示；右侧只显示结果，无结果时为 null（空态引导左侧）
-            setImageEditPreviewImage(restoredResult);
+            const pendingResult = getGenerationSeriesSession(chain.id)?.lastSavedItem;
+            setImageEditPreviewImage(pendingResult?.edit && pendingResult.edit.operation === activeEditOperation ? pendingResult.imageUrl : restoredResult);
             if (draft.maskRef) {
                 const maskBlob = await readLabWorkspaceAsset(draft.maskRef);
                 if (resolveRevision !== editBaseResolveRevisionRef.current) return;
@@ -729,6 +808,68 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         // 只在进入模式时恢复；当前模式上传／画布变更已有各自的即时更新。
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [workspaceKey, activeEditOperation]);
+
+    useEffect(() => {
+        lastSeriesPreviewRef.current = undefined;
+        lastSeriesStreamImageRef.current = undefined;
+        awaitingApprovalRef.current = '';
+        connectionNoticeRef.current = '';
+        const sync = () => {
+            const session = getGenerationSeriesSession(chain.id);
+            generationSeriesRef.current = session;
+            setGenerationSeries(session?.progress || null);
+            setQueuedGenerations(getQueuedGenerationSeries(chain.id));
+            if (!session) {
+                setGenerationProgress(null);
+                lastSeriesStreamImageRef.current = undefined;
+                return;
+            }
+            // 后台任务的过程预览独立于成图：最终图到达后再由 lastSavedItem 接管。
+            const preview = session.preview;
+            if (preview?.image && preview.image !== lastSeriesStreamImageRef.current) {
+                lastSeriesStreamImageRef.current = preview.image;
+                // 保存失败的终态会带完整未保存成图：先展示，再按失败态标注为未保存。
+                const previewState = session.state === 'failed' ? 'unsaved' as const : 'result' as const;
+                if (activeEditOperationRef.current) {
+                    if (chain.id !== 'playground') { setGeneratedImage(preview.image); setPreviewMode(previewState); }
+                    setImageEditPreviewImage(preview.image);
+                } else {
+                    setGeneratedImage(preview.image);
+                    setPreviewMode(previewState);
+                }
+                setGenerationProgress(preview.step ? { step: preview.step, total: currentGenerationStepsRef.current } : null);
+            }
+            if (session.connectionError && session.connectionError !== connectionNoticeRef.current) {
+                connectionNoticeRef.current = session.connectionError;
+                notify(session.connectionError, 'error');
+            } else if (!session.connectionError) connectionNoticeRef.current = '';
+            const awaiting = session.awaiting;
+            if (awaiting) {
+                const revision = `${session.token}:${awaiting.cost}:${awaiting.completedCount}`;
+                if (awaitingApprovalRef.current !== revision) {
+                    awaitingApprovalRef.current = revision;
+                    void promptJobApprovalRef.current(session, awaiting);
+                }
+            }
+            const item = session.lastSavedItem;
+            if (!item || lastSeriesPreviewRef.current === item.id) return;
+            lastSeriesPreviewRef.current = item.id;
+            previewSelectionRevisionRef.current += 1;
+            setPreviewHistory(previous => [item, ...previous.filter(saved => saved.id !== item.id)]);
+            if (item.edit) setImageEditPreviewImage(item.imageUrl);
+            if (!item.edit || chain.id !== 'playground') {
+                setGeneratedImage(item.imageUrl);
+                setPreviewIndex(0);
+                setPreviewMode('history');
+                if (session.count === 1 && !item.edit && window.matchMedia('(max-width: 1023px)').matches) setLightboxImg(item.imageUrl);
+            }
+            setGenerationProgress(null);
+            // 历史变更与额度刷新广播由后台任务监督器统一发出，本页不再重复 add。
+            checkAndRemoveUntestedTag();
+        };
+        sync();
+        return subscribeGenerationSeries(sync);
+    }, [chain.id]);
 
     /** 仅重置单个编辑模式的持久化底图/蒙版资产与草稿；不触碰文生图与其他编辑模式。 */
     const resetEditOperation = async (operation: ImageEditOperation) => {
@@ -1456,176 +1597,142 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     const checkAndRemoveUntestedTag = () => {
         if (chain.id && chain.id !== 'playground' && chainTags.includes(UNTESTED_CHAIN_TAG)) {
             const updatedTags = chainTags.filter(t => t !== UNTESTED_CHAIN_TAG);
-            setChainTags(updatedTags);
+            if (mountedRef.current) setChainTags(updatedTags);
             void onUpdateChain(chain.id, { tags: updatedTags });
         }
     };
 
-    const handleGenerateDraft = async (override?: PromptAgentDraft) => {
+    /** 费用上涨后由用户补充授权；没有确认就不恢复后端任务。 */
+    const promptJobApproval = async (session: GenerationSeriesSession, awaiting: { cost: number; completedCount: number; requestedCount: number }) => {
+        const remaining = Math.max(0, awaiting.requestedCount - awaiting.completedCount);
+        const approved = await confirmAction({
+            title: '后台任务费用已变化',
+            message: `当前每张预计 ${awaiting.cost} Anlas，剩余 ${remaining} 张预计 ${awaiting.cost * remaining} Anlas。确认后继续生成；取消将停止后续请求，已经提交的图片仍会保存。`,
+            confirmLabel: `消耗约 ${awaiting.cost * remaining} 点并继续`,
+            tone: 'danger',
+        });
+        if (!approved) { stopGenerationSeriesSession(session); return; }
+        try { await approveGenerationSeries(session, awaiting.cost); }
+        catch (error) {
+            // 授权未生效时允许再次提示，不能替用户自动确认。
+            awaitingApprovalRef.current = '';
+            if (mountedRef.current) notify((error as Error).message, 'error');
+        }
+    };
+    promptJobApprovalRef.current = promptJobApproval;
+
+    /** 提交一次有限后台任务：POST 一次后只观察后端状态与结果，本页不再逐张请求或落库。 */
+    const runBackgroundJob = async (descriptor: GenerationJobDescriptor, count: number,
+        options?: { agent?: boolean; onApproved?: () => Promise<void>; placement?: GenerationPlacement; onCompleted?: (item: LocalGenItem) => void | Promise<void> }): Promise<PromptAgentGenerationResult> => {
+        // 描述符构建与批准回调都是异步的：提交前必须确认 Key 仍是本轮开始时的 Key，不能把旧任务投给新 Key。
+        const assertSubmitKey = () => {
+            const storedKey = sessionStorage.getItem('nai_api_key') || localStorage.getItem('nai_api_key') || '';
+            if (latestGenerationStateRef.current.apiKey !== apiKey || storedKey !== apiKey) throw agentOperationError('NovelAI Key 已变化，已取消本次生成', 'key_changed');
+        };
+        try {
+            validateGenerationCount(count);
+            validateGenerationPlacement(options?.placement);
+            if (!apiKey) throw agentOperationError('请先在“全局设置”中配置 NovelAI API Key', 'missing_key');
+            if (!options?.placement && (generationSeriesRef.current || isGenerating)) throw agentOperationError('已有图片正在生成，请等待完成', 'generation_busy');
+            assertSubmitKey();
+            await options?.onApproved?.();
+            assertSubmitKey();
+            const { session, settle } = beginGenerationSeries({ scope: chain.id, key: apiKey, count, agent: Boolean(options?.agent), placement: options?.placement, descriptor });
+            if (!options?.placement) generationSeriesRef.current = session;
+            const result = await settle;
+            const completed = result.completedCount ?? 0;
+            if (session.lastSavedItem) await options?.onCompleted?.(session.lastSavedItem);
+            if (!mountedRef.current) return result;
+            if (result.success) notify(`已生成并保存 ${completed} 张图片`, 'success');
+            else if (result.outcome === 'cancelled') notify(`已取消后续生成，已保存 ${completed} 张图片`, 'success');
+            else notify(`${result.error}（已保存 ${completed}/${count} 张）`, 'error');
+            if (session.accountingFailed) notify('图片已保存，但本地记账异常，请核对额度后再继续', 'error');
+            else if (session.cleanupError) notify(`后台任务清理异常：${session.cleanupError}`, 'error');
+            return result;
+        } catch (error) {
+            const result = { ...agentGenerationFailure(error), requestedCount: count, completedCount: 0, historyIds: [] as string[] };
+            if (mountedRef.current && result.outcome !== 'cancelled') notify(result.error || '连续生成失败', 'error');
+            return result;
+        }
+    };
+
+    /** 文生图：一次构建固定配置，随机种子交由后端每张重新抽取。 */
+    const startTextToImageJob = async (draft: { basePrompt: string; subjectPrompt: string; negativePrompt: string; modules: PromptModule[]; params: NAIParams }, stream: boolean, approvedCost: number): Promise<GenerationJobDescriptor> => {
+        const activeParams: NAIParams = {
+            ...applyNaiModelSettings(draft.params, naiRuntimeConfig || DEFAULT_NAI_RUNTIME),
+            ...(forceEmptySeed ? { seed: undefined } : {}),
+            vibes: draft.params.vibes ? {
+                ...draft.params.vibes,
+                slots: normalizeVibeSelections(draft.params.vibes.slots, draft.params.vibes.normalizeStrengths),
+            } : undefined,
+        };
+        return buildGenerationJobDescriptor({
+            operation: 'text-to-image',
+            prompt: compilePrompt({ basePrompt: draft.basePrompt, modules: draft.modules }, draft.subjectPrompt),
+            negative: isNaiMediumModel(activeParams.model) ? '' : draft.negativePrompt,
+            params: activeParams, stream, forceEmptySeed, approvedCost,
+            history: {
+                basePrompt: draft.basePrompt, subjectPrompt: draft.subjectPrompt, modules: draft.modules,
+                sourceChainId, sourceChainName: chainName, sourceChainType: chain.id === 'playground' ? 'playground' : chain.type,
+            },
+        });
+    };
+
+    const submitTextToImageJob = async (draft: { basePrompt: string; subjectPrompt: string; negativePrompt: string; modules: PromptModule[]; params: NAIParams }, count: number, approvedCost: number,
+        options?: { agent?: boolean; onApproved?: () => Promise<void>; placement?: GenerationPlacement }): Promise<PromptAgentGenerationResult> => {
+        generationInFlightRef.current = true;
+        try {
+            const streamSupported = getRuntimeNaiModelInfo(applyNaiModelSettings(draft.params, naiRuntimeConfig || DEFAULT_NAI_RUNTIME).model, naiRuntimeConfig || DEFAULT_NAI_RUNTIME).supportsStreamedResponses;
+            const descriptor = await startTextToImageJob(draft, generationStreamPreview && streamSupported, approvedCost);
+            currentGenerationStepsRef.current = descriptor.history.params.steps ?? 0;
+            return await runBackgroundJob(descriptor, count, options);
+        } finally {
+            generationInFlightRef.current = false;
+        }
+    };
+
+    const handleGenerate = async (placement?: GenerationPlacement) => {
+        if (!placement && (generationSeriesRef.current || generationInFlightRef.current || isGenerating || queueState?.busy)) return false;
         if (!apiKey) {
             const message = '请先在“全局设置”中配置 NovelAI API Key';
             setErrorMsg(message);
             notify(message, 'error');
-            if (override) throw agentOperationError(message, 'missing_key');
             return false;
         }
-        if (generationInFlightRef.current) {
-            if (override) throw agentOperationError('已有图片正在生成，请等待完成后再提出请求', 'generation_busy');
-            return false;
-        }
-        generationInFlightRef.current = true;
-        const generationPrompt = override ? compilePrompt({ basePrompt: override.basePrompt, modules: override.modules }, override.subjectPrompt) : finalPrompt;
-        const generationParams = applyNaiModelSettings(override?.params ?? params, naiRuntimeConfig || DEFAULT_NAI_RUNTIME);
-        const generationNegativePrompt = isNaiMediumModel(generationParams.model) ? '' : (override?.negativePrompt ?? negativePrompt);
-        const previousGeneratedImage = generatedImage;
-        const previousPreviewMode = previewMode;
-        previewSelectionRevisionRef.current += 1;
-        let streamedPreviewShown = false;
-        setIsGenerating(true);
-        setGenerationProgress(null);
-        setErrorMsg(null);
-        try {
-            const activeParams: NAIParams = {
-                ...generationParams,
-                ...(forceEmptySeed ? { seed: undefined } : {}),
-                vibes: generationParams.vibes ? {
-                    ...generationParams.vibes,
-                    slots: normalizeVibeSelections(generationParams.vibes.slots, generationParams.vibes.normalizeStrengths),
-                } : undefined,
-            };
-            const streamSupported = getRuntimeNaiModelInfo(activeParams.model, naiRuntimeConfig || DEFAULT_NAI_RUNTIME).supportsStreamedResponses;
-            let result;
-            if (generationStreamPreview && streamSupported) {
-                try {
-                    result = await generateImageStream(apiKey, generationPrompt, generationNegativePrompt, activeParams, preview => {
-                        streamedPreviewShown = true;
-                        setGeneratedImage(preview.image);
-                        setPreviewMode('result');
-                        setGenerationProgress(preview.step ? { step: preview.step, total: activeParams.steps } : null);
-                    }, streamSupported);
-                } catch (streamError) {
-                    setGenerationProgress(null);
-                    // 4xx 是上游明确拒绝（参数/鉴权），重发必然同样失败且不计费，直接抛错展示；
-                    // 网络中断/5xx 时无法区分「未达上游」与「上游已完成但 final 丢失」，
-                    // 自动重发可能双扣费，必须改由用户确认。
-                    const streamStatus = (streamError as { status?: unknown })?.status;
-                    if (typeof streamStatus === 'number' && streamStatus >= 400 && streamStatus < 500) throw streamError;
-                    console.warn('生成过程预览中断：', streamError);
-                    const retry = await confirmAction({
-                        title: '过程预览连接中断',
-                        message: '生成状态未知，重试可能重复扣费；已扣费结果可能稍后入库。',
-                        confirmLabel: '重新生成',
-                        tone: 'danger',
-                    });
-                    if (!retry) throw streamError;
-                    result = await generateImage(apiKey, generationPrompt, generationNegativePrompt, activeParams);
-                }
-            } else {
-                result = await generateImage(apiKey, generationPrompt, generationNegativePrompt, activeParams);
-            }
-
-            lastGeneratedBlobRef.current = result.blob;
-
-            // Use actual seed returned from generation
-            const finalParams = { ...result.params, seed: result.seed };
-            const persistedNegativePrompt = isNaiMediumModel(finalParams.model) ? '' : generationNegativePrompt;
-            // Agent generation can use a draft that has not been applied to
-            // the editor.  Persist that exact draft so re-importing history
-            // reconstructs the image that was actually generated.
-            const generatedStructure = override ?? {
-                basePrompt,
-                subjectPrompt,
-                negativePrompt,
-                modules: modules.map(module => ({ ...module, isActive: activeModules[module.id] ?? module.isActive })),
-                params: activeParams,
-            };
-            const persistSource = {
-                sourceChainId,
-                sourceChainName: chainName,
-                sourceChainType: chain.id === 'playground' ? 'playground' : chain.type,
-                basePrompt: generatedStructure.basePrompt,
-                subjectPrompt: generatedStructure.subjectPrompt,
-                modules: generatedStructure.modules,
-            } as const;
-
-            // 用户在生成途中离开了编辑页：历史落库必须继续完成（产物不丢），UI 状态不再触碰。
-            if (!mountedRef.current) {
-                await localHistory.add(result.blob, generationPrompt, finalParams, persistedNegativePrompt, persistSource)
-                    .then(item => { if (override) agentGenerationReceiptRef.current = item.id; })
-                    .catch((historyError: unknown) => console.error('离开后保存生成历史失败:', historyError));
-                checkAndRemoveUntestedTag();
-                return true;
-            }
-
-            // Show the completed image before uploading its several-megabyte
-            // base64 payload to local history. Keeping previewMode='history'
-            // here made the previous history item mask the new result until
-            // that upload finished, which was especially visible on phones.
-            setGeneratedImage(result.image);
-            setPreviewMode('result');
-            if (window.matchMedia('(max-width: 1023px)').matches) setLightboxImg(result.image);
-
-            // Leave the current task so React can commit and the browser can
-            // paint the result before JSON serialization/history persistence.
-            await new Promise<void>(resolve => window.setTimeout(resolve, 0));
-
-            try {
-                const historyItem = await localHistory.add(result.blob, generationPrompt, finalParams, persistedNegativePrompt, persistSource);
-                if (override) agentGenerationReceiptRef.current = historyItem.id;
-                setPreviewHistory(prev => [historyItem, ...prev.filter(item => item.id !== historyItem.id)]);
-                setPreviewIndex(0);
-                setPreviewMode('history');
-                setGeneratedImage(historyItem.imageUrl);
-                setLightboxImg(current => current === result.image ? historyItem.imageUrl : current);
-                checkAndRemoveUntestedTag();
-            } catch (historyError: any) {
-                // Generation has already succeeded. Keep the in-memory image
-                // visible and report only the persistence failure.
-                setPreviewMode('unsaved');
-                notify(`图片已生成，但保存到本地历史失败：${historyError?.message || '未知错误'}`, 'error');
-            }
-            return true;
-        } catch (e: any) {
-            if (mountedRef.current) {
-                if (streamedPreviewShown) {
-                    setGeneratedImage(previousGeneratedImage);
-                    setPreviewMode(previousPreviewMode);
-                }
-                setErrorMsg(e.message);
-            }
-            // notify 是全局 toast：离开编辑页后仍应告知生成失败。
-            notify(e.message, 'error');
-            if (override) throw agentOperationError(e.message || '图片生成失败', 'generation_failed', 'failed');
-            return false;
-        } finally {
-            if (mountedRef.current) {
-                setGenerationProgress(null);
-                setIsGenerating(false);
-            }
-            generationInFlightRef.current = false;
-        }
-    };
-    const handleGenerate = async () => {
-        const requestParams = params;
+        const draft = structuredClone({ basePrompt, subjectPrompt, negativePrompt,
+            modules: modules.map(module => ({ ...module, isActive: activeModules[module.id] ?? module.isActive })), params });
+        const count = validateGenerationCount(generationCount);
         const freshSubscription = novelaiSubscription;
         void refreshUsageIfStale();
-        const cost = estimateV45GenerationCost(requestParams, isActiveOpusSubscription(freshSubscription), freshSubscription?.usage?.isNegative ?? true);
-        // 本地 Anlas 预算已用尽但仍需扣费：红色警告，由用户确认后才继续。
-        if (cost > 0 && anlasBudget.remaining <= 0) {
+        const cost = estimateV45GenerationCost(draft.params, isActiveOpusSubscription(freshSubscription), freshSubscription?.usage?.isNegative ?? true);
+        const totalCost = cost * count;
+        if (count > 1 || placement) {
+            if (!await confirmAction({
+                title: placement ? placement === 'next' ? '排到下一位' : '加入生成队列' : '确认连续生成',
+                message: `使用本轮固定的提示词与参数，逐张生成并保存 ${count} 张图片。${cost > 0 ? `\n每张预计 ${cost} Anlas，整轮预计 ${totalCost} Anlas。` : '\n当前参数预计使用免费额度；如果转为付费，将停止后续生成。'}\n停止只取消后续请求，正在生成的图片仍会接收并保存。${totalCost > anlasBudget.remaining ? `\n\n⚠ 剩余预算 ${anlasBudget.remaining} 点不足以覆盖整轮消耗。` : ''}${runtimeSyncUnhealthy ? `\n\n⚠ ${runtimeSyncWarning}` : ''}`,
+                confirmLabel: cost > 0 ? `消耗约 ${totalCost} 点，生成 ${count} 张` : `生成 ${count} 张`,
+                ...(totalCost > anlasBudget.remaining || runtimeSyncUnhealthy ? { tone: 'danger' as const } : {}),
+            })) return false;
+        } else if (cost > 0 && anlasBudget.remaining <= 0) {
+            // 本地 Anlas 预算已用尽但仍需扣费：红色警告，由用户确认后才继续。
             if (!await confirmAction({
                 title: 'Anlas 预算已用尽',
                 message: `本地预算已扣到 0，本次生成仍需消耗 ${cost} Anlas（共享账号额度），继续将透支你手动设定的预算线。\n\n若预算数字过期，可先到全局设置校准。`,
                 confirmLabel: `仍要消耗 ${cost} 点生成`,
                 tone: 'danger',
             })) return false;
-            return handleGenerateDraft();
-        }
-        if (cost > 0 && !await confirmAction({
+        } else if (cost > 0 && !await confirmAction({
             title: '确认生成图片',
             message: `当前参数预计消耗 ${cost} Anlas${params.characterReferences?.enabled && params.characterReferences.slots.length ? `\n其中角色参考：${params.characterReferences.slots.length} × ${(naiRuntimeConfig || DEFAULT_NAI_RUNTIME).billing.characterReferenceCost} = ${params.characterReferences.slots.length * (naiRuntimeConfig || DEFAULT_NAI_RUNTIME).billing.characterReferenceCost} Anlas` : ''}${cost > anlasBudget.remaining ? `\n\n⚠ 剩余预算 ${anlasBudget.remaining} 点不足以覆盖本次消耗。` : ''}${runtimeSyncUnhealthy ? `\n\n⚠ ${runtimeSyncWarning}` : ''}。`,
-            confirmLabel: cost > 0 ? `消耗 ${cost} 点并生成` : '确认生成一张',
+            confirmLabel: `消耗 ${cost} 点并生成`,
         })) return false;
-        return handleGenerateDraft();
+        try {
+            return (await submitTextToImageJob(draft, count, cost, { placement })).success;
+        } catch (error) {
+            const message = error instanceof Error ? error.message : '图片生成失败';
+            if (mountedRef.current) { setErrorMsg(message); notify(message, 'error'); }
+            return false;
+        }
     };
 
     const imageEditCostLabel = (operation: ImageEditOperation, focused: boolean, context?: { width: number; height: number; focusedRect?: { x: number; y: number; width: number; height: number } | null; minimumContextArea?: number }) => {
@@ -1636,13 +1743,15 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         const editStrength = activeEditDraft?.strength !== undefined ? activeEditDraft.strength : (operation === 'image-to-image' ? 0.7 : 1);
         const costParams = activeEditDraft?.params || params;
         const cost = estimateImageEditCost(costParams, operation, editStrength, focusedReady, opusSubscriptionActive ? novelaiSubscription?.tier : 0, opusUsageExhausted, context);
-        return formatGenerationCostLabel(cost, costParams.model);
+        return formatGenerationCostLabel(cost * generationCount, costParams.model);
     };
 
-    const handleImageEditGenerate = async (request: ImageEditRequest, options?: { params: NAIParams; onApproved?: () => Promise<void>; agent: true }): Promise<boolean> => {
-        const stop = (message: string, code: string, outcome: 'blocked' | 'failed' | 'cancelled' = 'blocked') => {
+    const handleImageEditGenerate = async (request: ImageEditRequest, options?: { params?: NAIParams; onApproved?: () => Promise<void>; agent?: boolean; count?: number; placement?: GenerationPlacement }): Promise<PromptAgentGenerationResult> => {
+        const count = validateGenerationCount(options?.agent ? options.count : generationCount);
+        // 未提交的任务同样回完整回执：请求数与已保存数为 0，历史 ID 为空。
+        const stop = (message: string, code: string, outcome: 'blocked' | 'failed' | 'cancelled' = 'blocked'): PromptAgentGenerationResult => {
             if (options?.agent) throw agentOperationError(message, code, outcome);
-            return false;
+            return { ...agentGenerationFailure(agentOperationError(message, code, outcome)), requestedCount: count, completedCount: 0, historyIds: [] };
         };
         if (!apiKey) {
             const message = '请先在“全局设置”中配置 NovelAI API Key';
@@ -1650,8 +1759,9 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             notify(message, 'error');
             return stop(message, 'missing_key');
         }
+        if (!options?.placement && (generationSeriesRef.current || generationInFlightRef.current || isGenerating)) return stop('此 Key 正在生成，请等待当前任务完成', 'generation_busy');
         const editParamsSource = options?.params || request.params || activeEditDraft?.params || params;
-        const freshSubscription = novelaiSubscription;
+        const freshSubscription = latestGenerationStateRef.current.subscription.info;
         void refreshUsageIfStale();
         let sourceWidth = request.canvasWidth;
         let sourceHeight = request.canvasHeight;
@@ -1673,19 +1783,24 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             minimumContextArea: request.minimumContextArea,
         });
         const syncWarning = runtimeSyncUnhealthy ? `\n\n⚠ ${runtimeSyncWarning}` : '';
-        if (editCost > 0 && anlasBudget.remaining <= 0) {
+        const totalCost = editCost * count;
+        // 确认只发生一次；提交后由后端费用状态机继续裁决，本页不再逐张确认。
+        if (count > 1 || options?.placement) {
+            if (!await confirmAction({
+                title: options?.placement ? options.placement === 'next' ? '排到下一位' : '加入生成队列' : '确认连续生成',
+                message: `使用本轮固定的提示词、参数与底图，逐张生成并保存 ${count} 张图片。${editCost > 0 ? `\n每张预计 ${editCost} Anlas，整轮预计 ${totalCost} Anlas。` : '\n当前参数预计使用免费额度；如果转为付费，将停止后续生成。'}\n停止只取消后续请求，正在生成的图片仍会接收并保存。${totalCost > anlasBudget.remaining ? `\n\n⚠ 剩余预算 ${anlasBudget.remaining} 点不足以覆盖整轮消耗。` : ''}${syncWarning}`,
+                confirmLabel: editCost > 0 ? `消耗约 ${totalCost} 点，生成 ${count} 张` : `生成 ${count} 张`,
+                ...(totalCost > anlasBudget.remaining || runtimeSyncUnhealthy ? { tone: 'danger' as const } : {}),
+            })) return stop('用户取消了生图请求', 'user_cancelled', 'cancelled');
+        } else if (editCost > 0 && anlasBudget.remaining <= 0) {
             if (!await confirmAction({ title: 'Anlas 预算已用尽', message: `本次图片编辑预计消耗 ${editCost} Anlas，继续将透支本地预算线。${syncWarning}`, confirmLabel: `仍要消耗 ${editCost} 点`, tone: 'danger' })) return stop('用户取消了生图请求', 'user_cancelled', 'cancelled');
         } else if ((editCost > 0 || options?.agent) && !await confirmAction({ title: '确认图片编辑', message: `本次${request.operation === 'image-to-image' ? '图生图' : request.operation === 'inpaint' ? '局部重绘' : '扩图'}本地结算估算消耗 ${editCost} Anlas；生成成功后会刷新当前 Key 的账号额度。${editCost > anlasBudget.remaining ? `\n\n⚠ 剩余预算 ${anlasBudget.remaining} 点不足以覆盖本次消耗。` : ''}${syncWarning}`, confirmLabel: editCost > 0 ? `消耗 ${editCost} 点并生成` : '仍要生成', ...(runtimeSyncUnhealthy ? { tone: 'danger' as const } : {}) })) return stop('用户取消了生图请求', 'user_cancelled', 'cancelled');
-
-        await options?.onApproved?.();
         await flushMaskSave(request.operation).catch(error => console.warn('生成前保存编辑蒙版失败:', error));
-        const previousGeneratedImage = generatedImage;
-        const previousPreviewMode = previewMode;
-        const previousEditPreviewImage = imageEditPreviewImage;
-        let streamedPreviewShown = false;
-        setIsGenerating(true);
-        setGenerationProgress(null);
-        setErrorMsg(null);
+        generationInFlightRef.current = true;
+        if (mountedRef.current) {
+            setIsGenerating(true);
+            setErrorMsg(null);
+        }
         try {
             const editParams: NAIParams = {
                 ...editParamsSource,
@@ -1693,130 +1808,64 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 height: sourceHeight,
                 seed: forceEmptySeed ? undefined : editParamsSource.seed,
             };
-            const streamSupported = getRuntimeNaiModelInfo(editParams.model, naiRuntimeConfig || DEFAULT_NAI_RUNTIME).supportsStreamedResponses;
-            let result;
-            if (generationStreamPreview && streamSupported) {
-                try {
-                    result = await generateImageEditStream(apiKey, request.prompt, request.negativePrompt, editParams, request, preview => {
-                        streamedPreviewShown = true;
-                        if (chain.id !== 'playground') {
-                            setGeneratedImage(preview.image);
-                            setPreviewMode('result');
-                        }
-                        setImageEditPreviewImage(preview.image);
-                        setGenerationProgress(preview.step ? { step: preview.step, total: editParams.steps } : null);
-                    }, streamSupported);
-                } catch (streamError) {
-                    setGenerationProgress(null);
-                    // 与文生图同理：4xx 明确拒绝直接抛错；网络中断/5xx 时结果未知，
-                    // 自动重发可能双扣费，需用户确认。
-                    const streamStatus = (streamError as { status?: unknown })?.status;
-                    if (typeof streamStatus === 'number' && streamStatus >= 400 && streamStatus < 500) throw streamError;
-                    console.warn('图片编辑过程预览中断：', streamError);
-                    const retry = await confirmAction({
-                        title: '过程预览连接中断',
-                        message: '编辑状态未知，重试可能重复扣费；已扣费结果可能稍后入库。',
-                        confirmLabel: '重新生成',
-                        tone: 'danger',
-                    });
-                    if (!retry) throw streamError;
-                    result = await generateImageEdit(apiKey, request.prompt, request.negativePrompt, editParams, request);
-                }
-            } else {
-                result = await generateImageEdit(apiKey, request.prompt, request.negativePrompt, editParams, request);
-            }
-            lastGeneratedBlobRef.current = result.blob;
-            // 先显示结果再落盘历史；离开编辑页时跳过 UI 更新直接落库。
-            if (mountedRef.current) {
-                if (chain.id !== 'playground') {
-                    setGeneratedImage(result.image);
-                    setPreviewMode('result');
-                }
-                setImageEditPreviewImage(result.image);
-                if (window.matchMedia('(max-width: 1023px)').matches) setLightboxImg(result.image);
-                // Leave the current task so React can commit and the browser can paint.
-                await new Promise<void>(resolve => window.setTimeout(resolve, 0));
-            }
-
-            const keyHash = await hashNaiApiKey(apiKey);
-            const editMask = request.mask ? await dataUrlToBlob(request.mask) : undefined;
-            const edit: ImageEditMetadata = {
-                operation: request.operation,
-                parentHistoryId: request.parentHistoryId,
-                baseImageSource: request.baseImageSource || (request.parentHistoryId ? 'history' : 'generated'),
-                strength: request.strength,
-                noise: request.noise,
-                focused: request.focused,
-                minimumContextArea: request.minimumContextArea,
-                focusedArea: request.focusedRect,
-                contextArea: request.minimumContextArea,
-                canvasExpansion: request.expansion,
-                requestWidth: result.requestWidth,
-                requestHeight: result.requestHeight,
-                fullSizeMask: Boolean(result.focusedGeometry?.fullSizeMask || (request.mask && !request.focused)),
-                maskAvailable: Boolean(editMask),
-                estimatedCost: result.estimatedCost ?? editCost,
-                settlementStatus: 'estimated',
-                keyHash,
-                promptSource: request.promptSource,
-            };
-            const historyItem = await localHistory.add(result.blob, request.prompt, { ...result.params, seed: result.seed }, isNaiMediumModel(result.params.model) ? '' : request.negativePrompt, {
-                sourceChainId,
-                sourceChainName: chainName,
-                sourceChainType: chain.id === 'playground' ? 'playground' : chain.type,
-                basePrompt,
-                subjectPrompt,
-                modules: modules.map(module => ({ ...module, isActive: activeModules[module.id] ?? module.isActive })),
-                edit,
-                editMask,
+            const streamSupported = getRuntimeNaiModelInfo(applyNaiModelSettings(editParams, naiRuntimeConfig || DEFAULT_NAI_RUNTIME).model, naiRuntimeConfig || DEFAULT_NAI_RUNTIME).supportsStreamedResponses;
+            // 只提交一次：回贴原料与整图历史参数都在这里固定，随机种子由后端每张抽取。
+            const job = await buildGenerationJobDescriptor({
+                operation: request.operation, prompt: request.prompt, negative: request.negativePrompt, params: editParams,
+                stream: generationStreamPreview && streamSupported, forceEmptySeed, apiKey, estimatedCost: editCost, approvedCost: editCost,
+                history: {
+                    basePrompt, subjectPrompt,
+                    modules: modules.map(module => ({ ...module, isActive: activeModules[module.id] ?? module.isActive })),
+                    sourceChainId, sourceChainName: chainName, sourceChainType: chain.id === 'playground' ? 'playground' : chain.type,
+                    edit: {
+                        operation: request.operation,
+                        parentHistoryId: request.parentHistoryId,
+                        baseImageSource: request.baseImageSource || (request.parentHistoryId ? 'history' : 'generated'),
+                        strength: request.strength, noise: request.noise, focused: request.focused,
+                        minimumContextArea: request.minimumContextArea, focusedArea: request.focusedRect,
+                        contextArea: request.minimumContextArea, canvasExpansion: request.expansion, promptSource: request.promptSource,
+                    },
+                },
+                edit: {
+                    image: request.image, mask: request.mask, strength: request.strength, noise: request.noise,
+                    focused: request.focused, focusedRect: request.focusedRect,
+                    minimumContextArea: request.minimumContextArea, expansion: request.expansion,
+                },
             });
-            // 历史落库完成后才检查挂载态：产物不丢，UI 与工作区草稿仅在仍在编辑页时更新。
-            if (options?.agent) agentGenerationReceiptRef.current = historyItem.id;
-            if (!mountedRef.current) return true;
-            setPreviewHistory(previous => [historyItem, ...previous.filter(item => item.id !== historyItem.id)]);
-            if (chain.id !== 'playground') {
-                previewSelectionRevisionRef.current += 1;
-                setPreviewIndex(0);
-                setPreviewMode('history');
-                setGeneratedImage(historyItem.imageUrl);
-            }
-            setImageEditPreviewImage(historyItem.imageUrl);
-            setLightboxImg(current => current === result.image ? historyItem.imageUrl : current);
-            // 把本次结果持久化为当前编辑模式的「生成本草稿」，历史导航不再覆盖工作区结果
-            try {
-                const resultRef = await saveLabWorkspaceAsset(result.blob, getLabWorkspaceAssetId(workspaceKey, request.operation, 'result'));
-                updateWorkspace(previous => ({
-                    ...previous,
-                    edits: { ...previous.edits, [request.operation]: { ...previous.edits[request.operation], resultImageRef: resultRef } },
-                }));
-            } catch (resultSaveError) {
-                console.warn('保存图片编辑结果资产失败:', resultSaveError);
-            }
-            checkAndRemoveUntestedTag();
-            notify('图片编辑完成，结果已保存为新的历史图片', 'success');
-            return true;
+            currentGenerationStepsRef.current = job.history.params.steps ?? 0;
+            const result = await runBackgroundJob(job, count, {
+                agent: options?.agent, placement: options?.placement, onApproved: options?.onApproved,
+                onCompleted: persistEditResultAsset,
+            });
+            if (result.success && !options?.agent) notify('图片编辑完成，结果已保存为新的历史图片', 'success');
+            return result;
         } catch (editError) {
-            if (mountedRef.current) {
-                if (streamedPreviewShown) {
-                    if (chain.id !== 'playground') {
-                        setGeneratedImage(previousGeneratedImage);
-                        setPreviewMode(previousPreviewMode);
-                    }
-                    setImageEditPreviewImage(previousEditPreviewImage);
-                }
-                const message = editError instanceof Error ? editError.message : '图片编辑失败';
-                setErrorMsg(message);
-                notify(message, 'error');
-            } else {
-                // 离开编辑页后仍应告知编辑失败（全局 toast）。
-                notify(editError instanceof Error ? editError.message : '图片编辑失败', 'error');
-            }
-            return stop(editError instanceof Error ? editError.message : '图片编辑失败', 'generation_failed', 'failed');
+            const message = editError instanceof Error ? editError.message : '图片编辑失败';
+            if (mountedRef.current) { setErrorMsg(message); notify(message, 'error'); }
+            const failure = agentGenerationFailure(editError);
+            return stop(message, failure.code || 'generation_failed', failure.outcome === 'cancelled' ? 'cancelled' : failure.outcome === 'blocked' ? 'blocked' : 'failed');
         } finally {
-            if (mountedRef.current) {
-                setIsGenerating(false);
-                setGenerationProgress(null);
-            }
+            generationInFlightRef.current = false;
+            if (mountedRef.current) setIsGenerating(false);
+        }
+    };
+
+    /** 后台任务保存编辑结果后，把它作为当前模式的结果资产留出预览入口。 */
+    const persistEditResultAsset = async (item: LocalGenItem) => {
+        const operation = item.edit?.operation;
+        if (!operation) return;
+        try {
+            const response = await fetch(item.imageUrl);
+            if (!response.ok) throw new Error(`读取图片编辑结果失败（${response.status}）`);
+            const blob = await response.blob();
+            lastGeneratedBlobRef.current = blob;
+            const resultRef = await saveLabWorkspaceAsset(blob, getLabWorkspaceAssetId(workspaceKey, operation, 'result'));
+            updateWorkspace(previous => ({
+                ...previous,
+                edits: { ...previous.edits, [operation]: { ...previous.edits[operation], resultImageRef: resultRef } },
+            }));
+        } catch (error) {
+            console.warn('保存图片编辑结果资产失败:', error);
         }
     };
 
@@ -1840,49 +1889,57 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         setHasChanges(true);
     };
 
-    const requestAgentGeneration = async (draft: PromptAgentDraft, reason?: string, onApproved?: () => Promise<void>): Promise<PromptAgentGenerationResult> => {
-        agentGenerationReceiptRef.current = undefined;
-        const execute = async (): Promise<boolean> => {
+    const requestAgentGeneration = async (draft: PromptAgentDraft, reason?: string, onApproved?: () => Promise<void>, count = 1, placement?: GenerationPlacement): Promise<PromptAgentGenerationResult> => {
+        // 未提交的任务也回完整回执：请求数与已保存数为 0，历史 ID 为空。
+        if (!placement && (generationSeriesRef.current || generationInFlightRef.current || isGenerating)) return { ...agentGenerationFailure(agentOperationError('已有图片正在生成，请等待完成', 'generation_busy')), requestedCount: count, completedCount: 0, historyIds: [] };
+        const execute = async (): Promise<PromptAgentGenerationResult> => {
+            validateGenerationCount(count);
+            validateGenerationPlacement(placement);
             const target = agentTargetRef.current;
             if (draft.target && (draft.target.chainId !== target?.chainId || draft.target.mode !== target?.mode || draft.target.fingerprint !== target?.fingerprint)) throw agentOperationError('创作目标已变化，请先读取当前状态，再重新请求生成', 'target_changed');
             const approve = async () => {
-                const target = agentTargetRef.current;
-                if (draft.target && (draft.target.chainId !== target?.chainId || draft.target.mode !== target?.mode || draft.target.fingerprint !== target?.fingerprint)) throw agentOperationError('确认期间创作目标已变化，请重新提出请求', 'target_changed');
+                const current = agentTargetRef.current;
+                if (draft.target && (draft.target.chainId !== current?.chainId || draft.target.mode !== current?.mode || draft.target.fingerprint !== current?.fingerprint)) throw agentOperationError('确认期间创作目标已变化，请重新提出请求', 'target_changed');
                 await onApproved?.();
             };
-        if (activeGenerationMode !== 'text-to-image') {
-            if (!agentEditGenerateRef.current) throw agentOperationError('编辑画布尚未准备好', 'canvas_not_ready');
-            return agentEditGenerateRef.current(draft, approve);
-        }
-        const freshSubscription = novelaiSubscription;
-        void refreshUsageIfStale();
-        const costParams = draft.params;
-        const cost = estimateV45GenerationCost(costParams, isActiveOpusSubscription(freshSubscription), freshSubscription?.usage?.isNegative ?? true);
-        const draftGenerationCostLabel = formatGenerationCostLabel(cost, draft.params.model);
-        // 预算已用尽仍需扣费：红色警告（Agent 路径同样拦截）。
-        if (cost > 0 && anlasBudget.remaining <= 0) {
-            if (!await confirmAction({
-                title: 'Anlas 预算已用尽',
-                message: `${reason ? `${reason}\n\n` : ''}本地预算已扣到 0，本次生成仍需消耗 ${cost} Anlas（共享账号额度），继续将透支你手动设定的预算线。`,
-                confirmLabel: `仍要消耗 ${cost} 点生成`,
-                tone: 'danger',
+            if (activeGenerationMode !== 'text-to-image') {
+                if (!agentEditGenerateRef.current) throw agentOperationError('编辑画布尚未准备好', 'canvas_not_ready');
+                const agentResult = await agentEditGenerateRef.current(draft, approve, count, placement);
+                if (typeof agentResult !== 'boolean') return agentResult;
+                return agentResult
+                    ? normalizeAgentGenerationResult({ success: true, historySaved: true, outcome: 'succeeded' })
+                    : agentGenerationFailure(agentOperationError('图片编辑未返回生成回执', 'generation_failed', 'failed'));
+            }
+            const freshSubscription = novelaiSubscription;
+            void refreshUsageIfStale();
+            const cost = estimateV45GenerationCost(draft.params, isActiveOpusSubscription(freshSubscription), freshSubscription?.usage?.isNegative ?? true);
+            const totalCost = cost * count;
+            // 预算已用尽仍需扣费：红色警告（Agent 路径同样拦截）。
+            if (cost > 0 && anlasBudget.remaining <= 0) {
+                if (!await confirmAction({
+                    title: 'Anlas 预算已用尽',
+                    message: `${reason ? `${reason}\n\n` : ''}本地预算已扣到 0，本次生成仍需消耗 ${cost} Anlas（共享账号额度），继续将透支你手动设定的预算线。`,
+                    confirmLabel: `仍要消耗 ${cost} 点生成`,
+                    tone: 'danger',
+                })) throw agentOperationError('用户取消了生图请求', 'user_cancelled', 'cancelled');
+            } else if (count > 1 || placement) {
+                if (!await confirmAction({
+                    title: placement ? placement === 'next' ? '排到下一位' : '加入生成队列' : '确认连续生成',
+                    message: `${reason ? `${reason}\n\n` : ''}使用本轮固定的提示词与参数，逐张生成并保存 ${count} 张图片。${cost > 0 ? `\n每张预计 ${cost} Anlas，整轮预计 ${totalCost} Anlas。` : '\n当前参数预计使用免费额度；如果转为付费，将停止后续生成。'}\n停止只取消后续请求，正在生成的图片仍会接收并保存。${totalCost > anlasBudget.remaining ? `\n\n⚠ 剩余预算 ${anlasBudget.remaining} 点不足以覆盖整轮消耗。` : ''}${runtimeSyncUnhealthy ? `\n\n⚠ ${runtimeSyncWarning}` : ''}`,
+                    confirmLabel: cost > 0 ? `消耗约 ${totalCost} 点，生成 ${count} 张` : `生成 ${count} 张`,
+                    ...(totalCost > anlasBudget.remaining || runtimeSyncUnhealthy ? { tone: 'danger' as const } : {}),
+                })) throw agentOperationError('用户取消了生图请求', 'user_cancelled', 'cancelled');
+            } else if (!await confirmAction({
+                title: '助手已准备好生图',
+                message: `${reason ? `${reason}\n\n` : ''}预计本次${formatGenerationCostLabel(cost, draft.params.model)}。确认后才会提交给 NovelAI。${cost > anlasBudget.remaining ? `\n\n⚠ 剩余预算 ${anlasBudget.remaining} 点不足以覆盖本次消耗。` : ''}${runtimeSyncUnhealthy ? `\n\n⚠ ${runtimeSyncWarning}` : ''}`,
+                confirmLabel: cost > 0 ? `消耗 ${cost} 点并生成` : '确认生成一张',
             })) throw agentOperationError('用户取消了生图请求', 'user_cancelled', 'cancelled');
-            await approve();
-            return handleGenerateDraft(draft);
-        }
-        if (!await confirmAction({
-            title: '助手已准备好生图',
-            message: `${reason ? `${reason}\n\n` : ''}预计本次${draftGenerationCostLabel}。确认后才会提交给 NovelAI。${cost > anlasBudget.remaining ? `\n\n⚠ 剩余预算 ${anlasBudget.remaining} 点不足以覆盖本次消耗。` : ''}${runtimeSyncUnhealthy ? `\n\n⚠ ${runtimeSyncWarning}` : ''}`,
-            confirmLabel: cost > 0 ? `消耗 ${cost} 点并生成` : '确认生成一张',
-        })) throw agentOperationError('用户取消了生图请求', 'user_cancelled', 'cancelled');
-        await approve();
-        return handleGenerateDraft(draft);
+            return await submitTextToImageJob(structuredClone(draft), count, cost, { agent: true, placement, onApproved: approve });
         };
         try {
-            const success = await execute();
-            return normalizeAgentGenerationResult({ success, historySaved: Boolean(agentGenerationReceiptRef.current), ...(agentGenerationReceiptRef.current ? { historyId: agentGenerationReceiptRef.current } : {}) });
+            return await execute();
         } catch (error) {
-            return agentGenerationFailure(error);
+            return { ...agentGenerationFailure(error), requestedCount: count, completedCount: 0, historyIds: [] };
         }
     };
 
@@ -2029,7 +2086,11 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                     if (draft.target ? draft.target.fingerprint !== currentAgentDraft().target?.fingerprint : editorRevisionRef.current !== agentRunRevisionRef.current) { setAgentProposal(draft); return; }
                     setAgentUndoSnapshot(currentAgentDraft()); applyAgentDraft(draft);
                 }}
-                onRequestGeneration={(draft, reason, onApproved) => requestAgentGeneration(draft, reason, onApproved)}
+                onRequestGeneration={requestAgentGeneration}
+                onGenerationInterrupted={() => {
+                    if (generationSeriesRef.current?.agent) stopGenerationSeries();
+                    for (const session of getQueuedGenerationSeries(chain.id)) if (session.agent) stopGenerationSeriesSession(session);
+                }}
                 canUndo={Boolean(agentUndoSnapshot)}
                 onUndo={() => { if (agentUndoSnapshot) { applyAgentDraft(agentUndoSnapshot); setAgentUndoSnapshot(null); notify('已撤销本次助手修改'); } }}
                 tagAssistEnabled={tagAssistEnabled}
@@ -2180,7 +2241,9 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                     favorite={displayedPreviewItem ? { imageUrl: displayedPreviewItem.imageUrl, sourceType: 'history', sourceId: displayedPreviewItem.id } : { imageUrl: chain.previewImage || '', title: chain.name, sourceType: chain.type === 'character' ? 'character' : 'chain', sourceId: chain.id, prompt: chain.basePrompt, negativePrompt: chain.negativePrompt, params: chain.params }}
                     generationData={displayedPreviewItem ? { prompt: displayedPreviewItem.prompt, negativePrompt: displayedPreviewItem.negativePrompt, params: displayedPreviewItem.params } : undefined}
                     isGenerating={isGenerating}
-                    handleGenerate={handleGenerate}
+                    generationDisabled={externalGenerationBusy}
+                    unavailableLabel={generationUnavailableLabel}
+                    handleGenerate={() => { void handleGenerate(); }}
                     errorMsg={errorMsg}
                     generatedImage={displayedPreviewImage}
                     previewImage={chain.previewImage}
@@ -2201,6 +2264,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                     generationCostLabel={generationCostLabel}
                     transparentPreview={activeModelInfo.supportsTransparentBackground && params.transparent === true}
                     generationProgress={generationProgress}
+                    generationCountControl={generationCountControl}
                     notify={notify}
                 />
                 </div>
@@ -2218,6 +2282,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 draft={activeEditDraft}
                 layout={activeLabLayout}
                 maskData={imageEditMaskData}
+                generationUnavailableLabel={generationUnavailableLabel}
                 generationCostLabel={imageEditCostLabel}
                 isGenerating={isGenerating}
                 generationProgress={generationProgress}
@@ -2336,6 +2401,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                     setImageEditMaskData(maskData);
                 }}
                 onGenerate={handleImageEditGenerate}
+                generationCountControl={generationCountControl}
                 onGenerateBarChange={handleImageEditGenerateBarChange}
             /> : null}
 
@@ -2346,7 +2412,14 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                     {mobileFloatingPreviewImage && <button type="button" onClick={() => setLightboxImg(mobileFloatingPreviewImage)} className="mobile-touch flex h-12 w-12 items-center justify-center overflow-hidden rounded-full border-2 border-white bg-gray-900 shadow-xl dark:border-gray-800" aria-label={t("查看当前预览图")}><SmartImage src={mobileFloatingPreviewImage || ''} alt={t("当前预览图")} /></button>}
                     <div className="flex flex-col items-end gap-2">
                         {queueStatus && <InlineCloudQueueStatus compact generationProgress={generationProgress} className="min-w-64 max-w-[calc(100vw-5rem)]" />}
-                        {!isCloudQueueTaskActive(queueStatus) && <button data-agent-action="business" onClick={activeEditOperation ? () => imageEditGenerateFnRef.current?.() : handleGenerate} disabled={isGenerating || imageEditBaseLoading || Boolean(activeEditOperation && !imageEditGenerateBar?.canGenerate)} className={`generation-action-button mobile-touch rounded-full px-6 text-sm font-bold text-white shadow-xl disabled:opacity-60 ${isGenerating ? 'generation-action-button--loading' : ''}`}><span>{isGenerating ? generationProgress ? t("生成中 {0}/{1}", [generationProgress.step, generationProgress.total]) : t("生成中…") : activeEditOperation && imageEditBaseLoading ? t("读取图片中…") : activeEditOperation && !imageEditGenerateBar?.canGenerate ? imageEditGenerateBar?.unavailableLabel || t("请先选择底图") : t("生成 · {0}", [activeEditOperation ? imageEditGenerateBar?.costLabel ?? '' : generationCostLabel])}</span></button>}
+                        <div className="flex items-stretch justify-end gap-2">
+                        <GenerationCountControl {...generationCountControl}
+                            onGenerate={activeEditOperation ? () => imageEditGenerateFnRef.current?.() : () => { void handleGenerate(); }}
+                            busy={isGenerating || externalGenerationBusy}
+                            costLabel={activeEditOperation ? imageEditGenerateBar?.costLabel : generationCostLabel}
+                            unavailableLabel={activeEditOperation && imageEditBaseLoading ? t("读取图片中…") : activeEditOperation ? imageEditGenerateBar?.unavailableLabel : generationUnavailableLabel}
+                            disabled={isGenerating || externalGenerationBusy || imageEditBaseLoading} />
+                        </div>
                     </div>
                 </div>
             </div>
