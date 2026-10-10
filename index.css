@@ -219,6 +219,12 @@ html[data-design-theme='nai-atelier'] ::selection {
   transition: color 180ms ease, border-color 180ms ease, background-color 180ms ease, filter 180ms ease, box-shadow 180ms ease, transform 180ms ease;
 }
 
+/* 单张入口不随张数、菜单或费用标签的显隐收缩；优先于手机通用触控最小尺寸。 */
+.generation-action-button.generation-action-button--single {
+  min-width: 10rem;
+  min-height: 2.75rem;
+}
+
 .nai-alpha-checker {
   background-color: #fff;
   background-image:

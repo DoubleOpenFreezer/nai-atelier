@@ -56,7 +56,6 @@ export const GenerationCountControl: React.FC<GenerationCountControlProps> = ({ 
     : Boolean(disabled) || occupied || paused;
   const primaryUnavailable = Boolean(primaryBlocked && unavailableLabel);
   const showProgress = continuousGenerationEnabled || occupied || paused;
-  const showProgressCount = continuousGenerationEnabled || occupied;
   const hasMenuContent = continuousGenerationEnabled || waiting.length > 0;
   useEffect(() => { if (!hasMenuContent) setOpen(false); }, [hasMenuContent]);
   const intervalInputNumber = Number(intervalValue);
@@ -137,12 +136,12 @@ export const GenerationCountControl: React.FC<GenerationCountControlProps> = ({ 
       aria-label={t(queueState?.pausing ? "暂停中…" : paused ? "继续生成" : "暂停生成")}
       title={t(queueState?.pausing ? "当前图片保存后暂停" : paused ? "继续生成" : "暂停生成")}
       className="mobile-touch !h-auto min-h-10 !gap-1.5 !px-2.5 !text-xs tabular-nums lg:absolute lg:inset-y-0 lg:right-full lg:mr-3">
-      {showProgressCount && <span>{completed}/{total}</span>}{paused && !queueState?.pausing ? <Play aria-hidden="true" className="h-3.5 w-3.5" /> : <Pause aria-hidden="true" className="h-3.5 w-3.5" />}
+      {continuousGenerationEnabled && <span>{completed}/{total}</span>}{paused && !queueState?.pausing ? <Play aria-hidden="true" className="h-3.5 w-3.5" /> : <Pause aria-hidden="true" className="h-3.5 w-3.5" />}
     </ToolbarButton>}
     <button ref={anchorRef} type="button" data-agent-action="business" aria-haspopup={hasMenuContent ? 'dialog' : undefined} aria-expanded={hasMenuContent ? open : undefined} aria-disabled={primaryBlocked}
       onClick={() => { if (!primaryBlocked) { close(); if (occupied && continuousGenerationEnabled && onQueue) onQueue('end'); else onGenerate?.(); } }}
       onKeyDown={event => { if (hasMenuContent && event.altKey && event.key === 'ArrowDown') { event.preventDefault(); setOpen(true); } }}
-      className="generation-action-button mobile-touch flex min-h-10 min-w-0 items-stretch overflow-hidden rounded-xl text-sm font-semibold">
+      className={'generation-action-button mobile-touch flex items-stretch overflow-hidden rounded-xl text-sm font-semibold ' + (continuousGenerationEnabled ? 'min-h-10 min-w-0' : 'generation-action-button--single')}>
       <span className={'flex min-w-0 flex-1 flex-wrap items-center justify-center gap-x-2 gap-y-1 px-3 py-2 ' + (primaryBlocked ? 'opacity-50' : '')}>
         <span>{primaryLabel}</span>
         {showPrimaryCount && <span className="whitespace-nowrap text-xs font-medium opacity-80">{t("{0} 张", [count])}</span>}

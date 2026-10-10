@@ -104,12 +104,30 @@ it('关闭连续生成时保留真实忙碌、暂停与系列管理，但不把�
   fireEvent.click(screen.getByRole('button', { name: '继续生成' })); expect(toggle).toHaveBeenCalledTimes(2);
 
   view.rerender(<GenerationCountControl {...props} continuousGenerationEnabled={false} onTogglePause={toggle} onQueue={queue} onGenerate={generate} series={{ current: 1, total: 3, stopping: false }} />);
-  expect(screen.getByText('1/3')).toBeTruthy();
   expect(screen.getByRole('button', { name: '生成中…' }).getAttribute('aria-disabled')).toBe('true');
   fireEvent.click(screen.getByRole('button', { name: '暂停生成' })); expect(toggle).toHaveBeenCalledTimes(3);
 
   view.rerender(<GenerationCountControl {...props} continuousGenerationEnabled={false} onTogglePause={toggle} onQueue={queue} onGenerate={generate} queueDisabled unavailableLabel="请先选择底图" queueState={state} />);
   expect(screen.getByRole('button', { name: '请先选择底图' })).toBeTruthy();
+});
+
+it('关闭连续生成后单张生成全程不显示队列计数，完成后仍可普通生成', () => {
+  const generate = vi.fn(), queue = vi.fn(), pause = vi.fn();
+  const control = { ...props, count: 1, continuousGenerationEnabled: false, onGenerate: generate, onQueue: queue, onTogglePause: pause };
+  const view = render(<GenerationCountControl {...control} busy series={{ current: 0, total: 1, stopping: false }}
+    queueState={{ busy: true, completed: 0, total: 1, paused: false, pausing: false, waiting: [] }} />);
+  expect(screen.queryByText('0/1')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '生成中…' }));
+  expect(generate).not.toHaveBeenCalled();
+  expect(queue).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: '暂停生成' }));
+  expect(pause).toHaveBeenCalledOnce();
+  view.rerender(<GenerationCountControl {...control} series={{ current: 1, total: 1, stopping: false }}
+    queueState={{ busy: false, completed: 1, total: 1, paused: false, pausing: false, waiting: [] }} />);
+  expect(screen.queryByText('1/1')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: /生成.*90 Anlas/ }));
+  expect(generate).toHaveBeenCalledOnce();
+  expect(queue).not.toHaveBeenCalled();
 });
 
 it('已完成快照与残留完成系列不转成队列动作，空闲普通生成仍遵守 disabled', () => {
