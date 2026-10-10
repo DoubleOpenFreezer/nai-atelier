@@ -219,10 +219,14 @@ html[data-design-theme='nai-atelier'] ::selection {
   transition: color 180ms ease, border-color 180ms ease, background-color 180ms ease, filter 180ms ease, box-shadow 180ms ease, transform 180ms ease;
 }
 
-/* 单张入口不随张数、菜单或费用标签的显隐收缩；优先于手机通用触控最小尺寸。 */
-.generation-action-button.generation-action-button--single {
+/* 生成入口保持旧版高度，手机保留触控宽度；桌面宽度由共用控件稳定在 20rem。 */
+.generation-action-button.generation-action-button--workbench {
   min-width: 10rem;
   min-height: 2.75rem;
+}
+
+@media (min-width: 64rem) {
+  .generation-action-button.generation-action-button--workbench { min-width: 0; }
 }
 
 .nai-alpha-checker {
@@ -256,7 +260,7 @@ html[data-design-theme='nai-atelier'] ::selection {
   opacity: 0;
 }
 
-.generation-action-button:hover:not(:disabled) {
+.generation-action-button:hover:not(:disabled):not([aria-disabled='true']) {
   color: white;
   border-color: transparent;
   background-color: var(--nai-action-deep, #0284c7);
@@ -287,7 +291,8 @@ html[data-design-theme='nai-atelier'] ::selection {
   transition: color 180ms ease, background-color 180ms ease;
 }
 
-.generation-action-button:hover:not(:disabled) .generation-action-button__cost {
+.generation-action-button:hover:not(:disabled):not([aria-disabled='true']) .generation-action-button__cost,
+.generation-action-button--loading .generation-action-button__cost {
   color: white;
   background: rgb(255 255 255 / .16);
 }
@@ -309,6 +314,9 @@ html[data-design-theme='nai-atelier'] ::selection {
   background-position: 0% 50%;
   background-size: 220% 100%;
 }
+
+.generation-action-button--loading[aria-disabled='false'] { cursor: pointer; }
+.generation-action-button[aria-disabled='true']:not(.generation-action-button--loading) { cursor: not-allowed; }
 
 .generation-action-button--loading::before {
   background-image:
@@ -336,13 +344,13 @@ html[data-design-theme='nai-atelier'].dark .generation-action-button:not(.genera
   background: color-mix(in srgb, var(--nai-accent, #818cf8) 18%, transparent);
 }
 
-html[data-design-theme='nai-atelier'].dark .generation-action-button:hover:not(:disabled) {
+html[data-design-theme='nai-atelier'].dark .generation-action-button:hover:not(:disabled):not([aria-disabled='true']) {
   color: white;
   border-color: transparent;
   background-color: var(--nai-action-deep, #4f46e5);
 }
 
-html[data-design-theme='nai-atelier'].dark .generation-action-button:hover:not(:disabled) .generation-action-button__cost {
+html[data-design-theme='nai-atelier'].dark .generation-action-button:hover:not(:disabled):not([aria-disabled='true']) .generation-action-button__cost {
   color: white;
   background: rgb(255 255 255 / .16);
 }

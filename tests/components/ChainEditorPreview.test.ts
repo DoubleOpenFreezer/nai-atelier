@@ -175,6 +175,23 @@ describe('生成后的操作恢复', () => {
 });
 
 describe('四模式共用生成状态', () => {
+  it.each(['text-to-image', 'image-to-image', 'inpaint', 'outpaint'] as const)('%s 备用生成入口保留旧宽高并恢复生成特效，完成后可点击', operation => {
+    const generate = vi.fn();
+    const props = { isGenerating: true, handleGenerate: generate, errorMsg: null, generatedImage: null, previewImage: undefined, setLightboxImg: vi.fn(), isOwner: false, isUploading: false, handleSavePreview: vi.fn(), handleUploadCover: vi.fn(), getDownloadFilename: () => 'test.png', generationCostLabel: '免费' };
+    const editProps = { operation: operation === 'text-to-image' ? 'image-to-image' as const : operation, image: null, error: null, isGenerating: true, canGenerate: true, onGenerate: generate, onOpenLightbox: vi.fn(), getDownloadFilename: () => 'test.png', generationCostLabel: '免费' };
+    const view = render(operation === 'text-to-image' ? React.createElement(ChainEditorPreview, props) : React.createElement(ImageEditPreview, editProps));
+    const button = screen.getByRole('button', { name: '生成中…' }) as HTMLButtonElement;
+    expect(button.classList.contains('generation-action-button--loading')).toBe(true);
+    expect(button.classList.contains('min-h-11')).toBe(true);
+    expect(button.classList.contains('w-full')).toBe(true);
+    expect(button.classList.contains('max-w-xs')).toBe(true);
+    expect(button.disabled).toBe(true);
+    fireEvent.click(button); expect(generate).not.toHaveBeenCalled();
+    view.rerender(operation === 'text-to-image' ? React.createElement(ChainEditorPreview, { ...props, isGenerating: false }) : React.createElement(ImageEditPreview, { ...editProps, isGenerating: false }));
+    expect(button.classList.contains('generation-action-button--loading')).toBe(false);
+    fireEvent.click(button); expect(generate).toHaveBeenCalledOnce();
+  });
+
   it.each(['text-to-image', 'image-to-image', 'inpaint', 'outpaint'] as const)('%s 桌面排队可取消，开始生成后显示步数，完成即恢复', operation => {
     emitCloudQueueStatus({ taskId: 'shared', phase: 'waiting', position: 2, cancelable: true });
     const common = { isGenerating: true, generationProgress: { step: 8, total: 28 }, generationCostLabel: '消耗 Opus 额度' };

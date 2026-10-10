@@ -1,19 +1,22 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ChevronDown, Images, ListEnd, ListStart, Minus, Pause, Play, Plus, Timer, X } from 'lucide-react';
+import { ChevronDown, Image as ImageIcon, Images, ListEnd, ListStart, Minus, Pause, Play, Plus, Timer, X } from 'lucide-react';
 import { AnchoredToolbarPopover, TOOLBAR_MENU_CLASS } from './ToolbarPopover';
 import { ToolbarButton } from './DesignSystem';
+import { useCloudQueueStatus } from './CloudQueueStatus';
+import { isCloudQueueTaskActive } from '../services/cloudQueue';
 import { MobileBottomSheet } from './MobileUI';
 import { ImagePreviewPortal } from './ImagePreviewPortal';
 import { t, useLanguage } from '../services/i18n';
 import type { GenerationSeriesProgress } from '../services/generationSeries';
 import type { GenerationPlacement, GenerationQueueSnapshot } from '../services/generationTask';
+import type { GenerationJobState } from '../services/generationJob';
 import { DEFAULT_GENERATION_INTERVAL_SECONDS, MAX_GENERATION_INTERVAL_SECONDS, validateGenerationInterval } from '../worker/generationTasks.mjs';
 
 export interface GenerationCountControlProps {
   count: number; onCountChange: (count: number) => void;
   series: GenerationSeriesProgress | null; onStop: () => void;
   disabled?: boolean; onGenerate?: () => void; costLabel?: string; unavailableLabel?: string;
-  busy?: boolean; queueState?: GenerationQueueSnapshot | null;
+  busy?: boolean; generationState?: GenerationJobState; queueState?: GenerationQueueSnapshot | null;
   onTogglePause?: () => void; pausePending?: boolean;
   onQueue?: (placement: GenerationPlacement) => void;
   queued?: { id: string; progress: GenerationSeriesProgress; onCancel: () => void }[];
@@ -22,8 +25,9 @@ export interface GenerationCountControlProps {
   intervalSeconds?: number; onIntervalChange?: (seconds: number) => void; intervalPending?: boolean;
 }
 
-export const GenerationCountControl: React.FC<GenerationCountControlProps> = ({ count, onCountChange, series, onStop, disabled, onGenerate, costLabel, unavailableLabel, busy, queueState, onTogglePause, pausePending, onQueue, queued = [], queueDisabled, continuousGenerationEnabled = true, intervalSeconds = DEFAULT_GENERATION_INTERVAL_SECONDS, onIntervalChange, intervalPending }) => {
+export const GenerationCountControl: React.FC<GenerationCountControlProps> = ({ count, onCountChange, series, onStop, disabled, onGenerate, costLabel, unavailableLabel, busy, generationState, queueState, onTogglePause, pausePending, onQueue, queued = [], queueDisabled, continuousGenerationEnabled = true, intervalSeconds = DEFAULT_GENERATION_INTERVAL_SECONDS, onIntervalChange, intervalPending }) => {
   useLanguage();
+  const queueStatus = useCloudQueueStatus();
   const countId = React.useId();
   const intervalId = React.useId();
   const [value, setValue] = useState(String(count));
@@ -48,6 +52,11 @@ export const GenerationCountControl: React.FC<GenerationCountControlProps> = ({ 
   const occupied = Boolean(busy || (queueState && queueState.total > queueState.completed)
     || (series && series.current < series.total) || waiting.length > 0);
   const paused = Boolean(queueState?.paused);
+  // 已保存后的短间隔延续动效；排队、暂停与费用待确认不能冒充正在执行。
+  const executing = Boolean((generationState === 'preparing' || generationState === 'generating' || generationState === 'saving'
+    || (generationState === 'waiting' && !series?.position && series && series.current > 0 && series.current < series.total))
+    && (!paused || queueState?.pausing)
+    && (!isCloudQueueTaskActive(queueStatus) || queueStatus?.phase === 'generating'));
   const blocked = onQueue ? Boolean(queueDisabled) : Boolean(disabled);
   const completed = queueState?.completed ?? Math.max(0, series?.current || 0);
   const total = queueState?.total ?? ((series?.total || 0) + waiting.reduce((sum, task) => sum + task.progress.total, 0));
@@ -131,7 +140,7 @@ export const GenerationCountControl: React.FC<GenerationCountControlProps> = ({ 
       </div>)}
     </div>}
   </>;
-  return <div className="relative inline-flex w-fit max-w-full min-w-0 items-stretch gap-2">
+  return <div className={'relative inline-flex w-fit max-w-full min-w-0 items-stretch gap-2 lg:w-80 ' + (showProgress ? 'lg:max-w-[calc(100%-8rem)]' : '')}>
     {showProgress && <ToolbarButton onClick={onTogglePause || onStop} disabled={pausePending || series?.stopping || queueState?.pausing || (!occupied && !paused)}
       aria-label={t(queueState?.pausing ? "暂停中…" : paused ? "继续生成" : "暂停生成")}
       title={t(queueState?.pausing ? "当前图片保存后暂停" : paused ? "继续生成" : "暂停生成")}
@@ -141,8 +150,9 @@ export const GenerationCountControl: React.FC<GenerationCountControlProps> = ({ 
     <button ref={anchorRef} type="button" data-agent-action="business" aria-haspopup={hasMenuContent ? 'dialog' : undefined} aria-expanded={hasMenuContent ? open : undefined} aria-disabled={primaryBlocked}
       onClick={() => { if (!primaryBlocked) { close(); if (occupied && continuousGenerationEnabled && onQueue) onQueue('end'); else onGenerate?.(); } }}
       onKeyDown={event => { if (hasMenuContent && event.altKey && event.key === 'ArrowDown') { event.preventDefault(); setOpen(true); } }}
-      className={'generation-action-button mobile-touch flex items-stretch overflow-hidden rounded-xl text-sm font-semibold ' + (continuousGenerationEnabled ? 'min-h-10 min-w-0' : 'generation-action-button--single')}>
-      <span className={'flex min-w-0 flex-1 flex-wrap items-center justify-center gap-x-2 gap-y-1 px-3 py-2 ' + (primaryBlocked ? 'opacity-50' : '')}>
+      className={'generation-action-button generation-action-button--workbench mobile-touch flex flex-1 items-stretch overflow-hidden rounded-full text-sm font-semibold lg:rounded-xl ' + (executing ? 'generation-action-button--loading' : '')}>
+      <span className={'flex min-w-0 flex-1 flex-wrap items-center justify-center gap-x-2 gap-y-1 px-4 py-2 ' + (primaryBlocked && !executing ? 'opacity-50' : '')}>
+        <ImageIcon aria-hidden="true" className="h-4 w-4 shrink-0" strokeWidth={2.2} />
         <span>{primaryLabel}</span>
         {showPrimaryCount && <span className="whitespace-nowrap text-xs font-medium opacity-80">{t("{0} 张", [count])}</span>}
         {showPrimaryCost && costLabel && <span className="generation-action-button__cost whitespace-nowrap">{costLabel}</span>}

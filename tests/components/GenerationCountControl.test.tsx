@@ -1,11 +1,77 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { GenerationCountControl } from '../../components/GenerationCountControl';
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+import { emitCloudQueueStatus } from '../../services/cloudQueue';
+afterEach(() => { cleanup(); emitCloudQueueStatus(null); vi.unstubAllGlobals(); });
 const state = { busy: true, completed: 2, total: 8, paused: false, pausing: false, waiting: [] };
 const props = { count: 3, onCountChange: vi.fn(), series: null, onStop: vi.fn(), onQueue: vi.fn(), onGenerate: vi.fn(), costLabel: '90 Anlas' };
+
+it.each([1280, 390])('%s 宽度恢复主按钮尺寸、图标，切换连续模式和费用显隐不缩小', width => {
+  vi.stubGlobal('innerWidth', width);
+  const view = render(<GenerationCountControl {...props} continuousGenerationEnabled={false} />);
+  const main = screen.getByRole('button', { name: /生成.*90 Anlas/ });
+  expect(main.parentElement?.classList.contains('lg:w-80')).toBe(true);
+  expect(main.classList.contains('generation-action-button--workbench')).toBe(true);
+  expect(main.classList.contains('rounded-full')).toBe(true);
+  expect(main.classList.contains('lg:rounded-xl')).toBe(true);
+  expect(main.querySelector('.lucide-image')).toBeTruthy();
+  expect(main.firstElementChild?.classList.contains('px-4')).toBe(true);
+  view.rerender(<GenerationCountControl {...props} continuousGenerationEnabled={false} busy disabled generationState="generating" />);
+  expect(screen.getByRole('button', { name: '生成中…' })).toBe(main);
+  expect(main.classList.contains('generation-action-button--workbench')).toBe(true);
+  expect(main.parentElement?.classList.contains('lg:w-80')).toBe(true);
+  view.rerender(<GenerationCountControl {...props} generationState="saving" queueState={state} />);
+  expect(screen.getByRole('button', { name: /加入队列.*3 张.*90 Anlas/ })).toBe(main);
+  expect(main.parentElement?.classList.contains('lg:max-w-[calc(100%-8rem)]')).toBe(true);
+  expect(main.classList.contains('generation-action-button--workbench')).toBe(true);
+});
+
+it.each([false, true])('连续生成 %s 时真实执行亮起特效，暂停、等待及费用确认停止，恢复后再亮起', continuousGenerationEnabled => {
+  const queue = vi.fn(), generate = vi.fn();
+  const common = { ...props, continuousGenerationEnabled, onQueue: queue, onGenerate: generate, busy: true, disabled: true, series: { current: 0, total: 3, stopping: false } };
+  const view = render(<GenerationCountControl {...common} generationState="generating" queueState={state} />);
+  const main = screen.getByRole('button', { name: continuousGenerationEnabled ? /加入队列.*3 张/ : '生成中…' });
+  expect(main.classList.contains('generation-action-button--loading')).toBe(true);
+  expect(main.getAttribute('aria-disabled')).toBe(String(!continuousGenerationEnabled));
+  expect(main.firstElementChild?.classList.contains('opacity-50')).toBe(false);
+  fireEvent.click(main);
+  expect(queue).toHaveBeenCalledTimes(continuousGenerationEnabled ? 1 : 0);
+  expect(generate).not.toHaveBeenCalled();
+  for (const generationState of ['preparing', 'generating', 'saving'] as const) {
+    view.rerender(<GenerationCountControl {...common} generationState={generationState} queueState={state} />);
+    expect(main.classList.contains('generation-action-button--loading')).toBe(true);
+  }
+  view.rerender(<GenerationCountControl {...common} generationState="saving" queueState={{ ...state, paused: true, pausing: true }} />);
+  expect(main.classList.contains('generation-action-button--loading')).toBe(true);
+  for (const generationState of ['paused', 'waiting', 'awaiting_confirmation', 'succeeded', 'failed', 'cancelled'] as const) {
+    view.rerender(<GenerationCountControl {...common} generationState={generationState} queueState={{ ...state, paused: generationState === 'paused' }} />);
+    expect(main.classList.contains('generation-action-button--loading')).toBe(false);
+  }
+  view.rerender(<GenerationCountControl {...common} generationState="generating" queueState={{ ...state, paused: true }} />);
+  expect(main.classList.contains('generation-action-button--loading')).toBe(false);
+  view.rerender(<GenerationCountControl {...common} generationState="generating" queueState={state} />);
+  expect(main.classList.contains('generation-action-button--loading')).toBe(true);
+});
+
+it('短间隔保留特效，等待插队或公共队列时停止，菜单仍可排到下一位', () => {
+  const queue = vi.fn();
+  const common = { ...props, onQueue: queue, busy: true, series: { current: 1, total: 3, stopping: false }, generationState: 'waiting' as const };
+  const view = render(<GenerationCountControl {...common} queueState={state} />);
+  const main = screen.getByRole('button', { name: /加入队列.*3 张/ });
+  expect(main.classList.contains('generation-action-button--loading')).toBe(true);
+  view.rerender(<GenerationCountControl {...common} series={{ ...common.series, position: 1 }} queueState={state} />);
+  expect(main.classList.contains('generation-action-button--loading')).toBe(false);
+  view.rerender(<GenerationCountControl {...common} generationState="generating" queueState={state} />);
+  act(() => emitCloudQueueStatus({ taskId: 'synthetic-task', phase: 'waiting', position: 1 }));
+  expect(main.classList.contains('generation-action-button--loading')).toBe(false);
+  act(() => emitCloudQueueStatus({ taskId: 'synthetic-task', phase: 'generating' }));
+  expect(main.classList.contains('generation-action-button--loading')).toBe(true);
+  fireEvent.keyDown(main, { key: 'ArrowDown', altKey: true });
+  fireEvent.click(within(screen.getByRole('dialog', { name: '生成选项' })).getByRole('button', { name: '排到下一位' }));
+  expect(queue).toHaveBeenCalledWith('next');
+});
 it.each([1280, 390])('%s 宽度间隔默认显示 2.0 秒，保留一位小数、失焦保存，可设 0，非法输入恢复且不触发生图', width => {
   vi.stubGlobal('innerWidth', width); const interval = vi.fn(), generate = vi.fn();
   const view = render(<GenerationCountControl {...props} onGenerate={generate} onIntervalChange={interval} queueState={state} />);

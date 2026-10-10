@@ -3,7 +3,7 @@ import { ImageLightbox } from './ImageLightbox';
 import { agentDraftFingerprint } from '../services/promptAgentCoordinator';
 import { agentOperationError, agentGenerationFailure, normalizeAgentGenerationResult, validateGenerationCount, validateGenerationPlacement } from '../services/agentOperation.mjs';
 import { approveGenerationSeries, beginGenerationSeries, getGenerationSeriesSession, getQueuedGenerationSeries, stopGenerationSeriesSession, subscribeGenerationSeries, type GenerationSeriesSession } from '../services/generationSeries';
-import { cancelGenerationJob, type GenerationJobDescriptor } from '../services/generationJob';
+import { cancelGenerationJob, type GenerationJobDescriptor, type GenerationJobState } from '../services/generationJob';
 import { getGenerationQueue, setGenerationQueuePaused, setGenerationInterval, type GenerationPlacement, type GenerationQueueSnapshot } from '../services/generationTask';
 import { GenerationCountControl } from './GenerationCountControl';
 import { AgentDraftReview } from './AgentDraftReview';
@@ -359,7 +359,10 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     const canSaveActiveModeToLibrary = canSaveLabModeToLibrary(activeGenerationMode);
     const activeEditOperation = activeGenerationMode === 'text-to-image' ? null : activeGenerationMode;
     activeEditOperationRef.current = activeEditOperation;
+    const generationSession = getGenerationSeriesSession(chain.id);
+    const generationState: GenerationJobState = generationSession?.key === apiKey ? generationSession.state : isImageGenerating ? 'preparing' : 'waiting';
     const generationCountControl = { continuousGenerationEnabled, count: effectiveGenerationCount, onCountChange: setGenerationCount, series: generationSeries, onStop: stopGenerationSeries, queueState, onTogglePause: () => { void toggleQueuePause(); }, pausePending,
+        generationState,
         intervalSeconds: queueState?.intervalSeconds, onIntervalChange: (seconds: number) => { void changeGenerationInterval(seconds); }, intervalPending: intervalPending || !apiKey,
         onQueue: continuousGenerationEnabled ? (placement: GenerationPlacement) => { void (activeEditOperation ? imageEditQueueFnRef.current?.(placement) : handleGenerate(placement)); } : undefined,
         queued: queueState ? queueState.waiting.map(task => ({ id: task.token, progress: { current: task.completed, total: task.total, position: task.position, stopping: false }, onCancel: () => { const local = queuedGenerations.find(session => session.token === task.token); if (local) stopGenerationSeriesSession(local); else void cancelGenerationJob(apiKey, task.token).catch(error => notify(error.message, 'error')); } })) : queuedGenerations.map(session => ({ id: session.token, progress: session.progress, onCancel: () => stopGenerationSeriesSession(session) })),

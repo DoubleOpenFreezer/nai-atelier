@@ -1060,6 +1060,41 @@ describe('后台任务只提交一次并只观察后端状态', () => {
   };
   const mobileActions = () => within(document.querySelector('.mobile-generation-actions') as HTMLElement);
 
+  it.each([['text-to-image', '文生图'], ['image-to-image', '图生图'], ['inpaint', '局部重绘'], ['outpaint', '扩图']] as const)('四模式 %s 将真实执行与暂停状态同步到桌面和手机生成特效', async (operation, label) => {
+    prepare();
+    vi.stubGlobal('createImageBitmap', vi.fn(async () => ({ width: 832, height: 1216, close: vi.fn() })));
+    scriptJobs([
+      { state: 'generating', completedCount: 0, requestedCount: 1, historyIds: [] },
+      { state: 'paused', completedCount: 0, requestedCount: 1, historyIds: [] },
+      backgroundResult('synthetic-effect-result'),
+    ]);
+    setupSeries();
+    if (operation !== 'text-to-image') {
+      await switchTo(label);
+      await act(async () => fireEvent.click(screen.getByRole('button', { name: '粘贴合成底图' })));
+    }
+    const desktop = within(screen.getByRole('region', { name: operation === 'text-to-image' ? '文生图预览' : operation }));
+    fireEvent.click(desktop.getByRole('button', { name: operation === 'text-to-image' ? '生成合成文生图' : operation === 'image-to-image' ? '生成合成编辑' : '生成合成蒙版编辑' }));
+    await waitFor(() => expect(state.startJob).toHaveBeenCalledOnce());
+    const desktopButton = desktop.getByRole('button', { name: /^加入队列/ });
+    const mobileButton = mobileActions().getByRole('button', { name: /^加入队列/ });
+    await waitFor(() => {
+      expect(desktopButton.classList.contains('generation-action-button--loading')).toBe(true);
+      expect(mobileButton.classList.contains('generation-action-button--loading')).toBe(true);
+    });
+    if (operation === 'text-to-image') {
+      expect(desktopButton.getAttribute('aria-disabled')).toBe('false');
+      expect(mobileButton.getAttribute('aria-disabled')).toBe('false');
+    }
+    await waitFor(() => {
+      expect(desktopButton.classList.contains('generation-action-button--loading')).toBe(false);
+      expect(mobileButton.classList.contains('generation-action-button--loading')).toBe(false);
+    }, { timeout: 3000 });
+    await waitFor(() => expect(getGenerationSeriesSession(chain.id)).toBeNull(), { timeout: 4000 });
+    expect(desktop.getByRole('button', { name: /^生成.*1 张/ })).toBe(desktopButton);
+    expect(mobileActions().getByRole('button', { name: /^生成.*1 张/ })).toBe(mobileButton);
+  }, 10000);
+
   it.each([['text-to-image', '文生图'], ['image-to-image', '图生图'], ['inpaint', '局部重绘'], ['outpaint', '扩图']] as const)('关闭连续生成后 %s 不继承旧张数，费用和实际请求均为单张，重新开启从 1 开始', async (operation, label) => {
     prepare();
     state.subscription = state.refreshedSubscription = { active: false, tier: 3 };
