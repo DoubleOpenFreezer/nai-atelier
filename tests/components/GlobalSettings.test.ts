@@ -9,7 +9,8 @@ import { GlobalSettings } from '../../components/GlobalSettings';
 import { readAgentPage } from '../../services/agentWorkspace';
 import { getCleanSharedImages, IMAGE_SHARING_STORAGE_KEY } from '../../services/imageSharing';
 import { readActiveNaiKey, REMEMBER_NAI_KEY_STORAGE_KEY, setActiveNaiKey } from '../../services/naiKeyStorage';
-const subscriptionFixture = vi.hoisted(() => ({ expired: false, balance: undefined as { fixedTrainingStepsLeft: number; purchasedTrainingSteps: number } | undefined, usage: undefined as import('../../services/naiUsage').NovelaiUsageState | undefined, refresh: vi.fn(async () => null) }));
+import { naiKeyVault } from '../../services/naiKeyVault';
+const subscriptionFixture = vi.hoisted(() => ({ entries: [] as import('../../services/naiKeyVault').NaiKeyEntry[], expired: false, balance: undefined as { fixedTrainingStepsLeft: number; purchasedTrainingSteps: number } | undefined, usage: undefined as import('../../services/naiUsage').NovelaiUsageState | undefined, refresh: vi.fn(async () => null) }));
 vi.mock('../../services/naiUsage', async importOriginal => ({
   ...await importOriginal<typeof import('../../services/naiUsage')>(),
   useNovelaiUsage: () => ({ info: subscriptionFixture.expired || subscriptionFixture.balance || subscriptionFixture.usage ? { active: !subscriptionFixture.expired, tier: 3, trainingStepsLeft: subscriptionFixture.balance } : null, usage: subscriptionFixture.usage, loading: false, error: null, fetchedAt: 0, refresh: subscriptionFixture.refresh }),
@@ -52,7 +53,7 @@ vi.mock('../../services/cloudQueue', () => {
 
 vi.mock('../../services/naiKeyVault', () => ({
   naiKeyVault: {
-    list: () => Promise.resolve(subscriptionFixture.expired ? [{ id: 'expired', name: '测试过期订阅', key: 'pst-settings-expired', createdAt: 0 }] : []),
+    list: () => Promise.resolve(subscriptionFixture.entries.length ? subscriptionFixture.entries : subscriptionFixture.expired ? [{ id: 'expired', name: '测试过期订阅', key: 'pst-settings-expired', createdAt: 0 }] : []),
     activate: vi.fn(),
     add: vi.fn(),
     remove: vi.fn(() => Promise.resolve([])),
@@ -140,6 +141,8 @@ describe('GlobalSettings', () => {
   });
 
   beforeEach(() => {
+    subscriptionFixture.entries = [];
+    vi.mocked(naiKeyVault.add).mockReset();
     subscriptionFixture.expired = false;
     subscriptionFixture.balance = undefined;
     subscriptionFixture.usage = undefined;
@@ -157,6 +160,35 @@ describe('GlobalSettings', () => {
       removeListener: vi.fn(),
       dispatchEvent: vi.fn(),
     })));
+  });
+
+  it('成员 Key 必须填写网关后添加；切回官方添加不携带网关地址', async () => {
+    vi.mocked(naiKeyVault.add).mockResolvedValue({ status: 'added', entry: { id: 'added', name: '合成', key: 'STA1N-test', createdAt: 0 } });
+    render(React.createElement(SettingsHarness, { initialSection: 'novelai' }));
+    fireEvent.change(await screen.findByLabelText('密钥接入方式'), { target: { value: 'gateway' } });
+    fireEvent.change(screen.getByLabelText('NovelAI API Key'), { target: { value: 'STA1N-test' } });
+    fireEvent.click(screen.getByRole('button', { name: '添加' }));
+    expect(naiKeyVault.add).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByLabelText('生图网关地址'), { target: { value: 'https://gateway.example/v1' } });
+    fireEvent.click(screen.getByRole('button', { name: '添加' }));
+    await waitFor(() => expect(naiKeyVault.add).toHaveBeenCalledWith('', 'STA1N-test', 'https://gateway.example/v1'));
+    await waitFor(() => expect((screen.getByLabelText('NovelAI API Key') as HTMLInputElement).value).toBe(''));
+    fireEvent.change(screen.getByLabelText('密钥接入方式'), { target: { value: 'official' } });
+    expect(screen.queryByLabelText('生图网关地址')).toBeNull();
+    fireEvent.change(screen.getByLabelText('NovelAI API Key'), { target: { value: 'pst-official' } });
+    fireEvent.click(screen.getByRole('button', { name: '添加' }));
+    await waitFor(() => expect(naiKeyVault.add).toHaveBeenLastCalledWith('', 'pst-official'));
+  });
+
+  it('当前成员 Key 显示网关来源并隐藏另一个公共队列地址', async () => {
+    const key = 'STA1N-settings-gateway';
+    sessionStorage.setItem('nai_api_key', key);
+    subscriptionFixture.entries = [{ id: 'member', name: '合成车队', key, gatewayUrl: 'https://gateway.example', createdAt: 0 }];
+    render(React.createElement(SettingsHarness, { initialSection: 'novelai' }));
+    expect(await screen.findByText('合成车队')).toBeTruthy();
+    expect(screen.getByText('网关').title).toBe('https://gateway.example');
+    expect(screen.queryByText('公共队列服务地址')).toBeNull();
+    expect(screen.queryByText('格式可疑')).toBeNull();
   });
 
   afterEach(() => {

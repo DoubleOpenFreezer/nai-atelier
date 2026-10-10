@@ -67,17 +67,17 @@ const makeMemoryDb = () => {
   return db;
 };
 
-const vaultApi = (method, body, path = '/api/nai-key-vault') =>
+const vaultApi = (method, body, path = '/api/nai-key-vault', authorization) =>
   new Request(`http://local.test${path}`, {
     method,
-    headers: body === undefined ? {} : { 'Content-Type': 'application/json' },
+    headers: { ...(body === undefined ? {} : { 'Content-Type': 'application/json' }), ...(authorization ? { Authorization: authorization } : {}) },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
 
-const runRoute = async (db, method, body, path = '/api/nai-key-vault') => {
+const runRoute = async (db, method, body, path = '/api/nai-key-vault', authorization) => {
   const mod = await loadModule('worker/routes/naiKeyVaultRoutes.ts');
   const { handleNaiKeyVaultRoute } = mod;
-  const request = vaultApi(method, body, path);
+  const request = vaultApi(method, body, path, authorization);
   const url = new URL(request.url);
   const ctx = {
     request,
@@ -97,6 +97,26 @@ test('路由 GET：空库返回空 entries', async () => {
   const response = await runRoute(db, 'GET');
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), { entries: [] });
+});
+
+test('成员 Key：保存、改名、迁移保留网关地址，连接查询只返回所选目标', async () => {
+  const db = makeMemoryDb();
+  const added = await (await runRoute(db, 'POST', { name: '合成车队', key: 'STA1N-member', gatewayUrl: 'https://gateway.example/v1/ai/generate-image/' })).json();
+  assert.equal(added.entry.gatewayUrl, 'https://gateway.example/v1');
+  const renamed = await (await runRoute(db, 'PUT', { name: '新车队名' }, `/api/nai-key-vault/${added.entry.id}`)).json();
+  assert.equal(renamed.entries[0].gatewayUrl, added.entry.gatewayUrl);
+  const legacy = { id: 'legacy-member', name: '旧成员', key: 'STA1N-legacy', gatewayUrl: 'https://other.example/', createdAt: 1 };
+  const merged = await (await runRoute(db, 'PUT', { entries: [legacy] })).json();
+  assert.equal(merged.entries[1].gatewayUrl, 'https://other.example');
+  for (const [key, expected] of [['STA1N-member', 'https://gateway.example/v1'], ['STA1N-legacy', 'https://other.example'], ['pst-unsaved', '']]) {
+    const connection = await runRoute(db, 'GET', undefined, '/api/nai-key-vault/connection', `Bearer ${key}`);
+    assert.equal(connection.status, 200); assert.deepEqual(await connection.json(), { gatewayUrl: expected });
+  }
+  assert.equal((await runRoute(db, 'GET', undefined, '/api/nai-key-vault/connection')).status, 401);
+  assert.equal((await runRoute(db, 'GET', undefined, '/api/nai-key-vault/connection', 'Bearer STA1N-missing')).status, 400);
+  const before = db._store.get('nai_key_vault');
+  assert.equal((await runRoute(db, 'POST', { key: 'STA1N-invalid', gatewayUrl: 'https://user:pass@gateway.example' })).status, 400);
+  assert.equal(db._store.get('nai_key_vault'), before);
 });
 
 test('路由 POST：空 key / 非 pst- 前缀返回 400 中文文案', async () => {
@@ -511,6 +531,32 @@ test('service：服务端不可达时回退本地保管箱（网络异常）', a
     delete globalThis.window;
     delete globalThis.localStorage;
     delete globalThis.sessionStorage;
+  }
+});
+
+test('service 成员 Key：绑定地址才可添加，网络兜底与重新迁移不丢目标', async () => {
+  const g = installBrowserGlobals();
+  const { naiKeyVault } = await loadModule('services/naiKeyVault.ts');
+  const originalWarn = console.warn;
+  console.warn = () => {};
+  try {
+    globalThis.fetch = async () => { throw new TypeError('synthetic offline'); };
+    assert.equal((await naiKeyVault.add('成员', 'STA1N-local')).status, 'invalid');
+    assert.equal((await naiKeyVault.add('成员', 'STA1N-local', 'invalid')).status, 'invalid-gateway');
+    const added = await naiKeyVault.add('成员', 'STA1N-local', 'https://gateway.example/v1/ai/generate-image');
+    assert.equal(added.status, 'added'); assert.equal(added.entry.gatewayUrl, 'https://gateway.example/v1');
+    const renamed = await naiKeyVault.rename(added.entry.id, '新备注');
+    assert.equal(renamed[0].gatewayUrl, added.entry.gatewayUrl);
+    const db = makeMemoryDb();
+    globalThis.fetch = async (input, init = {}) => runRoute(db, init.method || 'GET', init.body ? JSON.parse(init.body) : undefined, new URL(input, 'http://local.test').pathname);
+    const entries = await naiKeyVault.list();
+    assert.equal(entries[0].gatewayUrl, added.entry.gatewayUrl);
+    assert.equal(g.localStorage.getItem('nai_api_key_vault'), null);
+    const official = await naiKeyVault.add('官方', 'pst-original');
+    assert.equal(official.entry.gatewayUrl, undefined);
+  } finally {
+    console.warn = originalWarn; g.resetBrowser();
+    delete globalThis.fetch; delete globalThis.window; delete globalThis.localStorage; delete globalThis.sessionStorage;
   }
 });
 

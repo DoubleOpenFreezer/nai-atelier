@@ -25,6 +25,42 @@ const request = (key = 'handler-key', body = payload(), maximum) => {
   return req;
 };
 const idleQueue = () => new CloudQueueCoordinator(() => assert.fail('不能调用公共队列'), 'https://queue.invalid');
+test('Vibe 编码：成员 Key 走绑定网关，失败不重试，官方 Key 保持原接口；并发不同接入分别计费', async () => {
+  const spends = [], saves = [], calls = [];
+  const worker = createServer(async (req, res) => {
+    const chunks = []; for await (const chunk of req) chunks.push(chunk);
+    if (req.url.endsWith('/image')) return res.end(Buffer.alloc(128, 1));
+    res.setHeader('Content-Type', 'application/json');
+    if (req.url.endsWith('/encoding-result')) { saves.push(JSON.parse(Buffer.concat(chunks))); return res.end('{"item":{"id":"gateway-encoding"}}'); }
+    if (req.url === '/api/anlas-budget') { spends.push(JSON.parse(Buffer.concat(chunks))); return res.end('{"remaining":1664}'); }
+    res.end('{"item":{"id":"gateway-vibe","encodings":[]}}');
+  });
+  worker.listen(0, '127.0.0.1'); await once(worker, 'listening');
+  try {
+    const remote = async (url, options) => {
+      calls.push({ url, authorization: options.headers.Authorization });
+      assert.equal(options.redirect, url.startsWith('https://gateway.example') ? 'error' : undefined);
+      assert.deepEqual(JSON.parse(options.body), { image: Buffer.alloc(128, 1).toString('base64'), information_extracted: 1, model: 'nai-diffusion-4-5-full' });
+      await new Promise(resolve => setTimeout(resolve, 20));
+      return new Response(Buffer.alloc(128, 2));
+    };
+    const gateway = new Output(), official = new Output();
+    await Promise.all([
+      handleVibeEncodeRequest(request('STA1N-encode', { informationExtracted: 1 }), gateway, '', worker.address().port, 'gateway-vibe', remote, 'https://gateway.example/v1'),
+      handleVibeEncodeRequest(request('pst-encode-original', { informationExtracted: 1 }), official, '', worker.address().port, 'gateway-vibe', remote),
+    ]);
+    assert.equal(gateway.statusCode, 200, gateway.body()); assert.equal(official.statusCode, 200, official.body());
+    assert.deepEqual(calls.map(call => call.url).sort(), ['https://gateway.example/v1/ai/encode-vibe', 'https://image.novelai.net/ai/encode-vibe']);
+    assert.equal(saves.length, 2); assert.equal(spends.length, 2);
+    assert.equal(new Set(spends.map(item => item.keyHash)).size, 2);
+    const denied = new Output(); let rejected = 0;
+    await handleVibeEncodeRequest(request('STA1N-denied', { informationExtracted: 1 }), denied, '', worker.address().port, 'gateway-denied-vibe', async url => {
+      rejected++; assert.equal(url, 'https://gateway.example/v1/ai/encode-vibe'); return new Response('member disabled', { status: 403 });
+    }, 'https://gateway.example/v1');
+    assert.equal(denied.statusCode, 403); assert.match(denied.body(), /member disabled/);
+    assert.equal(rejected, 1); assert.equal(spends.length, 2); assert.equal(saves.length, 2);
+  } finally { worker.closeAllConnections(); await new Promise(resolve => worker.close(resolve)); }
+});
 test('Vibe 编码无额外费用上限拦截、重复复用与生成前单价一致，记账失败仍保存编码', async () => {
   let scenario, encoded = 0, saved = 0;
   const spends = [];

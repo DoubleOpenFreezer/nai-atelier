@@ -20,8 +20,8 @@ const modes = ['generate', 'img2img', 'infill', 'outpaint'];
 const payload = action => ({ model: 'nai-diffusion-4-5-full', action: action === 'outpaint' ? 'infill' : action, parameters: {
   ...(action === 'outpaint' ? { _local_edit_operation: 'outpaint' } : {}),
 } });
-const requestFor = (taskId, action = 'generate') => {
-  const req = Readable.from([Buffer.from(JSON.stringify(payload(action)))]);
+const requestFor = (taskId, action = 'generate', body = payload(action)) => {
+  const req = Readable.from([Buffer.from(JSON.stringify(body))]);
   req.method = 'POST';
   req.headers = { authorization: 'Bearer test-key', 'x-nai-queue-task-id': taskId };
   req.socket = { remoteAddress: '127.0.0.1' };
@@ -61,6 +61,41 @@ test('通用中转识别任意域名、端口与前缀，只接受明确的兼�
 });
 
 const proxyPreferences = { ...preferences, serviceUrl: 'https://relay.example/prefix/ai/generate-image/' };
+for (const handler of handlers) {
+  for (const action of modes) {
+    test(`成员网关 ${handler === handleGenerateRequest ? 'ZIP' : '预览入口'} ${action}：Medium 参数原样透传，一次请求普通 ZIP`, async () => {
+      const body = payload(action);
+      body.model = `nai-diffusion-5-full-medium${action === 'infill' || action === 'outpaint' ? '-inpainting' : ''}`;
+      Object.assign(body.parameters, { stream: true, width: 832, height: 1216, steps: 14, sampler: 'k_euler_ancestral', seed: 123,
+        image: action === 'generate' ? undefined : 'synthetic-image', mask: action === 'infill' || action === 'outpaint' ? 'synthetic-mask' : undefined,
+        reference_image_multiple: ['synthetic-vibe'], reference_information_extracted_multiple: [1], reference_strength_multiple: [0.6] });
+      const expected = structuredClone(body);
+      delete expected.parameters.stream; delete expected.parameters._local_edit_operation;
+      const req = requestFor(`member-${action}`, action, body);
+      req.headers.authorization = 'Bearer STA1N-synthetic';
+      const res = new TestResponse(); let calls = 0, settled = 0;
+      await handler(req, res, '', 0, setup(() => assert.fail('成员网关不能调用旧队列')), proxyPreferences, async (url, options) => {
+        calls++; assert.equal(url, 'https://gateway.example/v1/ai/generate-image');
+        assert.equal(options.headers.Authorization, 'Bearer STA1N-synthetic');
+        assert.equal(options.redirect, 'error');
+        assert.deepEqual(JSON.parse(options.body), JSON.parse(JSON.stringify(expected)));
+        return new Response('synthetic-zip', { headers: { 'Content-Type': 'application/zip' } });
+      }, { ...generationOptions, gatewayUrl: 'https://gateway.example/v1', settleGeneration: async () => { settled++; return { estimatedCost: 0 }; } });
+      assert.equal(res.statusCode, 200, res.body());
+      assert.equal(res.headers['content-type'], 'application/zip');
+      assert.equal(res.body(), 'synthetic-zip'); assert.equal(calls, 1); assert.equal(settled, 1);
+    });
+  }
+  for (const status of [401, 402, 403, 429, 500]) {
+    test(`成员网关拒绝 ${status} 不重试、不回退、不结算`, async () => {
+      const res = new TestResponse(); let calls = 0;
+      await handler(requestFor(`member-denied-${status}`), res, '', 0, setup(() => assert.fail('不可进入旧队列')), { enabled: false },
+        async url => { calls++; assert.equal(url, 'https://gateway.example/ai/generate-image'); return new Response('member denied', { status }); },
+        { ...generationOptions, gatewayUrl: 'https://gateway.example', settleGeneration: () => assert.fail('失败不能结算') });
+      assert.equal(res.statusCode, status); assert.equal(calls, 1);
+    });
+  }
+}
 for (const handler of handlers) {
   const label = handler === handleGenerateRequest ? 'normal' : 'stream';
   for (const action of modes) {

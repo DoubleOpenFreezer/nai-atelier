@@ -17,6 +17,8 @@ export interface NovelaiUsageState {
 }
 
 export interface NovelaiSubscriptionInfo {
+  /** 缺省为官方；成员网关的余额不是上游账号总钱包。 */
+  source?: 'gateway';
   /** 订阅等级：0 Paper / 1 Tablet / 2 Scroll / 3 Opus（兼容 1~4 序号）。 */
   tier: number;
   active: boolean;

@@ -5,7 +5,7 @@ import type { GenerationJobDescriptor, GenerationJobOutput } from '../worker/gen
 import type { GenerationTasks } from '../worker/generationTasks.mjs';
 import type { CloudQueueCoordinator } from 'mobile:gateway';
 import {
-  cacheNovelAiSubscription, estimateNovelAiGenerationCost, fetchNovelAiSubscription,
+  cacheNovelAiSubscription, estimateNovelAiGenerationCost,
   keyHashFromAuthorization, sanitizeNovelAiSubscription,
 } from 'mobile:gateway';
 import { generationHistoryForm, generationImageBytes, readGenerationResponse } from 'mobile:generation-output';
@@ -107,7 +107,7 @@ export function createMobileGenerationJobs({ tasks, queue }: { tasks: Generation
       const authorization = job.context.authorization;
       if (fresh) {
         try {
-          const response = await fetchNovelAiSubscription(authorization, AbortSignal.timeout(30_000));
+          const response = await fetch('/api/novelai-subscription', { headers: { Authorization: authorization }, signal: AbortSignal.timeout(30_000) });
           if (!response.ok) throw new Error('账号额度刷新失败');
           rememberNaiSubscription(authorization, sanitizeNovelAiSubscription(await response.json()));
         } catch {

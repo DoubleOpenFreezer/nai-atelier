@@ -21,6 +21,16 @@ beforeEach(() => { sessionStorage.clear(); localStorage.clear(); });
 afterEach(() => { cleanup(); setLanguage('zh-CN'); vi.unstubAllGlobals(); });
 
 describe('Anlas 预算／余额布局', () => {
+  it('成员余额明确来源，不覆盖本地预算，不声称为官方账号总钱包', () => {
+    const account = subscription(200);
+    account.info!.source = 'gateway';
+    render(React.createElement(AnlasBalanceBar, { variant: 'details', budget, subscription: account }));
+    expect(screen.getByText('网关余额').nextElementSibling?.textContent).toBe('200 点');
+    expect(screen.getByText('本地预算').nextElementSibling?.textContent).toBe('1,666 点');
+    expect(screen.queryByText('官方余额')).toBeNull();
+    expect(screen.getByRole('button').title).toContain('网关实际扣费');
+    expect(screen.getByText('本地预算 ≠ 网关余额')).toBeTruthy();
+  });
   it('五种语言翻译余额详情、状态与悬停组合文案，保留真实数量', () => {
     render(React.createElement(AnlasBalanceBar, { variant: 'details', budget, subscription: subscription(200) }));
     for (const language of LANGUAGES) {

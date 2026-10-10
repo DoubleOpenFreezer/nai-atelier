@@ -40,6 +40,17 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 describe('手机实验室账户资源', () => {
+  it('成员 Key 摘要和详情都显示成员来源', async () => {
+    fixture.subscription!.info!.source = 'gateway';
+    render(<MobileGenerationResources {...props('STA1N-mobile-member')} />);
+    const footer = screen.getByRole('button', { name: /成员额度 196%/ });
+    expect(footer.textContent).toContain('成员额度 196%');
+    expect(footer.textContent).not.toContain('Opus');
+    openPanel();
+    expect(await screen.findByText('网关余额')).toBeTruthy();
+    expect(screen.getByText('网关成员')).toBeTruthy();
+    expect(screen.queryByText('官方余额')).toBeNull();
+  });
   it('摘要紧凑显示来源，触屏展开保留完整点数、196% 真实额度、张数、备注、同步时间与刷新', async () => {
     render(<MobileGenerationResources {...props()} />);
     const entry = screen.getByRole('button', { name: /预算 1666 · 余额 6.84万 · Opus 196%/ });

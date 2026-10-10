@@ -3,19 +3,21 @@
 // 保管箱整体（密钥清单 + 备注）从浏览器 localStorage 迁移到这里由 Worker 保管，
 // settings 表中对应一行：key = 'nai_key_vault'，value = NaiKeyEntry[] 的 JSON。
 // 「当前使用的密钥」仍走既有的 nai_api_key 槽位（见 services/naiKeyVault.ts），
-// 本路由不参与激活钥的读写，因此所有生图消费方不受影响。
+// 激活钥由前端保存；接入查询只按本次请求携带的 Key 返回目标。
 //
 // 语义对齐前端原实现（services/naiKeyVault.ts）：
-//   - 新增时校验：trim 后为空 / 不以 pst- 开头 / 与现库任一 key 重复 → 400 拒绝；
+//   - 官方 Key 检查 pst- 前缀；成员 Key 必须绑定有效网关；空值／重复值拒绝；
 //   - name trim 后空则生成「密钥 N」序号名，超过 30 字截断；
 //   - 新增返回 { status, entry }，改名 / 删除返回 { entries }，便于调用方刷新整箱。
 import { json, error, parseStoredJson, type D1Database, type RouteContext } from './types';
+import { normalizeNaiGatewayUrl, validateNaiApiKey, resolveNaiGatewayUrl } from '../naiConnection.mjs';
 
 export interface NaiKeyEntry {
   id: string;
   name: string;
   key: string;
   createdAt: number;
+  gatewayUrl?: string;
 }
 
 const VAULT_SETTINGS_KEY = 'nai_key_vault';
@@ -53,6 +55,7 @@ const readVault = async (db: D1Database): Promise<NaiKeyEntry[]> => {
       name: rawName.slice(0, 30) || '未命名密钥',
       key,
       createdAt: typeof rec.createdAt === 'number' ? rec.createdAt : Date.now(),
+      ...(typeof rec.gatewayUrl === 'string' && rec.gatewayUrl ? { gatewayUrl: rec.gatewayUrl } : {}),
     });
   }
   return entries;
@@ -71,12 +74,21 @@ export async function handleNaiKeyVaultRoute(ctx: RouteContext): Promise<Respons
     return json({ entries: await readVault(db) });
   }
 
-  // 单条新增：trim 非空 → pst- 前缀 → 与现库查重。
+  if (path === '/api/nai-key-vault/connection' && method === 'GET') {
+    const authorization = request.headers.get('authorization') || '';
+    if (!authorization.startsWith('Bearer ')) return error('缺少 NovelAI API Key', 401);
+    try { return json({ gatewayUrl: resolveNaiGatewayUrl(authorization, await readVault(db)) }); }
+    catch (cause) { return error(cause instanceof Error ? cause.message : '密钥接入配置无效', 400); }
+  }
+
+  // 单条新增：接入地址与 Key 一次校验、保存。
   if (path === '/api/nai-key-vault' && method === 'POST') {
     const body = await readJsonBody(request);
     const trimmedKey = typeof body.key === 'string' ? body.key.trim() : '';
     if (!trimmedKey) return error('密钥不能为空', 400);
-    if (!trimmedKey.startsWith('pst-')) return error('这不像 NovelAI 密钥：官方密钥以 pst- 开头。请检查是否粘贴了其他服务的密钥。', 400);
+    let gatewayUrl;
+    try { gatewayUrl = normalizeNaiGatewayUrl(body.gatewayUrl); validateNaiApiKey(trimmedKey, gatewayUrl); }
+    catch (cause) { return error(cause instanceof Error ? cause.message : '密钥接入配置无效', 400); }
     const vault = await readVault(db);
     if (vault.some(entry => entry.key === trimmedKey)) return error('这把密钥已经在保管箱里了', 400);
     const rawName = typeof body.name === 'string' ? body.name.trim() : '';
@@ -85,6 +97,7 @@ export async function handleNaiKeyVaultRoute(ctx: RouteContext): Promise<Respons
       name: rawName.slice(0, 30) || `密钥 ${vault.length + 1}`,
       key: trimmedKey,
       createdAt: Date.now(),
+      ...(gatewayUrl ? { gatewayUrl } : {}),
     };
     await writeVault(db, [...vault, entry]);
     return json({ status: 'added', entry });
@@ -102,13 +115,16 @@ export async function handleNaiKeyVaultRoute(ctx: RouteContext): Promise<Respons
       if (!raw || typeof raw !== 'object') return error('迁移数据包含无效条目', 400);
       const rec = raw as Record<string, unknown>;
       const key = typeof rec.key === 'string' ? rec.key.trim() : '';
-      if (!key || !key.startsWith('pst-')) return error('迁移数据包含非 NovelAI 密钥（应以 pst- 开头），已中止，本地数据未删除', 400);
+      let gatewayUrl;
+      try { gatewayUrl = normalizeNaiGatewayUrl(rec.gatewayUrl); validateNaiApiKey(key, gatewayUrl); }
+      catch { return error('迁移数据包含无效接入配置（官方 Key 应以 pst- 开头，成员 Key 需网关地址），已中止，本地数据未删除', 400); }
       const rawName = typeof rec.name === 'string' ? rec.name.trim() : '';
       cleaned.push({
         id: typeof rec.id === 'string' && rec.id ? rec.id : crypto.randomUUID(),
         name: rawName.slice(0, 30) || '未命名密钥',
         key,
         createdAt: typeof rec.createdAt === 'number' ? rec.createdAt : Date.now(),
+        ...(gatewayUrl ? { gatewayUrl } : {}),
       });
     }
     const existing = await readVault(db);

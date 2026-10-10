@@ -66,6 +66,10 @@ export async function nativeFetch(input: RequestInfo | URL, options?: RequestIni
     requests.set(id, { event(event) {
       if (ended) return;
       if (event.type === 'head') {
+        if (request.redirect === 'error' && [301, 302, 303, 307, 308].includes(event.status)) {
+          const error = new TypeError('请求不允许重定向');
+          void native.cancel({ id }).catch(() => {}); controller.error(error); reject(error); finish(); return;
+        }
         const response = new Response([204, 205, 304].includes(event.status) || request.method === 'HEAD' ? null : stream, { status: event.status, headers: event.headers });
         Object.defineProperty(response, 'url', { value: event.url }); resolve(response);
       } else if (event.type === 'data') controller.enqueue(base64ToBytes(event.data));
@@ -74,7 +78,7 @@ export async function nativeFetch(input: RequestInfo | URL, options?: RequestIni
     } });
     request.signal.addEventListener('abort', abort, { once: true });
     if (request.signal.aborted) { abort(); return; }
-    native.http({ id, url: request.url, method: request.method, headers, body, manual: request.redirect === 'manual', background:request.method==='POST'&&Boolean(request.headers.get('content-type')?.startsWith('application/json')) }).catch(error => {
+    native.http({ id, url: request.url, method: request.method, headers, body, manual: request.redirect !== 'follow', background:request.method==='POST'&&Boolean(request.headers.get('content-type')?.startsWith('application/json')) }).catch(error => {
       if (!ended) { controller.error(error); reject(error); finish(); }
     });
   });

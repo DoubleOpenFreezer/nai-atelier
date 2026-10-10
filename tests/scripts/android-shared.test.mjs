@@ -15,6 +15,46 @@ test('Android 默认规则和官方提取复用电脑声明，不能带入 Node 
   assert.deepEqual(mobile.computeNaiRuntimeSync(NAI_MEDIUM_BILLING_BUNDLE), computeNaiRuntimeSync(NAI_MEDIUM_BILLING_BUNDLE));
   assert.doesNotMatch(source,/node:|readFile|process\.cwd/);
 });
+
+test('手机接入路由按所选 Key 连接生成、余额与 Vibe，切回官方不残留网关', async t => {
+  const { transform } = await import('esbuild');
+  const connectionUrl = new URL('../../worker/naiConnection.mjs', import.meta.url).href;
+  const gatewayUrl = new URL('../../scripts/media-gateway.mjs', import.meta.url).href;
+  const source = extractAndroidShared(join(projectRoot, 'mobile/gateway.ts'), ['mobileGateway'], `
+    import { resolveNaiGatewayUrl } from '${connectionUrl}';
+    import { sanitizeNovelAiSubscription, normalizeCloudQueuePreferences } from '${gatewayUrl}';
+    const keyHashFromAuthorization = authorization => authorization;
+    let nativeRequests = 0;
+    const nativeFetch = (...args) => { nativeRequests++; return fetch(...args); };
+    const entries = [{ key: 'STA1N-phone', gatewayUrl: 'https://gateway.example/v1' }];
+    const json = value => new Response(JSON.stringify(value));
+    const runHandler = (request, handler) => handler({ headers: { authorization: request.headers.get('authorization') } }, {});
+    const handleGenerateRequest = (...args) => json({ handler: 'zip', gatewayUrl: args[7].gatewayUrl });
+    const handleGenerateStreamRequest = (...args) => json({ handler: 'stream', gatewayUrl: args[7].gatewayUrl });
+    const handleVibeEncodeRequest = (...args) => json({ handler: 'vibe', gatewayUrl: args[6] });
+    const rememberNaiSubscription = () => {};
+  `, { tasks: 'const tasks = {};', queue: 'const queue = {};', generationJobs: 'const generationJobs = {};',
+    readSetting: "const readSetting = async (key, fallback) => key === 'nai_key_vault' ? entries : fallback;" });
+  const transformed = await transform(source + '\nexport { nativeRequests };', { loader: 'ts', format: 'esm' });
+  const mobile = await import('data:text/javascript;base64,' + Buffer.from(transformed.code).toString('base64'));
+  const calls = [];
+  t.mock.method(globalThis, 'fetch', async (url, options) => {
+    calls.push({ url, authorization: options.headers.authorization, redirect: options.redirect });
+    return new Response('{"active":true,"tier":3,"trainingStepsLeft":{"fixedTrainingStepsLeft":3,"purchasedTrainingSteps":7}}');
+  });
+  for (const [key, target] of [['STA1N-phone', 'https://gateway.example/v1'], ['pst-phone-official', '']]) {
+    for (const path of ['/api/generate', '/api/generate-stream', '/api/vibes/synthetic/encodings']) {
+      const response = await mobile.mobileGateway(new Request(`https://localhost${path}`, { method: 'POST', headers: { authorization: `Bearer ${key}` } }));
+      assert.equal((await response.json()).gatewayUrl, target);
+    }
+    const response = await mobile.mobileGateway(new Request('https://localhost/api/novelai-subscription', { headers: { authorization: `Bearer ${key}` } }));
+    assert.equal((await response.json()).source, target ? 'gateway' : undefined);
+    assert.deepEqual(calls.at(-1), { url: `${target || 'https://image.novelai.net'}/user/subscription`, authorization: `Bearer ${key}`, redirect: target ? 'error' : undefined });
+  }
+  await assert.rejects(mobile.mobileGateway(new Request('https://localhost/api/novelai-subscription', { headers: { authorization: 'Bearer STA1N-missing' } })), { status: 400 });
+  assert.equal(calls.length, 2);
+  assert.equal(mobile.nativeRequests, 1);
+});
 test('手机词库生成必须留下原子切换，由共用生成器保留字符检索和目录分页',()=>{
   const source=androidDictionaryGenerator(join(projectRoot,'scripts/update-tag-dictionary.mjs'));
   assert.match(source,/characterSearchRecords/);assert.match(source,/artistNamePages/);assert.match(source,/characterNamePages/);

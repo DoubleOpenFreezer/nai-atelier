@@ -1,6 +1,7 @@
 import { api, ApiError } from './api';
 import { createUuid } from './id';
 import { readActiveNaiKey, setActiveNaiKey, getRememberNaiKey } from './naiKeyStorage';
+import { normalizeNaiGatewayUrl, validateNaiApiKey } from '../worker/naiConnection.mjs';
 
 /**
  * NovelAI 多密钥保管箱。
@@ -21,12 +22,14 @@ export interface NaiKeyEntry {
   name: string;
   key: string;
   createdAt: number;
+  gatewayUrl?: string;
 }
 
 export type AddKeyResult =
   | { status: 'added'; entry: NaiKeyEntry }
   | { status: 'empty' }
   | { status: 'duplicate' }
+  | { status: 'invalid-gateway' }
   | { status: 'invalid' };
 
 const VAULT_STORAGE_KEY = 'nai_api_key_vault';
@@ -54,6 +57,7 @@ const readLocalVault = (): NaiKeyEntry[] => {
         name: (item.name as string) || '未命名密钥',
         key: item.key as string,
         createdAt: typeof item.createdAt === 'number' ? (item.createdAt as number) : Date.now(),
+        ...(typeof item.gatewayUrl === 'string' && item.gatewayUrl ? { gatewayUrl: item.gatewayUrl } : {}),
       }));
   } catch {
     return [];
@@ -122,16 +126,17 @@ export const naiKeyVault = {
   },
 
   /**
-   * 新增密钥。NovelAI 持久令牌以 pst- 开头；其他前缀（例如被浏览器自动填进来的
-   * LLM 服务密钥）直接拒绝，防止存错类型的密钥。校验规则与本地兜底一致。
+   * 官方密钥检查 pst- 前缀；成员 Key 必须明确绑定网关，校验与服务端／本地兜底一致。
    */
-  async add(name: string, key: string): Promise<AddKeyResult> {
+  async add(name: string, key: string, gatewayAddress = ''): Promise<AddKeyResult> {
     const trimmedKey = key.trim();
     if (!trimmedKey) return { status: 'empty' };
-    if (!trimmedKey.startsWith('pst-')) return { status: 'invalid' };
+    let gatewayUrl;
+    try { gatewayUrl = normalizeNaiGatewayUrl(gatewayAddress); } catch { return { status: 'invalid-gateway' }; }
+    try { validateNaiApiKey(trimmedKey, gatewayUrl); } catch { return { status: 'invalid' }; }
     if (!isBrowser()) return { status: 'invalid' };
     try {
-      const res = await api.post('/nai-key-vault', { name, key });
+      const res = await api.post('/nai-key-vault', { name, key, ...(gatewayUrl ? { gatewayUrl } : {}) });
       return { status: 'added', entry: res.entry as NaiKeyEntry };
     } catch (err) {
       // 服务端把校验失败以 400 返回：err 为 ApiError，剥离回局部判定结果；
@@ -150,6 +155,7 @@ export const naiKeyVault = {
         name: name.trim().slice(0, 30) || `密钥 ${local.length + 1}`,
         key: trimmedKey,
         createdAt: Date.now(),
+        ...(gatewayUrl ? { gatewayUrl } : {}),
       };
       writeLocalVault([...local, entry]);
       return { status: 'added', entry };

@@ -934,11 +934,18 @@ export const createSseEventObserver = onEvent => {
   };
 };
 
-export const fetchNovelAiSubscription = (authorization, signal = AbortSignal.timeout(30_000), requestRemote = fetch) => requestRemote(NAI_SUBSCRIPTION_URL, {
+export const fetchNovelAiSubscription = (authorization, signal = AbortSignal.timeout(30_000), requestRemote = fetch, gatewayUrl = '') => requestRemote(gatewayUrl ? `${gatewayUrl}/user/subscription` : NAI_SUBSCRIPTION_URL, {
   method: 'GET',
   headers: { 'Authorization': authorization },
   signal,
+  ...(gatewayUrl ? { redirect: 'error' } : {}),
 });
+
+// 只读取所选 Key 的接入地址，不把整个保管箱带入请求链。
+export const readNaiGatewayUrl = async (req, workerPort) => {
+  const connection = await requestWorkerJson('/api/nai-key-vault/connection', req, workerPort, { headers: { authorization: req.headers.authorization || '' } });
+  return connection.gatewayUrl || '';
+};
 
 /**
  * 只保留前端需要的订阅字段，剥离 paymentProcessorData 等敏感/冗余数据，
@@ -946,7 +953,7 @@ export const fetchNovelAiSubscription = (authorization, signal = AbortSignal.tim
  * 过期或非 Opus 订阅不派发 usage；过期后官方仍可能返回数字，但不能作为免费权益。
  * Paid Anlas 余额独立保留，订阅过期不等于密钥失效。
  */
-export const sanitizeNovelAiSubscription = payload => {
+export const sanitizeNovelAiSubscription = (payload, gatewayUrl = '') => {
   const usage = payload?.usage;
   const percent = Number(usage?.percent);
   const timeUntilNextPercent = Number(usage?.timeUntilNextPercent);
@@ -957,6 +964,7 @@ export const sanitizeNovelAiSubscription = payload => {
   const balanceKnown = balance && Number.isFinite(balance.fixedTrainingStepsLeft) && balance.fixedTrainingStepsLeft >= 0
     && Number.isFinite(balance.purchasedTrainingSteps) && balance.purchasedTrainingSteps >= 0;
   return {
+    ...(gatewayUrl ? { source: 'gateway' } : {}),
     tier,
     active,
     ...(balanceKnown ? { trainingStepsLeft: { fixedTrainingStepsLeft: balance.fixedTrainingStepsLeft, purchasedTrainingSteps: balance.purchasedTrainingSteps } } : {}),
@@ -1718,15 +1726,15 @@ export const handleGenerationTaskRequest = async (req, res, lanSecret, tasks = g
 
 export const handleGenerateRequest = async (req, res, lanSecret, workerPort, cloudQueue, queuePreferences, requestRemote, {
   generationTimeoutMs = 300_000, settleGeneration = settleSuccessfulNovelAiGeneration,
-  prepareBilling = prepareNovelAiBilling, tasks = generationTasks,
+  prepareBilling = prepareNovelAiBilling, tasks = generationTasks, gatewayUrl = '',
 } = {}) => {
   if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
   if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
   const authorization = String(req.headers.authorization || '');
   if (!authorization.startsWith('Bearer ')) return sendJson(res, 401, { error: '缺少 NovelAI API Key' });
 
-  const queueEnabled = queuePreferences.enabled === true && Boolean(queuePreferences.serviceUrl);
-  const generationProxyUrl = queueEnabled ? getCloudQueueGenerationUrl(queuePreferences.serviceUrl) : null;
+  const queueEnabled = Boolean(gatewayUrl) || queuePreferences.enabled === true && Boolean(queuePreferences.serviceUrl);
+  const generationProxyUrl = gatewayUrl ? `${gatewayUrl}/ai/generate-image` : queueEnabled ? getCloudQueueGenerationUrl(queuePreferences.serviceUrl) : null;
   const keyHash = keyHashFromAuthorization(authorization);
   const requestedTaskId = String(req.headers['x-nai-queue-task-id'] || '');
   const queueTaskId = /^[a-zA-Z0-9-]{8,80}$/.test(requestedTaskId) ? requestedTaskId : randomUUID();
@@ -1771,6 +1779,7 @@ export const handleGenerateRequest = async (req, res, lanSecret, workerPort, clo
     const rawBody = await readRequestBody(req, GENERATION_REQUEST_LIMIT);
     let payload;
     try { payload = JSON.parse(rawBody.toString('utf8')); } catch { return sendJson(res, 400, { error: '生图请求不是有效 JSON' }); }
+    if (gatewayUrl && payload?.parameters) delete payload.parameters.stream;
     const localVibes = payload?.parameters?._local_vibes;
     const localCharacterReferences = payload?.parameters?._local_character_references;
     const runtime = getNaiRuntime();
@@ -1988,8 +1997,11 @@ export const handleGenerateRequest = async (req, res, lanSecret, workerPort, clo
 
 export const handleGenerateStreamRequest = async (req, res, lanSecret, workerPort, cloudQueue, queuePreferences, requestRemote, {
   generationTimeoutMs = 300_000, settleGeneration = settleSuccessfulNovelAiGeneration,
-  prepareBilling = prepareNovelAiBilling, tasks = generationTasks,
+  prepareBilling = prepareNovelAiBilling, tasks = generationTasks, gatewayUrl = '',
 } = {}) => {
+  // 成员网关一次提交普通 ZIP；后台任务按响应类型解包，不先尝试不支持的流式接口。
+  if (gatewayUrl) return handleGenerateRequest(req, res, lanSecret, workerPort, cloudQueue, queuePreferences, requestRemote,
+    { generationTimeoutMs, settleGeneration, prepareBilling, tasks, gatewayUrl });
   if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
   if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
   const authorization = String(req.headers.authorization || '');
@@ -2178,7 +2190,7 @@ export const handleGenerateStreamRequest = async (req, res, lanSecret, workerPor
   }
 };
 
-export const handleVibeEncodeRequest = async (req, res, lanSecret, workerPort, vibeId, requestRemote) => {
+export const handleVibeEncodeRequest = async (req, res, lanSecret, workerPort, vibeId, requestRemote, gatewayUrl = '') => {
   if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
   if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
   const authorization = String(req.headers.authorization || '');
@@ -2199,7 +2211,8 @@ export const handleVibeEncodeRequest = async (req, res, lanSecret, workerPort, v
       const stored = await commitVibeRecovery(pendingRecovery, req, workerPort);
       return sendJson(res, 200, { ...stored, recovered: true });
     }
-    let task = vibeEncodingJobs.get(taskKey);
+    const jobKey = `${taskKey}:${keyHashFromAuthorization(authorization)}:${gatewayUrl}`;
+    let task = vibeEncodingJobs.get(jobKey);
     if (!task) {
       task = (async () => {
         const original = await requestWorkerBuffer(`/api/vibes/${encodeURIComponent(vibeId)}/image`, req, workerPort);
@@ -2209,15 +2222,16 @@ export const handleVibeEncodeRequest = async (req, res, lanSecret, workerPort, v
           throw error;
         }
         const cost = getNaiRuntime().billing.vibeEncodingCost;
-        const response = await requestRemote(NAI_ENCODE_VIBE_URL, {
+        const response = await requestRemote(gatewayUrl ? `${gatewayUrl}/ai/encode-vibe` : NAI_ENCODE_VIBE_URL, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': authorization },
           body: JSON.stringify({ image: original.buffer.toString('base64'), information_extracted: informationExtracted, model: 'nai-diffusion-4-5-full' }),
           signal: AbortSignal.timeout(300_000),
+          ...(gatewayUrl ? { redirect: 'error' } : {}),
         });
         if (!response.ok) {
           const detail = await response.text();
-          const error = new Error(response.status === 401 ? 'NovelAI API Key 无效' : response.status === 402 ? 'NovelAI Anlas 不足' : (detail || `NovelAI 编码失败 (${response.status})`));
+          const error = new Error(gatewayUrl ? (detail || `网关编码失败 (${response.status})`) : response.status === 401 ? 'NovelAI API Key 无效' : response.status === 402 ? 'NovelAI Anlas 不足' : (detail || `NovelAI 编码失败 (${response.status})`));
           error.status = response.status;
           throw error;
         }
@@ -2245,8 +2259,8 @@ export const handleVibeEncodeRequest = async (req, res, lanSecret, workerPort, v
           error.status = 503;
           throw error;
         }
-      })().finally(() => vibeEncodingJobs.delete(taskKey));
-      vibeEncodingJobs.set(taskKey, task);
+      })().finally(() => vibeEncodingJobs.delete(jobKey));
+      vibeEncodingJobs.set(jobKey, task);
     }
     const stored = await task;
     return sendJson(res, 200, stored);
@@ -3008,9 +3022,10 @@ const serveDistFile = async (req, res, url) => {
       const authorization = job.context.authorization;
       if (fresh) {
         try {
-          const response = await fetchNovelAiSubscription(authorization, AbortSignal.timeout(30_000), remoteFetch);
+          const gatewayUrl = await readNaiGatewayUrl({ ...internalWorkerRequest, headers: { authorization } }, workerPort);
+          const response = await fetchNovelAiSubscription(authorization, AbortSignal.timeout(30_000), remoteFetch, gatewayUrl);
           if (!response.ok) throw new Error('账号额度刷新失败');
-          cacheNovelAiSubscription(authorization, sanitizeNovelAiSubscription(await response.json()));
+          cacheNovelAiSubscription(authorization, sanitizeNovelAiSubscription(await response.json(), gatewayUrl));
         } catch {
           throw Object.assign(new Error('无法核实当前额度，已停止后续生成'), { code: 'quota_refresh_failed', status: 503 });
         }
@@ -3676,11 +3691,13 @@ const serveDistFile = async (req, res, url) => {
     }
     if (url.pathname === '/api/generate') {
       const { preferences } = await getCloudQueueScope(req);
-      return handleGenerateRequest(req, res, lanSecret, workerPort, cloudQueue, preferences, remoteFetch, { tasks });
+      const gatewayUrl = await readNaiGatewayUrl(req, workerPort);
+      return handleGenerateRequest(req, res, lanSecret, workerPort, cloudQueue, preferences, remoteFetch, { tasks, gatewayUrl });
     }
     if (url.pathname === '/api/generate-stream') {
       const { preferences } = await getCloudQueueScope(req);
-      return handleGenerateStreamRequest(req, res, lanSecret, workerPort, cloudQueue, preferences, remoteFetch, { tasks });
+      const gatewayUrl = await readNaiGatewayUrl(req, workerPort);
+      return handleGenerateStreamRequest(req, res, lanSecret, workerPort, cloudQueue, preferences, remoteFetch, { tasks, gatewayUrl });
     }
     if (url.pathname === '/api/novelai-subscription') {
       if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
@@ -3688,12 +3705,13 @@ const serveDistFile = async (req, res, url) => {
       const authorization = String(req.headers.authorization || '');
       if (!authorization.startsWith('Bearer ')) return sendJson(res, 401, { error: '缺少 NovelAI API Key' });
       try {
-        const upstream = await fetchNovelAiSubscription(authorization, undefined, remoteFetch);
+        const gatewayUrl = await readNaiGatewayUrl(req, workerPort);
+        const upstream = await fetchNovelAiSubscription(authorization, undefined, remoteFetch, gatewayUrl);
         if (!upstream.ok) {
-          return sendJson(res, 502, { error: 'NovelAI 订阅信息获取失败', upstreamStatus: upstream.status });
+          return sendJson(res, 502, { error: gatewayUrl ? '网关余额查询失败' : 'NovelAI 订阅信息获取失败', upstreamStatus: upstream.status });
         }
         const payload = await upstream.json();
-        const sanitized = sanitizeNovelAiSubscription(payload);
+        const sanitized = sanitizeNovelAiSubscription(payload, gatewayUrl);
         cacheNovelAiSubscription(authorization, sanitized);
         return sendJson(res, 200, sanitized);
       } catch (error) {
@@ -3749,7 +3767,7 @@ const serveDistFile = async (req, res, url) => {
       return sendJson(res, 200, { status: 'ok' });
     }
     const vibeEncodeMatch = url.pathname.match(/^\/api\/vibes\/([^/]+)\/encodings$/);
-    if (vibeEncodeMatch) return handleVibeEncodeRequest(req, res, lanSecret, workerPort, decodeURIComponent(vibeEncodeMatch[1]), remoteFetch);
+    if (vibeEncodeMatch) return handleVibeEncodeRequest(req, res, lanSecret, workerPort, decodeURIComponent(vibeEncodeMatch[1]), remoteFetch, await readNaiGatewayUrl(req, workerPort));
     if (url.pathname === '/api/media/history-index/status') {
       if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
       if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
@@ -3889,7 +3907,7 @@ const serveDistFile = async (req, res, url) => {
   };
   const server = createServer((req, res) => {
     activeHandlers.add(req);
-    void handleRequest(req, res).catch(error => sendJson(res, 500, { error: error.message || '请求失败' })).finally(() => activeHandlers.delete(req));
+    void handleRequest(req, res).catch(error => sendJson(res, Number(error.status) || 500, { error: error.message || '请求失败' })).finally(() => activeHandlers.delete(req));
   });
   server.on('close', () => {
     generationJobs.close();

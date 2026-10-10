@@ -12,6 +12,20 @@ const responseFor = (payload: unknown) => ({
 }) as Response;
 
 describe('OpusUsageBar', () => {
+  it.each([true, false])('成员额度标记来源，耗尽或停用不承诺官方付费路径 active=%s', async active => {
+    sessionStorage.setItem('nai_api_key', `STA1N-quota-${active}`);
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => String(input).startsWith('/api/novelai-runtime')
+      ? responseFor({ ...DEFAULT_NAI_RUNTIME, syncedAt: Date.now(), health: { ok: true } })
+      : responseFor({ source: 'gateway', tier: 3, active, trainingStepsLeft: { fixedTrainingStepsLeft: 0, purchasedTrainingSteps: 20 },
+        ...(active ? { usage: { percent: 0, isNegative: true, timeUntilNextPercent: 0 } } : {}) })));
+    render(React.createElement(OpusUsageBar, { collapsed: false, showDetails: true }));
+    const card = await screen.findByRole('status', { name: active ? /成员生成额度/ : /网关权益不可用/ });
+    expect(card.title).toContain('实际扣费以网关为准');
+    expect(card.title).not.toContain('权限与扣费以官方响应为准');
+    if (active) expect(screen.getByText('成员额度已用尽，请核对网关余额与策略')).toBeTruthy();
+    else expect(screen.queryByText('订阅已过期')).toBeNull();
+    expect(screen.queryByText('额度已用尽，生成将消耗 Anlas')).toBeNull();
+  });
   beforeEach(() => {
     sessionStorage.clear();
     localStorage.clear();

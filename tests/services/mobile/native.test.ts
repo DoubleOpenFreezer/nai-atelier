@@ -6,6 +6,22 @@ import { nativeFetch,initNativeNetwork,writeBlob } from '../../../mobile/native'
 
 beforeEach(async()=>{vi.clearAllMocks();plugin.cancel.mockResolvedValue(undefined);plugin.addListener.mockImplementation(async(name,callback)=>{listeners.set(name,callback);return{remove:async()=>{}};});await initNativeNetwork();});
 afterEach(()=>vi.unstubAllGlobals());
+it('成员网关 redirect:error 禁止原生跟随重定向；默认官方和 manual 行为保留',async()=>{
+  plugin.http.mockImplementation(async options=>{
+    const emit=listeners.get('http')!;
+    emit({id:options.id,type:'head',status:302,headers:{location:'https://other.invalid'},url:options.url});
+    emit({id:options.id,type:'end'});
+  });
+  await expect(nativeFetch('https://gateway.invalid/ai/generate-image',{redirect:'error',headers:{authorization:'Bearer STA1N-synthetic'}})).rejects.toThrow('请求不允许重定向');
+  expect(plugin.http.mock.lastCall?.[0].manual).toBe(true);expect(plugin.cancel).toHaveBeenCalledOnce();
+  const manual=await nativeFetch('https://example.invalid/manual',{redirect:'manual'});
+  expect(manual.status).toBe(302);expect(plugin.http.mock.lastCall?.[0].manual).toBe(true);
+  plugin.http.mockImplementation(async options=>{
+    const emit=listeners.get('http')!;emit({id:options.id,type:'head',status:200,headers:{},url:options.url});emit({id:options.id,type:'end'});
+  });
+  expect((await nativeFetch('https://image.novelai.net/user/subscription')).status).toBe(200);
+  expect(plugin.http.mock.lastCall?.[0].manual).toBe(false);
+});
 it('原生流保持逐块输出，完成后关闭，取消传递至原生请求',async()=>{
   plugin.http.mockImplementation(async options=>{const emit=listeners.get('http')!;emit({id:options.id,type:'head',status:200,headers:{'content-type':'text/event-stream'},url:options.url});emit({id:options.id,type:'data',data:btoa('event: final\n')});emit({id:options.id,type:'data',data:btoa('data: {}\n\n')});emit({id:options.id,type:'end'});});
   const response=await nativeFetch('https://example.invalid/stream');expect(await response.text()).toBe('event: final\ndata: {}\n\n');

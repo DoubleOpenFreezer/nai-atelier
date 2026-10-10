@@ -53,12 +53,14 @@ export const MobileGenerationResources: React.FC<MobileGenerationResourcesProps>
   }, [open]);
 
   const { info, usage, loading, error, fetchedAt } = subscription;
+  const gateway = info?.source === 'gateway';
+  const quotaName = gateway ? '成员额度' : 'Opus';
   const total = officialAnlasBalance(info);
   const runtimeBroken = isNaiRuntimeSyncUnhealthy(runtime);
-  const opusText = info?.active === false ? '订阅过期'
-    : error ? isActiveOpusSubscription(info) && usage ? `Opus ${usageRemainingPercent(usage)}% · 旧值` : '额度查询失败'
+  const opusText = info?.active === false ? gateway ? '网关权益不可用' : '订阅过期'
+    : error ? isActiveOpusSubscription(info) && usage ? `${quotaName} ${usageRemainingPercent(usage)}% · 旧值` : '额度查询失败'
       : loading ? '额度同步中'
-        : isActiveOpusSubscription(info) ? usage ? usage.isNegative ? 'Opus 已用尽' : `Opus ${usageRemainingPercent(usage)}%` : '额度未知'
+        : isActiveOpusSubscription(info) ? usage ? usage.isNegative ? `${quotaName} 已用尽` : `${quotaName} ${usageRemainingPercent(usage)}%` : '额度未知'
           : info?.active === true ? '非 Opus' : '额度未知';
   const balanceText = total === null ? loading ? '…' : '未知' : `${compactPoints(total)}${error ? '（旧值）' : ''}`;
   const summary = !apiKey ? '未配置 Key'
@@ -90,7 +92,7 @@ export const MobileGenerationResources: React.FC<MobileGenerationResourcesProps>
       style={keyboardOffset > 0 ? { bottom: `calc(${keyboardOffset}px + env(safe-area-inset-bottom))` } : undefined}
       className="mobile-touch group fixed inset-x-0 bottom-[env(safe-area-inset-bottom)] z-[900] mx-auto inline-flex h-11 w-max max-w-[calc(100vw-2rem)] cursor-pointer items-end justify-center gap-3 rounded-md border-0 bg-transparent px-2 pb-1 text-meta leading-4 shadow-none outline-none transition-opacity active:opacity-60 focus-visible:ring-2 focus-visible:ring-indigo-500 md:hidden">
       <span className={`whitespace-nowrap tabular-nums underline decoration-dotted decoration-gray-400/60 underline-offset-4 group-hover:decoration-current ${footerTone}`}>Anlas {footerBudget}/{footerBalance}</span>
-      <span className={`inline-flex items-center gap-1 whitespace-nowrap tabular-nums ${footerTone}`}><span className="underline decoration-dotted decoration-gray-400/60 underline-offset-4 group-hover:decoration-current">{t("Opus额度 ")}{footerQuota}{warning && <span aria-hidden="true" className="ml-1">!</span>}</span><ChevronUp aria-hidden="true" className="h-3 w-3 shrink-0" /></span>
+      <span className={`inline-flex items-center gap-1 whitespace-nowrap tabular-nums ${footerTone}`}><span className="underline decoration-dotted decoration-gray-400/60 underline-offset-4 group-hover:decoration-current">{t(gateway ? '成员额度' : "Opus额度 ")}{gateway && ' '}{footerQuota}{warning && <span aria-hidden="true" className="ml-1">!</span>}</span><ChevronUp aria-hidden="true" className="h-3 w-3 shrink-0" /></span>
     </button>
     <ImagePreviewPortal>
       <MobileBottomSheet open={open} title={t("账户资源")} onClose={() => setOpen(false)} footer={<button type="button" onClick={openSettings} className="mobile-touch w-full rounded-xl bg-indigo-600 px-4 text-sm font-semibold text-white">{t("账户设置")}</button>}>
@@ -101,7 +103,7 @@ export const MobileGenerationResources: React.FC<MobileGenerationResourcesProps>
             <OpusUsageBar collapsed={false} showDetails showSyncTime={false} />
           </div>
           <dl className="mt-4 grid grid-cols-[max-content_minmax(0,1fr)] items-baseline gap-x-3 gap-y-2 text-meta text-gray-500 dark:text-gray-400">
-            <dt>{t("订阅状态")}</dt><dd className="min-w-0 break-words text-gray-700 dark:text-gray-300">{!apiKey ? t("未配置 Key") : !info ? t("尚未同步") : info.active === false ? t("订阅过期") : isActiveOpusSubscription(info) ? 'Opus' : t("非 Opus")}</dd>
+            <dt>{t("订阅状态")}</dt><dd className="min-w-0 break-words text-gray-700 dark:text-gray-300">{!apiKey ? t("未配置 Key") : !info ? t("尚未同步") : info.active === false ? t(gateway ? '网关权益不可用' : "订阅过期") : gateway ? t('网关成员') : isActiveOpusSubscription(info) ? 'Opus' : t("非 Opus")}</dd>
             <dt>{t("最近成功同步")}</dt><dd className="min-w-0 break-words tabular-nums">{fetchedAt > 0 ? new Date(fetchedAt).toLocaleString(getLanguage(), { hour12: false }) : t("尚未同步")}</dd>
           </dl>
           {runtimeBroken && runtime && <p role="status" className="mt-2 text-xs text-amber-600 dark:text-amber-400">{t("{0}，费用估算可能过期", [describeNaiRuntimeSyncProblem(runtime)])}</p>}

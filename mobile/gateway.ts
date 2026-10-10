@@ -1,9 +1,10 @@
 import { GenerationTasks, validateGenerationInterval } from '../worker/generationTasks.mjs';
-import { native, bytesToBase64 } from './native';
+import { native, nativeFetch, bytesToBase64 } from './native';
 import { db } from './storage';
 import { runHandler } from './node-http';
 import { json } from '../worker/routes/types';
 import { thumbnailResponse } from './image';
+import { resolveNaiGatewayUrl } from '../worker/naiConnection.mjs';
 import { createMobileGenerationJobs, rememberNaiSubscription } from './generationJobs';
 import { AITAG_BROWSER_HEADERS } from 'mobile:remote';
 import {
@@ -48,6 +49,7 @@ async function refreshRuntime() {
     setTimeout(() => refreshRuntime().catch(console.warn), 300000);
   }
 }
+export const mobileNaiGatewayUrl = async (authorization: string) => resolveNaiGatewayUrl(authorization, await readSetting('nai_key_vault', []));
 export async function queuePreferences(authorization: string, next?: any) {
   const hash = keyHashFromAuthorization(authorization);
   const key = 'mobile_queue_' + hash;
@@ -63,9 +65,10 @@ export async function mobileGateway(request: Request): Promise<Response | null> 
   const url = new URL(request.url), path = url.pathname, authorization = request.headers.get('authorization') || '';
   if (path === '/api/novelai-runtime') return json(getNaiRuntime());
   if (path === '/api/novelai-subscription') {
-    const response = await fetch('https://image.novelai.net/user/subscription', { headers: { authorization }, signal: request.signal });
+    const gatewayUrl = await mobileNaiGatewayUrl(authorization);
+    const response = await (gatewayUrl ? nativeFetch : fetch)(gatewayUrl ? `${gatewayUrl}/user/subscription` : 'https://image.novelai.net/user/subscription', { headers: { authorization }, signal: request.signal, ...(gatewayUrl ? { redirect: 'error' as const } : {}) });
     if (!response.ok) return response;
-    const subscription = sanitizeNovelAiSubscription(await response.json()); rememberNaiSubscription(authorization, subscription); return json(subscription);
+    const subscription = sanitizeNovelAiSubscription(await response.json(), gatewayUrl); rememberNaiSubscription(authorization, subscription); return json(subscription);
   }
   if (path === '/api/generation-queue/preferences') return json(await queuePreferences(authorization, request.method === 'PUT' ? await request.json() : undefined));
   if (path === '/api/generation-queue/status') { const keyHash = keyHashFromAuthorization(authorization); const item = queue.get(keyHash, url.searchParams.get('taskId') || ''); return item ? json({ ...item, controller: undefined, keyHash: undefined }) : json({ error: '排队任务不存在' }, 404); }
@@ -91,10 +94,14 @@ export async function mobileGateway(request: Request): Promise<Response | null> 
   if (path === '/api/generate' || path === '/api/generate-stream') {
     const prefs = await queuePreferences(authorization);
     const handler = path.endsWith('-stream') ? handleGenerateStreamRequest : handleGenerateRequest;
-    return runHandler(request, (req, res) => handler(req, res, '', 0, queue, prefs, (...args: any[]) => fetch(args[0], args[1]), { tasks }));
+    const gatewayUrl = await mobileNaiGatewayUrl(authorization);
+    return runHandler(request, (req, res) => handler(req, res, '', 0, queue, prefs, (...args: any[]) => (gatewayUrl ? nativeFetch : fetch)(args[0], args[1]), { tasks, gatewayUrl }));
   }
   const encode = path.match(/^\/api\/vibes\/([^/]+)\/encodings$/);
-  if (encode && request.method === 'POST') return runHandler(request, (req, res) => handleVibeEncodeRequest(req, res, '', 0, decodeURIComponent(encode[1]), (...args: any[]) => fetch(args[0], args[1])));
+  if (encode && request.method === 'POST') {
+    const gatewayUrl = await mobileNaiGatewayUrl(authorization);
+    return runHandler(request, (req, res) => handleVibeEncodeRequest(req, res, '', 0, decodeURIComponent(encode[1]), (...args: any[]) => (gatewayUrl ? nativeFetch : fetch)(args[0], args[1]), gatewayUrl));
+  }
   if (path.startsWith('/api/image-tagger')) {
     const action = path === '/api/image-tagger' ? 'infer' : path.split('/').pop();
     const options = action === 'infer' ? { model: url.searchParams.get('model') || undefined, ...(url.searchParams.has('threshold') ? { threshold: Number(url.searchParams.get('threshold')) } : {}), ...(url.searchParams.has('characterThreshold') ? { characterThreshold: Number(url.searchParams.get('characterThreshold')) } : {}), data: bytesToBase64(new Uint8Array(await request.arrayBuffer())) } : request.method === 'POST' ? await request.json() : {};
