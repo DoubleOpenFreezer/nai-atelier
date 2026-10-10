@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 type Point = { x: number; y: number };
 export const clampImagePan = (pan: Point, width: number, height: number, box: { width: number; height: number }, zoom: number) => {
@@ -8,7 +8,7 @@ export const clampImagePan = (pan: Point, width: number, height: number, box: { 
 
 /** 大图统一使用视口坐标：双击取点击焦点、双指取中点，抬起一指后连续拖动。 */
 export function useImageViewport(key: React.Key, initial = {width:832,height:1216}, onSwipe?: (delta:number)=>void) {
-  const stageRef=useRef<HTMLElement>(null);
+  const [stage,setStage]=useState<HTMLElement|null>(null);
   const [box,setBox]=useState({width:800,height:600});
   const [natural,setNatural]=useState(initial);
   const [view,setView]=useState({zoom:1,pan:{x:0,y:0}});
@@ -22,21 +22,22 @@ export function useImageViewport(key: React.Key, initial = {width:832,height:121
   const lastInput=useRef('');
   const update=(zoom:number,pan:Point)=>{const next={zoom,pan:clampImagePan(pan,width,height,box,zoom)};latest.current=next;setView(next);};
   const reset=()=>update(1,{x:0,y:0});
-  const pointAt=(point:Point)=>{const rect=stageRef.current!.getBoundingClientRect();return {x:point.x-rect.left-rect.width/2,y:point.y-rect.top-rect.height/2};};
+  const pointAt=(point:Point)=>{const rect=stage!.getBoundingClientRect();return {x:point.x-rect.left-rect.width/2,y:point.y-rect.top-rect.height/2};};
   const zoomAt=(requested:number,point={x:0,y:0})=>{
     const next=Math.max(1,Math.min(maxZoom,requested)),current=latest.current,ratio=next/current.zoom;
     update(next,{x:point.x-(point.x-current.pan.x)*ratio,y:point.y-(point.y-current.pan.y)*ratio});
   };
   const doubleTap=(point:Point)=>latest.current.zoom>1?reset():zoomAt(Math.max(2,1/fit),pointAt(point));
-  useEffect(()=>{setNatural(initial);setView({zoom:1,pan:{x:0,y:0}});latest.current={zoom:1,pan:{x:0,y:0}};pointers.current.clear();gesture.current=null;tap.current=null;consumed.current=false;},[key,initial.width,initial.height]);
-  useEffect(()=>{
-    const stage=stageRef.current;if(!stage)return;
+  useLayoutEffect(()=>{setNatural(initial);setView({zoom:1,pan:{x:0,y:0}});latest.current={zoom:1,pan:{x:0,y:0}};pointers.current.clear();gesture.current=null;tap.current=null;consumed.current=false;},[key,initial.width,initial.height]);
+  // Portal 延迟挂载，等实际节点就绪后在绘制前测量。
+  useLayoutEffect(()=>{
+    if(!stage)return;
     const measure=()=>{const rect=stage.getBoundingClientRect();if(rect.width>0&&rect.height>0)setBox({width:rect.width,height:rect.height});};
     const observer=new ResizeObserver(measure);observer.observe(stage);measure();return()=>observer.disconnect();
-  },[]);
+  },[stage]);
   useEffect(()=>{setView(current=>({...current,pan:clampImagePan(current.pan,width,height,box,current.zoom)}));},[width,height,box]);
   useEffect(()=>{
-    const stage=stageRef.current;if(!stage)return;
+    if(!stage)return;
     const wheel=(event:WheelEvent)=>{event.preventDefault();zoomAt(latest.current.zoom*Math.exp(-event.deltaY*.002),pointAt({x:event.clientX,y:event.clientY}));};
     stage.addEventListener('wheel',wheel,{passive:false});return()=>stage.removeEventListener('wheel',wheel);
   });
@@ -46,7 +47,7 @@ export function useImageViewport(key: React.Key, initial = {width:832,height:121
   };
   const pointerDown=(event:React.PointerEvent<HTMLElement>)=>{
     if((event.target as Element).closest('button,input,a,[data-card-action]')||event.button>0)return;
-    stageRef.current?.setPointerCapture?.(event.pointerId);
+    stage?.setPointerCapture?.(event.pointerId);
     lastInput.current=event.pointerType;
     if(!pointers.current.size)consumed.current=false;
     pointers.current.set(event.pointerId,{x:event.clientX,y:event.clientY});start([...pointers.current.values()]);
@@ -80,8 +81,8 @@ export function useImageViewport(key: React.Key, initial = {width:832,height:121
     if(event.type==='pointercancel'||event.type==='lostpointercapture'){pointers.current.clear();gesture.current=null;consumed.current=true;}
     else if(pointers.current.size)start([...pointers.current.values()],true);else gesture.current=null;
   };
-  return {stageRef,natural,zoom:view.zoom,fit,maxZoom,reset,zoomAt,
-    imageStyle:{position:'absolute',left:'50%',top:'50%',maxWidth:'none',maxHeight:'none',width,height,transformOrigin:'center',transform:`translate(-50%, -50%) translate(${view.pan.x}px, ${view.pan.y}px) scale(${view.zoom})`} as React.CSSProperties,
+  return {stageRef:setStage,natural,zoom:view.zoom,fit,maxZoom,reset,zoomAt,
+    imageStyle:{position:'absolute',left:'50%',top:'50%',maxWidth:'100%',maxHeight:'100%',width:'auto',height:'auto',transformOrigin:'center',transform:`translate(-50%, -50%) translate(${view.pan.x}px, ${view.pan.y}px) scale(${view.zoom})`} as React.CSSProperties,
     onLoad:(event:React.SyntheticEvent<HTMLImageElement>)=>{const image=event.currentTarget;if(image.naturalWidth&&image.naturalHeight)setNatural({width:image.naturalWidth,height:image.naturalHeight});},
     handlers:{onPointerDown:pointerDown,onPointerMove:pointerMove,onPointerUp:pointerEnd,onPointerCancel:pointerEnd,onLostPointerCapture:pointerEnd,
       onDoubleClick:(event:React.MouseEvent<HTMLElement>)=>{if(lastInput.current!=='touch'&&!(event.target as Element).closest('button,[data-card-action]'))doubleTap({x:event.clientX,y:event.clientY});},

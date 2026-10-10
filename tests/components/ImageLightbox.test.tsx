@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
-import React from 'react';
-import {cleanup,fireEvent,render,screen} from '@testing-library/react';
+import React, { useState } from 'react';
+import {act,cleanup,fireEvent,render,screen,within} from '@testing-library/react';
 import {afterEach,beforeEach,expect,it,vi} from 'vitest';
 import {ImageLightbox,ViewableImage} from '../../components/ImageLightbox';
+import {ChainEditorPreview} from '../../components/ChainEditorPreview';
+import {ImageEditPreview} from '../../components/ImageEditPreview';
 import {installPointerEvents,longPress} from '../support/touchEvents';
 beforeEach(()=>{installPointerEvents();vi.stubGlobal('ResizeObserver',class{observe(){}disconnect(){}});vi.stubGlobal('matchMedia',()=>({matches:false,addEventListener(){},removeEventListener(){}}));});
 afterEach(()=>{cleanup();vi.unstubAllGlobals();vi.restoreAllMocks();});
@@ -34,6 +36,55 @@ it('长按保留原位分享，查看器返回与键盘 Esc 可退出；详情�
   fireEvent.keyDown(window,{key:'Escape'});expect(onClose).toHaveBeenCalledOnce();cleanup();
   render(<ViewableImage src="/synthetic.png" alt="合成作品"/>);fireEvent.click(screen.getByRole('button',{name:'放大查看：合成作品'}));
   expect(screen.getByRole('dialog',{name:'图片预览'})).toBeTruthy();fireEvent.click(screen.getByRole('button',{name:'返回图片详情'}));expect(screen.queryByRole('dialog')).toBeNull();
+});
+
+it.each([
+  [1400,900,1024,1024,'88%'],[1400,900,1216,832,'100%'],[1400,900,832,1216,'74%'],
+  [390,844,1024,1024,'38%'],[390,844,1216,832,'32%'],[390,844,832,1216,'47%'],
+])('窗口 %ix%i 打开 %ix%i 图片时始终按原比例适配，加载后不切换宽高样式', (width,height,naturalWidth,naturalHeight,percentage)=>{
+  vi.spyOn(HTMLElement.prototype,'getBoundingClientRect').mockReturnValue({width,height,left:0,top:0} as DOMRect);
+  const {image}=setup();
+  const before=image.style.cssText;
+  expect(image.style.width).toBe('auto');expect(image.style.height).toBe('auto');
+  expect(image.style.maxWidth).toBe('100%');expect(image.style.maxHeight).toBe('100%');
+  Object.defineProperties(image,{naturalWidth:{value:naturalWidth},naturalHeight:{value:naturalHeight}});fireEvent.load(image);
+  expect(image.style.cssText).toBe(before);
+  expect(screen.getByLabelText('图片缩放比例').textContent).toBe(percentage);
+});
+
+it('Portal 挂载后立即测量并注册尺寸监听，调整窗口重新适配，关闭清理监听',()=>{
+  let box={width:1400,height:900},resize!:()=>void;
+  const observe=vi.fn(),disconnect=vi.fn();
+  vi.spyOn(HTMLElement.prototype,'getBoundingClientRect').mockImplementation(()=>({...box,left:0,top:0} as DOMRect));
+  vi.stubGlobal('ResizeObserver',class{
+    constructor(callback:ResizeObserverCallback){resize=()=>callback([],this as unknown as ResizeObserver);}
+    observe=observe;disconnect=disconnect;
+  });
+  const {stage,image}=setup();expect(observe).toHaveBeenCalledWith(stage);
+  Object.defineProperties(image,{naturalWidth:{value:1024},naturalHeight:{value:1024}});fireEvent.load(image);
+  expect(screen.getByLabelText('图片缩放比例').textContent).toBe('88%');
+  box={width:700,height:500};act(()=>resize());
+  expect(screen.getByLabelText('图片缩放比例').textContent).toBe('49%');
+  fireEvent.wheel(stage,{deltaY:-100,clientX:350,clientY:250});
+  expect(image.style.transform).toContain('scale(1.2214027581601699)');
+  cleanup();expect(disconnect).toHaveBeenCalledOnce();
+});
+
+it.each(['text-to-image','image-to-image','inpaint','outpaint'] as const)('%s 预览入口共用稳定比例的大图查看器',operation=>{
+  const Harness=()=>{
+    const [open,setOpen]=useState<string|null>(null);
+    const common={isGenerating:false,generationCostLabel:'免费',getDownloadFilename:()=> 'synthetic.png'};
+    return <>{operation==='text-to-image'
+      ? <ChainEditorPreview {...common} generatedImage="/synthetic.png" previewImage={undefined} errorMsg={null} handleGenerate={vi.fn()} setLightboxImg={setOpen} isOwner={false} isUploading={false} handleSavePreview={vi.fn()} handleUploadCover={vi.fn()} />
+      : <ImageEditPreview {...common} operation={operation} image="/synthetic.png" error={null} canGenerate onGenerate={vi.fn()} onOpenLightbox={setOpen} />}
+      {open&&<ImageLightbox src={open} onClose={()=>setOpen(null)}/>}</>;
+  };
+  vi.spyOn(HTMLElement.prototype,'getBoundingClientRect').mockReturnValue({width:1400,height:900,left:0,top:0} as DOMRect);
+  render(<Harness/>);fireEvent.click(screen.getByRole('img'));
+  const image=within(screen.getByRole('dialog',{name:'图片预览'})).getByRole('img'),before=image.style.cssText;
+  Object.defineProperties(image,{naturalWidth:{value:1024},naturalHeight:{value:1024}});fireEvent.load(image);
+  expect(image.style.cssText).toBe(before);expect(image.style.width).toBe('auto');
+  expect(screen.getByLabelText('图片缩放比例').textContent).toBe('88%');
 });
 
 vi.mock('../../services/collectionFavorites', async original => ({

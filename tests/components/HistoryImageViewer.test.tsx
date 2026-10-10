@@ -25,6 +25,22 @@ const setup = (detailsOpen = true) => {
 };
 
 describe('历史图片缩放与手势', () => {
+  it('原图比例覆盖旧参数但不改变显示宽高规则，详情挤窄舞台后重新适配', () => {
+    let box = { width: 1000, height: 700 }, resize!: () => void;
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(() => ({ ...box, left: 0, top: 0 } as DOMRect));
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(callback: ResizeObserverCallback) { resize = () => callback([], this as unknown as ResizeObserver); }
+      observe() {} disconnect() {}
+    });
+    const { image } = setup(false), before = image.style.cssText;
+    Object.defineProperties(image, { naturalWidth: { value: 1216 }, naturalHeight: { value: 832 } });
+    fireEvent.load(image);
+    expect(image.style.cssText).toBe(before); expect(image.style.width).toBe('auto');
+    expect(screen.getByLabelText('图片缩放比例').textContent).toBe('82%');
+    box = { width: 600, height: 700 }; act(() => resize());
+    expect(screen.getByLabelText('图片缩放比例').textContent).toBe('49%');
+    expect(image.style.cssText).toBe(before);
+  });
   it('翻图后复用同一详情面板并回到顶部操作区', () => {
     const props = { index: 1, total: 4, navigating: false, favoritePending: false, detailsOpen: true, onDetailsChange: vi.fn(), onNavigate: vi.fn(), onClose: vi.fn(), onFavorite: vi.fn(), onDelete: vi.fn(), filename: 'synthetic.png', notify: vi.fn() };
     const result = render(<HistoryImageViewer {...props} item={item}><button>合成操作</button></HistoryImageViewer>);
