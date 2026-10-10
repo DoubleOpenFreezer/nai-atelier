@@ -18,9 +18,9 @@ const send = async (
     method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
     key: string,
     token: string,
-    options: { body?: unknown; headers?: Record<string, string>; viaQuery?: boolean; keepalive?: boolean } = {},
+    options: { body?: unknown; headers?: Record<string, string>; viaQuery?: boolean; previewVersion?: number; keepalive?: boolean } = {},
 ): Promise<GenerationJobSnapshot> => {
-    const response = await fetch(options.viaQuery ? `${JOB_PATH}?token=${encodeURIComponent(token)}` : JOB_PATH, {
+    const response = await fetch(options.viaQuery ? `${JOB_PATH}?token=${encodeURIComponent(token)}${options.previewVersion === undefined ? '' : `&previewVersion=${options.previewVersion}`}` : JOB_PATH, {
         method,
         cache: 'no-store',
         ...(options.keepalive ? { keepalive: true } : { signal: AbortSignal.timeout(REQUEST_TIMEOUT) }),
@@ -53,7 +53,7 @@ export const startGenerationJob = async (
     },
 });
 
-export const getGenerationJob = async (key: string, token: string): Promise<GenerationJobSnapshot> => send('GET', key, token, { viaQuery: true });
+export const getGenerationJob = async (key: string, token: string, previewVersion?: number): Promise<GenerationJobSnapshot> => send('GET', key, token, { viaQuery: true, previewVersion });
 
 /** 取消入口按 Key 访问；关闭/刷新页面用 keepalive 让请求在卸载后仍能送达。 */
 export const cancelGenerationJob = async (key: string, token: string, options: { keepalive?: boolean } = {}): Promise<void> => {

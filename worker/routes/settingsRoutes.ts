@@ -160,9 +160,11 @@ export async function getLocalOwner(db: D1Database) {
     owner = await db.prepare('SELECT id, username, role FROM users WHERE id = ?')
       .bind(id).first<any>();
   }
-  await db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('personal_owner_id_v2', ?)")
-    .bind(owner!.id).run();
-  return owner!;
+  if (savedOwner?.value !== owner!.id) {
+    await db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('personal_owner_id_v2', ?)")
+      .bind(owner!.id).run();
+  }
+  return { ...owner!, role: 'admin' };
 }
 
 export async function removeLegacyLoggingStorage(db: D1Database) {
@@ -184,9 +186,6 @@ export async function removeLegacyArtistLibrary(env: Env, db: D1Database) {
   void env;
   await db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('artist_catalog_local_v2', '1')").run();
 }
-
-// Constants
-const MAX_STORAGE_QUOTA = 300 * 1024 * 1024; // 300MB
 
 // Helper: Parse Cookies
 export function parseCookies(request: Request) {
@@ -220,6 +219,7 @@ export async function deleteR2File(env: Env, url: string) {
             console.log(`Deleted old file: ${key}`);
         } catch (e) {
             console.error(`Failed to delete file ${key}`, e);
+            throw e;
         }
     }
 }
@@ -574,21 +574,13 @@ export async function handleSettingsRoute(ctx: RouteContext): Promise<Response |
     return error('Method not allowed', 405);
   }
 
-  // --- ADMIN: Global Settings (Benchmark Config) ---
-  if (path === '/api/config/benchmarks' && method === 'PUT') {
-      if (currentUser.role !== 'admin') return error('Forbidden', 403);
-      const { config } = await request.json().catch(() => ({})) as any;
-      await db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').bind('benchmark_config', JSON.stringify(config ?? null)).run();
-      return json({ success: true });
-  }
-
   // --- NAI Proxy ---
   if (path === '/api/generate' || path === '/api/generate-stream' || path === '/api/generation-task' || path === '/api/generation-job') {
     if (!request.headers.get('Authorization')) return error('Missing API Key', 401);
     // 本地 Worker 入口也必须回到工坊网关；独立 Worker 不能绕过集中任务锁。
     if (!env.AITAG_LOCAL_PROXY_URL) return json({ error: '请通过工坊后端生成，当前入口未配置统一生成服务', code: 'generation_backend_required' }, 503);
     if (request.headers.get('X-Nai-Generation-Forwarded') === '1') return json({ error: '生成服务尚未就绪，请重启工坊后端', code: 'generation_backend_required' }, 503);
-    const forwarded = new Request(new URL(path, env.AITAG_LOCAL_PROXY_URL), request);
+    const forwarded = new Request(new URL(path + url.search, env.AITAG_LOCAL_PROXY_URL), request);
     forwarded.headers.set('X-Nai-Generation-Forwarded', '1');
     return fetch(forwarded);
   }
@@ -793,9 +785,8 @@ export async function handleSettingsRoute(ctx: RouteContext): Promise<Response |
     const chain = await db.prepare('SELECT user_id, preview_image, name, type FROM chains WHERE id = ?').bind(id).first<{user_id: string, preview_image: string, name: string, type: string}>();
     if (chain) {
         if (chain.user_id && chain.user_id !== currentUser.id && currentUser.role !== 'admin') return error('Permission Denied', 403);
-        // Delete Cover
-        if (chain.preview_image) await deleteR2File(env, chain.preview_image);
         await db.prepare('DELETE FROM chains WHERE id = ?').bind(id).run();
+        if (chain.preview_image) await deleteR2File(env, chain.preview_image);
     }
     return json({ success: true });
   }
@@ -862,6 +853,7 @@ export async function handleSettingsRoute(ctx: RouteContext): Promise<Response |
   if (path.startsWith('/api/artists/') && method === 'DELETE') {
     const id = path.split('/').pop();
     const artist = await db.prepare('SELECT name, benchmarks, preview_url, image_url FROM artists WHERE id = ?').bind(id).first<{name: string, benchmarks: string, preview_url: string, image_url: string}>();
+    await db.prepare('DELETE FROM artists WHERE id = ?').bind(id).run();
     if (artist) {
         // Delete all associated files
         await deleteR2File(env, artist.image_url);
@@ -874,7 +866,6 @@ export async function handleSettingsRoute(ctx: RouteContext): Promise<Response |
             }
         }
     }
-    await db.prepare('DELETE FROM artists WHERE id = ?').bind(id).run();
     return json({ success: true });
   }
 

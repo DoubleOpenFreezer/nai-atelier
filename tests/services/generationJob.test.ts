@@ -62,6 +62,8 @@ it('状态查询是可缓存的只读 GET，用 token 查询串且不重复发�
 
     await getGenerationJob('synthetic-key', 'a b/c');
     expect(fetch.mock.calls[1][0]).toBe('/api/generation-job?token=a%20b%2Fc');
+    await getGenerationJob('synthetic-key', 'synthetic-token', 7);
+    expect(fetch.mock.calls[2][0]).toBe('/api/generation-job?token=synthetic-token&previewVersion=7');
 });
 
 it('取消按 Key 发送 DELETE，页面卸载的 keepalive 请求不再挂超时信号', async () => {

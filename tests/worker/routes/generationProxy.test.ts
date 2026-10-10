@@ -9,7 +9,7 @@ const fixture = (gateway: string | undefined = 'http://127.0.0.1:3000/__internal
   const db = { prepare } as unknown as D1Database;
   const route = async (path: string, method: string, key = '', body?: unknown, headers: Record<string, string> = {}) => {
     const request = new Request('http://localhost' + path, { method, headers: { ...headers, ...(key ? { Authorization: 'Bearer ' + key } : {}) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
-    const context: RouteContext = { request, path, method, url: new URL(request.url), db, currentUser: { role: 'admin' },
+    const context: RouteContext = { request, path: new URL(request.url).pathname, method, url: new URL(request.url), db, currentUser: { role: 'admin' },
       env: { AITAG_LOCAL_PROXY_URL: gateway, ASSETS: { fetch: async () => { throw new Error('不能读取资产'); } } }, initDB: async () => { throw new Error('不能初始化'); } };
     return handleSettingsRoute(context);
   };
@@ -19,6 +19,17 @@ const fixture = (gateway: string | undefined = 'http://127.0.0.1:3000/__internal
 afterEach(() => vi.restoreAllMocks());
 
 describe('纯 Worker 生成代理', () => {
+  it.each(['', '&previewVersion=7'])('状态 GET 完整透传 token 和可选预览版本 %s', async suffix => {
+    const { route, prepare } = fixture();
+    const upstream = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{"state":"generating"}'));
+    const path = '/api/generation-job?token=synthetic%2Dtoken-0001' + suffix;
+    expect((await route(path, 'GET', 'synthetic-key'))?.status).toBe(200);
+    const request = upstream.mock.calls[0][0] as Request;
+    expect(request.url).toBe('http://127.0.0.1:3000' + path);
+    expect(request.headers.get('authorization')).toBe('Bearer synthetic-key');
+    expect(request.headers.has('X-Nai-Generation-Task')).toBe(false);
+    expect(prepare).not.toHaveBeenCalled();
+  });
   it.each(['/api/generate', '/api/generate-stream'])('%s 携带原参数与 Key 回到统一工坊网关，不另开官方请求', async path => {
     const { rows, prepare, route } = fixture();
     const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode('synthetic-key'));

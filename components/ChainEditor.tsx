@@ -81,9 +81,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     const [keyboardOffset, setKeyboardOffset] = useState(0);
     const queueStatus = useCloudQueueStatus();
     const confirmAction = useConfirmDialog();
-    const isOwner = true;
-    const isGuest = false;
-    const canEdit = true;
 
     // Distinguish Editor Mode
     const isCharacterMode = chain.type === 'character';
@@ -191,9 +188,9 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     const connectionNoticeRef = useRef('');
     const activeEditOperationRef = useRef<ImageEditOperation | null>(null);
     const promptJobApprovalRef = useRef<(session: GenerationSeriesSession, awaiting: { cost: number; completedCount: number; requestedCount: number }) => Promise<void>>(async () => {});
-    const latestGenerationStateRef = useRef({ apiKey, subscription: novelaiStatus });
-    latestGenerationStateRef.current = { apiKey, subscription: novelaiStatus };
     const isGenerating = isImageGenerating || Boolean(generationSeries && generationSeries.current < generationSeries.total);
+    const latestGenerationStateRef = useRef({ apiKey, subscription: novelaiStatus, isGenerating });
+    latestGenerationStateRef.current = { apiKey, subscription: novelaiStatus, isGenerating };
     const [queueState, setQueueState] = useState<GenerationQueueSnapshot | null>(null);
     const [pausePending, setPausePending] = useState(false);
     const [intervalPending, setIntervalPending] = useState(false);
@@ -204,16 +201,19 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
       setIntervalPending(false);
       intervalRevisionRef.current++;
       if (!apiKey) return;
-      let cancelled = false, reading = false;
-      const refresh = async () => {
-        if (reading) return; reading = true;
+      let cancelled = false, reading = false, lastRead = -Infinity, busy = false;
+      const refresh = async (force = false) => {
+        if (reading || document.hidden || (!force && Date.now() - lastRead < (busy || latestGenerationStateRef.current.isGenerating ? 1000 : 5000))) return;
+        reading = true; lastRead = Date.now();
         const revision = intervalRevisionRef.current;
-        try { const status = await getGenerationQueue(apiKey); if (!cancelled && revision === intervalRevisionRef.current && Number.isSafeInteger(status.total) && typeof status.paused === 'boolean') setQueueState(status); }
+        try { const status = await getGenerationQueue(apiKey); if (!cancelled && revision === intervalRevisionRef.current && Number.isSafeInteger(status.total) && typeof status.paused === 'boolean') { busy = status.total > status.completed; setQueueState(status); } }
         catch { /* 保留最后已知进度，接口异常由提交与暂停操作明确提示。 */ }
         finally { reading = false; }
       };
-      void refresh(); const timer = setInterval(() => { void refresh(); }, 1000);
-      return () => { cancelled = true; clearInterval(timer); };
+      const onVisible = () => { if (!document.hidden) void refresh(true); };
+      void refresh(true); const timer = setInterval(() => { void refresh(); }, 1000);
+      document.addEventListener('visibilitychange', onVisible);
+      return () => { cancelled = true; clearInterval(timer); document.removeEventListener('visibilitychange', onVisible); };
     }, [apiKey]);
     const toggleQueuePause = async () => {
       if (pausePending) return;
@@ -834,7 +834,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             }
             // 后台任务的过程预览独立于成图：最终图到达后再由 lastSavedItem 接管。
             const preview = session.preview;
-            if (preview?.image && preview.image !== lastSeriesStreamImageRef.current) {
+            const hasUnsavedPreview = session.state === 'failed' && Boolean(preview?.image);
+            if (preview?.image && (preview.image !== lastSeriesStreamImageRef.current || hasUnsavedPreview)) {
                 lastSeriesStreamImageRef.current = preview.image;
                 // 保存失败的终态会带完整未保存成图：先展示，再按失败态标注为未保存。
                 const previewState = session.state === 'failed' ? 'unsaved' as const : 'result' as const;
@@ -864,8 +865,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             lastSeriesPreviewRef.current = item.id;
             previewSelectionRevisionRef.current += 1;
             setPreviewHistory(previous => [item, ...previous.filter(saved => saved.id !== item.id)]);
-            if (item.edit) setImageEditPreviewImage(item.imageUrl);
-            if (!item.edit || chain.id !== 'playground') {
+            if (item.edit && !hasUnsavedPreview) setImageEditPreviewImage(item.imageUrl);
+            if (!hasUnsavedPreview && (!item.edit || chain.id !== 'playground')) {
                 setGeneratedImage(item.imageUrl);
                 setPreviewIndex(0);
                 setPreviewMode('history');
@@ -985,15 +986,14 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         return `NAI-${timestamp}.png`;
     };
 
-    // Helper to mark changes only if owner
+    // 编辑操作共用脏状态。
     const markChange = () => {
         editorRevisionRef.current += 1;
-        if (isOwner) setHasChanges(true);
+        setHasChanges(true);
     };
 
     // --- Character Handlers ---
     const addCharacter = () => {
-        if (!canEdit) return;
         if ((params.characters || []).length >= activeModelInfo.maxCharacters) {
             notify(`${activeModelInfo.label} 最多支持 ${activeModelInfo.maxCharacters} 个角色提示词`, 'error');
             return;
@@ -1004,7 +1004,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     };
 
     const updateCharacter = (idx: number, updates: Partial<CharacterParams>, useCoords?: boolean) => {
-        if (!canEdit || !params.characters?.[idx]) return;
+        if (!params.characters?.[idx]) return;
         const newChars = [...params.characters];
         newChars[idx] = { ...newChars[idx], ...updates };
         setParams({ ...params, characters: newChars, ...(useCoords !== undefined ? { useCoords } : {}) });
@@ -1013,7 +1013,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     };
 
     const removeCharacter = (idx: number) => {
-        if (!canEdit || !params.characters) return;
+        if (!params.characters) return;
         const newChars = [...params.characters];
         const removedId = newChars[idx]?.id;
         newChars.splice(idx, 1);
@@ -1067,7 +1067,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         options: LabPresetImportOptions,
         moduleIds: Set<string>
     ) => {
-        if (!canEdit) return;
         if (activeEditOperation && activeEditDraft) {
             updateEditDraft(activeEditOperation, buildImageEditPresetPatch(activeEditDraft, target, options, moduleIds, createUuid));
             notify(`已将 "${target.name}" 导入当前${activeEditOperation === 'image-to-image' ? '图生图' : activeEditOperation === 'inpaint' ? '局部重绘' : '扩图'}配置`);
@@ -1151,7 +1150,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     };
 
     const confirmImport = () => {
-        if (!importCandidate || !canEdit) return;
+        if (!importCandidate) return;
         executeImport(importCandidate, importOptions, selectedImportModuleIds);
     };
 
@@ -1205,7 +1204,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     };
 
     const importMetadataFile = async (file: File) => {
-        if (!canEdit) return;
 
         const normalizedFile = normalizeMetadataFile(file);
         if (isJsonMetadataFile(normalizedFile)) {
@@ -1273,7 +1271,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     };
 
     const handleImportDragEnter = (e: React.DragEvent<HTMLDivElement>) => {
-        if (!canEdit || !hasImageImportPayload(e.dataTransfer)) return;
+        if (!hasImageImportPayload(e.dataTransfer)) return;
         e.preventDefault();
         e.stopPropagation();
         importDragDepthRef.current += 1;
@@ -1281,7 +1279,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     };
 
     const handleImportDragOver = (e: React.DragEvent<HTMLDivElement>) => {
-        if (!canEdit || !hasImageImportPayload(e.dataTransfer)) return;
+        if (!hasImageImportPayload(e.dataTransfer)) return;
         e.preventDefault();
         e.stopPropagation();
         e.dataTransfer.dropEffect = 'copy';
@@ -1289,7 +1287,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     };
 
     const handleImportDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
-        if (!canEdit || !hasImageImportPayload(e.dataTransfer)) return;
+        if (!hasImageImportPayload(e.dataTransfer)) return;
         e.preventDefault();
         e.stopPropagation();
         importDragDepthRef.current = Math.max(0, importDragDepthRef.current - 1);
@@ -1299,7 +1297,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     };
 
     const handleImportDrop = async (e: React.DragEvent<HTMLDivElement>) => {
-        if (!canEdit || !hasImageImportPayload(e.dataTransfer)) return;
+        if (!hasImageImportPayload(e.dataTransfer)) return;
         e.preventDefault();
         e.stopPropagation();
 
@@ -1448,7 +1446,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     }, []);
 
     const handleSaveAll = async () => {
-        if (!isOwner || isUploading || !canSaveActiveModeToLibrary || chain.id === 'playground') return false;
+        if (isUploading || !canSaveActiveModeToLibrary || chain.id === 'playground') return false;
         setIsUploading(true);
         const updatedModules = modules.map(m => ({
             ...m,
@@ -1487,7 +1485,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     };
 
     React.useImperativeHandle(saveRef, () => ({
-        canSave: isOwner && !isUploading && canSaveActiveModeToLibrary && chain.id !== 'playground',
+        canSave: !isUploading && canSaveActiveModeToLibrary && chain.id !== 'playground',
         save: handleSaveAll,
     }));
 
@@ -1970,7 +1968,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
 
     const handleSavePreview = async () => {
         const coverImage = displayedPreviewImage;
-        if (!coverImage || !isOwner || chain.id === 'playground') return;
+        if (!coverImage || chain.id === 'playground') return;
         if (await confirmAction({
             title: '将当前图片设为封面并保存？',
             message: '替换原封面，并保存当前提示词与参数。',
@@ -2010,7 +2008,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     };
 
     const handleUploadCover = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (!isOwner) return;
         const file = e.target.files?.[0];
         if (!file) return;
         if (await confirmAction({
@@ -2061,7 +2058,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             onDragLeave={handleImportDragLeave}
             onDrop={handleImportDrop}
         >
-            {canEdit && isImportDragActive && (
+            {isImportDragActive && (
                 <div className="pointer-events-none absolute inset-0 z-[80] flex items-center justify-center bg-indigo-950/55 backdrop-blur-sm">
                     <div className="mx-4 max-w-sm rounded-lg border-2 border-dashed border-white/80 bg-white/95 px-6 py-5 text-center shadow-2xl dark:bg-gray-900/95 dark:border-indigo-300">
                         <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-indigo-100 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-300">
@@ -2076,9 +2073,9 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             <ChainEditorHeader
                 chainId={chain.id}
                 isCharacterMode={isCharacterMode}
-                isOwner={isOwner}
-                isGuest={isGuest}
-                canEdit={canEdit}
+                isOwner={true}
+                isGuest={false}
+                canEdit={true}
                 canSaveActiveModeToLibrary={canSaveActiveModeToLibrary}
                 canSaveCurrentChain={canSaveCurrentChain}
                 isUploading={isUploading}
@@ -2154,7 +2151,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                             setPrompt={setBasePrompt}
                             presetSources={presetSources}
                             tagAssistEnabled={tagAssistEnabled}
-                            canEdit={canEdit}
+                            canEdit={true}
                             copyPromptToClipboard={copyPromptToClipboard}
                             markPresetSectionModified={markPresetSectionModified}
                             markChange={markChange}
@@ -2169,7 +2166,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                             setParams={setParams}
                             characters={params.characters || []}
                             freeformPosition={activeModelInfo.freeformCharacterPosition}
-                            canEdit={canEdit}
+                            canEdit={true}
                             tagAssistEnabled={tagAssistEnabled}
                             characterPresetSources={characterPresetSources}
                             markPresetSectionModified={markPresetSectionModified}
@@ -2229,8 +2226,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                             </div>
                             <TagAutocompleteTextarea
                                 tagAssistEnabled={tagAssistEnabled && !isNaiMediumModel(params.model)}
-                                disabled={!canEdit || isNaiMediumModel(params.model)}
-                                className={`w-full border rounded-lg p-3 outline-none font-mono text-sm font-normal leading-relaxed min-h-[80px] ${!canEdit ? 'bg-gray-100 dark:bg-gray-800 text-gray-500 cursor-not-allowed' : 'bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-800 text-gray-900 dark:text-gray-100 focus:ring-1 focus:ring-indigo-500/50'}`}
+                                disabled={isNaiMediumModel(params.model)}
+                                className="w-full border rounded-lg p-3 outline-none font-mono text-sm font-normal leading-relaxed min-h-[80px] bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-800 text-gray-900 dark:text-gray-100 focus:ring-1 focus:ring-indigo-500/50"
                                 value={negativePrompt}
                                 onValueChange={(nextValue) => { setNegativePrompt(nextValue); markPresetSectionModified('negative'); markChange() }}
                             />
@@ -2249,7 +2246,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                             params={params}
                             prompt={finalPrompt}
                             setParams={(nextParams) => { setParams(nextParams); markPresetSectionModified('settings'); }}
-                            canEdit={canEdit}
+                            canEdit={true}
                             markChange={markChange}
                             presetSource={presetSources.settings}
                             forceEmptySeed={forceEmptySeed}
@@ -2273,7 +2270,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                     generatedImage={displayedPreviewImage}
                     previewImage={chain.previewImage}
                     setLightboxImg={setLightboxImg}
-                    isOwner={isOwner}
+                    isOwner={true}
                     isUploading={isUploading}
                     handleSavePreview={handleSavePreview}
                     handleUploadCover={handleUploadCover}
@@ -2463,8 +2460,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                         canManageHistoryGroup={Boolean(lightboxItem)}
                         onRemoveCurrentHistory={() => { void handleRemoveCurrentHistory(lightboxItem); }}
                         onClearHistoryGroup={handleClearHistoryGroup}
-                        onSetCover={!activeEditOperation && isOwner && chain.id !== 'playground' && lightboxImg === displayedPreviewImage ? handleSavePreview : undefined}
-                        onUploadCover={!activeEditOperation && isOwner && chain.id !== 'playground' ? handleUploadCover : undefined}
+                        onSetCover={!activeEditOperation && chain.id !== 'playground' && lightboxImg === displayedPreviewImage ? handleSavePreview : undefined}
+                        onUploadCover={!activeEditOperation && chain.id !== 'playground' ? handleUploadCover : undefined}
                         isUploading={isUploading}
                         onBack={() => setLightboxImg(null)}
                         backButtonRef={lightboxCloseBtnRef}

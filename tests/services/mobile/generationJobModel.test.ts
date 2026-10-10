@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { GenerationJob, GenerationJobDescriptor, GenerationJobOutput, GenerationJobSnapshot } from '../../../worker/generationJobs.mjs';
 import { GenerationJobs } from '../../../worker/generationJobs.mjs';
 import { GenerationTasks } from '../../../worker/generationTasks.mjs';
@@ -75,6 +75,17 @@ const setup = () => {
   });
   return { jobs, handler, retained, released };
 };
+
+it('手机 GET 将可选预览版本交给共享任务快照，旧查询仍可读', async () => {
+  const f = setup();
+  f.jobs.start(KEY, TOKEN, 1, undefined, descriptorOf(), { authorization: `Bearer ${KEY}` });
+  const snapshot = vi.spyOn(f.jobs, 'snapshot');
+  const query = new Request(`https://localhost/api/generation-job?token=${TOKEN}&previewVersion=7`, { headers: { authorization: `Bearer ${KEY}` } });
+  expect((await f.handler(query)).status).toBe(200);
+  expect(snapshot).toHaveBeenLastCalledWith(f.jobs.get(KEY, TOKEN), '7');
+  expect((await f.handler(new Request(query.url.replace('&previewVersion=7', ''), query))).status).toBe(200);
+  expect(snapshot).toHaveBeenLastCalledWith(f.jobs.get(KEY, TOKEN), null);
+});
 
 const request = (method: string, options: { body?: unknown; authorization?: string; token?: string; count?: string; placement?: string } = {}) =>
   new Request('https://localhost/api/generation-job', {

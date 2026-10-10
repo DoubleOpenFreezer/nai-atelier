@@ -25,6 +25,7 @@ export interface GenerationSeriesSession {
     historyIds: string[];
     lastSavedItem?: LocalGenItem;
     preview?: GenerationJobPreview;
+    previewVersion?: number;
     awaiting?: { cost: number; completedCount: number; requestedCount: number };
     accountingFailed?: boolean;
     cleanupError?: string;
@@ -82,6 +83,8 @@ const applySnapshot = (session: GenerationSeriesSession, snapshot: GenerationJob
     session.queued = Boolean(position);
     const preview = snapshot.preview;
     if (preview && typeof preview.image === 'string' && preview.image) session.preview = preview;
+    else if (snapshot.previewVersion !== undefined && snapshot.previewVersion !== session.previewVersion) session.preview = undefined;
+    session.previewVersion = snapshot.previewVersion;
     if (snapshot.lastSavedItem && snapshot.lastSavedItem.id !== session.lastSavedItem?.id) {
         session.lastSavedItem = snapshot.lastSavedItem;
         // 后端已把结果写入历史：只广播变更让各视图刷新，本页不重复入库。
@@ -187,7 +190,7 @@ const supervise = async (entry: SupervisedSeries, descriptor: GenerationJobDescr
             entry.wake = wake;
         });
         try {
-            snapshot = await getGenerationJob(session.key, session.token);
+            snapshot = await getGenerationJob(session.key, session.token, session.previewVersion);
             if (session.connectionError) { session.connectionError = undefined; publish(); }
         } catch (error) {
             if (isJobGone(error)) return settleSeries(entry, failureReceipt(session, error));

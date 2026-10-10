@@ -111,7 +111,7 @@ export const createGenerationJobHandler = <Context, Output extends GenerationJob
     try {
       const key = keyOf(request.headers.get('authorization') || '');
       if (!key) return json({ error: '缺少 NovelAI API Key', code: 'missing_key' }, 401);
-      if (request.method === 'GET') return json(jobs.snapshot(jobs.get(key, token)));
+      if (request.method === 'GET') return json(jobs.snapshot(jobs.get(key, token), url.searchParams.get('previewVersion')));
       if (request.method === 'DELETE') return json(jobs.cancel(key, token));
       if (request.method === 'PATCH') {
         let parsed: unknown;

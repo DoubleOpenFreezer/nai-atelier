@@ -806,10 +806,12 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     if (running || sessions.length <= 1) return;
     const accepted = await confirmAction({ title: '删除这条助手对话？', message: `“${session.title}”的消息记录会从电脑删除，项目资料不会受到影响。`, confirmLabel: '删除对话', tone: 'danger' });
     if (!accepted) return;
-    await promptAgentService.deleteSession(session.id);
-    const remaining = sessions.filter(item => item.id !== session.id);
-    setSessions(remaining);
-    if (activeSessionId === session.id) setActiveSessionId(remaining[0]?.id || '');
+    try {
+      await promptAgentService.deleteSession(session.id);
+      const remaining = sessions.filter(item => item.id !== session.id);
+      setSessions(remaining);
+      if (activeSessionId === session.id) setActiveSessionId(remaining[0]?.id || '');
+    } catch (error) { reportControlError(error); }
   };
 
   const updateSessionModel = async (model: PromptAgentModel) => {

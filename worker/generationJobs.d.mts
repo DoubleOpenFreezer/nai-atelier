@@ -15,7 +15,7 @@ export interface GenerationJobDescriptor {
 export interface GenerationJobSnapshot {
   token: string; state: GenerationJobState; completedCount: number; requestedCount: number;
   historyIds: string[]; position?: number; lastSavedItem?: LocalGenItem;
-  preview?: { image: string; step?: number }; cost?: number; error?: string; code?: string;
+  preview?: { image: string; step?: number }; previewVersion?: number; cost?: number; error?: string; code?: string;
   accountingFailed?: boolean; cleanupError?: string;
 }
 export interface GenerationJobOutput {
@@ -40,7 +40,7 @@ export class GenerationJobs<Context = unknown, Output extends GenerationJobOutpu
   jobs: Map<string, GenerationJob<Context>>;
   has(key: string, token: string): boolean;
   get(key: string, token: string): GenerationJob<Context>;
-  snapshot(job: GenerationJob<Context>): GenerationJobSnapshot;
+  snapshot(job: GenerationJob<Context>, previewVersion?: number | string | null): GenerationJobSnapshot;
   start(key: string, token: string, count: number, placement: 'end' | 'next' | undefined, descriptor: GenerationJobDescriptor, context: Context): GenerationJobSnapshot;
   cancel(key: string, token: string): GenerationJobSnapshot;
   approve(key: string, token: string, approvedCost: number): GenerationJobSnapshot;

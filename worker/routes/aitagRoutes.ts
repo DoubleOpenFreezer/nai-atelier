@@ -1,6 +1,6 @@
 // AITag scraping + reverse-proxy routes.
 // Moved verbatim from worker/index.ts during the domain split; behavior unchanged.
-import { json, error, clampInt, sleep, type D1Database, type Env, type RouteContext } from './types';
+import { json, error, addColumnIfMissing, clampInt, sleep, type D1Database, type Env, type RouteContext } from './types';
 
 const AITAG_BASE_URL = 'https://aitag.win';
 const AITAG_IMAGE_BASE_URL = 'https://ai-img.10118899.xyz/';
@@ -474,14 +474,14 @@ export async function ensureAitagCacheSchema(db: D1Database) {
     )
   `).run();
 
-  try { await db.prepare("ALTER TABLE aitag_works ADD COLUMN remote_cover_url TEXT").run(); } catch (e) {}
-  try { await db.prepare("ALTER TABLE aitag_works ADD COLUMN local_cover_url TEXT").run(); } catch (e) {}
-  try { await db.prepare("ALTER TABLE aitag_works ADD COLUMN cover_status TEXT DEFAULT 'missing'").run(); } catch (e) {}
-  try { await db.prepare("ALTER TABLE aitag_works ADD COLUMN cover_cached_at INTEGER").run(); } catch (e) {}
-  try { await db.prepare("ALTER TABLE aitag_works ADD COLUMN first_image_json TEXT").run(); } catch (e) {}
-  try { await db.prepare("ALTER TABLE aitag_works ADD COLUMN first_image_cached_at INTEGER").run(); } catch (e) {}
-  try { await db.prepare("ALTER TABLE aitag_works ADD COLUMN is_favorite INTEGER DEFAULT 0").run(); } catch (e) {}
-  try { await db.prepare("ALTER TABLE aitag_works ADD COLUMN favorite_at INTEGER").run(); } catch (e) {}
+  await addColumnIfMissing(db, "ALTER TABLE aitag_works ADD COLUMN remote_cover_url TEXT");
+  await addColumnIfMissing(db, "ALTER TABLE aitag_works ADD COLUMN local_cover_url TEXT");
+  await addColumnIfMissing(db, "ALTER TABLE aitag_works ADD COLUMN cover_status TEXT DEFAULT 'missing'");
+  await addColumnIfMissing(db, "ALTER TABLE aitag_works ADD COLUMN cover_cached_at INTEGER");
+  await addColumnIfMissing(db, "ALTER TABLE aitag_works ADD COLUMN first_image_json TEXT");
+  await addColumnIfMissing(db, "ALTER TABLE aitag_works ADD COLUMN first_image_cached_at INTEGER");
+  await addColumnIfMissing(db, "ALTER TABLE aitag_works ADD COLUMN is_favorite INTEGER DEFAULT 0");
+  await addColumnIfMissing(db, "ALTER TABLE aitag_works ADD COLUMN favorite_at INTEGER");
   await db.prepare('CREATE INDEX IF NOT EXISTS idx_aitag_works_sort_page ON aitag_works(source_sort, source_page, source_index)').run();
   await db.prepare('CREATE INDEX IF NOT EXISTS idx_aitag_works_ai_type ON aitag_works(ai_type)').run();
   await db.prepare('CREATE INDEX IF NOT EXISTS idx_aitag_works_cover_status ON aitag_works(cover_status)').run();

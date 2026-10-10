@@ -32,6 +32,33 @@ const isolated = async fn => {
   finally { for (const pending of service.pendingConfirmations.values()) clearTimeout(pending.timer); await rm(root, { recursive: true, force: true }); }
 };
 
+test('删除会话只忽略缺失文件，附件 IO 失败保留正文供重试', () => isolated(async service => {
+  const session = await service.createSession();
+  await mkdir(service.taskFile(session.id), { recursive: true });
+  await assert.rejects(service.deleteSession(session.id), error => ['EISDIR', 'EPERM', 'EACCES'].includes(error.code));
+  assert.equal((await service.readSession(session.id)).meta.id, session.id);
+  assert.ok((await service.listSessions()).some(item => item.id === session.id));
+  await rm(service.taskFile(session.id), { recursive: true });
+  await service.deleteSession(session.id);
+  await assert.rejects(readFile(service.sessionFile(session.id)), { code: 'ENOENT' });
+  await service.deleteSession(session.id);
+}));
+
+test('清空会话遇到附件 IO 失败保留消息，成功重试才写空正文', () => isolated(async service => {
+  const session = await service.createSession();
+  const existing = await service.readSession(session.id);
+  existing.messages = [{ role: 'user', content: 'synthetic retained message' }];
+  await service.writeSession(session.id, existing);
+  await mkdir(service.taskEventsFile(session.id), { recursive: true });
+  await assert.rejects(service.resetSession(session.id), error => ['EISDIR', 'EPERM', 'EACCES'].includes(error.code));
+  assert.deepEqual(await service.readSession(session.id), existing);
+  await rm(service.taskEventsFile(session.id), { recursive: true });
+  await service.resetSession(session.id);
+  const cleared = await service.readSession(session.id);
+  assert.deepEqual(cleared.messages, []);
+  assert.equal(cleared.meta.id, session.id);
+}));
+
 const syntheticAgentStream = (round, { input = 20000, output = 100 } = {}) => new Response('data: ' + JSON.stringify({
   id: 'synthetic', object: 'chat.completion.chunk', created: 1, model: 'a',
   choices: [{ index: 0, delta: { role: 'assistant', ...(round.tool ? { tool_calls: [{ index: 0, id: 'call-' + round.id, type: 'function', function: { name: round.tool, arguments: JSON.stringify(round.args || {}) } }] } : { content: round.text || '合成任务完成' }) }, finish_reason: round.tool ? 'tool_calls' : 'stop' }],

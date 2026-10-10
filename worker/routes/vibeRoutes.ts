@@ -1,7 +1,7 @@
 // Vibe Transfer library + character reference library routes and image helpers.
 // Moved verbatim from worker/index.ts during the domain split; behavior unchanged.
 import { readImageDimensions } from '../imageDimensions.mjs';
-import { json, error, parseStoredJson, type D1Database, type Env, type RouteContext } from './types';
+import { json, error, addColumnIfMissing, parseStoredJson, type D1Database, type Env, type RouteContext } from './types';
 
 // 进程内标记：DDL 幂等但昂贵，同一实例只在首个请求跑一次。
 let vibeSchemaEnsured = false;
@@ -27,7 +27,7 @@ export async function ensureVibeSchema(db: D1Database) {
     'ALTER TABLE vibe_assets ADD COLUMN thumbnail_key TEXT',
     'ALTER TABLE vibe_assets ADD COLUMN thumbnail_type TEXT',
   ]) {
-    try { await db.prepare(statement).run(); } catch { /* Column already exists. */ }
+    await addColumnIfMissing(db, statement);
   }
   vibeSchemaEnsured = true;
 }
@@ -46,9 +46,7 @@ export async function ensureCharacterReferenceSchema(db: D1Database) {
   )`).run();
   await db.prepare(`CREATE INDEX IF NOT EXISTS idx_character_reference_assets_archived_updated
     ON character_reference_assets(archived, updated_at DESC)`).run();
-  try {
-    await db.prepare('ALTER TABLE character_reference_assets ADD COLUMN default_fidelity REAL NOT NULL DEFAULT 0.6').run();
-  } catch { /* Column already exists. */ }
+  await addColumnIfMissing(db, 'ALTER TABLE character_reference_assets ADD COLUMN default_fidelity REAL NOT NULL DEFAULT 0.6');
   characterReferenceSchemaEnsured = true;
 }
 

@@ -1886,10 +1886,10 @@ export class PromptAgentService {
 
   async deleteSession(sessionId) {
     if (this.activeAgents.has(sessionId) || this.startingAgents.has(sessionId)) throw Object.assign(new Error('请先停止这个会话'), { status: 409 });
-    await unlink(this.sessionFile(sessionId)).catch(() => {});
-    await unlink(this.taskFile(sessionId)).catch(() => {});
-    await unlink(this.taskEventsFile(sessionId)).catch(() => {});
-    await unlink(this.auditLogFile(sessionId)).catch(() => {});
+    // 最后删除会话正文，附件清理失败时仍能在列表中重试。
+    for (const file of [this.taskFile(sessionId), this.taskEventsFile(sessionId), this.auditLogFile(sessionId), this.sessionFile(sessionId)]) {
+      await unlink(file).catch(error => { if (error.code !== 'ENOENT') throw error; });
+    }
     this.clearTaskEventState(sessionId);
   }
 
@@ -1945,10 +1945,10 @@ export class PromptAgentService {
   async resetSession(sessionId) {
     if (this.activeAgents.has(sessionId) || this.startingAgents.has(sessionId)) throw Object.assign(new Error('助手工作时不能清空当前对话'), { status: 409 });
     const existing = await this.readSession(sessionId);
+    await unlink(this.taskFile(sessionId)).catch(error => { if (error.code !== 'ENOENT') throw error; });
+    await unlink(this.taskEventsFile(sessionId)).catch(error => { if (error.code !== 'ENOENT') throw error; });
     if (existing.meta?.id) await this.writeSession(sessionId, { version: 2, meta: { ...existing.meta, updatedAt: Date.now() }, messages: [] });
-    else await unlink(this.sessionFile(sessionId)).catch(() => {});
-    await unlink(this.taskFile(sessionId)).catch(() => {});
-    await unlink(this.taskEventsFile(sessionId)).catch(() => {});
+    else await unlink(this.sessionFile(sessionId)).catch(error => { if (error.code !== 'ENOENT') throw error; });
     this.clearTaskEventState(sessionId);
     await this.appendAuditLog(sessionId, { type: 'session_reset' });
   }

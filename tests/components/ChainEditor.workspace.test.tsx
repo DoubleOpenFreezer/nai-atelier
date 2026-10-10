@@ -196,6 +196,30 @@ const setup = (entry: PromptChain = chain) => {
   return { ...render(<ChainEditor {...props} />), props };
 };
 const textPrompt = () => screen.getByPlaceholderText('输入全局提示词，英文逗号分隔') as HTMLTextAreaElement;
+
+it.each([false, true])('队列忙碌=%s 时按需查询，隐藏页暂停，回前台立即补查', async busy => {
+  vi.useFakeTimers();
+  let hidden = false;
+  const visibility = vi.spyOn(document, 'hidden', 'get').mockImplementation(() => hidden);
+  vi.mocked(getGenerationQueue).mockResolvedValue({ busy, completed: 0, total: busy ? 1 : 0, paused: false, pausing: false, waiting: [] });
+  sessionStorage.setItem('nai_api_key', 'synthetic-key');
+  const view = setup();
+  try {
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(getGenerationQueue).toHaveBeenCalledTimes(1);
+    await act(async () => { await vi.advanceTimersByTimeAsync(4000); });
+    expect(getGenerationQueue).toHaveBeenCalledTimes(busy ? 5 : 1);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+    expect(getGenerationQueue).toHaveBeenCalledTimes(busy ? 6 : 2);
+    hidden = true;
+    const calls = vi.mocked(getGenerationQueue).mock.calls.length;
+    await act(async () => { await vi.advanceTimersByTimeAsync(10000); });
+    expect(getGenerationQueue).toHaveBeenCalledTimes(calls);
+    hidden = false;
+    await act(async () => { document.dispatchEvent(new Event('visibilitychange')); });
+    expect(getGenerationQueue).toHaveBeenCalledTimes(calls + 1);
+  } finally { view.unmount(); visibility.mockRestore(); vi.useRealTimers(); }
+});
 const switchTo = async (label: string) => {
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: label })); });
   await waitFor(() => expect((screen.getByRole('button', { name: label }) as HTMLButtonElement).disabled).toBe(false));
@@ -409,7 +433,7 @@ it('四模式共用手机资源入口，切 Key 时继续使用当前工作台�
     expect(resources.className).toContain('md:hidden');
     expect(resources.className.split(' ')).not.toContain('hidden');
     expect(resources.closest('.mobile-generation-actions')).toBeNull();
-    expect(resources.textContent).toBe('Anlas —/—Opus额度 —');
+    expect(resources.textContent).toBe('Anlas —/—生成额度 —');
     act(() => { sessionStorage.setItem('nai_api_key', 'mobile-workspace-fixture'); window.dispatchEvent(new CustomEvent('nai-api-key-changed', { detail: 'mobile-workspace-fixture' })); });
     expect(screen.getByRole('button', { name: /查看账户资源：预算 1666 · 余额 未知 · 额度未知/ })).toBeTruthy();
     act(() => { sessionStorage.removeItem('nai_api_key'); window.dispatchEvent(new CustomEvent('nai-api-key-changed', { detail: '' })); });
@@ -1449,6 +1473,40 @@ describe('后台任务只提交一次并只观察后端状态', () => {
     await waitFor(() => expect(getGenerationSeriesSession(chain.id)).toBeNull());
     expect(screen.getByLabelText('文生图结果').textContent).toBe(unsaved);
   }, 12000);
+
+  it.each(['same-preview', 'partial-history'])('保存失败 %s 保留当前未保存产物和失败标记', async variant => {
+    prepare();
+    const unsaved = 'data:image/png;base64,VU5TQVZFRA==';
+    const partial = variant === 'partial-history';
+    scriptJobs([
+      { state: 'generating', completedCount: 0, requestedCount: partial ? 2 : 1, historyIds: [], ...(partial ? {} : { preview: { image: unsaved, step: 4 } }) },
+      { state: 'failed', code: 'history_save_failed', completedCount: partial ? 1 : 0, requestedCount: partial ? 2 : 1,
+        historyIds: partial ? ['job-1'] : [], ...(partial ? { lastSavedItem: savedItem('job-1') } : {}), error: '保存历史失败', preview: { image: unsaved } },
+    ]);
+    const view = setupSeries();
+    if (partial) fireEvent.change(countInput(), { target: { value: '2' } });
+    fireEvent.click(screen.getByText('生成合成文生图'));
+    await waitFor(() => expect(view.props.notify).toHaveBeenCalledWith(`保存历史失败（已保存 ${partial ? '1/2' : '0/1'} 张）`, 'error'), { timeout: 3000 });
+    expect(screen.getByLabelText('文生图结果').textContent).toBe(unsaved);
+    expect(screen.getByLabelText('预览历史编号').textContent).toBe('刚刚生成 · 历史保存失败');
+    expect(state.addHistory).not.toHaveBeenCalled();
+    if (partial) expect(state.notifySaved).toHaveBeenCalledWith('job-1');
+  });
+
+  it('编辑模式部分成功后的保存失败不会让旧历史图覆盖未保存产物', async () => {
+    prepare(); vi.stubGlobal('createImageBitmap', vi.fn(async () => ({ width: 832, height: 1216, close: vi.fn() })));
+    const unsaved = 'data:image/png;base64,VU5TQVZFRA==';
+    scriptJobs([{ state: 'failed', code: 'history_save_failed', completedCount: 1, requestedCount: 2, historyIds: ['job-1'],
+      lastSavedItem: savedItem('job-1', { edit: { operation: 'image-to-image' } }), error: '保存历史失败', preview: { image: unsaved } }]);
+    setupSeries(); await switchTo('图生图');
+    await waitFor(() => expect(state.agent?.draft.target?.mode).toBe('image-to-image'));
+    await act(async () => {
+      expect(await state.agent!.onRequestGeneration(state.agent!.draft, '两张', vi.fn(async () => {}), 2)).toMatchObject({ success: false, completedCount: 1, historyIds: ['job-1'] });
+    });
+    expect(screen.getByLabelText('编辑结果').textContent).toBe(unsaved);
+    expect(state.notifySaved).toHaveBeenCalledWith('job-1');
+    expect(state.addHistory).not.toHaveBeenCalled();
+  });
 
   it('换 Key 取消观察中的旧任务，不把新 Key 交给旧任务', async () => {
     prepare();

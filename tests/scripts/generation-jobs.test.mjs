@@ -26,6 +26,25 @@ const setup = (overrides = {}) => {
   return { tasks, jobs, calls, advance: value => { now += value; } };
 };
 
+test('预览按客户端版本发送，保存后等待与暂停释放图片，旧客户端仍可读取', async () => {
+  let releaseSave, emitPreview;
+  const f = setup({
+    generate: async (_job, _payload, preview) => { emitPreview = preview; preview({ image: 'data:image/png;base64,AQID', step: 1 }); return {}; },
+    save: async (_job, _output, metadata) => { await new Promise(resolve => { releaseSave = resolve; }); return { ...metadata, imageUrl: '/saved/' + metadata.id }; },
+  });
+  f.jobs.start('key', a, 2, undefined, descriptor(), {});
+  const job = f.jobs.get('key', a); await until(() => Boolean(releaseSave));
+  const first = f.jobs.snapshot(job);
+  assert.ok(first.preview); assert.equal(f.jobs.snapshot(job, String(first.previewVersion)).preview, undefined);
+  assert.deepEqual(f.jobs.snapshot(job).preview, first.preview);
+  emitPreview({ image: 'data:image/png;base64,BAUG', step: 2 });
+  const next = f.jobs.snapshot(job, first.previewVersion); assert.equal(next.preview.step, 2);
+  f.tasks.pause('key', true); releaseSave(); await until(() => job.state === 'paused');
+  const saved = f.jobs.snapshot(job, next.previewVersion);
+  assert.equal(saved.preview, undefined); assert.ok(saved.previewVersion > next.previewVersion); assert.equal(saved.completedCount, 1);
+  f.jobs.cancel('key', a); await job.running;
+});
+
 test('无浏览器轮询或心跳仍逐张生成保存，超过空闲租期不失效，回执与种子对应', async () => {
   let continueSaving;
   const fixture = setup({ save: async (_job, _output, metadata) => { await new Promise(resolve => { continueSaving = resolve; }); return { ...metadata, imageUrl: '/saved/' + metadata.id }; } });

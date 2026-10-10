@@ -28,9 +28,10 @@ export function createDesktopGenerationJobs({ tasks, gatewayUrl, workerPort, est
       return { ...output, queueTaskId };
     },
     save: async (job, output, metadata) => {
-      const composed = await composeGenerationOutput(output.bytes, job.descriptor.composition);
-      const image = { bytes: composed.bytes, mime: composed.mime || output.mime };
+      let image = { bytes: output.bytes, mime: output.mime };
       try {
+        const composed = await composeGenerationOutput(output.bytes, job.descriptor.composition);
+        image = { bytes: composed.bytes, mime: composed.mime || output.mime };
         const response = await fetch(`http://127.0.0.1:${workerPort}/api/local-history`, {
           method: 'POST', headers: {
             cookie: job.context.cookie, host: job.context.host,
@@ -38,7 +39,7 @@ export function createDesktopGenerationJobs({ tasks, gatewayUrl, workerPort, est
           }, body: generationHistoryForm(image, metadata, job.descriptor.editMask), signal: AbortSignal.timeout(30_000),
         });
         const saved = await response.json();
-        if (!response.ok) throw error(saved.error || '电脑历史保存失败', 'history_save_failed', response.status);
+        if (!response.ok || !saved?.item?.id || !saved.item.imageUrl) throw error(saved?.error || '电脑历史保存失败', 'history_save_failed', response.status);
         return saved.item;
       } catch (cause) {
         // 保留未落库产物供发起页下载；绝不把保存失败改成再次生图。
@@ -55,7 +56,7 @@ export async function handleGenerationJobRequest(req, res, jobs, { allowed, keyH
   const url = new URL(req.url, 'http://localhost');
   const token = String(req.headers['x-nai-generation-task'] || url.searchParams.get('token') || '');
   try {
-    if (req.method === 'GET') return sendJson(res, 200, jobs.snapshot(jobs.get(key, token)));
+    if (req.method === 'GET') return sendJson(res, 200, jobs.snapshot(jobs.get(key, token), url.searchParams.get('previewVersion')));
     if (req.method === 'DELETE') return sendJson(res, 200, jobs.cancel(key, token));
     if (req.method === 'PATCH') {
       const body = JSON.parse((await readBody(req, 4096)).toString('utf8'));

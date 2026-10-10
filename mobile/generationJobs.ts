@@ -82,17 +82,16 @@ export function createMobileGenerationJobs({ tasks, queue }: { tasks: Generation
     },
     // 保存复用既有 history multipart 接口；缩略图与索引由该接口维护，不另建手机存储结构。
     save: async (job, output, metadata) => {
-      const image = job.descriptor.composition
-        ? { bytes: await composeMobileEditResult(output, job.descriptor.composition), mime: 'image/png' }
-        : { bytes: output.bytes, mime: output.mime };
+      let image = { bytes: output.bytes, mime: output.mime };
       try {
+        if (job.descriptor.composition) image = { bytes: await composeMobileEditResult(output, job.descriptor.composition), mime: 'image/png' };
         const response = await fetch('/api/local-history', {
           method: 'POST', body: generationHistoryForm(image, metadata, job.descriptor.editMask),
           signal: AbortSignal.timeout(30_000),
         });
         // 回执结构由既有 history 路由维护，与前端保存使用同一份 LocalGenItem 语义。
         const saved = await response.json() as { error?: string; item?: LocalGenItem };
-        if (!response.ok || !saved?.item) throw new Error(saved?.error || '手机历史保存失败');
+        if (!response.ok || !saved?.item?.id || !saved.item.imageUrl) throw new Error(saved?.error || '手机历史保存失败');
         return saved.item;
       } catch (cause) {
         // 保留未落库产物供发起页下载；绝不把保存失败改成再次生图。

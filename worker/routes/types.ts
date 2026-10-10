@@ -73,6 +73,14 @@ export const clampInt = (value: string | null, fallback: number, min: number, ma
 
 export const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
+export async function addColumnIfMissing(db: D1Database, statement: string) {
+  try { await db.prepare(statement).run(); }
+  catch (error) {
+    // 旧库重复初始化只忽略已存在列；磁盘、权限与 SQL 错误必须交给调用方。
+    if (!(error instanceof Error) || !/duplicate column name\s*:/i.test(error.message)) throw error;
+  }
+}
+
 export function parseStoredJson(value: string | null | undefined, fallback: any) {
   try { return value ? JSON.parse(value) : fallback; } catch { return fallback; }
 }

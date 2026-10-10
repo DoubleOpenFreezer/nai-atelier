@@ -106,6 +106,21 @@ const panelElement = (canUndo = false, overrides = {}) => {
 const renderPanel = (canUndo = false, overrides = {}) => render(panelElement(canUndo, overrides));
 
 describe('PromptAgentPanel 顶栏前端布局规范', () => {
+  it('删除失败显示实际错误，保留会话与当前选中项', async () => {
+    stubServices();
+    vi.spyOn(promptAgentService, 'listSessions').mockResolvedValue([mockSession, { ...mockSession, id: 'session-2', title: '第二条对话' }]);
+    const remove = vi.spyOn(promptAgentService, 'deleteSession').mockRejectedValue(new Error('synthetic EACCES'));
+    renderPanel();
+    await screen.findByRole('heading', { name: '新对话' });
+    fireEvent.click(screen.getByRole('button', { name: '会话列表' }));
+    fireEvent.click(screen.getAllByRole('button', { name: '会话操作' })[0]);
+    fireEvent.click(screen.getByRole('button', { name: '删除' }));
+    fireEvent.click(await screen.findByRole('button', { name: '删除对话' }));
+    await screen.findByText('synthetic EACCES');
+    expect(remove).toHaveBeenCalledWith('session-1');
+    expect(screen.getByRole('heading', { name: '新对话' })).toBeTruthy();
+    expect(screen.getByText('第二条对话')).toBeTruthy();
+  });
   beforeEach(() => {
     Element.prototype.scrollTo = vi.fn();
   });

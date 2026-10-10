@@ -1,7 +1,7 @@
 // Local generation history (D1 + R2), inspiration boards/library, and the
 // lightweight agent overview endpoints.
 // Moved verbatim from worker/index.ts during the domain split; behavior unchanged.
-import { json, error, clampInt, parseStoredJson, MAX_MANAGED_IMAGE_BYTES, type D1Database, type D1Result, type Env, type RouteContext } from './types';
+import { json, error, addColumnIfMissing, clampInt, parseStoredJson, MAX_MANAGED_IMAGE_BYTES, type D1Database, type D1Result, type Env, type RouteContext } from './types';
 import { parseImageData, parseUploadedImage, exactArrayBuffer, ensureVibeSchema, ensureCharacterReferenceSchema } from './vibeRoutes';
 import { deleteR2File, processImageUpload } from './settingsRoutes';
 import { normalizeChainTags } from '../../services/chainTags';
@@ -36,7 +36,7 @@ async function ensureInspirationSchema(db: D1Database) {
     "ALTER TABLE inspirations ADD COLUMN image_type TEXT",
     "ALTER TABLE inspirations ADD COLUMN updated_at INTEGER",
   ]) {
-    try { await db.prepare(statement).run(); } catch { /* Column already exists. */ }
+    await addColumnIfMissing(db, statement);
   }
   await db.prepare('CREATE INDEX IF NOT EXISTS idx_inspirations_board ON inspirations(user_id, board_id, archived, is_pinned, created_at DESC)').run();
   await db.prepare('CREATE INDEX IF NOT EXISTS idx_inspirations_source ON inspirations(user_id, source_type, source_id)').run();
@@ -102,7 +102,7 @@ export async function ensureLocalHistorySchema(db: D1Database) {
     'ALTER TABLE local_generation_history ADD COLUMN is_favorite INTEGER NOT NULL DEFAULT 0',
     'ALTER TABLE local_generation_history ADD COLUMN favorite_at INTEGER',
   ]) {
-    try { await db.prepare(statement).run(); } catch { /* Column already exists. */ }
+    await addColumnIfMissing(db, statement);
   }
   await db.prepare(`CREATE INDEX IF NOT EXISTS idx_local_history_user_created
     ON local_generation_history(user_id, created_at DESC)`).run();
@@ -311,13 +311,13 @@ export async function handleHistoryRoute(ctx: RouteContext): Promise<Response | 
 
     const deleteHistoryRows = async (rows: Array<{id: string, image_key: string}>) => {
       for (const row of rows) {
+        await db.prepare('DELETE FROM local_generation_history WHERE id = ? AND user_id = ?')
+          .bind(row.id, currentUser.id).run();
         if (row.image_key) {
           const reference = await db.prepare('SELECT COUNT(*) AS count FROM inspirations WHERE image_key = ?').bind(row.image_key).first<{count: number}>();
           if (Number(reference?.count || 0) === 0) await env.BUCKET!.delete(row.image_key);
         }
         await env.BUCKET!.delete(localHistoryEditMaskKey(currentUser.id, row.id));
-        await db.prepare('DELETE FROM local_generation_history WHERE id = ? AND user_id = ?')
-          .bind(row.id, currentUser.id).run();
       }
       return rows.length;
     };

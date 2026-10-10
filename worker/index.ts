@@ -1,7 +1,7 @@
 import { MEDIA_VARIANTS, validateMediaSource } from './mediaValidation';
 import { LAN_ACCESS_COOKIE } from './sharedWhitelist.mjs';
 import {
-  json, error, INIT_SQL,  type Env, type WorkerContext, type RouteContext,
+  json, error, addColumnIfMissing, INIT_SQL,  type Env, type WorkerContext, type RouteContext,
 } from './routes/types';
 import { handleDanbooruRoute } from './routes/danbooruRoutes';
 import { handleAitagRoute, ensureAitagCacheSchema, recoverAitagAsset } from './routes/aitagRoutes';
@@ -98,20 +98,20 @@ export default {
     const initDB = async () => {
       const statements = INIT_SQL.split(';').map(s => s.trim()).filter(s => s.length > 0);
       for (const sql of statements) {
-          try { await db.prepare(sql).run(); } catch(e) {}
+          await db.prepare(sql).run();
       }
-      try { await db.prepare("ALTER TABLE chains ADD COLUMN user_id TEXT").run(); } catch (e) {}
-      try { await db.prepare("ALTER TABLE chains ADD COLUMN username TEXT").run(); } catch (e) {}
-      try { await db.prepare("ALTER TABLE inspirations ADD COLUMN user_id TEXT").run(); } catch (e) {}
-      try { await db.prepare("ALTER TABLE inspirations ADD COLUMN username TEXT").run(); } catch (e) {}
-      try { await db.prepare("ALTER TABLE inspirations ADD COLUMN negative_prompt TEXT DEFAULT ''").run(); } catch (e) {}
-      try { await db.prepare("ALTER TABLE inspirations ADD COLUMN params TEXT").run(); } catch (e) {}
-      try { await db.prepare("ALTER TABLE chains ADD COLUMN variable_values TEXT DEFAULT '{}'").run(); } catch (e) {}
-      try { await db.prepare("ALTER TABLE artists ADD COLUMN preview_url TEXT").run(); } catch (e) {}
-      try { await db.prepare("ALTER TABLE artists ADD COLUMN benchmarks TEXT DEFAULT '[]'").run(); } catch (e) {}
-      try { await db.prepare("ALTER TABLE chains ADD COLUMN type TEXT DEFAULT 'style'").run(); } catch (e) {}
-      try { await db.prepare("ALTER TABLE chains ADD COLUMN guest_hidden INTEGER NOT NULL DEFAULT 0").run(); } catch (e) {}
-      try { await ensureAitagCacheSchema(db); } catch (e) { console.error('Aitag cache table init failed', e) }
+      await addColumnIfMissing(db, "ALTER TABLE chains ADD COLUMN user_id TEXT");
+      await addColumnIfMissing(db, "ALTER TABLE chains ADD COLUMN username TEXT");
+      await addColumnIfMissing(db, "ALTER TABLE inspirations ADD COLUMN user_id TEXT");
+      await addColumnIfMissing(db, "ALTER TABLE inspirations ADD COLUMN username TEXT");
+      await addColumnIfMissing(db, "ALTER TABLE inspirations ADD COLUMN negative_prompt TEXT DEFAULT ''");
+      await addColumnIfMissing(db, "ALTER TABLE inspirations ADD COLUMN params TEXT");
+      await addColumnIfMissing(db, "ALTER TABLE chains ADD COLUMN variable_values TEXT DEFAULT '{}'");
+      await addColumnIfMissing(db, "ALTER TABLE artists ADD COLUMN preview_url TEXT");
+      await addColumnIfMissing(db, "ALTER TABLE artists ADD COLUMN benchmarks TEXT DEFAULT '[]'");
+      await addColumnIfMissing(db, "ALTER TABLE chains ADD COLUMN type TEXT DEFAULT 'style'");
+      await addColumnIfMissing(db, "ALTER TABLE chains ADD COLUMN guest_hidden INTEGER NOT NULL DEFAULT 0");
+      await ensureAitagCacheSchema(db);
     };
 
     try {
@@ -143,17 +143,6 @@ export default {
           });
         }
         return error('Account authentication is disabled in personal mode', 410);
-      }
-
-      // --- PUBLIC: Benchmark Config (Read) ---
-      if (path === '/api/config/benchmarks' && method === 'GET') {
-          const res = await db.prepare('SELECT value FROM settings WHERE key = ?').bind('benchmark_config').first<{value: string}>();
-          // settings 表值可能因备份恢复/手工编辑而损坏，容错解析避免整端点 500
-          let config: unknown = null;
-          if (res) {
-            try { config = JSON.parse(res.value); } catch { config = null; }
-          }
-          return json({ config });
       }
 
       const agentResult = await handleAgentRoute({

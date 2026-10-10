@@ -36,6 +36,27 @@ beforeEach(() => {
     job.cancel.mockReset().mockResolvedValue(undefined);
     job.approve.mockReset().mockResolvedValue(undefined);
 });
+
+it('未变化的预览不重复传图，版本变化清除已保存预览，旧快照仍兼容', async () => {
+    const scope = nextScope();
+    const preview = { image: 'data:image/png;base64,AQID', step: 4 };
+    job.start.mockResolvedValueOnce(snapshot({ state: 'generating', previewVersion: 2, preview }));
+    job.get
+        .mockResolvedValueOnce(snapshot({ state: 'generating', previewVersion: 2 }))
+        .mockResolvedValueOnce(snapshot({ state: 'waiting', previewVersion: 3, completedCount: 1, historyIds: ['h1'] }))
+        .mockResolvedValueOnce(snapshot({ state: 'failed', preview: { image: 'data:image/png;base64,BAUG' }, code: 'history_save_failed' }));
+    const { session, settle } = beginGenerationSeries({ scope, key: 'synthetic-key', count: 3, agent: false, descriptor: descriptor() });
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(session.preview).toEqual(preview);
+    expect(job.get).toHaveBeenLastCalledWith('synthetic-key', session.token, 2);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(session.preview).toBeUndefined();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(job.get).toHaveBeenLastCalledWith('synthetic-key', session.token, 3);
+    expect(session.preview?.image).toBe('data:image/png;base64,BAUG');
+    await expect(settle).resolves.toMatchObject({ outcome: 'failed', code: 'history_save_failed' });
+});
 afterEach(() => { vi.useRealTimers(); sessionStorage.clear(); });
 
 it('一次 POST 后只轮询观察：进度、预览与已保存项透传，终态退出并给出成功回执', async () => {
@@ -63,7 +84,7 @@ it('一次 POST 后只轮询观察：进度、预览与已保存项透传，终�
     expect(session.preview).toEqual({ image: 'data:image/png;base64,AQID', step: 4 });
     expect(session.lastSavedItem).toEqual(saved);
     expect(job.get).toHaveBeenCalledOnce();
-    expect(job.get).toHaveBeenCalledWith('synthetic-key', session.token);
+    expect(job.get).toHaveBeenCalledWith('synthetic-key', session.token, undefined);
 
     unsubscribe();
     const publishedWhileSubscribed = listener.mock.calls.length;

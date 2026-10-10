@@ -25,7 +25,7 @@ export class GenerationJobs {
     for (const [id, job] of this.jobs) {
       if (!terminal(job.state)) continue;
       // 未被前端收取的终态回执不能因页面冻结超过五分钟而丢失；图片预览另行限时释放。
-      if (job.preview && this.now() - job.finishedAt > this.terminalMs) job.preview = undefined;
+      if (job.preview && this.now() - job.finishedAt > this.terminalMs) { job.preview = undefined; job.previewVersion++; }
       if (job.observedAt !== undefined && this.now() - job.observedAt > this.terminalMs) this.jobs.delete(id);
       else count++;
     }
@@ -40,7 +40,7 @@ export class GenerationJobs {
     return job;
   }
   has(key, token) { this.prune(); return this.jobs.has(index(key, token)); }
-  snapshot(job) {
+  snapshot(job, previewVersion) {
     if (terminal(job.state) && job.observedAt === undefined) {
       job.observedAt = this.now();
       setTimeout(() => this.prune(), this.terminalMs + 1).unref?.();
@@ -59,7 +59,8 @@ export class GenerationJobs {
       token: job.token, state, completedCount: job.historyIds.length, requestedCount: job.count,
       historyIds: [...job.historyIds], ...(position === undefined ? {} : { position }),
       ...(job.lastSavedItem ? { lastSavedItem: job.lastSavedItem } : {}),
-      ...(job.preview ? { preview: job.preview } : {}),
+      previewVersion: job.previewVersion,
+      ...(job.preview && String(previewVersion) !== String(job.previewVersion) ? { preview: job.preview } : {}),
       ...(job.error ? { error: job.error, code: job.code } : {}),
       ...(job.cost === undefined ? {} : { cost: job.cost }),
       ...(job.accountingFailed ? { accountingFailed: true } : {}),
@@ -79,7 +80,7 @@ export class GenerationJobs {
     this.validate(descriptor);
     if (placement) this.tasks.enqueue(key, token, placement, count); else this.tasks.reserve(key, token, count);
     this.tasks.manage(key, token);
-    const job = { key, token, count, placement, descriptor, context, state: 'waiting', historyIds: [], approvedCost: descriptor.approvedCost, cancelled: false };
+    const job = { key, token, count, placement, descriptor, context, state: 'waiting', historyIds: [], previewVersion: 0, approvedCost: descriptor.approvedCost, cancelled: false };
     this.jobs.set(index(key, token), job);
     job.running = this.run(job);
     return this.snapshot(job);
@@ -135,10 +136,11 @@ export class GenerationJobs {
           if (payload.action !== 'generate') payload.parameters.extra_noise_seed = seed - 1;
         }
         job.preview = undefined;
+        job.previewVersion++;
         job.state = 'generating';
         let output;
         try {
-          output = await this.generate(job, payload, preview => { job.preview = preview; });
+          output = await this.generate(job, payload, preview => { job.preview = preview; job.previewVersion++; });
         } catch (error) {
           // 只有后端明确在上游提交前拒绝的调度回执可以等待，不重试失败的真实生图。
           if (error.status === 409 && ['generation_paused', 'generation_waiting', 'generation_interval'].includes(error.code)) { job.needsRefresh = true; await this.sleep(250); continue; }
@@ -158,6 +160,8 @@ export class GenerationJobs {
         if (!item?.id || !item.imageUrl) throw failure('图片已生成，但历史保存回执无效，已停止后续生成', 'history_save_failed', 500);
         job.historyIds.push(item.id);
         job.lastSavedItem = item;
+        job.preview = undefined;
+        job.previewVersion++;
         job.lastQueueTaskId = output.queueTaskId;
         this.tasks.renew(job.key, job.token, job.historyIds.length);
         while (this.tasks.current(job.key)?.token === job.token && this.tasks.current(job.key).inFlight) await this.sleep(50);
@@ -171,14 +175,14 @@ export class GenerationJobs {
       job.state = !saving && (error.code === 'generation_cancelled' || job.cancelled) ? 'cancelled' : 'failed';
       job.error = error.message || '后台生成失败';
       job.code = job.state === 'cancelled' ? 'generation_cancelled' : saving ? 'history_save_failed' : error.code || 'generation_failed';
-      if (error.preview) job.preview = error.preview;
+      if (error.preview) { job.preview = error.preview; job.previewVersion++; }
     } finally {
       // 公共清理可能晚于图片交付；不要因任务结束抢先放开它仍持有的单并发锁。
       if (job.cancelled) this.tasks.cancel(job.key, job.token); else this.tasks.release(job.key, job.token);
       job.finishedAt = this.now();
       job.descriptor = undefined;
       job.context = undefined;
-      if (job.state !== 'failed') job.preview = undefined;
+      if (job.state !== 'failed') { job.preview = undefined; job.previewVersion++; }
       setTimeout(() => this.prune(), this.terminalMs + 1).unref?.();
     }
   }
