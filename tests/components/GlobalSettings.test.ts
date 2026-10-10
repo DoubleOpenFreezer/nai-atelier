@@ -63,10 +63,16 @@ vi.mock('../../services/naiKeyVault', () => ({
 
 interface SettingsHarnessProps {
   initialSection?: 'home' | 'appearance' | 'generation' | 'novelai' | 'agent' | 'privacy' | 'maintenance';
+  initialAppearancePreferences?: Partial<AppearancePreferences>;
+  onAppearancePreferencesChange?: (preferences: AppearancePreferences) => void;
 }
 
-const SettingsHarness: React.FC<SettingsHarnessProps> = ({ initialSection = 'appearance' }) => {
-  const [appearancePreferences, setAppearancePreferences] = useState<AppearancePreferences>(DEFAULT_APPEARANCE_PREFERENCES);
+const SettingsHarness: React.FC<SettingsHarnessProps> = ({ initialSection = 'appearance', initialAppearancePreferences, onAppearancePreferencesChange }) => {
+  const [appearancePreferences, setAppearancePreferences] = useState<AppearancePreferences>(() => ({
+    ...DEFAULT_APPEARANCE_PREFERENCES,
+    ...initialAppearancePreferences,
+  }));
+  React.useEffect(() => onAppearancePreferencesChange?.(appearancePreferences), [appearancePreferences, onAppearancePreferencesChange]);
   return React.createElement(ConfirmDialogProvider, null,
     React.createElement(GlobalSettings, {
       open: true,
@@ -88,6 +94,40 @@ const SettingsHarness: React.FC<SettingsHarnessProps> = ({ initialSection = 'app
 };
 
 describe('GlobalSettings', () => {
+  it('连续生成开关默认开启，点击后即时关闭', async () => {
+    const onAppearancePreferencesChange = vi.fn<(preferences: AppearancePreferences) => void>();
+    render(React.createElement(SettingsHarness, {
+      initialSection: 'generation',
+      onAppearancePreferencesChange,
+    }));
+    const toggle = await screen.findByRole('button', { name: /连续生成与排队/ });
+    expect(toggle.getAttribute('aria-pressed')).toBe('true');
+    fireEvent.click(toggle);
+    await waitFor(() => expect(onAppearancePreferencesChange.mock.lastCall?.[0].continuousGenerationEnabled).toBe(false));
+    expect(toggle.getAttribute('aria-pressed')).toBe('false');
+  });
+
+  it('应用外观预设和恢复默认外观不会重置连续生成偏好', async () => {
+    const onAppearancePreferencesChange = vi.fn<(preferences: AppearancePreferences) => void>();
+    render(React.createElement(SettingsHarness, {
+      initialAppearancePreferences: { continuousGenerationEnabled: false },
+      onAppearancePreferencesChange,
+    }));
+    fireEvent.click(screen.getByRole('button', { name: '另存当前主题' }));
+    fireEvent.change(screen.getByPlaceholderText(/例如：晴空午夜/), { target: { value: '生图偏好不变' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    await waitFor(() => expect(
+      onAppearancePreferencesChange.mock.lastCall?.[0].customPresets.some(preset => preset.name === '生图偏好不变'),
+    ).toBe(true));
+    const savedPreset = onAppearancePreferencesChange.mock.lastCall?.[0].customPresets.find(preset => preset.name === '生图偏好不变');
+    expect(savedPreset).not.toHaveProperty('continuousGenerationEnabled');
+    expect(onAppearancePreferencesChange.mock.lastCall?.[0].continuousGenerationEnabled).toBe(false);
+
+    fireEvent.click(screen.getByRole('button', { name: '应用外观预设：生图偏好不变' }));
+    await waitFor(() => expect(onAppearancePreferencesChange.mock.lastCall?.[0].continuousGenerationEnabled).toBe(false));
+    fireEvent.click(screen.getByRole('button', { name: '恢复 NAI Atelier 默认外观' }));
+    await waitFor(() => expect(onAppearancePreferencesChange.mock.lastCall?.[0].continuousGenerationEnabled).toBe(false));
+  });
   it('设置首页省去分类说明，仍可进入分类并保留隐私后果', async () => {
     const { container } = render(React.createElement(SettingsHarness, { initialSection: 'home' }));
     expect(container.textContent).not.toMatch(/独立页面中打开|主题预设、防社死|连接信息和本地数据维护/);

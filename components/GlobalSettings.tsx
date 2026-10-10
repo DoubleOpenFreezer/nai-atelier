@@ -469,6 +469,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
       ...DEFAULT_APPEARANCE_PREFERENCES,
       themeMode,
       tagAssistEnabled: appearancePreferences.tagAssistEnabled,
+      continuousGenerationEnabled: appearancePreferences.continuousGenerationEnabled,
       labModuleOrder: appearancePreferences.labModuleOrder,
       labModuleCollapsed: appearancePreferences.labModuleCollapsed,
       labPageLayouts: appearancePreferences.labPageLayouts,
@@ -954,6 +955,16 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
               <button type="button" onClick={() => updateAppearance({ generationStreamPreview: !appearancePreferences.generationStreamPreview })} aria-pressed={appearancePreferences.generationStreamPreview} className="flex w-full items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-left transition hover:border-indigo-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-indigo-700">
                 <span className="min-w-0"><b className="block text-xs text-gray-800 dark:text-gray-100">{t("生成过程预览")}</b></span>
                 <span className={`relative h-6 w-11 flex-none rounded-full transition-colors ${appearancePreferences.generationStreamPreview ? 'bg-indigo-500' : 'bg-gray-300 dark:bg-gray-700'}`}><span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${appearancePreferences.generationStreamPreview ? 'translate-x-5' : 'translate-x-0'}`} /></span>
+              </button>
+              <button type="button" onClick={() => updateAppearance({ continuousGenerationEnabled: !appearancePreferences.continuousGenerationEnabled })} aria-pressed={appearancePreferences.continuousGenerationEnabled} className="flex w-full items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-left transition hover:border-indigo-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-indigo-700">
+                <span className="min-w-0">
+                  <b className="block text-xs text-gray-800 dark:text-gray-100">{t("连续生成与排队")}</b>
+                  <span className="mt-0.5 block text-micro leading-4 text-gray-500 dark:text-gray-400">
+                    {t("关闭后，每次仅生成一张，不允许追加或插队。")}</span>
+                </span>
+                <span className={`relative h-6 w-11 flex-none rounded-full transition-colors ${appearancePreferences.continuousGenerationEnabled ? 'bg-indigo-500' : 'bg-gray-300 dark:bg-gray-700'}`}>
+                  <span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${appearancePreferences.continuousGenerationEnabled ? 'translate-x-5' : 'translate-x-0'}`} />
+                </span>
               </button>
 
               <button type="button" onClick={() => updateAppearance({ forceEmptySeed: !appearancePreferences.forceEmptySeed })} aria-pressed={appearancePreferences.forceEmptySeed} className="flex w-full items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-left transition hover:border-indigo-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-indigo-700">

@@ -657,6 +657,7 @@ const App = () => {
           generationStreamPreview={appearancePreferences.generationStreamPreview}
           forceEmptySeed={appearancePreferences.forceEmptySeed}
           enforceFreeStepLimit={appearancePreferences.enforceFreeStepLimit}
+          continuousGenerationEnabled={appearancePreferences.continuousGenerationEnabled}
           labPageLayouts={appearancePreferences.labPageLayouts}
           safeMode={safeMode}
           onBack={handleReturnFromEditor}
@@ -725,6 +726,7 @@ const App = () => {
           generationStreamPreview={appearancePreferences.generationStreamPreview}
           forceEmptySeed={appearancePreferences.forceEmptySeed}
           enforceFreeStepLimit={appearancePreferences.enforceFreeStepLimit}
+          continuousGenerationEnabled={appearancePreferences.continuousGenerationEnabled}
           labPageLayouts={appearancePreferences.labPageLayouts}
           safeMode={safeMode}
           onBack={() => handleNavigate(lastLabEntryViewRef.current)}

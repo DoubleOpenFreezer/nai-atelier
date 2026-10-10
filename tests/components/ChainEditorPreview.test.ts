@@ -215,7 +215,7 @@ it.each(['text-to-image', 'image-to-image', 'inpaint', 'outpaint'] as const)('%s
   const generate = vi.fn(), queue = vi.fn();
   const control = { count: 1, onCountChange: vi.fn(), series: null, onStop: vi.fn(), onQueue: queue, queueDisabled: false };
   const element = (busy: boolean, ready: boolean, cloud: boolean) => {
-    const common = { isGenerating: cloud, generationDisabled: busy || !ready, generationCountControl: { ...control, queueDisabled: !ready }, generationCostLabel: '免费', unavailableLabel: !ready ? '请先选择底图' : busy ? '此 Key 正在生成' : undefined };
+    const common = { isGenerating: cloud, generationDisabled: busy || !ready, generationCountControl: { ...control, queueDisabled: !ready, queueState: { busy, completed: 0, total: busy ? 1 : 0, paused: false, pausing: false, waiting: [] } }, generationCostLabel: '免费', unavailableLabel: !ready ? '请先选择底图' : busy ? '此 Key 正在生成' : undefined };
     return operation === 'text-to-image'
       ? React.createElement(ChainEditorPreview, { ...common, handleGenerate: generate, errorMsg: null, generatedImage: null, previewImage: undefined,
         setLightboxImg: vi.fn(), isOwner: false, isUploading: false, handleSavePreview: vi.fn(), handleUploadCover: vi.fn(), getDownloadFilename: () => 'test.png' })
@@ -236,6 +236,48 @@ it.each(['text-to-image', 'image-to-image', 'inpaint', 'outpaint'] as const)('%s
   expect(screen.getByRole('button', { name: '请先选择底图' }).getAttribute('aria-disabled')).toBe('true');
 });
 
+it.each(['text-to-image', 'image-to-image', 'inpaint', 'outpaint'] as const)('%s 关闭连续生成后忙碌不能入队，未就绪说明仍优先，空闲只生成单张', operation => {
+  const generate = vi.fn(), queue = vi.fn();
+  const element = (busy: boolean, ready: boolean) => {
+    const common = { isGenerating: busy, generationDisabled: busy || !ready, generationCountControl: {
+      continuousGenerationEnabled: false, count: 1, onCountChange: vi.fn(), series: null, onStop: vi.fn(), onQueue: queue, queueDisabled: !ready,
+    }, generationCostLabel: '免费', unavailableLabel: !ready ? '请先选择底图' : busy ? '此 Key 正在生成' : undefined };
+    return operation === 'text-to-image'
+      ? React.createElement(ChainEditorPreview, { ...common, handleGenerate: generate, errorMsg: null, generatedImage: null, previewImage: undefined,
+        setLightboxImg: vi.fn(), isOwner: false, isUploading: false, handleSavePreview: vi.fn(), handleUploadCover: vi.fn(), getDownloadFilename: () => 'test.png' })
+      : React.createElement(ImageEditPreview, { ...common, operation, image: null, error: null, onGenerate: generate, onOpenLightbox: vi.fn(), getDownloadFilename: () => 'test.png' });
+  };
+  const view = render(element(true, true));
+  fireEvent.click(screen.getByRole('button', { name: '此 Key 正在生成' }));
+  expect(queue).not.toHaveBeenCalled();
+  expect(generate).not.toHaveBeenCalled();
+  expect(screen.queryByRole('button', { name: /加入队列/ })).toBeNull();
+  view.rerender(element(false, false));
+  fireEvent.click(screen.getByRole('button', { name: '请先选择底图' }));
+  expect(generate).not.toHaveBeenCalled();
+  view.rerender(element(false, true));
+  fireEvent.click(screen.getByRole('button', { name: /生成.*免费/ }));
+  expect(generate).toHaveBeenCalledOnce();
+  expect(queue).not.toHaveBeenCalled();
+});
+
+it.each(['text-to-image', 'image-to-image', 'inpaint', 'outpaint'] as const)('%s 没有任务时不把暂不可提交误判为加入队列', operation => {
+  const generate = vi.fn(), queue = vi.fn();
+  const common = { isGenerating: false, generationDisabled: true, generationCountControl: {
+    count: 1, onCountChange: vi.fn(), series: null, onStop: vi.fn(), onQueue: queue, queueDisabled: false,
+    queueState: { busy: false, completed: 2, total: 2, paused: false, pausing: false, waiting: [] },
+  }, generationCostLabel: '免费' };
+  render(operation === 'text-to-image'
+    ? React.createElement(ChainEditorPreview, { ...common, handleGenerate: generate, errorMsg: null, generatedImage: null, previewImage: undefined,
+      setLightboxImg: vi.fn(), isOwner: false, isUploading: false, handleSavePreview: vi.fn(), handleUploadCover: vi.fn(), getDownloadFilename: () => 'test.png' })
+    : React.createElement(ImageEditPreview, { ...common, operation, image: null, error: null, onGenerate: generate, onOpenLightbox: vi.fn(), getDownloadFilename: () => 'test.png', unavailableLabel: '画布加载中…' }));
+  expect(screen.queryByRole('button', { name: /^加入队列/ })).toBeNull();
+  const button = screen.getByRole('button', { name: operation === 'text-to-image' ? /生成.*免费/ : '画布加载中…' });
+  fireEvent.click(button);
+  expect(queue).not.toHaveBeenCalled();
+  expect(generate).not.toHaveBeenCalled();
+});
+
 
 it.each(['text-to-image', 'image-to-image', 'inpaint', 'outpaint'] as const)('%s 连续生成在云排队期间仍能停止后续，停止中禁止重复操作', operation => {
   emitCloudQueueStatus({ taskId: 'synthetic-series', phase: 'waiting' });
@@ -249,7 +291,6 @@ it.each(['text-to-image', 'image-to-image', 'inpaint', 'outpaint'] as const)('%s
   const view = render(element(false));
   const button = screen.getByRole('button', { name: '暂停生成' }) as HTMLButtonElement;
   expect(button.disabled).toBe(false); fireEvent.click(button); expect(stop).toHaveBeenCalledOnce();
-  expect(screen.getByText('0/3')).toBeTruthy();
   view.rerender(element(true));
   expect((screen.getByRole('button', { name: '暂停生成' }) as HTMLButtonElement).disabled).toBe(true);
 });

@@ -1,14 +1,40 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   DEFAULT_APPEARANCE_PREFERENCES,
   DEFAULT_LAB_MODULE_COLLAPSED,
   DEFAULT_LAB_PAGE_LAYOUTS,
+  loadAppearancePreferences,
   normalizeAppearancePreferences,
   parseAppearancePresetsFromJson,
+  saveAppearancePreferences,
   validateAppearancePreset,
 } from '../../services/appearancePreferences';
 
+const localStorageValues = new Map<string, string>();
+beforeEach(() => {
+  localStorageValues.clear();
+  vi.stubGlobal('localStorage', {
+    getItem: (key: string) => localStorageValues.get(key) ?? null,
+    setItem: (key: string, value: string) => { localStorageValues.set(key, value); },
+  });
+});
+afterEach(() => vi.unstubAllGlobals());
+
 describe('appearance preferences', () => {
+  it('旧生图偏好缺少连续生成字段时默认开启', () => {
+    localStorageValues.set('nai_appearance_preferences', JSON.stringify({ generationStreamPreview: true }));
+    expect(loadAppearancePreferences().continuousGenerationEnabled).toBe(true);
+    expect(normalizeAppearancePreferences({}).continuousGenerationEnabled).toBe(true);
+  });
+
+  it('关闭连续生成后保存并重载仍保持关闭', () => {
+    saveAppearancePreferences({
+      ...DEFAULT_APPEARANCE_PREFERENCES,
+      continuousGenerationEnabled: false,
+    });
+    expect(JSON.parse(localStorageValues.get('nai_appearance_preferences')!).continuousGenerationEnabled).toBe(false);
+    expect(loadAppearancePreferences().continuousGenerationEnabled).toBe(false);
+  });
   it('accepts a complete supported theme customization', () => {
     const normalized = normalizeAppearancePreferences({
       designTheme: 'nai-atelier',
@@ -21,6 +47,7 @@ describe('appearance preferences', () => {
       fontScale: 'large',
       tagAssistEnabled: false,
       generationStreamPreview: true,
+      continuousGenerationEnabled: false,
       forceEmptySeed: true,
       enforceFreeStepLimit: false,
       labModuleOrder: ['params', 'prompt', 'negative', 'vibe', 'characters', 'characterReference'],
@@ -44,6 +71,7 @@ describe('appearance preferences', () => {
       fontScale: 'large',
       tagAssistEnabled: false,
       generationStreamPreview: true,
+      continuousGenerationEnabled: false,
       forceEmptySeed: true,
       enforceFreeStepLimit: false,
       labModuleOrder: ['params', 'prompt', 'negative', 'vibe', 'characters', 'characterReference'],

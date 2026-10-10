@@ -121,6 +121,8 @@ export interface AppearancePreferences {
   tagAssistEnabled: boolean;
   /** 在支持的模型上显示采样过程；这是当前设备的观看偏好，不写入风格串。 */
   generationStreamPreview: boolean;
+  /** 本端连续生成与排队偏好，不随 Key 且不属于外观预设。 */
+  continuousGenerationEnabled: boolean;
   /** 强制清空随机种子；开启后在工坊与实验室中暂时忽略并留空随机种子（不修改预设保存的原值），关闭后恢复。 */
   forceEmptySeed: boolean;
   /** 免费步数上限开关；开启时生成步数输入锁定在官方同步的 freeMaxSteps（默认 28）内，关闭后允许探索付费步数（至多 50）。 */
@@ -148,6 +150,7 @@ export const DEFAULT_APPEARANCE_PREFERENCES: AppearancePreferences = {
   fontScale: 'standard',
   tagAssistEnabled: true,
   generationStreamPreview: false,
+  continuousGenerationEnabled: true,
   forceEmptySeed: false,
   enforceFreeStepLimit: true,
   labModuleOrder: [...DEFAULT_LAB_MODULE_ORDER],
@@ -291,6 +294,9 @@ export const normalizeAppearancePreferences = (value: unknown): AppearancePrefer
     generationStreamPreview: typeof input.generationStreamPreview === 'boolean'
       ? input.generationStreamPreview
       : DEFAULT_APPEARANCE_PREFERENCES.generationStreamPreview,
+    continuousGenerationEnabled: typeof input.continuousGenerationEnabled === 'boolean'
+      ? input.continuousGenerationEnabled
+      : DEFAULT_APPEARANCE_PREFERENCES.continuousGenerationEnabled,
     forceEmptySeed: typeof input.forceEmptySeed === 'boolean'
       ? input.forceEmptySeed
       : DEFAULT_APPEARANCE_PREFERENCES.forceEmptySeed,

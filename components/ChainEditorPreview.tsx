@@ -83,7 +83,6 @@ export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
 }) => {
   useLanguage();
     const queueStatus = useCloudQueueStatus();
-    const queueAction = Boolean(generationCountControl?.onQueue && !generationCountControl.queueDisabled && (isGenerating || generationDisabled));
 
     return (
         <div className="chain-editor-preview w-full lg:w-1/2 flex flex-col bg-gray-100 dark:bg-black/20 order-1 lg:order-2 border-b lg:border-b-0 border-gray-200 dark:border-gray-800 lg:shrink-0">
@@ -172,7 +171,7 @@ export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
                     {errorMsg && <div role="alert" className="mb-2 w-full max-w-sm rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-center text-xs text-red-600 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300">{errorMsg}</div>}
                     {showQueueStatus && queueStatus && <InlineCloudQueueStatus generationProgress={generationProgress} className="mb-2 w-full max-w-xs flex-shrink-0" />}
                     <div className={`flex max-w-full items-stretch justify-center gap-2 ${hideGenerateButtonOnMobile ? 'hidden lg:flex' : ''}`}>
-                    {generationCountControl ? <GenerationCountControl {...generationCountControl} onGenerate={handleGenerate} costLabel={generationCostLabel} unavailableLabel={unavailableLabel} busy={queueAction || isGenerating} disabled={isGenerating || generationDisabled} /> : !(showQueueStatus && isCloudQueueTaskActive(queueStatus)) && <button data-agent-action="business" onClick={handleGenerate} disabled={isGenerating || generationDisabled} className="generation-action-button flex h-11 flex-1 items-center justify-center gap-2 rounded-xl px-3 text-sm font-semibold disabled:opacity-50">
+                    {generationCountControl ? <GenerationCountControl {...generationCountControl} onGenerate={handleGenerate} costLabel={generationCostLabel} unavailableLabel={unavailableLabel} busy={isGenerating} disabled={isGenerating || generationDisabled} /> : !(showQueueStatus && isCloudQueueTaskActive(queueStatus)) && <button data-agent-action="business" onClick={handleGenerate} disabled={isGenerating || generationDisabled} className="generation-action-button flex h-11 flex-1 items-center justify-center gap-2 rounded-xl px-3 text-sm font-semibold disabled:opacity-50">
                       <ImageIcon aria-hidden="true" className="h-4 w-4" /><span>{isGenerating ? t("生成中…") : unavailableLabel || t("生成")}</span>{!isGenerating && !unavailableLabel && <span className="generation-action-button__cost">{generationCostLabel}</span>}
                     </button>}
                     </div>

@@ -1,4 +1,9 @@
 {
+  "连续生成与排队": ["連續生成與排隊","Continuous generation and queueing","連続生成とキュー","연속 생성 및 대기열"],
+  "关闭后，每次仅生成一张，不允许追加或插队。": ["關閉後，每次僅生成一張，不允許追加或插隊。","When off, generate one image at a time without adding or inserting queued tasks.","オフにすると毎回1枚のみ生成し、キューへの追加や割り込みはできません。","끄면 한 번에 한 장만 생성하며 작업 추가나 끼워넣기를 허용하지 않습니다."],
+  "减少生成间隔": ["減少生成間隔","Decrease request interval","生成間隔を短くする","생성 간격 줄이기"],
+  "增加生成间隔": ["增加生成間隔","Increase request interval","生成間隔を長くする","생성 간격 늘리기"],
+  "连续生成与排队已关闭，请在设置中开启后再请求多张或排队": ["連續生成與排隊已關閉，請在設定中開啟後再請求多張或排隊","Continuous generation and queueing are off. Enable them in settings before requesting multiple images or queueing.","連続生成とキューはオフです。複数枚の生成やキュー追加を行うには設定で有効にしてください。","연속 생성 및 대기열이 꺼져 있습니다. 여러 장을 요청하거나 대기열에 추가하려면 설정에서 켜 주세요."],
   "生成间隔": ["生成間隔","Request interval","生成間隔","생성 간격"],
   "秒": ["秒","s","秒","초"],
   "每张图片保存后等待；0 秒不额外等待": ["每張圖片儲存後等待；0 秒不額外等待","Wait after each image is saved; 0 adds no delay","画像を保存した後の待ち時間。0 秒は追加の待機なし","각 이미지 저장 후 대기합니다. 0초는 추가 대기 없음"],

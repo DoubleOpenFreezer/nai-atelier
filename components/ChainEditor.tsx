@@ -70,12 +70,13 @@ interface ChainEditorProps {
     generationStreamPreview: boolean;
     forceEmptySeed?: boolean;
     enforceFreeStepLimit?: boolean;
+    continuousGenerationEnabled?: boolean;
     labPageLayouts: LabPageLayouts;
     safeMode: boolean;
     onBack: () => void | Promise<void>;
 }
 
-export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUpdateChain, onFork, setIsDirty, saveRef, notify, externalImportToken, agentOpenToken, tagAssistEnabled, onTagAssistEnabledChange, generationStreamPreview, forceEmptySeed = false, enforceFreeStepLimit = true, labPageLayouts, safeMode, onBack }) => {
+export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUpdateChain, onFork, setIsDirty, saveRef, notify, externalImportToken, agentOpenToken, tagAssistEnabled, onTagAssistEnabledChange, generationStreamPreview, forceEmptySeed = false, enforceFreeStepLimit = true, continuousGenerationEnabled = true, labPageLayouts, safeMode, onBack }) => {
   useLanguage();
     const [keyboardOffset, setKeyboardOffset] = useState(0);
     const queueStatus = useCloudQueueStatus();
@@ -118,9 +119,13 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         : '';
     const activeModelInfo = getRuntimeNaiModelInfo(params.model, naiRuntimeConfig || DEFAULT_NAI_RUNTIME);
     const [generationCount, setGenerationCount] = useState(1);
+    const effectiveGenerationCount = continuousGenerationEnabled ? generationCount : 1;
+    const continuousGenerationEnabledRef = useRef(continuousGenerationEnabled);
+    continuousGenerationEnabledRef.current = continuousGenerationEnabled;
+    useEffect(() => { if (!continuousGenerationEnabled) setGenerationCount(1); }, [continuousGenerationEnabled]);
     const estimatedAnlasCost = estimateV45GenerationCost(params, opusSubscriptionActive, opusUsageExhausted);
     const costStatusLabel = !novelaiSubscription ? novelaiSubscriptionLoading ? '费用确认中…' : '费用未知' : undefined;
-    const generationCostLabel = costStatusLabel || formatGenerationCostLabel(estimatedAnlasCost * generationCount, params.model);
+    const generationCostLabel = costStatusLabel || formatGenerationCostLabel(estimatedAnlasCost * effectiveGenerationCount, params.model);
 
     // --- New: Subject/Variable Prompt State ---
     const [subjectPrompt, setSubjectPrompt] = useState('');
@@ -188,7 +193,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     const promptJobApprovalRef = useRef<(session: GenerationSeriesSession, awaiting: { cost: number; completedCount: number; requestedCount: number }) => Promise<void>>(async () => {});
     const latestGenerationStateRef = useRef({ apiKey, subscription: novelaiStatus });
     latestGenerationStateRef.current = { apiKey, subscription: novelaiStatus };
-    const isGenerating = isImageGenerating || generationSeries !== null;
+    const isGenerating = isImageGenerating || Boolean(generationSeries && generationSeries.current < generationSeries.total);
     const [queueState, setQueueState] = useState<GenerationQueueSnapshot | null>(null);
     const [pausePending, setPausePending] = useState(false);
     const [intervalPending, setIntervalPending] = useState(false);
@@ -231,7 +236,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
       } catch (error) { if (latestGenerationStateRef.current.apiKey === apiKey) notify((error as Error).message, 'error'); }
       finally { if (latestGenerationStateRef.current.apiKey === apiKey && revision === intervalRevisionRef.current) { intervalRevisionRef.current++; setIntervalPending(false); } }
     };
-    const externalGenerationBusy = Boolean(queueState?.busy) && !isGenerating;
+    const externalGenerationBusy = Boolean(queueState && queueState.total > queueState.completed) && !isGenerating;
     const generationUnavailableLabel = externalGenerationBusy ? t("此 Key 正在生成") : undefined;
     const stopGenerationSeries = React.useCallback(() => {
         if (!generationSeriesRef.current) return;
@@ -354,9 +359,9 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     const canSaveActiveModeToLibrary = canSaveLabModeToLibrary(activeGenerationMode);
     const activeEditOperation = activeGenerationMode === 'text-to-image' ? null : activeGenerationMode;
     activeEditOperationRef.current = activeEditOperation;
-    const generationCountControl = { count: generationCount, onCountChange: setGenerationCount, series: generationSeries, onStop: stopGenerationSeries, queueState, onTogglePause: () => { void toggleQueuePause(); }, pausePending,
+    const generationCountControl = { continuousGenerationEnabled, count: effectiveGenerationCount, onCountChange: setGenerationCount, series: generationSeries, onStop: stopGenerationSeries, queueState, onTogglePause: () => { void toggleQueuePause(); }, pausePending,
         intervalSeconds: queueState?.intervalSeconds, onIntervalChange: (seconds: number) => { void changeGenerationInterval(seconds); }, intervalPending: intervalPending || !apiKey,
-        onQueue: (placement: GenerationPlacement) => { void (activeEditOperation ? imageEditQueueFnRef.current?.(placement) : handleGenerate(placement)); },
+        onQueue: continuousGenerationEnabled ? (placement: GenerationPlacement) => { void (activeEditOperation ? imageEditQueueFnRef.current?.(placement) : handleGenerate(placement)); } : undefined,
         queued: queueState ? queueState.waiting.map(task => ({ id: task.token, progress: { current: task.completed, total: task.total, position: task.position, stopping: false }, onCancel: () => { const local = queuedGenerations.find(session => session.token === task.token); if (local) stopGenerationSeriesSession(local); else void cancelGenerationJob(apiKey, task.token).catch(error => notify(error.message, 'error')); } })) : queuedGenerations.map(session => ({ id: session.token, progress: session.progress, onCancel: () => stopGenerationSeriesSession(session) })),
         queueDisabled: !apiKey || imageEditBaseLoading || Boolean(activeEditOperation && !imageEditGenerateBar?.canQueue) };
     const activeEditDraft = activeEditOperation ? workspaceSession.edits[activeEditOperation] : null;
@@ -1621,6 +1626,12 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     };
     promptJobApprovalRef.current = promptJobApproval;
 
+    const assertGenerationPreference = (count: number, placement?: GenerationPlacement) => {
+        if (!continuousGenerationEnabledRef.current && (count > 1 || placement)) {
+            throw agentOperationError('连续生成与排队已关闭，请在设置中开启后再请求多张或排队', 'continuous_generation_disabled');
+        }
+    };
+
     /** 提交一次有限后台任务：POST 一次后只观察后端状态与结果，本页不再逐张请求或落库。 */
     const runBackgroundJob = async (descriptor: GenerationJobDescriptor, count: number,
         options?: { agent?: boolean; onApproved?: () => Promise<void>; placement?: GenerationPlacement; onCompleted?: (item: LocalGenItem) => void | Promise<void> }): Promise<PromptAgentGenerationResult> => {
@@ -1632,11 +1643,14 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         try {
             validateGenerationCount(count);
             validateGenerationPlacement(options?.placement);
+            assertGenerationPreference(count, options?.placement);
             if (!apiKey) throw agentOperationError('请先在“全局设置”中配置 NovelAI API Key', 'missing_key');
             if (!options?.placement && (generationSeriesRef.current || isGenerating)) throw agentOperationError('已有图片正在生成，请等待完成', 'generation_busy');
             assertSubmitKey();
             await options?.onApproved?.();
             assertSubmitKey();
+            // 确认或准备期间关闭偏好后，不再投递尚未提交的多张/排队任务。
+            assertGenerationPreference(count, options?.placement);
             const { session, settle } = beginGenerationSeries({ scope: chain.id, key: apiKey, count, agent: Boolean(options?.agent), placement: options?.placement, descriptor });
             if (!options?.placement) generationSeriesRef.current = session;
             const result = await settle;
@@ -1692,7 +1706,11 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     };
 
     const handleGenerate = async (placement?: GenerationPlacement) => {
-        if (!placement && (generationSeriesRef.current || generationInFlightRef.current || isGenerating || queueState?.busy)) return false;
+        if (placement && !continuousGenerationEnabledRef.current) {
+            notify('连续生成与排队已关闭，请在设置中开启后再请求多张或排队', 'error');
+            return false;
+        }
+        if (!placement && (generationSeriesRef.current || generationInFlightRef.current || isGenerating || externalGenerationBusy || queueState?.paused)) return false;
         if (!apiKey) {
             const message = '请先在“全局设置”中配置 NovelAI API Key';
             setErrorMsg(message);
@@ -1701,7 +1719,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         }
         const draft = structuredClone({ basePrompt, subjectPrompt, negativePrompt,
             modules: modules.map(module => ({ ...module, isActive: activeModules[module.id] ?? module.isActive })), params });
-        const count = validateGenerationCount(generationCount);
+        const count = validateGenerationCount(effectiveGenerationCount);
         const freshSubscription = novelaiSubscription;
         void refreshUsageIfStale();
         const cost = estimateV45GenerationCost(draft.params, isActiveOpusSubscription(freshSubscription), freshSubscription?.usage?.isNegative ?? true);
@@ -1743,16 +1761,19 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         const editStrength = activeEditDraft?.strength !== undefined ? activeEditDraft.strength : (operation === 'image-to-image' ? 0.7 : 1);
         const costParams = activeEditDraft?.params || params;
         const cost = estimateImageEditCost(costParams, operation, editStrength, focusedReady, opusSubscriptionActive ? novelaiSubscription?.tier : 0, opusUsageExhausted, context);
-        return formatGenerationCostLabel(cost * generationCount, costParams.model);
+        return formatGenerationCostLabel(cost * effectiveGenerationCount, costParams.model);
     };
 
     const handleImageEditGenerate = async (request: ImageEditRequest, options?: { params?: NAIParams; onApproved?: () => Promise<void>; agent?: boolean; count?: number; placement?: GenerationPlacement }): Promise<PromptAgentGenerationResult> => {
-        const count = validateGenerationCount(options?.agent ? options.count : generationCount);
+        const count = validateGenerationCount(options?.agent ? options.count : effectiveGenerationCount);
         // 未提交的任务同样回完整回执：请求数与已保存数为 0，历史 ID 为空。
         const stop = (message: string, code: string, outcome: 'blocked' | 'failed' | 'cancelled' = 'blocked'): PromptAgentGenerationResult => {
             if (options?.agent) throw agentOperationError(message, code, outcome);
             return { ...agentGenerationFailure(agentOperationError(message, code, outcome)), requestedCount: count, completedCount: 0, historyIds: [] };
         };
+        if (!continuousGenerationEnabledRef.current && (count > 1 || options?.placement)) {
+            return stop('连续生成与排队已关闭，请在设置中开启后再请求多张或排队', 'continuous_generation_disabled');
+        }
         if (!apiKey) {
             const message = '请先在“全局设置”中配置 NovelAI API Key';
             setErrorMsg(message);
@@ -1895,6 +1916,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         const execute = async (): Promise<PromptAgentGenerationResult> => {
             validateGenerationCount(count);
             validateGenerationPlacement(placement);
+            assertGenerationPreference(count, placement);
             const target = agentTargetRef.current;
             if (draft.target && (draft.target.chainId !== target?.chainId || draft.target.mode !== target?.mode || draft.target.fingerprint !== target?.fingerprint)) throw agentOperationError('创作目标已变化，请先读取当前状态，再重新请求生成', 'target_changed');
             const approve = async () => {
@@ -2418,7 +2440,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                             busy={isGenerating || externalGenerationBusy}
                             costLabel={activeEditOperation ? imageEditGenerateBar?.costLabel : generationCostLabel}
                             unavailableLabel={activeEditOperation && imageEditBaseLoading ? t("读取图片中…") : activeEditOperation ? imageEditGenerateBar?.unavailableLabel : generationUnavailableLabel}
-                            disabled={isGenerating || externalGenerationBusy || imageEditBaseLoading} />
+                            disabled={isGenerating || externalGenerationBusy || imageEditBaseLoading || Boolean(activeEditOperation && !imageEditGenerateBar?.canGenerate)} />
                         </div>
                     </div>
                 </div>

@@ -5,7 +5,7 @@ import { longPress } from '../support/touchEvents';
 import React from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { LocalGenItem, PromptChain } from '../../types';
+import type { LocalGenItem, PromptAgentGenerationResult, PromptChain } from '../../types';
 import { cloneDefaultLabPageLayouts } from '../../services/appearancePreferences';
 import { createLabWorkspaceSession, loadLabWorkspaceSession, saveLabWorkspaceSession } from '../../services/labWorkspace';
 import { ChainEditor, type ChainEditorSaveHandle } from '../../components/ChainEditor';
@@ -124,6 +124,7 @@ vi.mock('../../components/ImageEditPanel', () => ({ ImageEditPanel: (props: Imag
   <output aria-label="聚焦重绘状态">{String(props.draft.focused)}</output>
   <output aria-label="编辑费用">{props.generationCostLabel(props.operation, props.draft.focused, { width: 832, height: 1216, focusedRect: props.draft.focusedRect })}</output>
   <button onClick={() => props.onDraftChange({ focused: false })}>使用普通重绘</button>
+  <button onClick={() => props.onDraftChange({ focusedRect: { x: 0, y: 0, width: 832, height: 1216 } })}>选择合成重绘区域</button>
   <output aria-label="编辑底图">{props.baseImage}</output>
   <output aria-label="编辑底图读取状态">{String(props.isBaseImageLoading)}</output>
   <output aria-label="编辑蒙版">{props.maskData}</output>
@@ -1059,6 +1060,88 @@ describe('后台任务只提交一次并只观察后端状态', () => {
   };
   const mobileActions = () => within(document.querySelector('.mobile-generation-actions') as HTMLElement);
 
+  it.each([['text-to-image', '文生图'], ['image-to-image', '图生图'], ['inpaint', '局部重绘'], ['outpaint', '扩图']] as const)('关闭连续生成后 %s 不继承旧张数，费用和实际请求均为单张，重新开启从 1 开始', async (operation, label) => {
+    prepare();
+    state.subscription = state.refreshedSubscription = { active: false, tier: 3 };
+    vi.stubGlobal('createImageBitmap', vi.fn(async () => ({ width: 832, height: 1216, close: vi.fn() })));
+    const view = setupSeries();
+    if (label !== '文生图') {
+      await switchTo(label);
+      await act(async () => fireEvent.click(screen.getByRole('button', { name: '粘贴合成底图' })));
+    }
+    if (operation === 'inpaint') fireEvent.click(screen.getByRole('button', { name: '选择合成重绘区域' }));
+    const fee = screen.getByLabelText(label === '文生图' ? '文生图费用' : '编辑费用');
+    const singleCost = Number(fee.textContent?.match(/\d+/)?.[0]);
+    expect(singleCost).toBeGreaterThan(0);
+    fireEvent.change(countInput(operation === 'text-to-image' ? '文生图预览' : operation), { target: { value: '3' } });
+    expect(fee.textContent).toContain(String(singleCost * 3));
+    view.rerender(<ChainEditor {...view.props} continuousGenerationEnabled={false} />);
+    expect(fee.textContent).toContain(String(singleCost));
+    expect(screen.queryByLabelText('生成张数')).toBeNull();
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: label === '文生图' ? '生成合成文生图' : '生成合成编辑' })));
+    await waitFor(() => expect(state.notifySaved).toHaveBeenCalledWith('job-1'));
+    expect(state.startJob).toHaveBeenCalledOnce();
+    expect(state.started[0]).toMatchObject({ count: 1 });
+    expect(state.started[0].placement).toBeUndefined();
+    await waitFor(() => expect(getGenerationSeriesSession(chain.id)).toBeNull());
+    view.rerender(<ChainEditor {...view.props} continuousGenerationEnabled />);
+    expect((countInput(operation === 'text-to-image' ? '文生图预览' : operation) as HTMLInputElement).value).toBe('1');
+  });
+
+  it.each([['text-to-image', '文生图'], ['image-to-image', '图生图'], ['inpaint', '局部重绘'], ['outpaint', '扩图']] as const)('关闭连续生成后 Agent %s 拒绝多张、队尾和插队，不降为单张或进入费用确认', async (operation, label) => {
+    prepare();
+    const view = setupSeries();
+    if (label !== '文生图') await switchTo(label);
+    view.rerender(<ChainEditor {...view.props} continuousGenerationEnabled={false} />);
+    await waitFor(() => expect(state.agent?.draft.target?.mode).toBe(operation));
+    const approved = vi.fn(async () => {});
+    for (const [count, placement] of [[2, undefined], [1, 'end'], [1, 'next']] as const) {
+      await act(async () => {
+        expect(await state.agent!.onRequestGeneration(state.agent!.draft, '合成请求', approved, count, placement)).toMatchObject({
+          success: false, code: 'continuous_generation_disabled', outcome: 'blocked', requestedCount: count, completedCount: 0, historyIds: [],
+        });
+      });
+    }
+    expect(state.confirm).not.toHaveBeenCalled();
+    expect(approved).not.toHaveBeenCalled();
+    expect(state.buildDescriptor).not.toHaveBeenCalled();
+    expect(state.startJob).not.toHaveBeenCalled();
+  });
+
+  it('Agent 批准回调尚未完成时关闭连续生成，不投递已准备的多张任务', async () => {
+    prepare();
+    const view = setupSeries();
+    const approval = Promise.withResolvers<void>();
+    const approved = vi.fn(() => approval.promise);
+    let task!: Promise<boolean | PromptAgentGenerationResult>;
+    await act(async () => { task = state.agent!.onRequestGeneration(state.agent!.draft, '两张', approved, 2); });
+    await waitFor(() => expect(approved).toHaveBeenCalledOnce());
+    view.rerender(<ChainEditor {...view.props} continuousGenerationEnabled={false} />);
+    await act(async () => { approval.resolve(); await expect(task).resolves.toMatchObject({ success: false, code: 'continuous_generation_disabled', requestedCount: 2, completedCount: 0 }); });
+    expect(state.startJob).not.toHaveBeenCalled();
+  });
+
+  it('关闭连续生成不取消已提交的任务，原张数全部完成并保存', async () => {
+    prepare();
+    scriptJobs([{ state: 'generating', completedCount: 0, requestedCount: 3, historyIds: [] }]);
+    const completion = Promise.withResolvers<GenerationJobSnapshot>();
+    state.getJob.mockImplementation(() => completion.promise);
+    const view = setupSeries();
+    fireEvent.change(countInput(), { target: { value: '3' } });
+    fireEvent.click(screen.getByRole('button', { name: '生成合成文生图' }));
+    await waitFor(() => expect(state.startJob).toHaveBeenCalledOnce());
+    view.rerender(<ChainEditor {...view.props} continuousGenerationEnabled={false} />);
+    expect(state.cancelJob).not.toHaveBeenCalled();
+    expect(mobileActions().getByRole('button', { name: '暂停生成' }).getAttribute('disabled')).toBeNull();
+    await act(async () => {
+      completion.resolve({ ...backgroundResult('job-3', 3, { historyIds: ['job-1', 'job-2', 'job-3'] }), token: state.started[0].token });
+    });
+    await waitFor(() => expect(view.props.notify).toHaveBeenCalledWith('已生成并保存 3 张图片', 'success'), { timeout: 4000 });
+    expect(state.started[0].count).toBe(3);
+    expect(state.cancelJob).not.toHaveBeenCalled();
+    expect(mobileActions().queryByRole('button', { name: '暂停生成' })).toBeNull();
+  });
+
   it('四模式共用当前 Key 的间隔设置，换 Key 后迟到回执不覆盖新设置', async () => {
     prepare();
     const old: GenerationQueueSnapshot = { intervalSeconds: 2, busy: false, completed: 0, total: 0, paused: false, pausing: false, waiting: [] };
@@ -1396,6 +1479,19 @@ describe('后台任务只提交一次并只观察后端状态', () => {
       expect((screen.getByText('生成合成编辑') as HTMLButtonElement).disabled).toBe(true);
     }
     expect(state.startJob).not.toHaveBeenCalled();
+  });
+
+  it('只有已完成队伍快照时恢复普通生成，不把 busy 标记或旧进度当成待执行任务', async () => {
+    prepare();
+    vi.mocked(getGenerationQueue).mockResolvedValue({ busy: true, completed: 2, total: 2, paused: false, pausing: false, waiting: [] });
+    setupSeries();
+    await waitFor(() => expect(getGenerationQueue).toHaveBeenCalledWith('synthetic-key'));
+    await waitFor(() => expect(screen.getByLabelText('生成不可用原因').textContent).toBe(''));
+    const generate = mobileActions().getByRole('button', { name: /^生成.*1 张/ });
+    fireEvent.click(generate);
+    await waitFor(() => expect(state.startJob).toHaveBeenCalledOnce());
+    expect(state.started[0].placement).toBeUndefined();
+    expect(state.started[0].count).toBe(1);
   });
 
   it.each([['text-to-image', '文生图'], ['image-to-image', '图生图'], ['inpaint', '局部重绘'], ['outpaint', '扩图']] as const)('后端返回占用时 %s 的 Agent 回执为 blocked，不误报用户取消', async (operation, label) => {
