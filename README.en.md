@@ -45,7 +45,7 @@ The source version and the published download version can differ. A local build 
 
 1. Run the installer, choose its language and the program installation folder. It checks the Microsoft Visual C++ x64 runtime; if the runtime is missing, follow the installer instructions and run setup again after installing it.
 2. Open **NAI Atelier** from the desktop, Start menu or `NAI Atelier.exe` in the installation folder.
-3. Add your NovelAI `pst-` key in **Global settings → NovelAI and Anlas** and set a local Anlas budget for that key.
+3. Add your NovelAI `pst-` key in **Global settings → NovelAI and Anlas** and set a local Anlas budget for that key. For a gateway member key, select **Image gateway** under **Add key** and enter the operator's root URL and member key. Generation, member balances and Vibe encoding use that address. Medium passes through unchanged and requires support on the deployed gateway; gateway generation has no live preview. Switching back to an official key restores its original connection. Member balances do not replace the local budget, and official cost estimates may differ from gateway charges.
 4. Open **Global settings → Data and maintenance → Tag completion dictionary** and choose **Check and update**.
 5. In **Lab**, choose text-to-image, enter a prompt, select the model and parameters, and check the displayed cost before generating. Save a useful configuration as a style chain.
 

@@ -33,7 +33,7 @@ export const AnlasBalanceBar: React.FC<AnlasBalanceBarProps> = ({ collapsed = fa
   useLanguage();
   const { info, loading, error, fetchedAt, refresh } = subscription;
   const gateway = info?.source === 'gateway';
-  const balanceLabel = gateway ? '网关余额' : '官方余额';
+  const balanceLabel = !info ? '账号余额' : gateway ? '网关余额' : '官方余额';
   const balance = info?.trainingStepsLeft;
   // 只有两种余额都明确有效时才显示总数，字段缺失不能默认成 0。
   const total = officialAnlasBalance(info);
@@ -52,7 +52,7 @@ export const AnlasBalanceBar: React.FC<AnlasBalanceBarProps> = ({ collapsed = fa
   const balanceSummary = total === null ? t('未知') : t('{0} 点', [total.toLocaleString(getLanguage())]);
   const title = [
     `个人剩余预算：${t(budgetSummary)}（本地）`,
-    `账号剩余点数：${t(balanceSummary)}（${gateway ? '网关成员' : '官方'}）`,
+    `账号剩余点数：${t(balanceSummary)}（${!info ? '来源待同步' : gateway ? '网关成员' : '官方'}）`,
     ...(balanceKnown ? [t(gateway ? '成员分配：{0} 点；付费余额：{1} 点' : '订阅赠送：{0} 点；Paid Anlas：{1} 点', [balance!.fixedTrainingStepsLeft.toLocaleString(getLanguage()), balance!.purchasedTrainingSteps.toLocaleString(getLanguage())])] : []),
     ...(info?.active === false ? [gateway ? '网关免费权益不可用，权限与余额以网关响应为准。' : '订阅已过期，免费权益不可用；保留点数的使用权限以官方响应为准。'] : []),
     balanceState,
@@ -81,7 +81,7 @@ export const AnlasBalanceBar: React.FC<AnlasBalanceBarProps> = ({ collapsed = fa
         <div className="min-w-0 border-l border-gray-200 pl-3 dark:border-gray-700"><dt className="text-micro text-gray-500 dark:text-gray-400">{t(balanceLabel)}</dt><dd className={`mt-1 break-all text-lg font-semibold leading-6 tabular-nums ${error ? 'text-amber-600 dark:text-amber-400' : 'text-gray-800 dark:text-gray-100'}`}>{t(balanceSummary)}</dd></div>
       </dl>
       {balanceKnown && <dl className="mt-3 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-micro text-gray-500 dark:text-gray-400"><dt>{t(gateway ? '成员分配 / Paid' : "订阅赠送 / Paid")}</dt><dd className="tabular-nums">{balance!.fixedTrainingStepsLeft.toLocaleString(getLanguage())} / {balance!.purchasedTrainingSteps.toLocaleString(getLanguage())}</dd></dl>}
-      <p className="mt-2 text-micro text-gray-500 dark:text-gray-400">{t(gateway ? "本地预算 ≠ 网关余额" : "本地预算 ≠ 官方余额")}</p>
+      <p className="mt-2 text-micro text-gray-500 dark:text-gray-400">{t(!info ? '本地预算 ≠ 账号余额' : gateway ? "本地预算 ≠ 网关余额" : "本地预算 ≠ 官方余额")}</p>
       {error && <p role="status" className="mt-2 break-words text-xs text-amber-600 dark:text-amber-400">{total === null ? t("余额未知") : t("显示上次余额")}：{t(error)}</p>}
     </section>
   );

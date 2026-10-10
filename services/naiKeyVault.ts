@@ -57,7 +57,7 @@ const readLocalVault = (): NaiKeyEntry[] => {
         name: (item.name as string) || '未命名密钥',
         key: item.key as string,
         createdAt: typeof item.createdAt === 'number' ? (item.createdAt as number) : Date.now(),
-        ...(typeof item.gatewayUrl === 'string' && item.gatewayUrl ? { gatewayUrl: item.gatewayUrl } : {}),
+        ...(item.gatewayUrl != null ? { gatewayUrl: item.gatewayUrl as string } : {}),
       }));
   } catch {
     return [];

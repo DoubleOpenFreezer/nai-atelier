@@ -4,6 +4,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_NAI_RUNTIME, refreshNaiRuntimeConfig } from '../../services/naiRuntime';
 import { OpusUsageBar } from '../../components/OpusUsageBar';
+import { LANGUAGES, setLanguage, t } from '../../services/i18n';
 
 const responseFor = (payload: unknown) => ({
   ok: true,
@@ -12,6 +13,23 @@ const responseFor = (payload: unknown) => ({
 }) as Response;
 
 describe('OpusUsageBar', () => {
+  it('首次成员查询失败不显示官方权益；错误正文与来源提示支持五语', async () => {
+    sessionStorage.setItem('nai_api_key', 'STA1N-first-error');
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => String(input).startsWith('/api/novelai-runtime')
+      ? responseFor({ ...DEFAULT_NAI_RUNTIME, syncedAt: Date.now(), health: { ok: true } })
+      : new Response('{"error":"网关余额查询失败","upstreamStatus":403}', { status: 502 })));
+    render(React.createElement(OpusUsageBar, { collapsed: false, showDetails: true }));
+    await screen.findByRole('status', { name: /生成额度 同步失败/ });
+    for (const language of LANGUAGES) {
+      act(() => setLanguage(language.code));
+      const card = screen.getByRole('status');
+      expect(screen.getByText(t('生成额度'))).toBeTruthy();
+      expect(card.title).toContain(t('网关余额查询失败'));
+      expect(card.title).not.toContain('Opus');
+      expect(card.textContent).not.toContain('upstreamStatus');
+      if (language.code === 'en') expect(card.textContent).not.toMatch(/[\u3400-\u9fff]/);
+    }
+  });
   it.each([true, false])('成员额度标记来源，耗尽或停用不承诺官方付费路径 active=%s', async active => {
     sessionStorage.setItem('nai_api_key', `STA1N-quota-${active}`);
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => String(input).startsWith('/api/novelai-runtime')
@@ -33,6 +51,7 @@ describe('OpusUsageBar', () => {
 
   afterEach(() => {
     cleanup();
+    setLanguage('zh-CN');
     vi.unstubAllGlobals();
   });
   it('详情把额度与估算张数放入等宽两列，同步信息另起公共行，显式提示刷新', async () => {
@@ -91,7 +110,7 @@ describe('OpusUsageBar', () => {
       }
       subscriptionAttempts += 1;
       if (subscriptionAttempts === 1) {
-        return { ok: false, text: async () => 'temporary subscription failure' } as Response;
+        return new Response('temporary subscription failure', { status: 502 });
       }
       return responseFor({ tier: 4, active: true, usage: { percent: 73, isNegative: false, timeUntilNextPercent: 1500 } });
     }));

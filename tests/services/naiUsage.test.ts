@@ -16,13 +16,16 @@ const responseFor = (payload: unknown) => ({
   text: async () => '',
 }) as Response;
 
-const errorResponse = (message: string) => ({
-  ok: false,
-  json: async () => ({ error: message }),
-  text: async () => message,
-}) as Response;
+const errorResponse = (message: string) => new Response(message, { status: 502 });
 
 describe('订阅健康判定', () => {
+  it('余额查询解析网关 JSON 错误，保留业务状态，纯文本错误仍可读', async () => {
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce(new Response('{"error":"网关余额查询失败","upstreamStatus":403}', { status: 502 }))
+      .mockResolvedValueOnce(new Response('synthetic plain error', { status: 503 })));
+    await expect(requestNovelaiSubscription('STA1N-json-error')).rejects.toMatchObject({ message: '网关余额查询失败', status: 502 });
+    await expect(requestNovelaiSubscription('pst-plain-error')).rejects.toMatchObject({ message: 'synthetic plain error', status: 503 });
+  });
   it('active 仅表示订阅状态，过期不表示 Key 失效，null 保持未知', () => {
     expect(isNovelaiSubscriptionActive({ active: true })).toBe(true);
     expect(isNovelaiSubscriptionActive({ active: false })).toBe(false);

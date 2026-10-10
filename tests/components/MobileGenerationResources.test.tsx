@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MobileGenerationResources } from '../../components/MobileGenerationResources';
 import { DEFAULT_NAI_RUNTIME, type NaiRuntimeConfig } from '../../services/naiRuntime';
 import type { useNovelaiUsage } from '../../services/naiUsage';
+import { LANGUAGES, setLanguage, t } from '../../services/i18n';
 
 type Subscription = ReturnType<typeof useNovelaiUsage>;
 const fixture = vi.hoisted(() => ({
@@ -37,9 +38,31 @@ beforeEach(() => {
   vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() }));
   vi.stubGlobal('fetch', vi.fn(() => { throw new Error('测试禁止真实网络'); }));
 });
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+afterEach(() => { cleanup(); setLanguage('zh-CN'); vi.unstubAllGlobals(); });
 
 describe('手机实验室账户资源', () => {
+  it.each(['正常', '旧值', '耗尽'])('成员摘要%s时五语完整翻译，数字保持原值', state => {
+    fixture.subscription!.info!.source = 'gateway';
+    if (state === '旧值') fixture.subscription!.error = '网关余额查询失败';
+    if (state === '耗尽') fixture.subscription!.usage = { percent: 0, isNegative: true, timeUntilNextPercent: 0 };
+    render(<MobileGenerationResources {...props('STA1N-translated-member')} />);
+    for (const language of LANGUAGES) {
+      act(() => setLanguage(language.code));
+      const footer = screen.getByRole('button');
+      expect(footer.textContent).toContain(t('成员额度'));
+      expect(footer.textContent).toContain(state === '耗尽' ? '0%' : '196%');
+      if (language.code === 'en') expect(footer.getAttribute('aria-label')).not.toMatch(/[\u3400-\u9fff]/);
+    }
+  });
+  it('首次成员查询失败使用未知来源标签，不提示官方余额或 Opus', () => {
+    fixture.subscription = { ...fixture.subscription!, info: null, usage: undefined, error: '网关余额查询失败' };
+    render(<MobileGenerationResources {...props('STA1N-first-failure')} />);
+    expect(screen.getByRole('button').textContent).toContain('生成额度');
+    expect(screen.getByRole('button').textContent).not.toContain('Opus');
+    openPanel();
+    expect(screen.getByText('账号余额')).toBeTruthy();
+    expect(screen.queryByText('官方余额')).toBeNull();
+  });
   it('成员 Key 摘要和详情都显示成员来源', async () => {
     fixture.subscription!.info!.source = 'gateway';
     render(<MobileGenerationResources {...props('STA1N-mobile-member')} />);
@@ -158,7 +181,7 @@ describe('手机实验室账户资源', () => {
     expect(await screen.findByText('合成副号')).toBeTruthy();
     await act(async () => finish([{ key: 'mobile-resources-synthetic-key', name: '旧主号' }]));
     expect(screen.queryByText('旧主号')).toBeNull();
-    expect(screen.getByText('官方余额').nextElementSibling?.textContent).toBe('未知');
+    expect(screen.getByText('账号余额').nextElementSibling?.textContent).toBe('未知');
     expect(screen.getByRole('dialog').textContent).not.toContain('second-synthetic-key');
   });
   it('手机从资源面板进入账户设置时，先退掉资源历史层，不误关新设置', async () => {

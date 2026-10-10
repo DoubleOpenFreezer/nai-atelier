@@ -99,6 +99,21 @@ test('路由 GET：空库返回空 entries', async () => {
   assert.deepEqual(await response.json(), { entries: [] });
 });
 
+test('损坏的网关绑定不得在读取时丢弃，pst- 前缀也不能因此回退官方', async () => {
+  const db = makeMemoryDb();
+  for (const gatewayUrl of [0, false, {}, ['https://gateway.example']]) {
+    const entries = [{ id: 'broken', key: 'pst-broken-gateway', name: '合成绑定', createdAt: 0, gatewayUrl },
+      { id: 'official', key: 'pst-unbound-official', name: '合成官方', createdAt: 0 }];
+    const stored = JSON.stringify(entries); db._store.set('nai_key_vault', stored);
+    const broken = await runRoute(db, 'GET', undefined, '/api/nai-key-vault/connection', 'Bearer pst-broken-gateway');
+    assert.equal(broken.status, 400);
+    assert.match((await broken.json()).error, /网关地址/);
+    const official = await runRoute(db, 'GET', undefined, '/api/nai-key-vault/connection', 'Bearer pst-unbound-official');
+    assert.equal(official.status, 200); assert.deepEqual(await official.json(), { gatewayUrl: '' });
+    assert.equal(db._store.get('nai_key_vault'), stored);
+  }
+});
+
 test('成员 Key：保存、改名、迁移保留网关地址，连接查询只返回所选目标', async () => {
   const db = makeMemoryDb();
   const added = await (await runRoute(db, 'POST', { name: '合成车队', key: 'STA1N-member', gatewayUrl: 'https://gateway.example/v1/ai/generate-image/' })).json();
@@ -298,6 +313,25 @@ const makeFetchStub = (routes) => async (input, init = {}) => {
 };
 
 const okJson = (body) => ({ status: 200, body });
+
+test('浏览器兜底保留损坏的网关绑定，合流失败不删除本地副本', async () => {
+  const g = installBrowserGlobals();
+  const entries = [{ id: 'broken', name: '合成绑定', key: 'pst-local-broken', gatewayUrl: false, createdAt: 0 }];
+  const stored = JSON.stringify(entries); g.localStorage.setItem('nai_api_key_vault', stored);
+  const { naiKeyVault } = await loadModule('services/naiKeyVault.ts');
+  try {
+    globalThis.fetch = async () => { throw new Error('synthetic offline'); };
+    assert.deepEqual(await naiKeyVault.list(), entries);
+    const db = makeMemoryDb();
+    globalThis.fetch = async (input, init = {}) => runRoute(db, init.method || 'GET', init.body ? JSON.parse(init.body) : undefined, new URL(input, 'http://local.test').pathname);
+    assert.deepEqual(await naiKeyVault.list(), []);
+    assert.equal(g.localStorage.getItem('nai_api_key_vault'), stored);
+    assert.equal(db._store.get('nai_key_vault'), undefined);
+  } finally {
+    g.resetBrowser();
+    for (const name of ['fetch', 'window', 'localStorage', 'sessionStorage']) delete globalThis[name];
+  }
+});
 
 test('service：服务端可达时 list/add/rename/remove 全链路', async () => {
   const g = installBrowserGlobals();

@@ -7,7 +7,7 @@
 
   **[简体中文](./README.md) · [繁體中文](./README.zh-TW.md) · [English](./README.en.md) · [日本語](./README.ja.md) · [한국어](./README.ko.md)**
 
-  [![Version](https://img.shields.io/badge/version-1.61.0-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.61.1-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4%20%7C%20V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据主权与备份)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网创作体验)
@@ -334,7 +334,7 @@ flowchart LR
 
 - 支持录入多组 NovelAI Key 并标注别名（如「Opus 主号」、「拼车号」），在实验室顶栏一键秒切；
 - **成员网关 Key**：在「设置 → NovelAI 与 Anlas → 添加密钥」选择「生图网关」，填写运营者提供的根地址（如 `https://gateway.example`，带 `/v1` 或其他部署前缀也可）与成员 Key（如 `STA1N-…`），添加后选中使用。也接受完整 `/ai/generate-image` 地址。网关地址随该 Key 保存，生成、成员余额和 Vibe 编码统一走网关；切回官方 `pst-…` Key 即恢复其原有官方／公共队列配置。旧官方条目无需修改。
-- 网关兼容 NovelAI 原生 `/ai/generate-image` ZIP、`/user/subscription` JSON 与 `/ai/encode-vibe` 二进制接口，四种生图模式及 Medium 模型 ID／有效参数原样提交。成员网关使用普通 ZIP，即使开启实时预览也只提交一次普通生图请求；不探测流式、不在失败后重试或回退官方。参考内容会随本次请求交给所选网关。
+- 网关兼容 NovelAI 原生 `/ai/generate-image` ZIP、`/user/subscription` JSON 与 `/ai/encode-vibe` 二进制接口，四种生图模式及 Medium 模型 ID／有效参数原样提交；Medium 是否可用取决于所部署网关的支持情况，Atelier 不替换模型档位。成员网关使用普通 ZIP，即使开启实时预览也只提交一次普通生图请求；不探测流式、不在失败后重试或回退官方。参考内容会随本次请求交给所选网关。
 - 「网关余额／成员额度」显示成员分配值，不代表上游账号总钱包，不覆盖本地预算；张数和费用仍按官方规则估算，实际权限与扣费由网关决定。未绑定地址的成员 Key 会在本地拒绝，不发往官方。
 - 界面上密钥默认掩码脱敏，防止屏幕共享与录屏泄露。
 

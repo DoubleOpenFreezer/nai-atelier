@@ -145,7 +145,7 @@ const requestPersonalUsageRefresh = (budgetKeyHash = '') => {
 export const reportNaiAccountingError = (budgetKeyHash = '') => {
   requestPersonalUsageRefresh(budgetKeyHash);
   if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent(NAI_ACCOUNTING_ERROR_EVENT, {
-    detail: { message: '任务已完成，但本地用量记账失败；请核对官方余额与本地预算，勿重复提交' },
+    detail: { message: '任务已完成，但本地用量记账失败；请核对账号余额与本地预算，勿重复提交' },
   }));
 };
 

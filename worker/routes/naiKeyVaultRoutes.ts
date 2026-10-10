@@ -55,7 +55,8 @@ const readVault = async (db: D1Database): Promise<NaiKeyEntry[]> => {
       name: rawName.slice(0, 30) || '未命名密钥',
       key,
       createdAt: typeof rec.createdAt === 'number' ? rec.createdAt : Date.now(),
-      ...(typeof rec.gatewayUrl === 'string' && rec.gatewayUrl ? { gatewayUrl: rec.gatewayUrl } : {}),
+      // 损坏地址保留到请求校验，不能丢掉绑定后回退官方。
+      ...(rec.gatewayUrl != null ? { gatewayUrl: rec.gatewayUrl as string } : {}),
     });
   }
   return entries;

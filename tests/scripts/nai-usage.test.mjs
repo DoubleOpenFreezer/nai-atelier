@@ -1,9 +1,16 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {
-  usageRemainingImages,
-  usageRemainingPercent,
-} from '../../services/naiUsage.ts';
+import { build } from 'esbuild';
+import { fileURLToPath } from 'node:url';
+
+// 浏览器模块包含无扩展名的服务导入，使用现有 esbuild 在内存中加载完整依赖。
+const result = await build({
+  entryPoints: [fileURLToPath(new URL('../../services/naiUsage.ts', import.meta.url))],
+  bundle: true, write: false, format: 'esm', platform: 'browser', logLevel: 'silent',
+});
+const { usageRemainingImages, usageRemainingPercent } = await import(
+  'data:text/javascript;base64,' + Buffer.from(result.outputFiles[0].text).toString('base64')
+);
 
 // 这些断言覆盖 NovelAI Opus 限额接口映射：
 //   percent: 透支归零，否则保留活动加成后可超过 100 的官方原始值

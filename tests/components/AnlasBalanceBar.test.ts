@@ -21,6 +21,12 @@ beforeEach(() => { sessionStorage.clear(); localStorage.clear(); });
 afterEach(() => { cleanup(); setLanguage('zh-CN'); vi.unstubAllGlobals(); });
 
 describe('Anlas 预算／余额布局', () => {
+  it.each([true, false])('首次查询未成功时不冒充官方余额，loading=%s', loading => {
+    render(React.createElement(AnlasBalanceBar, { variant: 'details', budget, subscription: subscription(0, { info: null, loading, error: loading ? null : '网关余额查询失败' }) }));
+    expect(screen.getByText('账号余额').nextElementSibling?.textContent).toBe('未知');
+    expect(screen.queryByText('官方余额')).toBeNull();
+    expect(screen.getByRole('button').title).toContain('来源待同步');
+  });
   it('成员余额明确来源，不覆盖本地预算，不声称为官方账号总钱包', () => {
     const account = subscription(200);
     account.info!.source = 'gateway';
@@ -30,6 +36,16 @@ describe('Anlas 预算／余额布局', () => {
     expect(screen.queryByText('官方余额')).toBeNull();
     expect(screen.getByRole('button').title).toContain('网关实际扣费');
     expect(screen.getByText('本地预算 ≠ 网关余额')).toBeTruthy();
+  });
+  it('成员余额的五语详情与悬停完整翻译，保留分配值', () => {
+    const account = subscription(200); account.info!.source = 'gateway';
+    render(React.createElement(AnlasBalanceBar, { variant: 'details', budget, subscription: account }));
+    for (const language of LANGUAGES) {
+      act(() => setLanguage(language.code));
+      expect(screen.getByText(t('网关余额')).nextElementSibling?.textContent).toContain('200');
+      expect(screen.getByRole('button').title).toContain(t('网关余额为当前成员分配额度，不覆盖本地预算；官方费用估算不代表网关实际扣费。'));
+      if (language.code === 'en') expect(screen.getByRole('button').title).not.toMatch(/[\u3400-\u9fff]/);
+    }
   });
   it('五种语言翻译余额详情、状态与悬停组合文案，保留真实数量', () => {
     render(React.createElement(AnlasBalanceBar, { variant: 'details', budget, subscription: subscription(200) }));
@@ -201,7 +217,7 @@ describe('Anlas 官方余额与订阅驱动', () => {
     act(() => { sessionStorage.removeItem('nai_api_key'); window.dispatchEvent(new CustomEvent('nai-api-key-changed', { detail: '' })); });
     expect(screen.getByRole('button', { name: /查看账户资源：未配置 Key/ })).toBeTruthy();
     expect(screen.queryByText('73%')).toBeNull();
-    expect(screen.getByText('官方余额').nextElementSibling?.textContent).toBe('未知');
+    expect(screen.getByText('账号余额').nextElementSibling?.textContent).toBe('未知');
   });
   it('余额与 Opus 共用一次查询，手动刷新同时更新两行且不改写本地预算', async () => {
     sessionStorage.setItem('nai_api_key', 'balance-shared-query-test-key');

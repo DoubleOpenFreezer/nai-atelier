@@ -22,7 +22,7 @@ export const OpusUsageBar: React.FC<OpusUsageBarProps> = ({ collapsed, showDetai
   useLanguage();
   const { info, usage, loading, error, fetchedAt, refresh } = useNovelaiUsage();
   const gateway = info?.source === 'gateway';
-  const quotaLabel = gateway ? '成员额度' : 'Opus 限额';
+  const quotaLabel = !info ? '生成额度' : gateway ? '成员额度' : 'Opus 限额';
   const runtime = useNaiRuntime();
   const refreshAll = () => {
     void refresh();
@@ -73,7 +73,7 @@ export const OpusUsageBar: React.FC<OpusUsageBarProps> = ({ collapsed, showDetai
         ? 'text-amber-500 dark:text-amber-400'
         : 'text-emerald-500 dark:text-emerald-400';
   const syncSummary = t(error
-    ? gateway ? t('成员额度同步失败：{0}', [error]) : `Opus 限额同步失败：${error}`
+    ? t(!info ? '额度同步失败：{0}' : gateway ? '成员额度同步失败：{0}' : 'Opus 限额同步失败：{0}', [t(error)])
     : syncPending
     ? '官方常量同步进行中，稍后自动重试'
     : runtimeSyncBroken
@@ -81,7 +81,7 @@ export const OpusUsageBar: React.FC<OpusUsageBarProps> = ({ collapsed, showDetai
     : health?.missed?.length
       ? `常量同步部分失效：未命中 ${health.missed.join('、')}（${runtime.syncedAt ? new Date(runtime.syncedAt).toLocaleString(getLanguage()) : ''} 同步）`
       : `常量同步正常（${runtime.syncedAt ? new Date(runtime.syncedAt).toLocaleString(getLanguage()) : t('等待首次同步')}）`);
-  const title = gateway ? `${!usage ? error ? t('额度未知：{0}', [error]) : t('正在同步…') : t('成员额度：{0}%（约 {1} 张），按官方规则估算', [percent, images])}\n${t('成员分配额度与实际扣费以网关为准；点击刷新')}\n${syncSummary}` : `${t(!usage
+  const title = !info ? `${error ? t('额度未知：{0}', [t(error)]) : t('正在同步…')}\n${syncSummary}` : gateway ? `${!usage ? error ? t('额度未知：{0}', [t(error)]) : t('正在同步…') : t('成员额度：{0}%（约 {1} 张），按官方规则估算', [percent, images])}\n${t('成员分配额度与实际扣费以网关为准；点击刷新')}\n${syncSummary}` : `${t(!usage
     ? error ? 'Opus 限额同步失败，点击立即重试' : '正在同步 Opus 限额'
     : negative
     ? 'Opus 限额已用尽：所有生图将消耗 Anlas，额度恢复后自动回到免费生成'
@@ -103,7 +103,7 @@ export const OpusUsageBar: React.FC<OpusUsageBarProps> = ({ collapsed, showDetai
           />
         </svg>
         {loading && (
-          <svg viewBox="0 0 36 36" className="absolute inset-0 h-full w-full animate-spin" aria-label={t(gateway ? '正在刷新成员额度' : "正在刷新 Opus 限额")}>
+          <svg viewBox="0 0 36 36" className="absolute inset-0 h-full w-full animate-spin" aria-label={t(!info ? '正在同步' : gateway ? '正在刷新成员额度' : "正在刷新 Opus 限额")}>
             <circle
               cx="18"
               cy="18"
@@ -127,7 +127,7 @@ export const OpusUsageBar: React.FC<OpusUsageBarProps> = ({ collapsed, showDetai
       onClick={refreshAll}
       title={collapsed ? title : t("{0}（点击立即刷新）", [title])}
       aria-busy={loading}
-      aria-label={t(gateway ? '成员生成额度 {0}' : "Opus 生成限额 {0}", [syncBroken ? t('同步失败') : !usage ? t('正在同步') : negative ? t('已用尽') : `${percent}%`])}
+      aria-label={t(!info ? '生成额度 {0}' : gateway ? '成员生成额度 {0}' : "Opus 生成限额 {0}", [syncBroken ? t('同步失败') : !usage ? t('正在同步') : negative ? t('已用尽') : `${percent}%`])}
       className={`group relative min-h-14 w-full cursor-pointer select-none text-left outline-none transition hover:bg-gray-100 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-500 dark:hover:bg-gray-800 ${showDetails && !collapsed ? 'rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-800/70' : `flex items-center border-b border-gray-200 dark:border-gray-800 ${collapsed ? 'justify-center px-0' : 'gap-2.5 px-3'}`}`}
     >
       {showDetails && !collapsed ? <>
@@ -140,7 +140,7 @@ export const OpusUsageBar: React.FC<OpusUsageBarProps> = ({ collapsed, showDetai
           <span>{runtimeSyncBroken ? t("计费规则同步异常，张数换算可能过期") : syncPending ? t("计费规则正在同步") : t("V5 等受限模型共用额度")}</span>
           {showSyncTime && fetchedAt > 0 && <span>{t("最近同步 {0}", [new Date(fetchedAt).toLocaleTimeString(getLanguage(), { hour12: false })])}</span>}
         </span>
-        {error && <span className="mt-2 block break-words text-micro text-red-500 dark:text-red-400">{usage ? t("上次额度 {0}%（≈{1} 张）：{2}", [percent, images, error]) : t("额度未知：{0}", [error])}</span>}
+        {error && <span className="mt-2 block break-words text-micro text-red-500 dark:text-red-400">{usage ? t("上次额度 {0}%（≈{1} 张）：{2}", [percent, images, t(error)]) : t("额度未知：{0}", [t(error)])}</span>}
         {negative && <span className="mt-2 block text-micro text-red-500 dark:text-red-400">{t(gateway ? '成员额度已用尽，请核对网关余额与策略' : "额度已用尽，生成将消耗 Anlas")}</span>}
       </> : <>
       {ring}

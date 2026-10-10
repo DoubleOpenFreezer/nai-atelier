@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { parseErrorResponse } from './api';
 
 /**
  * NovelAI Opus 免费生成限额（2026-08-21 随 V5 引入）。
@@ -142,7 +143,7 @@ export const requestNovelaiSubscription = (apiKey: string): Promise<NovelaiSubsc
     cache: 'no-store',
     headers: { 'Authorization': `Bearer ${apiKey}` },
   }).then(async response => {
-    if (!response.ok) throw new Error(await response.text());
+    if (!response.ok) throw await parseErrorResponse(response);
     return await response.json() as NovelaiSubscriptionInfo;
   });
   inFlightUsageRequests.set(apiKey, request);

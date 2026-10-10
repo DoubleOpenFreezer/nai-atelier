@@ -1168,7 +1168,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                   name="nai-vault-key-secret"
                   readOnly={false}
                   className="min-w-0 flex-1 rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 font-mono text-sm text-gray-900 outline-none focus:border-indigo-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
-                  aria-label="NovelAI API Key"
+                  aria-label={newKeyGateway ? t('成员 API Key') : 'NovelAI API Key'}
                 />
                 <button type="button" onClick={() => setShowNewKeyValue(value => !value)} className="rounded-lg border border-gray-300 px-3 text-sm text-gray-600 hover:bg-gray-100 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800">
                   {showNewKeyValue ? t("隐藏") : t("显示")}

@@ -9,7 +9,10 @@ describe('SSE parser', () => {
     const received: string[] = [];
     expect(await api.postSse('/generate-stream', {}, {}, event => received.push(event.event))).toEqual({});
     expect(received).toContain('final');
-    expect(events.some(event => event.type === NAI_ACCOUNTING_ERROR_EVENT)).toBe(true);
+    const notice = events.find(event => event.type === NAI_ACCOUNTING_ERROR_EVENT) as CustomEvent;
+    expect(notice).toBeTruthy();
+    expect(notice.detail.message).toContain('核对账号余额与本地预算');
+    expect(notice.detail.message).not.toContain('官方余额');
     vi.unstubAllGlobals();
   });
   it('POST 流透传取消信号，保留已有逐帧解析', async () => {
