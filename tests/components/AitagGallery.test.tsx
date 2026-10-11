@@ -83,6 +83,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); document.documentElement.className = ''; delete document.documentElement.dataset.safeMode; delete document.documentElement.dataset.motion;
+  delete document.documentElement.dataset.galleryFrostedCaption;
   if (originalScrollTo) Object.defineProperty(HTMLElement.prototype, 'scrollTo', originalScrollTo);
   else Reflect.deleteProperty(HTMLElement.prototype, 'scrollTo');
 });
@@ -98,6 +99,31 @@ const setup = async (layout = 'masonry') => {
 };
 const card = (id: number) => screen.getByRole('button', { name: `查看作品 合成作品 ${id}` });
 const selected = (id: number) => expect(card(id).getAttribute('aria-pressed')).toBe('true');
+it.each(['masonry', 'portrait', 'square'].flatMap(layout => [true, false].map(frosted => [layout, frosted] as const)))('%s 布局／磨砂 %s：缓存色条替换为标题前圆点，未缓存不留空位', async (layout, frosted) => {
+  document.documentElement.dataset.galleryFrostedCaption = String(frosted);
+  const cachedWorks = ['full', 'first-image', 'none'].map((level, index) => ({
+    ...works[0], id: index + 1, title: `合成作品 ${index + 1}`,
+    hasFullyCachedImages: level === 'full',
+    localFirstImageUrl: level === 'none' ? undefined : `/synthetic/${index + 1}.png`,
+  }));
+  mocks.search.mockResolvedValue({ items: cachedWorks, total: 3, page: 1, page_size: 60 });
+  await setup(layout);
+  cachedWorks.forEach((work, index) => {
+    const first = card(work.id);
+    const title = within(first).getByText(work.title);
+    const marker = title.previousElementSibling;
+    if (index < 2) {
+      expect(marker?.className.split(' ')).toEqual(['h-2', 'w-2', 'shrink-0', 'rounded-full', index === 0 ? 'bg-emerald-500' : 'bg-sky-500']);
+      expect(marker?.getAttribute('aria-hidden')).toBe('true');
+    } else expect(marker).toBeNull();
+    expect(title.getAttribute('data-safe-mode-title')).toBe('true');
+    expect(first.lastElementChild?.classList.contains('gallery-card-caption')).toBe(true);
+    expect(first.querySelector('.h-1')).toBeNull();
+  });
+  if (layout === 'masonry') {
+    expect(mocks.masonry.mock.lastCall?.[0].estimateItemHeight(cachedWorks[0], 200)).toBe(200 + (frosted ? 2 : 70));
+  }
+});
 it('首图操作跟随实际候选，点击和回车不打开详情；详情逐图导出且按文件顺序命名', async () => {
   await setup();
   const first = card(1);

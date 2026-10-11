@@ -366,7 +366,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
   const estimateAitagCardHeight = React.useCallback((work: AitagWorkSummary, columnWidth: number) => {
     const ratio = aitagRatios[work.id] || aitagRatioCache[work.id] || 1;
     const imageHeight = Math.max(1, columnWidth) / Math.max(0.1, ratio);
-    return imageHeight + (frostedCaption ? 6 : 74);
+    return imageHeight + (frostedCaption ? 2 : 70);
   }, [aitagRatios, frostedCaption]);
   const renderAitagCard = (work: AitagWorkSummary) => {
     const type = getAitagType(work);
@@ -441,6 +441,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
         </div>
         <div className="gallery-card-caption p-3 flex-1">
           <div className="flex items-center gap-2">
+            {cacheLevel !== 'none' && <span aria-hidden="true" className={`h-2 w-2 shrink-0 rounded-full ${cardTone.marker}`} />}
             <div data-safe-mode-title="true" className="font-semibold text-sm text-gray-900 dark:text-gray-100 truncate min-w-0 flex-1">
               {work.title || `#${work.id}`}
             </div>
@@ -452,7 +453,6 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
             {frostedCaption && <span className="ml-auto whitespace-nowrap">{t('{0}页', [imageCount])}</span>}
           </div>
         </div>
-        <div className={`h-1 ${cardTone.marker}`} />
       </PressRevealSurface>
     );
   };
