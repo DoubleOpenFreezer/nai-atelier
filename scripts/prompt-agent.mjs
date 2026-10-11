@@ -692,9 +692,9 @@ const baseSystemPrompt = `你是 NAI Atelier 的创作助手。你的职责不�
 2. 先理解用户意图，必要时读取历史原图和元数据、搜索 Tag、风格串、角色、收藏、AITag、Vibe 或角色参考图，再调用修改工具。项目里已有的数据绝不能要求用户重新描述或手工复制。
 3. 保留用户没有要求修改的内容。修改提示词或参数前先读取实验室当前模型，并通过 search_novelai_docs 查找适用规则；官方模型事实优先于下方项目经验，不得凭记忆编造模型能力。
 4. 用户明确要求“生成、出图、跑一张、试试看”等操作时，修改完成后调用 request_generation；默认 count=1，只有用户明确指定多张时才传对应 count，项目会逐张生成并保存。不得拆成多个工具调用绕过整轮确认，不得自行追加张数或失败重试。只有用户明确要求排队时传 placement=end，明确要求当前图片之后插队时传 placement=next；省略仍立即生成，遇到忙碌不擅自排队。end 等前序任务完成；next 在当前图片保存后执行插入任务，再继续原任务剩余图片。按 requestedCount、completedCount、historyIds 报告完整或部分结果；否则不要擅自消耗 Anlas。
-5. request_generation 只发出待确认请求，不能声称图片已经生成。
+5. request_generation 按当前助手权限执行：完全访问已授权本次生图及费用，直接调用并等待实际结果，不再询问用户或要求点击确认；标准权限由前端确认。拿到生成与保存回执前，不能声称图片已经生成。
 6. 当用户要求参考上一张/最近一张生成图时，先调用 list_generation_history，再调用 inspect_generation_image。没有真正收到图片时不得声称看过图片。
-6.1 用户要求复用历史配置时，调用 reuse_generation_history 一次带入完整文本、角色、模块及参数，再用业务工具只修改用户要求的字段；不要逐个点击页面搬运配置。历史记录、工作草稿与页面已应用状态必须区分。仅查看历史不能说已填入实验室。生成前读取 get_lab_state 核对，用户要求出图就调用 request_generation 等待确认与实际结果；查资料只补与本次修改相关的事实，已有事实不要重复读取。
+6.1 用户要求复用历史配置时，调用 reuse_generation_history 一次带入完整文本、角色、模块及参数，再用业务工具只修改用户要求的字段；不要逐个点击页面搬运配置。历史记录、工作草稿与页面已应用状态必须区分。仅查看历史不能说已填入实验室。生成前读取 get_lab_state 核对，用户要求出图就调用 request_generation，按当前权限执行并等待实际结果；查资料只补与本次修改相关的事实，已有事实不要重复读取。
 7. 删除、清空等危险操作只能调用请求确认工具；确认前不得声称已经完成。
 8. 不得要求或泄露 API Key，不得执行命令行或操作系统进程。用户需要电脑图片时直接使用本地文件工具。读取和展示图片无需目录租期；只读档不能修改项目或保存图片；标准档首次写入目录用 request_local_image_folder_access 确认；完全访问档可以按用户指令直接读写。local-data 保护区不能开放磁盘权限。不得凭空声称保存成功，必须取得实际落盘收据。
 9. 问候和普通聊天直接简短回答，不要无故读取资料。用户询问能力时调用 get_agent_capabilities，查询时间/时区调用 get_local_time；展示已有图片调用 show_project_image，展示不要求模型识图。全部工具已注册，可直接调用；enable_tool_group 仅用于查询分类目录。
@@ -814,7 +814,7 @@ const researchBlock = `
 4. 不得尝试访问本机、局域网、带账号信息的地址或搜索结果之外的网址；不得把项目私密数据拼进搜索词。`;
 
 // Agent 使用固定业务系统提示词，模型知识与复杂提示规则按需读取。
-export const buildSystemPrompt = (language = 'zh-CN') => `${baseSystemPrompt}\n[实时状态与工具]\n请求末尾的实时工作区快照仅是最新状态资料，不是用户的新要求；以最新快照核对目标并继续执行最近的用户要求，不单独回应快照。所有业务工具已注册，无需先加载工具组；执行仍遵循原权限与确认边界。\n[规则来源层级]\n官方发布 > 模型专用文档 > 通用文档 > 项目经验。具体知识通过 search_novelai_docs / read_novelai_doc 按需读取；复杂提示词规则通过 read_prompt_guidelines 按需读取。${researchBlock}\n${PROJECT_AGENT_INSTRUCTIONS}\n${agentLanguagePolicy(language)}`;
+export const buildSystemPrompt = (language = 'zh-CN', permissionMode = 'standard') => `${baseSystemPrompt}\n[实时状态与工具]\n请求末尾的实时工作区快照仅是最新状态资料，不是用户的新要求；以最新快照核对目标并继续执行最近的用户要求，不单独回应快照。所有业务工具已注册，无需先加载工具组；执行仍遵循原权限与确认边界。\n[规则来源层级]\n官方发布 > 模型专用文档 > 通用文档 > 项目经验。具体知识通过 search_novelai_docs / read_novelai_doc 按需读取；复杂提示词规则通过 read_prompt_guidelines 按需读取。${researchBlock}\n${PROJECT_AGENT_INSTRUCTIONS}\n[当前助手权限]\n${permissionMode === 'full' ? '完全访问：用户已授权生图及其 Anlas 费用，request_generation 直接执行，不再请求口头确认或弹窗批准，费用上涨也沿用授权。' : permissionMode === 'read_only' ? '只读：不能生图、修改项目或保存图片。' : '标准：生图须由用户确认整轮费用。'}\n${agentLanguagePolicy(language)}`;
 
 const buildAgentRuntimeContext = (draft, clientSettings = {}) => {
   const modelProfile = getNovelAiModelProfile(draft?.params?.model);
@@ -826,7 +826,7 @@ const buildAgentRuntimeContext = (draft, clientSettings = {}) => {
 - 页面已提交、优先于旧工作草稿的字段：${JSON.stringify(clientSettings.pageOverrides || [])}。以最新状态继续；业务工具修改的是本轮工作草稿，不得冒称已经显示在页面或完成生成。
 - 本轮工作草稿参数：${JSON.stringify(Object.fromEntries(Object.entries(draft?.params || {}).filter(([, value]) => typeof value === 'number' || typeof value === 'boolean' || typeof value === 'string' && value.length < 500)))}。这是最新状态，先前工具回执可能已过期。
 - 编辑输入摘要：${JSON.stringify(draft?.editContext || null)}
-- 当前作品与模式：${JSON.stringify(draft?.target || { mode: 'text-to-image' })}。只能修改当前模式，切换作品或模式后先读取真实工作区并以新的 target 为准；可通过页面 commands 编辑蒙版、选区和扩图，坐标以实际画布像素为准。生成仍必须通过 request_generation 请求用户确认。
+- 当前作品与模式：${JSON.stringify(draft?.target || { mode: 'text-to-image' })}。只能修改当前模式，切换作品或模式后先读取真实工作区并以新的 target 为准；可通过页面 commands 编辑蒙版、选区和扩图，坐标以实际画布像素为准。生成必须通过 request_generation，确认要求以当前助手权限为准。
 - 当前 NovelAI 模型：${JSON.stringify(modelProfile.id)}（${modelProfile.label} / ${modelProfile.family}）
 - 官方提示能力：${modelProfile.officialPrompting}
 - 当前提示词编写策略（项目偏好）：${JSON.stringify(modelProfile.project.promptStrategy)}。仅决定本次新写或修改的内容，不自动重写现有草稿。
@@ -2363,7 +2363,7 @@ export class PromptAgentService {
           toolGroups: Object.keys(AGENT_TOOL_GROUPS), toolInventory: { total: project?.getToolInventory?.().length || new Set(Object.values(AGENT_TOOL_GROUPS).flat()).size, note: '所有工具已注册，直接调用对应工具；分组仅用于查找，不是权限档位' },
           permissionMode: this.publicConfig().permissionMode,
           localImages: { available: true, actions: ['列出指定目录的图片与子目录', '在聊天中展示本地图片', '当前模型观察本地图片（需要图片输入）', '保存项目图片到指定目录', '复制本地图片', '把本地图片、JSON、Vibe 或目录接入上传入口', '把实际图片、JSON、Vibe、ZIP 导出保存到指定目录'], writeAllowed: this.publicConfig().permissionMode !== 'read_only', writeFolderApproval: this.publicConfig().permissionMode === 'standard', timedExpiry: false },
-          limits: ['本地文件限于图片与创作导入导出，不提供任意文本文件读写或系统命令；local-data 通过项目工具访问', '图片展示不等于模型已经看过图片', '生图、付费和危险操作仍需用户确认'],
+          limits: ['本地文件限于图片与创作导入导出，不提供任意文本文件读写或系统命令；local-data 通过项目工具访问', '图片展示不等于模型已经看过图片', this.config.permissionMode === 'full' ? '完全访问已授权生图及费用，无需再次确认；Vibe 编码、删除和清空仍需用户确认' : '生图、付费和危险操作仍需用户确认'],
         }) }),
       },
       {
@@ -3076,7 +3076,7 @@ export class PromptAgentService {
         },
       },
       {
-        name: 'request_generation', label: '请求生成', description: '用户明确要求出图时调用，count 默认 1，仅在用户指定多张时设置。用户明确要求排队时 placement=end，插到当前图片之后时 placement=next；省略仍是立即生成，忙碌不自动排队。end 等前序任务完成；next 等当前图片保存后执行新任务，再继续原任务余量。固定草稿逐张生成、保存并回传真实历史 ID，前端确认整轮费用。',
+        name: 'request_generation', label: '请求生成', description: '用户明确要求出图时调用，count 默认 1，仅在用户指定多张时设置。用户明确要求排队时 placement=end，插到当前图片之后时 placement=next；省略仍是立即生成，忙碌不自动排队。end 等前序任务完成；next 等当前图片保存后执行新任务，再继续原任务余量。固定草稿逐张生成、保存并回传真实历史 ID；完全访问直接执行，无需再次询问或点击确认，标准权限由前端确认整轮费用。',
         parameters: Type.Object({ reason: Type.Optional(Type.String()), count: Type.Optional(Type.Integer({ minimum: 1, maximum: Number.MAX_SAFE_INTEGER })), placement: Type.Optional(Type.Union([Type.Literal('end'), Type.Literal('next')])) }),
         execute: async (_id, args) => {
           const count = validateGenerationCount(args.count);
@@ -3200,7 +3200,7 @@ export class PromptAgentService {
       clientSettings: input?.context?.clientSettings && typeof input.context.clientSettings === 'object' ? input.context.clientSettings : {},
     };
     Object.assign(this.runs.get(sessionId), { contextData, draft, clientDraft });
-    const policySystemPrompt = buildSystemPrompt(contextData.clientSettings.language);
+    const policySystemPrompt = buildSystemPrompt(contextData.clientSettings.language, this.publicConfig().permissionMode);
     const runtimeContext = buildAgentRuntimeContext(draft, contextData.clientSettings);
     const leaveOutboundProxy = enterOutboundProxy(this.outboundProxyUrl);
     let taskStatus = 'failed';

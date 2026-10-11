@@ -3,9 +3,22 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm, mkdir, writeFile, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { PromptAgentService, assemblePromptContext, estimateContextTokens, sanitizeAgentImages, detectModelCapabilities, sanitizeCustomProvider, customProviderRuntime, createPromptAgentModelRuntime } from '../../scripts/prompt-agent.mjs';
+import { PromptAgentService, buildSystemPrompt, assemblePromptContext, estimateContextTokens, sanitizeAgentImages, detectModelCapabilities, sanitizeCustomProvider, customProviderRuntime, createPromptAgentModelRuntime } from '../../scripts/prompt-agent.mjs';
 import { getSupportedThinkingLevels, InMemoryCredentialStore } from '@earendil-works/pi-ai';
 import { createAgentThinkingMap } from '../../services/agentThinking.mjs';
+
+test('助手生图规则和能力回执跟随真实权限，完全访问不再索要口头或弹窗确认', () => isolated(async service => {
+  assert.match(buildSystemPrompt('zh-CN', 'full'), /完全访问：用户已授权生图及其 Anlas 费用/);
+  assert.match(buildSystemPrompt('zh-CN', 'full'), /不再请求口头确认或弹窗批准/);
+  assert.match(buildSystemPrompt(), /标准：生图须由用户确认整轮费用/);
+  assert.match(buildSystemPrompt('zh-CN', 'read_only'), /只读：不能生图/);
+  const tools = service.createTools({ params: {} }, {}, () => {}, {});
+  const caps = tools.find(tool => tool.name === 'get_agent_capabilities');
+  service.config.permissionMode = 'full';
+  assert.ok(JSON.parse((await caps.execute('id', {})).content[0].text).limits.includes('完全访问已授权生图及费用，无需再次确认；Vibe 编码、删除和清空仍需用户确认'));
+  service.config.permissionMode = 'read_only';
+  await assert.rejects(tools.find(tool => tool.name === 'request_generation').execute('id', {}), /只读/);
+}));
 
 test('助手编码确认使用网关当前单价，未知费用不提出付费请求', () => isolated(async service => {
   service.activeAgents.set('s', { agent: {}, emit() {} });

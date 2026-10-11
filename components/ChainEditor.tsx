@@ -1,6 +1,7 @@
 import { t, useLanguage, getLanguage } from '../services/i18n';
 import { ImageLightbox } from './ImageLightbox';
 import { agentDraftFingerprint } from '../services/promptAgentCoordinator';
+import { promptAgentService } from '../services/promptAgent';
 import { agentOperationError, agentGenerationFailure, normalizeAgentGenerationResult, validateGenerationCount, validateGenerationPlacement } from '../services/agentOperation.mjs';
 import { approveGenerationSeries, beginGenerationSeries, getGenerationSeriesSession, getQueuedGenerationSeries, stopGenerationSeriesSession, subscribeGenerationSeries, type GenerationSeriesSession } from '../services/generationSeries';
 import { cancelGenerationJob, type GenerationJobDescriptor, type GenerationJobState } from '../services/generationJob';
@@ -1655,7 +1656,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
 
     /** 提交一次有限后台任务：POST 一次后只观察后端状态与结果，本页不再逐张请求或落库。 */
     const runBackgroundJob = async (descriptor: GenerationJobDescriptor, count: number,
-        options?: { agent?: boolean; onApproved?: () => Promise<void>; placement?: GenerationPlacement; onCompleted?: (item: LocalGenItem) => void | Promise<void> }): Promise<PromptAgentGenerationResult> => {
+        options?: { agent?: boolean; autoApproveCost?: boolean; onApproved?: () => Promise<void>; placement?: GenerationPlacement; onCompleted?: (item: LocalGenItem) => void | Promise<void> }): Promise<PromptAgentGenerationResult> => {
         // 描述符构建与批准回调都是异步的：提交前必须确认 Key 仍是本轮开始时的 Key，不能把旧任务投给新 Key。
         const assertSubmitKey = () => {
             const storedKey = sessionStorage.getItem('nai_api_key') || localStorage.getItem('nai_api_key') || '';
@@ -1672,7 +1673,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             assertSubmitKey();
             // 确认或准备期间关闭偏好后，不再投递尚未提交的多张/排队任务。
             assertGenerationPreference(count, options?.placement);
-            const { session, settle } = beginGenerationSeries({ scope: chain.id, key: apiKey, count, agent: Boolean(options?.agent), placement: options?.placement, descriptor });
+            const { session, settle } = beginGenerationSeries({ scope: chain.id, key: apiKey, count, agent: Boolean(options?.agent), placement: options?.placement, descriptor: { ...descriptor, ...(options?.autoApproveCost ? { autoApproveCost: true } : {}) } });
             if (!options?.placement) generationSeriesRef.current = session;
             const result = await settle;
             const completed = result.completedCount ?? 0;
@@ -1714,7 +1715,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     };
 
     const submitTextToImageJob = async (draft: { basePrompt: string; subjectPrompt: string; negativePrompt: string; modules: PromptModule[]; params: NAIParams }, count: number, approvedCost: number,
-        options?: { agent?: boolean; onApproved?: () => Promise<void>; placement?: GenerationPlacement }): Promise<PromptAgentGenerationResult> => {
+        options?: { agent?: boolean; autoApproveCost?: boolean; onApproved?: () => Promise<void>; placement?: GenerationPlacement }): Promise<PromptAgentGenerationResult> => {
         generationInFlightRef.current = true;
         try {
             const streamSupported = getRuntimeNaiModelInfo(applyNaiModelSettings(draft.params, naiRuntimeConfig || DEFAULT_NAI_RUNTIME).model, naiRuntimeConfig || DEFAULT_NAI_RUNTIME).supportsStreamedResponses;
@@ -1802,6 +1803,9 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             return stop(message, 'missing_key');
         }
         if (!options?.placement && (generationSeriesRef.current || generationInFlightRef.current || isGenerating)) return stop('此 Key 正在生成，请等待当前任务完成', 'generation_busy');
+        const permissionMode = options?.agent ? (await promptAgentService.getConfig()).permissionMode : undefined;
+        if (permissionMode === 'read_only') return stop('当前为只读权限，不能生成图片', 'agent_read_only');
+        const fullAccess = permissionMode === 'full';
         const editParamsSource = options?.params || request.params || activeEditDraft?.params || params;
         const freshSubscription = latestGenerationStateRef.current.subscription.info;
         void refreshUsageIfStale();
@@ -1826,17 +1830,17 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         });
         const syncWarning = runtimeSyncUnhealthy ? `\n\n⚠ ${runtimeSyncWarning}` : '';
         const totalCost = editCost * count;
-        // 确认只发生一次；提交后由后端费用状态机继续裁决，本页不再逐张确认。
-        if (count > 1 || options?.placement) {
+        // 标准权限只确认一次，完全访问沿用授权；提交后由后端费用状态机继续裁决。
+        if (!fullAccess && (count > 1 || options?.placement)) {
             if (!await confirmAction({
                 title: options?.placement ? options.placement === 'next' ? '排到下一位' : '加入生成队列' : '确认连续生成',
                 message: `使用本轮固定的提示词、参数与底图，逐张生成并保存 ${count} 张图片。${editCost > 0 ? `\n每张预计 ${editCost} Anlas，整轮预计 ${totalCost} Anlas。` : '\n当前参数预计使用免费额度；如果转为付费，将停止后续生成。'}\n停止只取消后续请求，正在生成的图片仍会接收并保存。${totalCost > anlasBudget.remaining ? `\n\n⚠ 剩余预算 ${anlasBudget.remaining} 点不足以覆盖整轮消耗。` : ''}${syncWarning}`,
                 confirmLabel: editCost > 0 ? `消耗约 ${totalCost} 点，生成 ${count} 张` : `生成 ${count} 张`,
                 ...(totalCost > anlasBudget.remaining || runtimeSyncUnhealthy ? { tone: 'danger' as const } : {}),
             })) return stop('用户取消了生图请求', 'user_cancelled', 'cancelled');
-        } else if (editCost > 0 && anlasBudget.remaining <= 0) {
+        } else if (!fullAccess && editCost > 0 && anlasBudget.remaining <= 0) {
             if (!await confirmAction({ title: 'Anlas 预算已用尽', message: `本次图片编辑预计消耗 ${editCost} Anlas，继续将透支本地预算线。${syncWarning}`, confirmLabel: `仍要消耗 ${editCost} 点`, tone: 'danger' })) return stop('用户取消了生图请求', 'user_cancelled', 'cancelled');
-        } else if ((editCost > 0 || options?.agent) && !await confirmAction({ title: '确认图片编辑', message: `本次${request.operation === 'image-to-image' ? '图生图' : request.operation === 'inpaint' ? '局部重绘' : '扩图'}本地结算估算消耗 ${editCost} Anlas；生成成功后会刷新当前 Key 的账号额度。${editCost > anlasBudget.remaining ? `\n\n⚠ 剩余预算 ${anlasBudget.remaining} 点不足以覆盖本次消耗。` : ''}${syncWarning}`, confirmLabel: editCost > 0 ? `消耗 ${editCost} 点并生成` : '仍要生成', ...(runtimeSyncUnhealthy ? { tone: 'danger' as const } : {}) })) return stop('用户取消了生图请求', 'user_cancelled', 'cancelled');
+        } else if (!fullAccess && (editCost > 0 || options?.agent) && !await confirmAction({ title: '确认图片编辑', message: `本次${request.operation === 'image-to-image' ? '图生图' : request.operation === 'inpaint' ? '局部重绘' : '扩图'}本地结算估算消耗 ${editCost} Anlas；生成成功后会刷新当前 Key 的账号额度。${editCost > anlasBudget.remaining ? `\n\n⚠ 剩余预算 ${anlasBudget.remaining} 点不足以覆盖本次消耗。` : ''}${syncWarning}`, confirmLabel: editCost > 0 ? `消耗 ${editCost} 点并生成` : '仍要生成', ...(runtimeSyncUnhealthy ? { tone: 'danger' as const } : {}) })) return stop('用户取消了生图请求', 'user_cancelled', 'cancelled');
         await flushMaskSave(request.operation).catch(error => console.warn('生成前保存编辑蒙版失败:', error));
         generationInFlightRef.current = true;
         if (mountedRef.current) {
@@ -1876,7 +1880,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             });
             currentGenerationStepsRef.current = job.history.params.steps ?? 0;
             const result = await runBackgroundJob(job, count, {
-                agent: options?.agent, placement: options?.placement, onApproved: options?.onApproved,
+                agent: options?.agent, autoApproveCost: fullAccess, placement: options?.placement, onApproved: options?.onApproved,
                 onCompleted: persistEditResultAsset,
             });
             if (result.success && !options?.agent) notify('图片编辑完成，结果已保存为新的历史图片', 'success');
@@ -1957,27 +1961,30 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             void refreshUsageIfStale();
             const cost = estimateV45GenerationCost(draft.params, isActiveOpusSubscription(freshSubscription), freshSubscription?.usage?.isNegative ?? true);
             const totalCost = cost * count;
-            // 预算已用尽仍需扣费：红色警告（Agent 路径同样拦截）。
-            if (cost > 0 && anlasBudget.remaining <= 0) {
+            const permissionMode = (await promptAgentService.getConfig()).permissionMode;
+            if (permissionMode === 'read_only') throw agentOperationError('当前为只读权限，不能生成图片', 'agent_read_only');
+            const fullAccess = permissionMode === 'full';
+            // 完全访问已授权生图费用，其他权限仍逐轮确认。
+            if (!fullAccess && cost > 0 && anlasBudget.remaining <= 0) {
                 if (!await confirmAction({
                     title: 'Anlas 预算已用尽',
                     message: `${reason ? `${reason}\n\n` : ''}本地预算已扣到 0，本次生成仍需消耗 ${cost} Anlas（共享账号额度），继续将透支你手动设定的预算线。`,
                     confirmLabel: `仍要消耗 ${cost} 点生成`,
                     tone: 'danger',
                 })) throw agentOperationError('用户取消了生图请求', 'user_cancelled', 'cancelled');
-            } else if (count > 1 || placement) {
+            } else if (!fullAccess && (count > 1 || placement)) {
                 if (!await confirmAction({
                     title: placement ? placement === 'next' ? '排到下一位' : '加入生成队列' : '确认连续生成',
                     message: `${reason ? `${reason}\n\n` : ''}使用本轮固定的提示词与参数，逐张生成并保存 ${count} 张图片。${cost > 0 ? `\n每张预计 ${cost} Anlas，整轮预计 ${totalCost} Anlas。` : '\n当前参数预计使用免费额度；如果转为付费，将停止后续生成。'}\n停止只取消后续请求，正在生成的图片仍会接收并保存。${totalCost > anlasBudget.remaining ? `\n\n⚠ 剩余预算 ${anlasBudget.remaining} 点不足以覆盖整轮消耗。` : ''}${runtimeSyncUnhealthy ? `\n\n⚠ ${runtimeSyncWarning}` : ''}`,
                     confirmLabel: cost > 0 ? `消耗约 ${totalCost} 点，生成 ${count} 张` : `生成 ${count} 张`,
                     ...(totalCost > anlasBudget.remaining || runtimeSyncUnhealthy ? { tone: 'danger' as const } : {}),
                 })) throw agentOperationError('用户取消了生图请求', 'user_cancelled', 'cancelled');
-            } else if (!await confirmAction({
+            } else if (!fullAccess && !await confirmAction({
                 title: '助手已准备好生图',
                 message: `${reason ? `${reason}\n\n` : ''}预计本次${formatGenerationCostLabel(cost, draft.params.model)}。确认后才会提交给 NovelAI。${cost > anlasBudget.remaining ? `\n\n⚠ 剩余预算 ${anlasBudget.remaining} 点不足以覆盖本次消耗。` : ''}${runtimeSyncUnhealthy ? `\n\n⚠ ${runtimeSyncWarning}` : ''}`,
                 confirmLabel: cost > 0 ? `消耗 ${cost} 点并生成` : '确认生成一张',
             })) throw agentOperationError('用户取消了生图请求', 'user_cancelled', 'cancelled');
-            return await submitTextToImageJob(structuredClone(draft), count, cost, { agent: true, placement, onApproved: approve });
+            return await submitTextToImageJob(structuredClone(draft), count, cost, { agent: true, autoApproveCost: fullAccess, placement, onApproved: approve });
         };
         try {
             return await execute();

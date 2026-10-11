@@ -11,6 +11,8 @@ export interface GenerationJobDescriptor {
   randomSeed: boolean;
   stream: boolean;
   approvedCost: number;
+  /** 完全访问的 Agent 本轮已授权生图费用，费用上涨无需再次确认。 */
+  autoApproveCost?: boolean;
 }
 export interface GenerationJobSnapshot {
   token: string; state: GenerationJobState; completedCount: number; requestedCount: number;

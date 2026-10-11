@@ -28,6 +28,8 @@ const state = vi.hoisted(() => ({
   unlinkHistory: vi.fn(async () => {}),
   getEditMask: vi.fn(async (): Promise<Blob | null> => null),
   confirm: vi.fn(async (_options?: unknown) => true),
+  agentConfig: vi.fn<() => Promise<{ permissionMode: 'read_only' | 'standard' | 'full' }>>(),
+  budget: 1666,
   buildDescriptor: vi.fn<(input: GenerationJobDescriptorInput) => Promise<GenerationJobDescriptor>>(),
   startJob: vi.fn<(key: string, token: string, descriptor: GenerationJobDescriptor, count: number, placement?: GenerationPlacement) => Promise<GenerationJobSnapshot>>(),
   getJob: vi.fn<(key: string, token: string) => Promise<GenerationJobSnapshot>>(),
@@ -48,6 +50,7 @@ const state = vi.hoisted(() => ({
   delayedSubscription: null as Promise<NovelaiSubscriptionInfo | null> | null,
 }));
 
+vi.mock('../../services/promptAgent', () => ({ promptAgentService: { getConfig: state.agentConfig } }));
 vi.mock('../../services/generationJob', async importOriginal => {
   const actual = await importOriginal<typeof import('../../services/generationJob')>();
   return { ...actual, startGenerationJob: state.startJob, getGenerationJob: state.getJob, cancelGenerationJob: state.cancelJob, updateGenerationJobApproval: state.approveJob };
@@ -64,7 +67,7 @@ vi.mock('../../services/naiUsage', async importOriginal => ({
 }));
 vi.mock('../../services/anlasBudget', async importOriginal => ({
   ...await importOriginal<typeof import('../../services/anlasBudget')>(),
-  useAnlasBudget: () => ({ remaining: 1666, loading: false }),
+  useAnlasBudget: () => ({ remaining: state.budget, loading: false }),
 }));
 vi.mock('../../services/localHistory', () => ({ localHistory: { getBySourceChain: state.history, add: state.addHistory, unlinkFromSourceChain: state.unlinkHistory, unlinkAllFromSourceChain: state.unlinkHistory, notifyBackgroundSaved: state.notifySaved, getEditMask: state.getEditMask } }));
 vi.mock('../../services/labWorkspace', async importOriginal => ({
@@ -251,12 +254,15 @@ beforeEach(() => {
   state.delayedSubscription = null;
   state.getEditMask.mockReset(); state.getEditMask.mockResolvedValue(null);
   state.confirm.mockReset(); state.confirm.mockResolvedValue(true);
+  state.agentConfig.mockReset(); state.agentConfig.mockResolvedValue({ permissionMode: 'standard' });
+  state.budget = 1666;
   state.history.mockReset(); state.history.mockResolvedValue([]);
   state.addHistory.mockClear();
   state.notifySaved.mockReset(); state.unlinkHistory.mockClear();
   localStorage.clear(); sessionStorage.clear();
   vi.stubGlobal('innerWidth', 1280);
   vi.stubGlobal('matchMedia', (media: string) => ({ matches: false, media, addEventListener: vi.fn(), removeEventListener: vi.fn() }));
+  vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
   vi.stubGlobal('fetch', vi.fn(() => { throw new Error('测试禁止真实网络请求'); }));
 });
 afterEach(async () => {
@@ -1116,6 +1122,62 @@ it('手动修改冲突保留两份，选择字段后才应用', async () => {
   expect(dialog.textContent).toContain('manual edit'); expect(dialog.textContent).toContain('Agent edit');
   fireEvent.click(within(dialog).getByText('应用选中修改'));
   expect(textPrompt().value).toBe('Agent edit');
+});
+
+it.each(['text-to-image', 'image-to-image', 'inpaint', 'outpaint'] as const)('完全访问下 Agent %s 的免费、付费、预算不足和排队请求直接生成', async mode => {
+  sessionStorage.setItem('nai_api_key', 'synthetic-key');
+  state.agentConfig.mockResolvedValue({ permissionMode: 'full' });
+  state.budget = 0;
+  state.confirm.mockResolvedValue(false);
+  vi.stubGlobal('createImageBitmap', vi.fn(async () => ({ width: 832, height: 1216, close: vi.fn() })));
+  vi.stubGlobal('fetch', vi.fn(async (input: string) => {
+    if (!String(input).startsWith('/synthetic/') && !String(input).startsWith('data:image/')) throw new Error('测试禁止真实网络请求');
+    return new Response(new Uint8Array([1, 2, 3]), { headers: { 'Content-Type': 'image/png' } });
+  }));
+  const session = fallback(); session.activeMode = mode;
+  saveLabWorkspaceSession(chain.id, session); setup();
+  await waitFor(() => expect(state.agent?.draft.target?.mode).toBe(mode));
+  const approve = vi.fn(async () => {});
+  for (const free of [true, false]) {
+    // 有效 Opus 快照覆盖免费；无订阅及超大尺寸覆盖预算已用尽时的付费分支。
+    state.subscription = free ? { active: true, tier: 3, usage: { percent: 50, isNegative: false, timeUntilNextPercent: 10 } } : null;
+    await act(async () => state.agent!.onFinalDraft({ ...state.agent!.draft, params: { ...state.agent!.draft.params, width: free ? 832 : 2048, height: free ? 1216 : 2048 } }));
+    const count = free ? 1 : 2, placement = free ? undefined : 'next';
+    scriptJobs([backgroundResult('full-result', count, { historyIds: Array.from({ length: count }, (_, index) => `full-result-${index}`) })]);
+    await act(async () => {
+      await expect(state.agent!.onRequestGeneration(state.agent!.draft, '合成生图', approve, count, placement)).resolves.toMatchObject({ success: true, requestedCount: count, completedCount: count });
+    });
+    expect(state.started).toHaveLength(1);
+    expect(state.started[0]).toMatchObject({ count, descriptor: { autoApproveCost: true } });
+    if (free) expect(state.started[0].descriptor.approvedCost).toBe(0);
+    else expect(state.started[0].descriptor.approvedCost).toBeGreaterThan(0);
+    if (placement) expect(state.started[0].placement).toBe(placement);
+  }
+  expect(approve).toHaveBeenCalledTimes(2);
+  expect(state.confirm).not.toHaveBeenCalled();
+});
+
+it('标准权限的 Agent 生图仍确认，确认后的任务不带自动费用授权', async () => {
+  sessionStorage.setItem('nai_api_key', 'synthetic-key'); setup();
+  await waitFor(() => expect(state.agent?.draft.basePrompt).toBe('saved style'));
+  const approve = vi.fn(async () => {});
+  await act(async () => { await state.agent!.onRequestGeneration(state.agent!.draft, '合成生图', approve); });
+  expect(state.confirm).toHaveBeenCalledOnce(); expect(approve).toHaveBeenCalledOnce();
+  expect(state.started).toHaveLength(1); expect(state.started[0].descriptor.autoApproveCost).toBeUndefined();
+});
+
+it.each(['text-to-image', 'image-to-image', 'inpaint', 'outpaint'] as const)('只读权限的 Agent %s 不确认也不投递生图', async mode => {
+  sessionStorage.setItem('nai_api_key', 'synthetic-key');
+  state.agentConfig.mockResolvedValue({ permissionMode: 'read_only' });
+  vi.stubGlobal('createImageBitmap', vi.fn(async () => ({ width: 832, height: 1216, close: vi.fn() })));
+  const session = fallback(); session.activeMode = mode;
+  saveLabWorkspaceSession(chain.id, session); setup();
+  await waitFor(() => expect(state.agent?.draft.target?.mode).toBe(mode));
+  const approve = vi.fn(async () => {});
+  await act(async () => {
+    await expect(state.agent!.onRequestGeneration(state.agent!.draft, '合成生图', approve)).resolves.toMatchObject({ success: false, code: 'agent_read_only', completedCount: 0 });
+  });
+  expect(state.confirm).not.toHaveBeenCalled(); expect(approve).not.toHaveBeenCalled(); expect(state.startJob).not.toHaveBeenCalled();
 });
 
 it('生图确认期间手动修改使旧批准失效，不提交任务或批准回调', async () => {

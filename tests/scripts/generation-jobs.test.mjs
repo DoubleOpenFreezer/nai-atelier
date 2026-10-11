@@ -135,6 +135,31 @@ test('费用上涨保持停止，重新授权剩余费用后继续，不允许�
   assert.equal(fixture.jobs.snapshot(fixture.jobs.get('key', a)).state, 'succeeded');
 });
 
+test('完全访问的费用授权随有限任务生效，费用上涨直接继续且保留暂停与真实记账依据', async () => {
+  const costs = [0, 12]; let estimates = 0;
+  const fixture = setup({ estimate: async () => costs[estimates++] });
+  fixture.tasks.pause('key', true);
+  fixture.jobs.start('key', a, 2, 'end', { ...descriptor(), autoApproveCost: true }, {});
+  const job = fixture.jobs.get('key', a);
+  await until(() => job.state === 'paused');
+  assert.equal(fixture.calls.length, 0);
+  fixture.tasks.pause('key', false);
+  await job.running;
+  assert.equal(fixture.calls.length, 2);
+  assert.equal(estimates, 2);
+  assert.equal(job.approvedCost, 0);
+  assert.equal(fixture.jobs.snapshot(job).state, 'succeeded');
+});
+
+test('非布尔的自动费用授权不能跳过确认', async () => {
+  const fixture = setup({ estimate: async () => 12 });
+  fixture.jobs.start('key', a, 1, undefined, { ...descriptor(), autoApproveCost: 'true' }, {});
+  const job = fixture.jobs.get('key', a);
+  await until(() => job.state === 'awaiting_confirmation');
+  assert.equal(fixture.calls.length, 0);
+  fixture.jobs.cancel('key', a); await job.running;
+});
+
 test('保存失败不计完成、不补张，终态保留未保存图片而非伪报取消或成功', async () => {
   const fixture = setup({ save: async () => { throw Object.assign(new Error('synthetic-save-failure'), { preview: { image: 'data:image/png;base64,AQID' } }); } });
   fixture.jobs.start('key', a, 3, undefined, descriptor(), {});

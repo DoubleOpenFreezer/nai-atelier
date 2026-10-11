@@ -48,6 +48,7 @@ export const parseGenerationJobBody = (raw: string): GenerationJobDescriptor => 
     randomSeed: parsed.randomSeed === true,
     stream: parsed.stream === true,
     approvedCost: parsed.approvedCost,
+    ...(parsed.autoApproveCost === true ? { autoApproveCost: true } : {}),
   };
 };
 

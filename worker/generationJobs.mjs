@@ -115,7 +115,7 @@ export class GenerationJobs {
         job.needsRefresh = false;
         if (job.cancelled) break;
         if (!Number.isFinite(cost) || cost < 0) throw failure('无法核实当前额度，已停止后续生成', 'quota_refresh_failed', 503);
-        if (cost > job.approvedCost) {
+        if (cost > job.approvedCost && job.descriptor.autoApproveCost !== true) {
           job.cost = cost;
           job.state = 'awaiting_confirmation';
           // 保留当前执行位等待本任务授权，不改写用户/其他客户端的全局暂停状态。

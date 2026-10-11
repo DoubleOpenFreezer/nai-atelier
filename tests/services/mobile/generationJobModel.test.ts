@@ -287,6 +287,13 @@ describe('后台任务描述与计费入参', () => {
     expect(() => parseGenerationJobBody(' '.repeat(GENERATION_JOB_REQUEST_LIMIT + 1))).toThrowError(/过大/);
   });
 
+  it('独立 Android 保留完全访问的费用授权，仅接受明确的布尔值', () => {
+    expect(parseGenerationJobBody(JSON.stringify({ ...descriptorOf(), autoApproveCost: true })).autoApproveCost).toBe(true);
+    for (const value of [undefined, false, 'true', 1]) {
+      expect(parseGenerationJobBody(JSON.stringify({ ...descriptorOf(), autoApproveCost: value })).autoApproveCost).toBeUndefined();
+    }
+  });
+
   it('按本地 Vibe／角色参考数量补齐计费入参，不覆盖已有请求字段', () => {
     const priced = normalizedBillingPayload({
       model: 'nai-diffusion-4-5-full', action: 'generate',
