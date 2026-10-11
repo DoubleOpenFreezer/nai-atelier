@@ -4,7 +4,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { builtinModules } from 'node:module';
 import { createWorkspace, removeWorkspace } from '../support/workspace.mjs';
-import { RUNTIME_FILES, DESKTOP_FILES, RUNTIME_DEPENDENCIES, createRuntimePackage, isPrivateDistributionPath, isDistributionMetadata, pruneRuntimeMetadata } from '../../scripts/build-desktop.mjs';
+import { RUNTIME_FILES, DESKTOP_FILES, RUNTIME_DEPENDENCIES, createRuntimePackage, sameDependencies, isPrivateDistributionPath, isDistributionMetadata, pruneRuntimeMetadata } from '../../scripts/build-desktop.mjs';
 import builder from '../../desktop/builder.config.mjs';
 
 test('分发边界识别数据、缓存、词库、环境变量与测试资料，公开运行文件均不落保护区', async () => {
@@ -13,6 +13,7 @@ test('分发边界识别数据、缓存、词库、环境变量与测试资料�
   assert.deepEqual(builder.nsis.installerLanguages, ['zh_CN', 'zh_TW', 'en_US', 'ja_JP', 'ko_KR']);
   assert.ok(RUNTIME_FILES.includes('worker/naiBilling.mjs'), '安装版必须包含网关共用的计费模块');
   assert.ok(RUNTIME_FILES.includes('worker/cloudQueueTarget.mjs'), '安装版必须包含通用生图中转地址识别');
+  assert.ok(RUNTIME_FILES.includes('worker/codexRemote.mjs'), '安装版必须包含法典远端读取模块');
   for (const name of ['local-data/prompt-agent.key', 'PUBLIC/TAG-DATA/tags.json', 'x\\local-cache\\model.onnx', '.env.local', '.dev.vars', '.git/config', 'logs/tests/gateway.log', 'tests/fixtures/synthetic.json', '.wrangler/tmp/test']) assert.equal(isPrivateDistributionPath(name), true, name);
   for (const name of RUNTIME_FILES) {
     assert.equal(isPrivateDistributionPath(name), false, name);
@@ -27,6 +28,9 @@ test('桌面运行依赖锁文件单独维护，不带开发工具，版本跟�
   const runtime = createRuntimePackage(pkg, overrides);
   const lock = JSON.parse(await readFile(new URL('../../desktop/runtime-package-lock.json', import.meta.url)));
   assert.deepEqual(runtime.dependencies, lock.packages[''].dependencies);
+  assert.equal(sameDependencies({ first: '1', second: '2' }, { second: '2', first: '1' }), true);
+  assert.equal(sameDependencies({ first: '1' }, { first: '2' }), false);
+  assert.equal(sameDependencies({ first: '1' }, { first: '1', second: '2' }), false);
   assert.equal(runtime.version, pkg.version);
   assert.equal(runtime.devDependencies, undefined);
   assert.equal(runtime.dependencies.electron, undefined);

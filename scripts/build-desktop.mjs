@@ -12,7 +12,7 @@ export const RUNTIME_FILES = [
   ...['agent-web', 'agent-ui-bridge', 'agent-runtime', 'agent-page-tools', 'agent-local-images', 'collector-download', 'danbooru-loading', 'desktop-launcher', 'generation-gateway', 'generation-output', 'image-tagger', 'local-backup', 'local-server', 'local-server-runtime', 'media-gateway', 'media-memory-cache', 'novelai-agent-knowledge', 'pixiv-local', 'pixiv-scheme-handler', 'pixiv-web-login', 'prompt-agent', 'st-chatu8-bridge', 'style-collector', 'tag-update-server', 'tagger-model-download', 'update-tag-dictionary'].map(name => `scripts/${name}.mjs`),
   'scripts/style-collector-window.ps1', 'scripts/style-collector-window.cs', 'scripts/pixiv-edge-callback-watcher.ps1', 'scripts/pixiv-login-complete.html',
   ...['agentOperation', 'agentLabSync', 'agentConnection', 'danbooruErrors', 'agentThinking', 'imageTaggerModels', 'transparentBackground', 'pngMetadata'].map(name => `services/${name}.mjs`),
-  ...['stChatu8Policy', 'sharedWhitelist', 'imageDimensions', 'cloudQueueNumbers', 'cloudQueueTarget', 'naiBilling', 'generationTasks', 'generationJobs'].map(name => `worker/${name}.mjs`),
+  ...['stChatu8Policy', 'sharedWhitelist', 'imageDimensions', 'cloudQueueNumbers', 'cloudQueueTarget', 'naiBilling', 'generationTasks', 'generationJobs', 'codexRemote'].map(name => `worker/${name}.mjs`),
   'LICENSE', 'PROJECT_AGENT.md', 'wrangler.toml', 'data/novelai-v45-tags.json',
   'locales/index.mjs', 'locales/messages.json',
   ...['index.js', 'style.css', 'manifest.json', 'README.md'].map(name => `sillytavern-extension/npm-bridge/${name}`),
@@ -21,6 +21,7 @@ export const RUNTIME_FILES = [
 export const DESKTOP_FILES = ['main.mjs', 'preload.cjs', 'startup.html', 'startup.js', 'app-updater.mjs'];
 // 前端依赖已经编译到 dist；只为实际运行的 Node 脚本安装这些直接依赖。
 export const RUNTIME_DEPENDENCIES = ['@earendil-works/pi-agent-core', '@earendil-works/pi-ai', 'fast-png', 'jszip', 'onnxruntime-node', 'sharp', 'undici'];
+export const sameDependencies = (left, right) => Object.keys(left).length === Object.keys(right).length && Object.entries(left).every(([name, version]) => right[name] === version);
 export function createRuntimePackage(pkg, overrides) {
   const dependencies = Object.fromEntries(RUNTIME_DEPENDENCIES.map(name => {
     if (!pkg.dependencies[name]) throw new Error(`根包未声明所需运行依赖：${name}`);
@@ -164,7 +165,7 @@ export async function buildDesktop({ unpacked = false, skipInstall = false } = {
   const overrides = JSON.parse(await readFile(join(root, 'desktop', 'runtime-dependencies.json'), 'utf8'));
   const runtimePkg = createRuntimePackage(pkg, overrides);
   const lock = JSON.parse(await readFile(join(root, 'desktop', 'runtime-package-lock.json'), 'utf8'));
-  if (JSON.stringify(lock.packages[''].dependencies) !== JSON.stringify(runtimePkg.dependencies)) throw new Error('桌面运行锁文件已过期，请按 Windows 发布文档同步');
+  if (!sameDependencies(lock.packages[''].dependencies, runtimePkg.dependencies)) throw new Error('桌面运行锁文件已过期，请按 Windows 发布文档同步');
   lock.version = pkg.version;
   lock.packages[''].version = pkg.version;
   if (skipInstall) {
