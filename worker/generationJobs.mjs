@@ -6,13 +6,14 @@ const index = (key, token) => `${key}:${token}`;
 
 /** 配置与凭据仅在运行设备进程内存中托管；重启不恢复，不允许自动付费重试。 */
 export class GenerationJobs {
-  constructor({ tasks, generate, save, estimate, validate, readCleanup, now = Date.now, sleep = wait, terminalMs = 300_000, terminalLimit = 256 }) {
+  constructor({ tasks, generate, save, estimate, validate, readCleanup, readQueue, now = Date.now, sleep = wait, terminalMs = 300_000, terminalLimit = 256 }) {
     this.tasks = tasks;
     this.generate = generate;
     this.save = save;
     this.estimate = estimate;
     this.validate = validate;
     this.readCleanup = readCleanup;
+    this.readQueue = readQueue;
     this.now = now;
     this.sleep = sleep;
     this.terminalMs = terminalMs;
@@ -67,8 +68,15 @@ export class GenerationJobs {
     const state = !terminal(job.state) && !['generating', 'saving', 'awaiting_confirmation'].includes(job.state)
       ? paused ? 'paused' : position > 0 ? 'waiting' : job.state
       : job.state;
+    const queue = this.readQueue?.(job);
     return {
       token: job.token, state, completedCount: job.historyIds.length, requestedCount: job.count,
+      // 只传展示与取消所需信息，后台控制器、Key 指纹等内部字段留在运行设备。
+      cloudQueue: queue ? {
+        taskId: queue.taskId, phase: queue.phase, position: queue.position, queueSize: queue.queueSize,
+        greeting: queue.greeting, cancelable: queue.cancelable, proxy: queue.proxy,
+        error: queue.error, cleanupError: queue.cleanupError,
+      } : null,
       historyIds: [...job.historyIds], ...(position === undefined ? {} : { position }),
       ...(job.lastSavedItem ? { lastSavedItem: job.lastSavedItem } : {}),
       previewVersion: job.previewVersion,

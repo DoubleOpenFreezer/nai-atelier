@@ -26,6 +26,34 @@ const setup = (overrides = {}) => {
   return { tasks, jobs, calls, advance: value => { now += value; } };
 };
 
+test('后台查询与实时推送携带公共队列状态，保留零与未知且不暴露内部字段', async () => {
+  let queue = null, finish;
+  const f = setup({ readQueue: () => queue,
+    generate: async () => { await new Promise(resolve => { finish = resolve; }); return {}; },
+  });
+  f.jobs.start('key', a, 1, undefined, descriptor(), {});
+  await until(() => Boolean(finish));
+  const job = f.jobs.get('key', a), reader = generationJobEventResponse(f.jobs, job).body.getReader();
+  const read = async () => JSON.parse(new TextDecoder().decode((await reader.read()).value).split('data: ')[1]);
+  assert.equal((await read()).cloudQueue, null);
+  queue = { taskId: 'synthetic-cloud-task', phase: 'waiting', position: 2, queueSize: 4, greeting: '正在生成中～',
+    cancelable: true, keyHash: 'private-key-hash', controller: new AbortController(), lockToken: 'private-lock' };
+  f.jobs.notify(job);
+  const status = (await read()).cloudQueue;
+  assert.deepEqual(status, { taskId: queue.taskId, phase: 'waiting', position: 2, queueSize: 4, greeting: queue.greeting, cancelable: true });
+  assert.equal(JSON.stringify(status).includes('private'), false);
+  queue.position = 0; queue.queueSize = 0;
+  assert.equal(f.jobs.snapshot(job).cloudQueue.position, 0);
+  assert.equal(f.jobs.snapshot(job).cloudQueue.queueSize, 0);
+  queue = { taskId: queue.taskId, phase: 'waiting', proxy: true, position: null, queueSize: null, cancelable: true };
+  f.jobs.notify(job);
+  assert.deepEqual((await read()).cloudQueue, queue);
+  queue = { taskId: queue.taskId, phase: 'completed', cleanupError: 'synthetic cleanup warning', cancelable: false };
+  finish(); await job.running;
+  assert.equal(f.jobs.snapshot(job).cloudQueue.cleanupError, queue.cleanupError);
+  await reader.cancel();
+});
+
 for (const operation of ['generate', 'img2img', 'inpaint', 'outpaint']) test(`${operation} 每步立即推送，断开观察仍完成后台保存`, async () => {
   let emit, finish;
   const f = setup({ generate: async (_job, _payload, onPreview) => {

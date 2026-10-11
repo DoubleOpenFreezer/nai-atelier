@@ -5,9 +5,9 @@ const REQUEST_LIMIT = 60 * 1024 * 1024;
 const error = (message, code, status) => Object.assign(new Error(message), { code, status });
 
 /** 通过同一电脑网关生图、既有 Worker 历史接口保存，不另建存储或绕过准入。 */
-export function createDesktopGenerationJobs({ tasks, gatewayUrl, workerPort, estimate, readCleanup }) {
+export function createDesktopGenerationJobs({ tasks, gatewayUrl, workerPort, estimate, readCleanup, readQueue }) {
   return new GenerationJobs({
-    tasks, estimate, readCleanup,
+    tasks, estimate, readCleanup, readQueue,
     validate: descriptor => {
       if (descriptor.composition) {
         generationImageBytes(descriptor.composition.originalImage);
@@ -16,7 +16,7 @@ export function createDesktopGenerationJobs({ tasks, gatewayUrl, workerPort, est
       if (descriptor.editMask) generationImageBytes(descriptor.editMask);
     },
     generate: async (job, payload, onPreview) => {
-      const queueTaskId = crypto.randomUUID();
+      const queueTaskId = job.lastQueueTaskId = crypto.randomUUID();
       const response = await fetch(`${gatewayUrl()}/api/generate${job.descriptor.stream ? '-stream' : ''}`, {
         method: 'POST', headers: {
           'Content-Type': 'application/json', Authorization: job.context.authorization,

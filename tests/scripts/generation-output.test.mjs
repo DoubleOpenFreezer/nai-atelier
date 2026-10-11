@@ -12,6 +12,29 @@ import { GenerationJobs } from '../../worker/generationJobs.mjs';
 const png = async (width, height, rgba) => sharp({ create: { width, height, channels: 4, background: { r: rgba[0], g: rgba[1], b: rgba[2], alpha: rgba[3] / 255 } } }).png().toBuffer();
 const uri = bytes => 'data:image/png;base64,' + bytes.toString('base64');
 
+for (const stream of [false, true]) test(`电脑预览 ${stream}：上游尚在排队时任务已带公共任务标识与状态`, async t => {
+  const records = new Map(); let finish;
+  const previous = globalThis.fetch; t.after(() => { globalThis.fetch = previous; });
+  globalThis.fetch = async (url, options) => {
+    assert.ok(String(url).endsWith(stream ? '/api/generate-stream' : '/api/generate'));
+    const taskId = options.headers['X-Nai-Queue-Task-Id'];
+    records.set(taskId, { taskId, phase: 'waiting', position: 2, queueSize: 4, cancelable: true, keyHash: 'private', controller: new AbortController() });
+    return new Promise(resolve => { finish = () => resolve(new Response('{"error":"synthetic failure"}', { status: 503 })); });
+  };
+  const jobs = createDesktopGenerationJobs({ tasks: new GenerationTasks({ intervalSeconds: 0 }), gatewayUrl: () => 'http://synthetic', workerPort: 9999,
+    estimate: async () => 0, readCleanup: () => undefined, readQueue: job => records.get(job.lastQueueTaskId),
+  });
+  const token = 'synthetic-queue-token-0001';
+  jobs.start('key', token, 1, undefined, { payload: { model: 'synthetic', action: 'generate', parameters: { n_samples: 1 } }, history: { prompt: 'synthetic', params: {} }, approvedCost: 0, stream }, { authorization: 'Bearer synthetic' });
+  await new Promise(resolve => setTimeout(resolve, 0));
+  const job = jobs.get('key', token), queue = jobs.snapshot(job).cloudQueue;
+  assert.equal(queue.taskId, job.lastQueueTaskId);
+  assert.equal(queue.position, 2); assert.equal(queue.queueSize, 4);
+  assert.equal(queue.keyHash, undefined); assert.equal(queue.controller, undefined);
+  finish(); await job.running;
+  assert.equal(job.state, 'failed'); assert.equal(records.size, 1);
+});
+
 test('电脑 GET 传递预览版本，未带版本的旧客户端保留完整快照', async () => {
   const seen = [], job = { state: 'generating' };
   const jobs = { get: () => job, snapshot: (value, version) => { assert.equal(value, job); seen.push(version); return {}; } };

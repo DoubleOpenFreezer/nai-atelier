@@ -3018,6 +3018,7 @@ const serveDistFile = async (req, res, url) => {
   };
   const generationJobs = createDesktopGenerationJobs({
     tasks, workerPort, gatewayUrl: () => `http://127.0.0.1:${server.address().port}`,
+    readQueue: job => job.lastQueueTaskId ? cloudQueue.get(job.key, job.lastQueueTaskId) : null,
     readCleanup: job => job.lastQueueTaskId ? cloudQueue.get(job.key, job.lastQueueTaskId)?.cleanupError : undefined,
     estimate: async (job, fresh) => {
       const authorization = job.context.authorization;

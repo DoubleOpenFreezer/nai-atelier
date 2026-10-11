@@ -6,6 +6,10 @@ import {
     stopGenerationSeriesSession, subscribeGenerationSeries,
 } from '../../services/generationSeries';
 import type { GenerationJobDescriptor, GenerationJobSnapshot } from '../../services/generationJob';
+import { createElement } from 'react';
+import { act, cleanup, render, screen } from '@testing-library/react';
+import { InlineCloudQueueStatus } from '../../components/CloudQueueStatus';
+import { emitCloudQueueStatus, getCurrentCloudQueueStatus } from '../../services/cloudQueue';
 
 // 只替换四个网络函数；状态判定与全部状态机逻辑走真实实现。
 const job = vi.hoisted(() => ({ start: vi.fn(), get: vi.fn(), cancel: vi.fn(), approve: vi.fn(), observe: vi.fn() }));
@@ -31,6 +35,7 @@ const nextScope = () => `synthetic-series-${++scopeSeq}`;
 beforeEach(() => {
     vi.useFakeTimers();
     sessionStorage.clear();
+    emitCloudQueueStatus(null);
     job.start.mockReset().mockResolvedValue(snapshot({ state: 'preparing' }));
     job.get.mockReset().mockResolvedValue(snapshot({ state: 'succeeded', completedCount: 3, historyIds: ['h1', 'h2', 'h3'] }));
     job.cancel.mockReset().mockResolvedValue(undefined);
@@ -104,7 +109,89 @@ it('未变化的预览不重复传图，版本变化清除已保存预览，旧�
     expect(session.preview?.image).toBe('data:image/png;base64,BAUG');
     await expect(settle).resolves.toMatchObject({ outcome: 'failed', code: 'history_save_failed' });
 });
-afterEach(() => { vi.useRealTimers(); sessionStorage.clear(); });
+afterEach(() => { cleanup(); emitCloudQueueStatus(null); vi.useRealTimers(); sessionStorage.clear(); });
+
+it.each(['generate', 'img2img', 'inpaint', 'outpaint'].flatMap(operation => [false, true].map(stream => ({ operation, stream }))))(
+    '$operation 预览 $stream：后台排队回执驱动实际提示，生成与完成正确收尾', async ({ operation, stream }) => {
+        sessionStorage.setItem('nai_api_key', 'synthetic-key');
+        const data = descriptor(); data.stream = stream;
+        data.payload.action = operation === 'generate' ? 'generate' : operation === 'img2img' ? 'img2img' : 'infill';
+        if (operation === 'outpaint') data.payload.parameters._local_edit_operation = 'outpaint';
+        const cloud = { taskId: 'synthetic-cloud-task', phase: 'joining' as const, cancelable: true };
+        job.start.mockResolvedValueOnce(snapshot({ state: 'generating', cloudQueue: cloud }));
+        let push: (value: GenerationJobSnapshot) => void = () => {};
+        let finish: () => void = () => {};
+        job.observe.mockImplementationOnce((_key, _token, _signal, onSnapshot) => {
+            push = onSnapshot; return new Promise<void>(resolve => { finish = resolve; });
+        });
+        const view = render(createElement(InlineCloudQueueStatus, { generationProgress: { step: 8, total: 28 } }));
+        let settle!: Promise<unknown>;
+        await act(async () => {
+            ({ settle } = beginGenerationSeries({ scope: nextScope(), key: 'synthetic-key', count: 1, agent: false, descriptor: data }));
+            await vi.advanceTimersByTimeAsync(0);
+        });
+        expect(screen.getByRole('status').textContent).toContain('加入队列中…');
+        const deliver = async (next: GenerationJobSnapshot) => {
+            await act(async () => {
+                if (stream) { push(next); if (next.state === 'succeeded') finish(); }
+                else { job.get.mockResolvedValueOnce(next); await vi.advanceTimersByTimeAsync(1000); }
+            });
+        };
+        await deliver(snapshot({ state: 'generating', cloudQueue: { ...cloud, phase: 'waiting', position: 2, queueSize: 4, greeting: '正在生成中～' } }));
+        expect(screen.getByRole('status').textContent).toContain('前方 2 个任务');
+        expect(screen.getByRole('status').textContent).toContain('队列共 4 个任务');
+        expect(screen.getByRole('status').textContent).toContain('当前使用者：正在生成中～');
+        expect(screen.getByRole('button', { name: '取消排队' })).toBeTruthy();
+        await deliver(snapshot({ state: 'generating', cloudQueue: { ...cloud, phase: 'waiting', position: 0, queueSize: 0 } }));
+        expect(screen.getByRole('status').textContent).toContain('前方 0 个任务');
+        expect(screen.getByRole('status').textContent).toContain('队列共 0 个任务');
+        await deliver(snapshot({ state: 'generating', cloudQueue: { ...cloud, phase: 'generating', cancelable: false, queueSize: null } }));
+        expect(screen.getByRole('status').textContent).toContain('生成中 8/28');
+        expect(screen.getByRole('status').textContent).toContain('队列数量未知');
+        expect(screen.queryByRole('button', { name: '取消排队' })).toBeNull();
+        await deliver(snapshot({ state: 'succeeded', requestedCount: 1, completedCount: 1, historyIds: ['h1'], cloudQueue: { ...cloud, phase: 'completed', cancelable: false } }));
+        await expect(settle).resolves.toMatchObject({ success: true });
+        expect(screen.queryByRole('status')).toBeNull();
+        expect(job.start).toHaveBeenCalledOnce();
+        view.unmount();
+    },
+);
+
+it('待生成任务与旧任务回执不清除新提示，切 Key 后迟到回执不能重新点亮', async () => {
+    sessionStorage.setItem('nai_api_key', 'synthetic-key');
+    const cloud = { taskId: 'old-cloud-task', phase: 'waiting' as const, position: 2 };
+    job.start.mockResolvedValueOnce(snapshot({ state: 'generating', cloudQueue: cloud }))
+        .mockResolvedValueOnce(snapshot({ state: 'waiting', position: 1, cloudQueue: null }));
+    const first = beginGenerationSeries({ scope: nextScope(), key: 'synthetic-key', count: 1, agent: false, descriptor: descriptor() });
+    await vi.advanceTimersByTimeAsync(0);
+    const waiting = beginGenerationSeries({ scope: nextScope(), key: 'synthetic-key', count: 1, placement: 'end', agent: false, descriptor: descriptor() });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(getCurrentCloudQueueStatus()?.taskId).toBe(cloud.taskId);
+    emitCloudQueueStatus({ taskId: 'new-cloud-task', phase: 'waiting', position: 0 }, 'synthetic-key');
+    job.get.mockResolvedValue(snapshot({ state: 'succeeded', cloudQueue: { ...cloud, phase: 'completed' } }));
+    await vi.advanceTimersByTimeAsync(1000);
+    await Promise.all([first.settle, waiting.settle]);
+    expect(getCurrentCloudQueueStatus()?.taskId).toBe('new-cloud-task');
+
+    job.start.mockResolvedValueOnce(snapshot({ state: 'generating', cloudQueue: cloud }));
+    const switched = beginGenerationSeries({ scope: nextScope(), key: 'synthetic-key', count: 1, agent: false, descriptor: descriptor() });
+    await vi.advanceTimersByTimeAsync(0);
+    sessionStorage.setItem('nai_api_key', 'another-key');
+    window.dispatchEvent(new Event('nai-api-key-changed'));
+    emitCloudQueueStatus({ taskId: 'another-key-task', phase: 'waiting' }, 'another-key');
+    await vi.advanceTimersByTimeAsync(1000); await switched.settle;
+    expect(getCurrentCloudQueueStatus()?.taskId).toBe('another-key-task');
+});
+
+it.each(['succeeded', 'cancelled', 'failed'] as const)('后台 %s 时仍在等待的公共队列提示按真实终态收束', async state => {
+    sessionStorage.setItem('nai_api_key', 'synthetic-key');
+    job.start.mockResolvedValueOnce(snapshot({ state: 'generating', cloudQueue: { taskId: 'cloud-terminal', phase: 'waiting', cancelable: true } }));
+    job.get.mockResolvedValueOnce(snapshot({ state, requestedCount: 1, completedCount: state === 'succeeded' ? 1 : 0,
+        historyIds: state === 'succeeded' ? ['h1'] : [], error: state === 'failed' ? 'synthetic failure' : undefined }));
+    const { settle } = beginGenerationSeries({ scope: nextScope(), key: 'synthetic-key', count: 1, agent: false, descriptor: descriptor() });
+    await vi.advanceTimersByTimeAsync(1000); await settle;
+    expect(getCurrentCloudQueueStatus()).toMatchObject({ phase: state === 'succeeded' ? 'completed' : state === 'cancelled' ? 'cancelled' : 'error', cancelable: false });
+});
 
 it('一次 POST 后只轮询观察：进度、预览与已保存项透传，终态退出并给出成功回执', async () => {
     const scope = nextScope();

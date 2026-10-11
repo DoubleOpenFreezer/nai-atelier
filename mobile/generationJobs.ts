@@ -52,6 +52,7 @@ const composeMobileEditResult = async (output: MobileGenerationOutput, compositi
 export function createMobileGenerationJobs({ tasks, queue }: { tasks: GenerationTasks; queue: CloudQueueCoordinator }) {
   const jobs = new GenerationJobs<MobileGenerationContext, MobileGenerationOutput>({
     tasks,
+    readQueue: job => job.lastQueueTaskId ? queue.get(job.key, job.lastQueueTaskId) : null,
     readCleanup: job => (job.lastQueueTaskId ? queue.get(job.key, job.lastQueueTaskId)?.cleanupError : undefined),
     validate: descriptor => {
       if (descriptor.composition) {
@@ -66,7 +67,7 @@ export function createMobileGenerationJobs({ tasks, queue }: { tasks: Generation
     },
     // 生图复用同一手机网关处理器：公共队列、计费与单并发准入只有一份实现。
     generate: async (job, payload, onPreview) => {
-      const queueTaskId = crypto.randomUUID();
+      const queueTaskId = job.lastQueueTaskId = crypto.randomUUID();
       const response = await fetch(`/api/generate${job.descriptor.stream ? '-stream' : ''}`, {
         method: 'POST',
         headers: {

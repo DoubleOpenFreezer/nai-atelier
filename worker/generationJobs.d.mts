@@ -1,6 +1,7 @@
 import type { LocalGenItem, ImageEditMetadata } from '../types';
 import type { ImageEditFocusedGeometry } from '../services/imageEdit';
 import type { GenerationTasks } from './generationTasks.mjs';
+import type { CloudQueueStatus } from '../services/cloudQueue';
 
 export type GenerationJobState = 'waiting' | 'preparing' | 'generating' | 'saving' | 'paused' | 'awaiting_confirmation' | 'succeeded' | 'cancelled' | 'failed';
 export interface GenerationJobDescriptor {
@@ -19,6 +20,7 @@ export interface GenerationJobSnapshot {
   historyIds: string[]; position?: number; lastSavedItem?: LocalGenItem;
   preview?: { image: string; step?: number }; previewVersion?: number; cost?: number; error?: string; code?: string;
   accountingFailed?: boolean; cleanupError?: string;
+  cloudQueue?: CloudQueueStatus | null;
 }
 export interface GenerationJobOutput {
   seed?: number; estimatedCost?: number; accountingFailed?: boolean; cleanupError?: string; queueTaskId?: string;
@@ -37,6 +39,7 @@ export class GenerationJobs<Context = unknown, Output extends GenerationJobOutpu
     estimate: (job: GenerationJob<Context>, fresh: boolean) => Promise<number>;
     validate: (descriptor: GenerationJobDescriptor) => void;
     readCleanup: (job: GenerationJob<Context>) => string | undefined;
+    readQueue?: (job: GenerationJob<Context>) => CloudQueueStatus | null | undefined;
     now?: () => number; sleep?: (milliseconds: number) => Promise<void>; terminalMs?: number; terminalLimit?: number;
   });
   jobs: Map<string, GenerationJob<Context>>;

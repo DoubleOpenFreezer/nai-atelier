@@ -3,7 +3,7 @@ declare module 'mobile:gateway' {
   export interface CloudQueueTaskRecord {
     taskId: string;
     keyHash: string;
-    phase: string;
+    phase: import('../services/cloudQueue').CloudQueueStatus['phase'];
     position?: number | null;
     queueSize?: number | null;
     greeting?: string | null;

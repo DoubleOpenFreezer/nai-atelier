@@ -7,6 +7,7 @@ import {
 import type { GenerationPlacement } from './generationTask';
 import { localHistory } from './localHistory';
 import { NOVELAI_USAGE_REFRESH_EVENT } from './naiUsage';
+import { emitCloudQueueStatus, getCurrentCloudQueueStatus, isCloudQueueTaskActive } from './cloudQueue';
 
 export interface GenerationSeriesProgress { current: number; total: number; stopping: boolean; position?: number }
 
@@ -30,6 +31,7 @@ export interface GenerationSeriesSession {
     awaiting?: { cost: number; completedCount: number; requestedCount: number };
     accountingFailed?: boolean;
     cleanupError?: string;
+    cloudQueueTaskId?: string;
     /** 观察链路暂时不可用时的就地说明；恢复后清除，不代表任务失败。 */
     connectionError?: string;
 }
@@ -77,6 +79,12 @@ export const subscribeGenerationSeries = (listener: () => void) => {
 };
 
 const applySnapshot = (session: GenerationSeriesSession, snapshot: GenerationJobSnapshot) => {
+    if (snapshot.cloudQueue) {
+        session.cloudQueueTaskId = snapshot.cloudQueue.taskId;
+        emitCloudQueueStatus(snapshot.cloudQueue, session.key);
+    } else if (snapshot.cloudQueue === null && session.cloudQueueTaskId && getCurrentCloudQueueStatus()?.taskId === session.cloudQueueTaskId) {
+        emitCloudQueueStatus(null, session.key);
+    }
     session.state = isGenerationJobState(snapshot.state) ? snapshot.state : session.state;
     if (Array.isArray(snapshot.historyIds)) session.historyIds = snapshot.historyIds.filter(id => typeof id === 'string' && id.length > 0);
     const position = typeof snapshot.position === 'number' && Number.isSafeInteger(snapshot.position) && snapshot.position > 0 ? snapshot.position : undefined;
@@ -155,6 +163,11 @@ const failureReceipt = (session: GenerationSeriesSession, error: unknown): Promp
 /** 结束本地归属并交出本请求的独立回执。 */
 const settleSeries = (entry: SupervisedSeries, result: PromptAgentGenerationResult) => {
     entry.wake = null;
+    const queue = getCurrentCloudQueueStatus();
+    if (queue && queue.taskId === entry.session.cloudQueueTaskId && isCloudQueueTaskActive(queue)) {
+        emitCloudQueueStatus({ ...queue, phase: result.success ? 'completed' : result.outcome === 'cancelled' ? 'cancelled' : 'error',
+            cancelable: false, error: result.success ? undefined : result.error }, entry.session.key);
+    }
     finishGenerationSeries(entry.session);
     return result;
 };
