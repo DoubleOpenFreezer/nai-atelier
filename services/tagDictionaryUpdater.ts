@@ -11,7 +11,7 @@ export interface TagUpdateStatus {
     count: number;
     generatedAt: string | null;
     sourceLastModified: string | null;
-  };
+  } | null;
 }
 
 const CONTROL_URL = '/api/tag-dictionary';

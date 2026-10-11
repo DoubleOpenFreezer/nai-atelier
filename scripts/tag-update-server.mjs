@@ -49,11 +49,11 @@ async function readManifestSummary() {
   }
 }
 
-function runCommand(command, args, onLine) {
+function runCommand(command, args, onLine, env = process.env) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
       cwd: WORKSPACE,
-      env: process.env,
+      env,
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true
     });
@@ -78,7 +78,7 @@ function runCommand(command, args, onLine) {
   });
 }
 
-async function runTagUpdate(updateScript) {
+async function runTagUpdate(updateScript, outboundProxyUrl) {
   updateState.running = true;
   updateState.phase = 'checking';
   updateState.message = '正在检查上游数据库…';
@@ -109,7 +109,7 @@ async function runTagUpdate(updateScript) {
 
       const errorMessage = line.match(/^TAG_UPDATE_ERROR=(.+)$/)?.[1];
       if (errorMessage) detailedError = decodeURIComponent(errorMessage);
-    });
+    }, { ...process.env, NAI_TAG_PROXY_URL: outboundProxyUrl });
 
     if (updateResult === 'unchanged') {
       updateState.phase = 'unchanged';
@@ -158,7 +158,7 @@ function writeJson(response, status, body, origin) {
   response.end(JSON.stringify(body));
 }
 
-export function startTagUpdateServer({ port = PORT, updateScript = UPDATE_SCRIPT } = {}) {
+export function startTagUpdateServer({ port = PORT, updateScript = UPDATE_SCRIPT, outboundProxyUrl = '' } = {}) {
   let appUpdating = false;
   const server = createServer(async (request, response) => {
     const origin = request.headers.origin || '';
@@ -188,7 +188,7 @@ export function startTagUpdateServer({ port = PORT, updateScript = UPDATE_SCRIPT
       // 消费并丢弃请求体：keep-alive 客户端下未读的 body 会污染同连接的下一个请求
       request.resume();
       if (appUpdating) return writeJson(response, 503, { error: '工坊正在安装更新，请稍后重试' }, allowedOrigin);
-      if (!updateState.running) void runTagUpdate(updateScript);
+      if (!updateState.running) void runTagUpdate(updateScript, outboundProxyUrl);
       return writeJson(response, updateState.running ? 202 : 200, {
         available: true,
         ...updateState,

@@ -378,9 +378,9 @@ async function startServer() {
     '--show-interactive-dev-session=false'
   ];
   
-  const tagUpdateServer = startTagUpdateServer();
   const wranglerEnv = resolveWranglerStartupEnv();
   const gatewayOutboundProxy = await resolveGatewayProxyUrl(outboundProxyUrl);
+  const tagUpdateServer = startTagUpdateServer({ outboundProxyUrl: gatewayOutboundProxy });
   console.log(`\x1b[90mWrangler 出站代理: ${wranglerEnv.HTTPS_PROXY}（快速失败，跳过启动期外连检查与 npm 更新检查）\x1b[0m`);
   console.log(`\x1b[90mWrangler 调试日志: ${wranglerEnv.WRANGLER_LOG_PATH}（可通过环境变量 WRANGLER_LOG_PATH 覆盖）\x1b[0m`);
   // Tag 数据不再随仓库分发（上游未声明许可）：缺失时提示用户自行安装。

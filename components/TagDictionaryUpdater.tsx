@@ -2,9 +2,6 @@ import { t, useLanguage, getLanguage } from '../services/i18n';
 import React, { useEffect, useRef, useState } from 'react';
 import { resetTagDictionaryCache } from '../services/tagDictionary';
 import { getTagUpdateStatus, startTagUpdate, TagUpdatePhase, TagUpdateStatus } from '../services/tagDictionaryUpdater';
-import { CloseButton } from './DesignSystem';
-import { useModalA11y, isTopmostModal } from './useModalA11y';
-import { ImagePreviewPortal } from './ImagePreviewPortal';
 
 interface TagDictionaryUpdaterProps {
   notify: (message: string, type?: 'success' | 'error') => void;
@@ -21,62 +18,49 @@ const PHASE_PROGRESS: Record<TagUpdatePhase, number> = {
   error: 100
 };
 
-const formatDate = (value: string | null) => {
-  if (!value) return '未知';
+const formatDate = (value: string | null | undefined) => {
+  if (!value) return t('未知');
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? '未知' : date.toLocaleString(getLanguage(), { hour12: false });
+  return Number.isNaN(date.getTime()) ? t('未知') : date.toLocaleString(getLanguage(), { hour12: false });
 };
 
 export const TagDictionaryUpdater: React.FC<TagDictionaryUpdaterProps> = ({ notify }) => {
   useLanguage();
-  const [isOpen, setIsOpen] = useState(false);
   const [status, setStatus] = useState<TagUpdateStatus | null>(null);
   const [connectionError, setConnectionError] = useState('');
-  const appliedResultRef = useRef<string | null>(null);
-  // P2-17：模态焦点管理（焦点移入 / Tab 圈禁 / 关闭后归还）。
-  const dialogRef = useModalA11y<HTMLDivElement>(isOpen);
+  const [isStarting, setIsStarting] = useState(false);
+  const appliedResultRef = useRef<string | null | undefined>(undefined);
 
   const loadStatus = async () => {
     try {
       const next = await getTagUpdateStatus();
       setStatus(next);
       setConnectionError('');
-
+      // 重新打开设置仍刷新词库缓存，但不重复通知旧更新。
+      const isFirstRead = appliedResultRef.current === undefined;
       if ((next.phase === 'completed' || next.phase === 'unchanged') && next.finishedAt && appliedResultRef.current !== next.finishedAt) {
         appliedResultRef.current = next.finishedAt;
         if (next.phase === 'completed') {
           resetTagDictionaryCache();
-          notify(`Tag 词库已更新，共 ${next.manifest.count.toLocaleString(getLanguage())} 条`, 'success');
-        } else {
+          if (!isFirstRead) notify(`Tag 词库已更新，共 ${(next.manifest?.count ?? 0).toLocaleString(getLanguage())} 条`, 'success');
+        } else if (!isFirstRead) {
           notify('Tag 词库已经是最新版本', 'success');
         }
       }
-      return next;
+      if (isFirstRead) appliedResultRef.current = next.finishedAt;
     } catch (error) {
       setConnectionError(error instanceof Error ? error.message : '无法连接 Tag 更新服务');
-      return null;
     }
   };
 
   useEffect(() => {
-    if (!isOpen) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isTopmostModal(dialogRef.current) && !status?.running) {
-        setIsOpen(false);
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, status?.running]);
-
-  useEffect(() => {
-    if (!isOpen && !status?.running) return;
     void loadStatus();
     const timer = window.setInterval(() => void loadStatus(), status?.running ? 700 : 3000);
     return () => window.clearInterval(timer);
-  }, [isOpen, status?.running]);
+  }, [status?.running]);
 
   const handleUpdate = async () => {
+    setIsStarting(true);
     try {
       appliedResultRef.current = null;
       setConnectionError('');
@@ -85,84 +69,44 @@ export const TagDictionaryUpdater: React.FC<TagDictionaryUpdaterProps> = ({ noti
       const message = error instanceof Error ? error.message : '无法开始更新';
       setConnectionError(message);
       notify(message, 'error');
+    } finally {
+      setIsStarting(false);
     }
   };
 
-  const isRunning = Boolean(status?.running);
-  const isError = status?.phase === 'error' || Boolean(connectionError);
-  const progress = PHASE_PROGRESS[status?.phase || 'idle'];
+  const isRunning = isStarting || Boolean(status?.running);
+  const isError = !isStarting && (status?.phase === 'error' || Boolean(connectionError));
+  const progress = PHASE_PROGRESS[isStarting ? 'checking' : status?.phase || 'idle'];
+  const message = isStarting ? t('正在检查上游数据库…') : (connectionError || status?.message || '').split('\n').map(line => t(line)).join('\n');
+  const showProgress = isRunning || status?.phase === 'completed' || status?.phase === 'unchanged' || isError;
 
   return (
-    <>
-      <div className="flex gap-2">
-        <a href="https://github.com/ffdkj/ffdkj-Danbooru_Tag-Chinese-English-Translation-Table" target="_blank" rel="noreferrer" className="mobile-touch flex items-center gap-1.5 rounded bg-gray-100 px-2 py-1.5 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700" title={t("打开词库 GitHub 原址")}>
-          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5h5v5m-1-4L10 14M19 14v4a1 1 0 01-1 1H6a1 1 0 01-1-1V6a1 1 0 011-1h4" /></svg>
-          <span>{t("词库来源")}</span>
-        </a>
-        <button
-          type="button"
-          onClick={() => setIsOpen(true)}
-          className="mobile-touch flex items-center gap-1.5 rounded bg-indigo-50 px-2 py-1.5 text-sm font-medium text-indigo-600 transition-colors hover:bg-indigo-100 dark:bg-indigo-900/30 dark:text-indigo-300 dark:hover:bg-indigo-900/50"
-          title={t("检查并更新 Tag 补全词库")}
-        >
-          <svg className={`h-4 w-4 ${isRunning ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-          </svg>
-          <span>{t("更新词库")}</span>
-        </button>
+    <div className="w-full min-w-0 space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h4 className="font-semibold text-gray-900 dark:text-white">{t('Tag 补全词库')}</h4>
+        <div className="flex flex-none gap-2">
+          <a href="https://github.com/ffdkj/ffdkj-Danbooru_Tag-Chinese-English-Translation-Table" target="_blank" rel="noreferrer" className="mobile-touch flex items-center gap-1.5 rounded bg-gray-100 px-2 py-1.5 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700" title={t('打开词库 GitHub 原址')}>
+            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5h5v5m-1-4L10 14M19 14v4a1 1 0 01-1 1H6a1 1 0 011-1h4" /></svg>
+            <span>{t('词库来源')}</span>
+          </a>
+          <button type="button" disabled={isRunning} onClick={() => void handleUpdate()} className="mobile-touch flex items-center gap-1.5 rounded bg-indigo-50 px-2 py-1.5 text-sm font-medium text-indigo-600 transition-colors hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-indigo-900/30 dark:text-indigo-300 dark:hover:bg-indigo-900/50" title={t('检查并更新 Tag 补全词库')}>
+            <svg className={`h-4 w-4 ${isRunning ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357 2m15.357 2H15" /></svg>
+            <span>{isRunning ? t('更新中…') : t('更新词库')}</span>
+          </button>
+        </div>
       </div>
-
-      {isOpen && (
-        <ImagePreviewPortal><div className="fixed inset-0 z-[1250] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm" onMouseDown={() => !isRunning && setIsOpen(false)}>
-          <div
-            ref={dialogRef}
-            role="dialog"
-            aria-modal="true"
-            aria-label={t("Tag 补全词库")}
-            className="operation-dialog flex flex-col border border-gray-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-900"
-            onMouseDown={event => event.stopPropagation()}
-          >
-            <div className="operation-header flex flex-none items-center justify-between border-b border-gray-200 dark:border-gray-800 px-5 py-4">
-              <div>
-                <h2 className="font-bold text-gray-900 dark:text-white">{t("Tag 补全词库")}</h2>
-              </div>
-              <CloseButton onClick={() => { if (!isRunning) setIsOpen(false); }} className={isRunning ? 'pointer-events-none opacity-40' : ''} size="sm" />
-            </div>
-
-            <div className="min-h-0 flex-1 overflow-y-auto space-y-4 px-5 py-5">
-              <div className="grid grid-cols-2 gap-3 text-sm">
-                <div className="rounded-xl bg-gray-50 dark:bg-gray-800 p-3">
-                  <div className="text-xs text-gray-500 dark:text-gray-400">{t("当前 Tag 数量")}</div>
-                  <div className="mt-1 font-semibold text-gray-900 dark:text-white">{status ? status.manifest.count.toLocaleString(getLanguage()) : '—'}</div>
-                </div>
-                <div className="rounded-xl bg-gray-50 dark:bg-gray-800 p-3">
-                  <div className="text-xs text-gray-500 dark:text-gray-400">{t("词库生成时间")}</div>
-                  <div className="mt-1 text-xs font-medium text-gray-900 dark:text-white">{formatDate(status?.manifest.generatedAt || null)}</div>
-                </div>
-              </div>
-
-              {(isRunning || status?.phase === 'completed' || status?.phase === 'unchanged' || isError) && (
-                <div>
-                  <div className={`mb-2 text-sm ${isError ? 'text-red-600 dark:text-red-400' : 'text-gray-700 dark:text-gray-300'}`}>
-                    {connectionError || t(status?.message)}
-                  </div>
-                  <div className="h-2 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
-                    <div className={`h-full transition-all duration-500 ${isError ? 'bg-red-500' : 'bg-indigo-500'} ${isRunning ? 'animate-pulse' : ''}`} style={{ width: `${progress}%` }} />
-                  </div>
-                </div>
-              )}
-
-            </div>
-
-            <div className="operation-footer flex flex-none justify-end gap-2 border-t border-gray-200 dark:border-gray-800 px-5 py-4">
-              <button type="button" disabled={isRunning} onClick={() => setIsOpen(false)} className="rounded-xl px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800 disabled:opacity-40">{t("关闭")}</button>
-              <button type="button" disabled={isRunning} onClick={handleUpdate} className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50">
-                {isRunning ? t("更新中…") : t("检查并更新")}
-              </button>
-            </div>
+      {showProgress && (
+        <div className="space-y-2">
+          <p role={isError ? 'alert' : 'status'} className={`whitespace-pre-line text-xs leading-5 [overflow-wrap:anywhere] ${isError ? 'text-red-600 dark:text-red-400' : 'text-gray-600 dark:text-gray-300'}`}>{message}</p>
+          <div role="progressbar" aria-label={t('词库更新进度')} aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress} aria-valuetext={message} className="h-1.5 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
+            <div className={`h-full rounded-full transition-all duration-500 ${isError ? 'bg-red-500' : 'bg-indigo-600'} ${isRunning ? 'animate-pulse' : ''}`} style={{ width: `${progress}%` }} />
           </div>
-        </div></ImagePreviewPortal>
+        </div>
       )}
-    </>
+      <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs leading-5 text-gray-500 dark:text-gray-400">
+        <span>{t('当前 Tag 数量')}：<span className="font-medium tabular-nums text-gray-600 dark:text-gray-300">{status ? (status.manifest?.count ?? 0).toLocaleString(getLanguage()) : '—'}</span></span>
+        <span>{t('词库生成时间')}：{formatDate(status?.manifest?.generatedAt)}</span>
+      </div>
+    </div>
   );
 };

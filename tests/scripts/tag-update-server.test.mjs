@@ -4,7 +4,13 @@ import { once } from 'node:events';
 import { join } from 'node:path';
 import { writeFile, readFile } from 'node:fs/promises';
 import { createWorkspace, removeWorkspace } from '../support/workspace.mjs';
-import { startTagUpdateServer } from '../../scripts/tag-update-server.mjs';
+import '../support/node-environment.mjs';
+
+const previousPackaged = process.env.NAI_PACKAGED;
+process.env.NAI_PACKAGED = '1';
+const { startTagUpdateServer } = await import('../../scripts/tag-update-server.mjs');
+if (previousPackaged === undefined) delete process.env.NAI_PACKAGED;
+else process.env.NAI_PACKAGED = previousPackaged;
 
 test('停服会终止本次启动的词库子进程，不留下继续写入的后台', async () => {
   const root = createWorkspace('tag-update-child-');
@@ -34,6 +40,37 @@ test('停服会终止本次启动的词库子进程，不留下继续写入的�
       await new Promise(done => setTimeout(done, 25));
     }
     assert.throws(() => process.kill(pid, 0));
+  } finally {
+    server.stopUpdates();
+    await new Promise(done => { server.close(done); server.closeAllConnections(); });
+    removeWorkspace(root);
+  }
+});
+
+test('更新子进程获得现有网关代理，多行主备错误原样返回界面', async () => {
+  const root = createWorkspace('tag-update-proxy-');
+  const script = join(root, 'synthetic-updater.mjs'), marker = join(root, 'proxy.txt');
+  const detail = '主线路（primary.invalid）：连接超时\n备用线路（fallback.invalid）：下载服务器返回 403 Forbidden';
+  await writeFile(script, `import fs from 'node:fs'; fs.writeFileSync(new URL('./proxy.txt', import.meta.url), process.env.NAI_TAG_PROXY_URL || ''); console.error('TAG_UPDATE_ERROR=' + encodeURIComponent(${JSON.stringify(detail)})); process.exitCode = 1;`);
+  const proxy = 'http://127.0.0.1:7897';
+  const server = startTagUpdateServer({ port: 0, updateScript: script, outboundProxyUrl: proxy });
+  try {
+    await once(server, 'listening');
+    const url = `http://127.0.0.1:${server.address().port}/tag-dictionary`;
+    const headers = { Origin: 'http://127.0.0.1:3000', 'X-Nai-Local-Control': 'true' };
+    // 上一个停服用例的退出回执处理完成后，再启动下一次合成任务。
+    for (let attempt = 0; attempt < 40 && (await (await fetch(url, { headers })).json()).running; attempt++) await new Promise(done => setTimeout(done, 25));
+    assert.equal((await fetch(url, { method: 'POST', headers })).status, 202);
+    let status;
+    for (let attempt = 0; attempt < 40; attempt++) {
+      status = await (await fetch(url, { headers })).json();
+      if (!status.running) break;
+      await new Promise(done => setTimeout(done, 25));
+    }
+    assert.equal(await readFile(marker, 'utf8'), proxy);
+    assert.equal(status.phase, 'error');
+    assert.equal(status.message, detail);
+    assert.equal(status.running, false);
   } finally {
     server.stopUpdates();
     await new Promise(done => { server.close(done); server.closeAllConnections(); });

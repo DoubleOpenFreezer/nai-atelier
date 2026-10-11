@@ -48,7 +48,7 @@ export function AndroidStorageManager({ notify }: { notify: (message: string, ty
       </div>}
     </div>
     <div className="border-b border-gray-200 pb-5 dark:border-gray-700"><h4 className="font-semibold">{t("缩略图缓存")}</h4><p className="mt-2 text-xs text-gray-500">{t("{0} 张 · {1} MB / {2} MB，清理不影响原图。", [cache.count, (cache.bytes/1048576).toFixed(1), cache.limitMb])}</p><div className="mt-3 flex flex-wrap gap-2">{[0,25,50,100].map(limit=><button key={limit} type="button" onClick={()=>{setMobileCacheLimitMb(limit);setCache(getMobileCacheStats());}} className={`mobile-touch rounded-lg border px-3 py-2 text-xs ${cache.limitMb===limit?'border-indigo-500 text-indigo-500':'border-gray-300 dark:border-gray-600'}`}>{limit?`${limit} MB`:t("关闭")}</button>)}<button type="button" className="mobile-touch px-3 py-2 text-xs text-red-500" onClick={()=>void perform('正在清理缓存…',async()=>{await clearMobileThumbnailCache();notify('缩略图缓存已清理');})}>{t("清理缓存")}</button></div></div>
-    <div className="flex items-center justify-between gap-3 border-b border-gray-200 pb-5 dark:border-gray-700"><h4 className="font-semibold">{t("Tag 补全词库")}</h4><TagDictionaryUpdater notify={notify} /></div>
+    <div className="border-b border-gray-200 pb-5 dark:border-gray-700"><TagDictionaryUpdater notify={notify} /></div>
     <div className="flex items-center justify-between gap-3"><div><h4 className="font-semibold">NAI Atelier</h4><p className="mt-1 text-xs text-gray-500">Android · v{__APP_VERSION__}</p></div><a href="https://github.com/HelloQun54321/nai-atelier" target="_blank" rel="noreferrer" className="mobile-touch flex items-center gap-2 rounded-lg bg-indigo-600 px-3 py-2 text-xs text-white"><ExternalLink className="h-4 w-4" />GitHub</a></div>
   </div>;
 }

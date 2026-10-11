@@ -3,6 +3,7 @@ import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { fetch, ProxyAgent } from 'undici';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 // 词库先写入暂存目录、全部成功后再原子替换正式目录：
@@ -15,8 +16,8 @@ const MANIFEST_FILE = path.join(FINAL_OUTPUT_DIR, 'manifest.json');
 const NAI_TAGS_FILE = path.join(ROOT, 'data', 'novelai-v45-tags.json');
 const TRANSLATION_DATABASE_URL = process.env.NAI_TAG_DATABASE_URL
   || 'https://raw.githubusercontent.com/ffdkj/ffdkj-Danbooru_Tag-Chinese-English-Translation-Table/main/tag.sqlite';
-const TRANSLATION_DATABASE_FALLBACK_URL = process.env.NAI_TAG_DATABASE_FALLBACK_URL
-  || 'https://cdn.jsdelivr.net/gh/ffdkj/ffdkj-Danbooru_Tag-Chinese-English-Translation-Table@main/tag.sqlite';
+// jsDelivr 对该文件限制 20 MB，当前词库已超限；备用源只使用明确配置的地址。
+const TRANSLATION_DATABASE_FALLBACK_URL = process.env.NAI_TAG_DATABASE_FALLBACK_URL || '';
 const TRANSLATION_PROJECT_URL = 'https://github.com/ffdkj/ffdkj-Danbooru_Tag-Chinese-English-Translation-Table';
 const USER_AGENT = 'NAI-Atelier/0.5.0 (private local tag dictionary updater)';
 const CHARACTER_SEARCH_SHARD_COUNT = 128;
@@ -113,63 +114,81 @@ async function downloadTranslationDatabase(targetPath) {
   console.log('TAG_UPDATE_PHASE=checking');
   console.log('Downloading the latest bilingual Danbooru tag database...');
   const currentSource = await readCurrentSourceMetadata();
-  const sources = [...new Set([TRANSLATION_DATABASE_URL, TRANSLATION_DATABASE_FALLBACK_URL])];
-  let lastError;
+  const sources = [...new Set([TRANSLATION_DATABASE_URL, TRANSLATION_DATABASE_FALLBACK_URL].filter(Boolean))];
+  const proxyUrl = process.env.NAI_TAG_PROXY_URL || process.env.HTTPS_PROXY || process.env.https_proxy || process.env.HTTP_PROXY || process.env.http_proxy;
+  const proxyAgent = proxyUrl ? new ProxyAgent(proxyUrl) : null;
+  const failures = [];
 
-  for (let sourceIndex = 0; sourceIndex < sources.length; sourceIndex++) {
-    const sourceUrl = sources[sourceIndex];
-    const validator = currentSource.validators[sourceUrl] || {};
+  try {
+    for (let sourceIndex = 0; sourceIndex < sources.length; sourceIndex++) {
+      const sourceUrl = sources[sourceIndex];
+      const validator = currentSource.validators[sourceUrl] || {};
+      const sourceLabel = `${sourceIndex === 0 ? '主线路' : '备用线路'}（${new URL(sourceUrl).host}）`;
+      let lastError;
 
-    if (sourceIndex > 0) {
-      console.log(`TAG_UPDATE_MESSAGE=${encodeURIComponent('GitHub 连接失败，正在切换备用下载线路…')}`);
-      console.log('Switching to the jsDelivr fallback...');
-    }
+      if (sourceIndex > 0) {
+        console.log(`TAG_UPDATE_MESSAGE=${encodeURIComponent('主线路下载失败，正在切换备用线路…')}`);
+        console.log('Switching to the configured fallback...');
+      }
 
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      const headers = { 'User-Agent': USER_AGENT };
-      if (currentSource.canSkipRegeneration && validator.etag) headers['If-None-Match'] = validator.etag;
-      if (currentSource.canSkipRegeneration && !validator.etag && validator.lastModified) headers['If-Modified-Since'] = validator.lastModified;
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        const headers = { 'User-Agent': USER_AGENT };
+        if (currentSource.canSkipRegeneration && validator.etag) headers['If-None-Match'] = validator.etag;
+        if (currentSource.canSkipRegeneration && !validator.etag && validator.lastModified) headers['If-Modified-Since'] = validator.lastModified;
 
-      try {
-        const response = await fetch(sourceUrl, {
-          cache: 'no-store',
-          headers,
-          signal: AbortSignal.timeout(45000)
-        });
-        if (response.status === 304) {
-          console.log('TAG_UPDATE_RESULT=unchanged');
-          return null;
-        }
-        if (!response.ok) throw new Error(`下载服务器返回 ${response.status} ${response.statusText}`);
-
-        console.log('TAG_UPDATE_PHASE=downloading');
-        const bytes = new Uint8Array(await response.arrayBuffer());
-        await writeFile(targetPath, bytes);
-        console.log(`Downloaded ${(bytes.byteLength / 1024 / 1024).toFixed(1)} MB`);
-        return {
-          downloadUrl: sourceUrl,
-          validators: {
-            ...currentSource.validators,
-            [sourceUrl]: {
-              etag: response.headers.get('etag') || '',
-              lastModified: response.headers.get('last-modified') || ''
-            }
+        try {
+          const response = await fetch(sourceUrl, {
+            cache: 'no-store',
+            headers,
+            signal: AbortSignal.timeout(45000),
+            ...(proxyAgent ? { dispatcher: proxyAgent } : {})
+          });
+          if (response.status === 304) {
+            console.log('TAG_UPDATE_RESULT=unchanged');
+            return null;
           }
-        };
-      } catch (error) {
-        lastError = error;
-        const reason = describeNetworkError(error);
-        if (attempt < 3) {
-          const delayMs = attempt * 1500;
-          console.warn(`${reason}; retrying in ${delayMs}ms (${attempt}/3)`);
-          console.log(`TAG_UPDATE_MESSAGE=${encodeURIComponent(`${reason}，${delayMs / 1000} 秒后重试（${attempt}/3）…`)}`);
-          await wait(delayMs);
+          if (!response.ok) {
+            let detail = '';
+            if (response.headers.get('content-type')?.startsWith('text/plain')) {
+              detail = (await response.text()).trim().replace(/\s+/g, ' ').slice(0, 200);
+              const sizeLimit = detail.match(/File size exceeded the configured limit of (\d+\s*MB)/i)?.[1];
+              if (sizeLimit) detail = `文件超过下载源的大小限制（${sizeLimit}）`;
+            } else await response.body?.cancel();
+            throw Object.assign(new Error(`下载服务器返回 ${response.status} ${response.statusText}${detail ? `：${detail}` : ''}`), { status: response.status });
+          }
+
+          console.log('TAG_UPDATE_PHASE=downloading');
+          const bytes = new Uint8Array(await response.arrayBuffer());
+          await writeFile(targetPath, bytes);
+          console.log(`Downloaded ${(bytes.byteLength / 1024 / 1024).toFixed(1)} MB`);
+          return {
+            downloadUrl: sourceUrl,
+            validators: {
+              ...currentSource.validators,
+              [sourceUrl]: {
+                etag: response.headers.get('etag') || '',
+                lastModified: response.headers.get('last-modified') || ''
+              }
+            }
+          };
+        } catch (error) {
+          lastError = error;
+          const reason = describeNetworkError(error);
+          if (error.status >= 400 && error.status < 500 && error.status !== 408 && error.status !== 429) break;
+          if (attempt < 3) {
+            const delayMs = attempt * 1500;
+            console.warn(`${reason}; retrying in ${delayMs}ms (${attempt}/3)`);
+            console.log(`TAG_UPDATE_MESSAGE=${encodeURIComponent(`${sourceLabel}：${reason}，${delayMs / 1000} 秒后重试（${attempt}/3）…`)}`);
+            await wait(delayMs);
+          }
         }
       }
+      failures.push(`${sourceLabel}：${describeNetworkError(lastError)}`);
     }
+    throw new Error(failures.join('\n'));
+  } finally {
+    await proxyAgent?.close();
   }
-
-  throw new Error(`${describeNetworkError(lastError)}。主线路和备用线路均不可用，请检查网络或代理后重试`);
 }
 
 async function writeShards(shards, directoryName) {
