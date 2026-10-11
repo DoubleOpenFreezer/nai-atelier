@@ -2,7 +2,7 @@
 import { Blob as NativeBlob } from 'node:buffer';
 import { encode } from 'fast-png';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { copySharedImage, downloadSharedImage, setCleanSharedImages } from '../../services/imageSharing';
+import { copySharedImage, downloadSharedImage, getSharedImageCustomText, setCleanSharedImages, setSharedImageCustomText, getSharedImageCleanContent, setSharedImageCleanContent, IMAGE_SHARING_CONTENT_STORAGE_KEY } from '../../services/imageSharing';
 import { extractNovelAiMetadataFromPng } from '../../services/metadataService';
 
 class TestClipboardItem {
@@ -29,6 +29,65 @@ beforeEach(() => {
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers(); });
 
 describe('分享输出与剪贴板', () => {
+  it('清洗内容缺省、非法值和读取失败均为全部，关闭清洗保留偏好', () => {
+    expect(getSharedImageCleanContent()).toBe('all');
+    localStorage.setItem(IMAGE_SHARING_CONTENT_STORAGE_KEY, 'invalid');
+    expect(getSharedImageCleanContent()).toBe('all');
+    setSharedImageCleanContent('prompts');
+    setCleanSharedImages(false);
+    expect(getSharedImageCleanContent()).toBe('prompts');
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('unavailable'); });
+    expect(getSharedImageCleanContent()).toBe('all');
+  });
+
+  it.each(['copy', 'download'] as const)('%s 捕获仅提示词模式，迟到的模式切换不删真实参数，关闭不改变原文件', async action => {
+    const image = new NativeBlob([encode({ width: 1, height: 1, data: new Uint8Array([4, 5, 6, 255]), text: { Comment: '{"prompt":"private style","steps":17,"seed":0,"sm":false}' } })], { type: 'image/png' }) as unknown as Blob;
+    let copied!: Blob;
+    vi.stubGlobal('navigator', { clipboard: { write: vi.fn(async (items: TestClipboardItem[]) => { copied = await items[0].data['image/png']; }) } });
+    let resolveImage!: (res: Response) => void;
+    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(resolve => { resolveImage = resolve; })));
+    setSharedImageCleanContent('prompts');
+    setSharedImageCustomText('🐷');
+    const pending = action === 'copy' ? copySharedImage('/image', true) : downloadSharedImage('/image', 'NAI.png', true);
+    setSharedImageCleanContent('all');
+    setSharedImageCustomText('later');
+    resolveImage(response(image));
+    await pending;
+    const shared = action === 'copy' ? copied : created[0];
+    expect(JSON.parse((await extractNovelAiMetadataFromPng(await shared.arrayBuffer()))!)).toEqual({ prompt: '🐷', steps: 17, seed: 0, sm: false });
+    setSharedImageCleanContent('prompts');
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response(image)));
+    if (action === 'copy') await copySharedImage('/image', false);
+    else await downloadSharedImage('/image', 'NAI.png', false);
+    expect(new Uint8Array(await (action === 'copy' ? copied : created[1]).arrayBuffer())).toEqual(new Uint8Array(await image.arrayBuffer()));
+  });
+  it('自定义文本默认留空并保存原文，读取失败返回空文本', () => {
+    expect(getSharedImageCustomText()).toBe('');
+    setSharedImageCustomText('  🐷 中文  ');
+    expect(getSharedImageCustomText()).toBe('  🐷 中文  ');
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('unavailable'); });
+    expect(getSharedImageCustomText()).toBe('');
+  });
+
+  it.each(['copy', 'download'] as const)('%s 发起时捕获自定义文本，关闭清洗仍保留原信息', async action => {
+    let copied!: Blob;
+    vi.stubGlobal('navigator', { clipboard: { write: vi.fn(async (items: TestClipboardItem[]) => { copied = await items[0].data['image/png']; }) } });
+    let resolveImage!: (res: Response) => void;
+    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(resolve => { resolveImage = resolve; })));
+    setSharedImageCustomText('  🐷 "分享"  ');
+    const pending = action === 'copy' ? copySharedImage('/image', true) : downloadSharedImage('/image', 'NAI.png', true);
+    setSharedImageCustomText('后来修改');
+    resolveImage(response());
+    await pending;
+    const shared = action === 'copy' ? copied : created[0];
+    expect(JSON.parse((await extractNovelAiMetadataFromPng(await shared.arrayBuffer()))!)).toEqual({ prompt: '  🐷 "分享"  ' });
+    expect(new TextDecoder().decode(await shared.arrayBuffer())).not.toContain('private style');
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response()));
+    if (action === 'copy') await copySharedImage('/image', false);
+    else await downloadSharedImage('/image', 'NAI.png', false);
+    const uncleaned = action === 'copy' ? copied : created[1];
+    expect(new Uint8Array(await uncleaned.arrayBuffer())).toEqual(png);
+  });
   it('开启清洗时输出另命名的分享版，显式原图下载仍与原字节完全一致', async () => {
     vi.useFakeTimers();
     setCleanSharedImages(true);

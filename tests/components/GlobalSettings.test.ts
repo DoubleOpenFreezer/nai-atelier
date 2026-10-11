@@ -7,7 +7,7 @@ import { DEFAULT_APPEARANCE_PREFERENCES, AppearancePreferences } from '../../ser
 import { ConfirmDialogProvider } from '../../components/ConfirmDialog';
 import { GlobalSettings } from '../../components/GlobalSettings';
 import { readAgentPage } from '../../services/agentWorkspace';
-import { getCleanSharedImages, IMAGE_SHARING_STORAGE_KEY } from '../../services/imageSharing';
+import { getCleanSharedImages, getSharedImageCustomText, getSharedImageCleanContent, IMAGE_SHARING_STORAGE_KEY, IMAGE_SHARING_TEXT_STORAGE_KEY, IMAGE_SHARING_CONTENT_STORAGE_KEY } from '../../services/imageSharing';
 import { readActiveNaiKey, REMEMBER_NAI_KEY_STORAGE_KEY, setActiveNaiKey } from '../../services/naiKeyStorage';
 import { naiKeyVault } from '../../services/naiKeyVault';
 const subscriptionFixture = vi.hoisted(() => ({ entries: [] as import('../../services/naiKeyVault').NaiKeyEntry[], expired: false, balance: undefined as { fixedTrainingStepsLeft: number; purchasedTrainingSteps: number } | undefined, usage: undefined as import('../../services/naiUsage').NovelaiUsageState | undefined, refresh: vi.fn(async () => null) }));
@@ -282,7 +282,52 @@ describe('GlobalSettings', () => {
     view.unmount();
     render(React.createElement(SettingsHarness, { initialSection: 'privacy' }));
     expect((await screen.findByRole('checkbox', { name: '分享图片时移除生成信息' }) as HTMLInputElement).checked).toBe(true);
-    expect(screen.getByText(/原图与历史保留/)).toBeTruthy();
+    expect(screen.getByText('复制／下载时移除生成信息；原图与历史保留。')).toBeTruthy();
+  });
+  it('安全模式与图片元数据清洗分属独立板块，自定义文本可保存并在关闭时保留', async () => {
+    const view = render(React.createElement(SettingsHarness, { initialSection: 'privacy' }));
+    const safeHeading = screen.getByRole('heading', { level: 3, name: '安全模式' });
+    const cleanHeading = screen.getByRole('heading', { level: 3, name: '图片元数据清洗' });
+    expect(safeHeading.parentElement).not.toBe(cleanHeading.parentElement);
+    expect(screen.queryByRole('heading', { level: 3, name: '隐私与分享' })).toBeNull();
+
+    const cleanToggle = await screen.findByRole('checkbox', { name: '分享图片时移除生成信息' }) as HTMLInputElement;
+    const cleanContent = screen.getByRole('combobox', { name: '清洗内容' }) as HTMLSelectElement;
+    const customText = screen.getByRole('textbox', { name: '自定义文本' }) as HTMLInputElement;
+    const safeToggle = screen.getByRole('button', { name: /^安全模式/ });
+    expect(cleanToggle.checked).toBe(false);
+    expect(cleanContent.value).toBe('all');
+    expect(getSharedImageCleanContent()).toBe('all');
+    expect(cleanContent.disabled).toBe(true);
+    expect(customText.value).toBe('');
+    expect(customText.disabled).toBe(true);
+    fireEvent.click(safeToggle);
+    expect(cleanToggle.checked).toBe(false);
+    fireEvent.click(cleanToggle);
+    expect(safeToggle.getAttribute('aria-pressed')).toBe('true');
+    expect(cleanToggle.checked).toBe(true);
+    expect(cleanContent.disabled).toBe(false);
+    expect(customText.disabled).toBe(false);
+    fireEvent.change(cleanContent, { target: { value: 'prompts' } });
+    expect(getSharedImageCleanContent()).toBe('prompts');
+    expect(localStorage.getItem(IMAGE_SHARING_CONTENT_STORAGE_KEY)).toBe('prompts');
+    fireEvent.change(customText, { target: { value: '中文自定义文本 🌸' } });
+    expect(getSharedImageCustomText()).toBe('中文自定义文本 🌸');
+    expect(localStorage.getItem(IMAGE_SHARING_TEXT_STORAGE_KEY)).toBe('中文自定义文本 🌸');
+
+    view.unmount();
+    render(React.createElement(SettingsHarness, { initialSection: 'privacy' }));
+    const reopenedToggle = await screen.findByRole('checkbox', { name: '分享图片时移除生成信息' }) as HTMLInputElement;
+    const reopenedCleanContent = screen.getByRole('combobox', { name: '清洗内容' }) as HTMLSelectElement;
+    const reopenedText = screen.getByRole('textbox', { name: '自定义文本' }) as HTMLInputElement;
+    expect(reopenedToggle.checked).toBe(true);
+    expect(reopenedCleanContent.value).toBe('prompts');
+    expect(reopenedText.value).toBe('中文自定义文本 🌸');
+    fireEvent.click(reopenedToggle);
+    expect(reopenedCleanContent.disabled).toBe(true);
+    expect(reopenedCleanContent.value).toBe('prompts');
+    expect(reopenedText.disabled).toBe(true);
+    expect(reopenedText.value).toBe('中文自定义文本 🌸');
   });
   it('当前 Key 订阅过期时显示琥珀色订阅状态，提示 Paid Anlas，不误标为密钥失效', async () => {
     subscriptionFixture.expired = true;

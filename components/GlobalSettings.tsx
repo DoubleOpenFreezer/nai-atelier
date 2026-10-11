@@ -3,7 +3,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useModalA11y, isTopmostModal } from './useModalA11y';
 import { TagDictionaryUpdater } from './TagDictionaryUpdater';
 import { ImageTaggerModelManager } from './ImageTaggerModelManager';
-import { setCleanSharedImages, useCleanSharedImages } from '../services/imageSharing';
+import { setCleanSharedImages, useCleanSharedImages, setSharedImageCustomText, useSharedImageCustomText, setSharedImageCleanContent, useSharedImageCleanContent } from '../services/imageSharing';
 import { copyTagText } from '../services/externalImageTags';
 import { DataBackupManager } from './DataBackupManager';
 import { DesktopLauncherManager } from './DesktopLauncherManager';
@@ -160,6 +160,8 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
   useLanguage();
   const confirmAction = useConfirmDialog();
   const cleanSharedImages = useCleanSharedImages();
+  const sharedImageCustomText = useSharedImageCustomText();
+  const sharedImageCleanContent = useSharedImageCleanContent();
   const [apiKey, setApiKey] = useState(readApiKey);
   const [rememberApiKey, setRememberApiKey] = useState(() => getRememberNaiKey());
   const [cloudQueue, setCloudQueue] = useState(getCachedCloudQueuePreferences);
@@ -1288,9 +1290,9 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
             {activeSection === 'agent' && <PromptAgentSettings notify={notify} />}
           </section>
 
-          <section id="settings-privacy" className={`rounded-xl border border-gray-200 p-4 dark:border-gray-700 ${activeSection !== 'privacy' ? 'hidden' : ''}`}>
-            <h3 className="mb-4 text-base font-bold text-gray-900 dark:text-white">{t("隐私与分享")}</h3>
-            {activeSection === 'privacy' && <div className="mb-4">
+          <section id="settings-privacy" className={`${activeSection !== 'privacy' ? 'hidden' : 'space-y-4'}`}>
+            {activeSection === 'privacy' && <div className="rounded-xl border border-gray-200 p-4 dark:border-gray-700">
+              <h3 className="mb-4 text-base font-bold text-gray-900 dark:text-white">{t("安全模式")}</h3>
               <button type="button" onClick={toggleSafeMode} aria-pressed={safeMode} className={`mobile-touch md:h-10 flex w-full items-center justify-between rounded-xl px-3 text-sm font-bold ${safeMode ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200'}`}><span className="flex items-center gap-2"><Shield className="h-4 w-4" />{t("安全模式（防社死）")}</span><span>{safeMode ? t("已开启") : t("已关闭")}</span></button>
               <p className="mt-2 text-meta leading-5 text-gray-500 dark:text-gray-400">{t("点击图片临时显示")}</p>
               <button type="button" onClick={() => setSafeModeHideTitles(enabled => !enabled)} aria-pressed={safeModeHideTitles} className="mt-2 flex w-full items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-left transition hover:border-emerald-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-emerald-700">
@@ -1302,13 +1304,35 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                 <span className={`relative h-6 w-11 flex-none rounded-full transition-colors ${safeModeStartup ? 'bg-emerald-500' : 'bg-gray-300 dark:bg-gray-700'}`}><span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${safeModeStartup ? 'translate-x-5' : 'translate-x-0'}`} /></span>
               </button>
             </div>}
-            <label className="flex cursor-pointer items-start justify-between gap-4 rounded-xl border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-900">
-              <span className="min-w-0"><b className="block text-sm text-gray-900 dark:text-white">{t("分享图片时移除生成信息")}</b><span className="mt-1 block text-xs leading-5 text-gray-500 dark:text-gray-400">{t("复制／下载时移除生成信息；原图与历史保留。")}</span></span>
-              <input type="checkbox" aria-label={t("分享图片时移除生成信息")} checked={cleanSharedImages} onChange={event => {
-                try { setCleanSharedImages(event.target.checked); }
-                catch { notify('设置保存失败，请检查浏览器存储权限', 'error'); }
-              }} className="mt-1 h-5 w-5 shrink-0 accent-indigo-600" />
-            </label>
+            {activeSection === 'privacy' && <div className="rounded-xl border border-gray-200 p-4 dark:border-gray-700">
+              <h3 className="mb-4 text-base font-bold text-gray-900 dark:text-white">{t("图片元数据清洗")}</h3>
+              <label className="flex cursor-pointer items-start justify-between gap-4 rounded-xl border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-900">
+                <span className="min-w-0"><b className="block text-sm text-gray-900 dark:text-white">{t("分享图片时移除生成信息")}</b><span className="mt-1 block text-xs leading-5 text-gray-500 dark:text-gray-400">{t("复制／下载时移除生成信息；原图与历史保留。")}</span></span>
+                <input type="checkbox" aria-label={t("分享图片时移除生成信息")} checked={cleanSharedImages} onChange={event => {
+                  try { setCleanSharedImages(event.target.checked); }
+                  catch { notify('设置保存失败，请检查浏览器存储权限', 'error'); }
+                }} className="mt-1 h-5 w-5 shrink-0 accent-indigo-600" />
+              </label>
+              <label className="mt-3 block text-sm font-medium text-gray-800 dark:text-gray-100">
+                {t("清洗内容")}
+                <select aria-label={t("清洗内容")} value={sharedImageCleanContent} disabled={!cleanSharedImages} onChange={event => {
+                  try { setSharedImageCleanContent(event.target.value as 'all' | 'prompts'); }
+                  catch { notify('设置保存失败，请检查浏览器存储权限', 'error'); }
+                }} className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-900 dark:text-white">
+                  <option value="all">{t("全部生成信息")}</option>
+                  <option value="prompts">{t("仅提示词")}</option>
+                </select>
+                <span className="mt-1 block text-xs leading-5 font-normal text-gray-500 dark:text-gray-400">{t("仅提示词会保留生成参数。")}</span>
+              </label>
+              <label className="mt-3 block text-sm font-medium text-gray-800 dark:text-gray-100">
+                {t("自定义文本")}
+                <input type="text" aria-label={t("自定义文本")} placeholder={t("留空时只清洗")} value={sharedImageCustomText} disabled={!cleanSharedImages} onChange={event => {
+                  try { setSharedImageCustomText(event.target.value); }
+                  catch { notify('设置保存失败，请检查浏览器存储权限', 'error'); }
+                }} className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-900 dark:text-white" />
+                <span className="mt-1 block text-xs leading-5 font-normal text-gray-500 dark:text-gray-400">{t("清洗后写入自定义文本，原图与历史保留。")}</span>
+              </label>
+            </div>}
           </section>
 
           <section id="settings-maintenance" className={`rounded-xl border border-gray-200 p-4 dark:border-gray-700 ${activeSection !== 'maintenance' ? 'hidden' : ''}`}>

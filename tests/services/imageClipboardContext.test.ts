@@ -3,7 +3,7 @@ import { Blob as NativeBlob, File as NativeFile } from 'node:buffer';
 import { webcrypto } from 'node:crypto';
 import { decode, encode } from 'fast-png';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { copySharedImage } from '../../services/imageSharing';
+import { copySharedImage, IMAGE_SHARING_TEXT_STORAGE_KEY, setSharedImageCustomText, IMAGE_SHARING_CONTENT_STORAGE_KEY, setSharedImageCleanContent } from '../../services/imageSharing';
 import { readClipboardImage } from '../../services/imageClipboard';
 import { beginImageClipboardCopy, getCopiedImageData, rememberCopiedImage } from '../../services/imageClipboardContext';
 import { extractMetadata } from '../../services/metadataService';
@@ -38,7 +38,9 @@ describe('主动复制图片的会话内生成配置', () => {
     expect(await getCopiedImageData(file(image()))).toEqual(generationData);
     await pending;
   });
-  it.each([false, true])('历史复制→系统重编码→读取：清洗=%s，角色正负词与空全局负面仍完整', async clean => {
+  it.each([[false, 'all'], [true, 'all'], [true, 'prompts']] as const)('历史复制→系统重编码→读取：清洗=%s，内容=%s，角色正负词与空全局负面仍完整', async (clean, content) => {
+    setSharedImageCustomText('🐷 分享文字');
+    setSharedImageCleanContent(content);
     let pasted!: Blob;
     vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, blob: async () => image({ Comment: JSON.stringify({ prompt: 'old embedded prompt' }) }) })));
     vi.stubGlobal('ClipboardItem', class { constructor(public data: Record<string, Promise<Blob>>) {} });
@@ -55,7 +57,7 @@ describe('主动复制图片的会话内生成配置', () => {
     expect(await extractMetadata(imported)).toBeNull();
     expect(await getCopiedImageData(imported)).toEqual(generationData);
     expect(Object.keys(sessionStorage)).toEqual(['nai_last_copied_image']);
-    expect(Object.keys(localStorage)).toEqual([]);
+    expect(Object.keys(localStorage)).toEqual([IMAGE_SHARING_TEXT_STORAGE_KEY, IMAGE_SHARING_CONTENT_STORAGE_KEY]);
   });
 
   it('没有额外历史配置时，从原图解析结构化角色再关联清洗副本', async () => {
