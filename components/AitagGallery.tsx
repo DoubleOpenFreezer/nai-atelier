@@ -361,7 +361,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
 
   // 瀑布流（masonry 布局时）：图片加载后按真实宽高比完整显示，最短列分配互相补齐。
   const [aitagRatios, setAitagRatios] = useState<Record<number, number>>(() => aitagRatioCache);
-  const masonryColumns = useMasonryColumnCount(imageDisplay);
+  const masonryColumns = useMasonryColumnCount(imageDisplay, undefined, galleryContentRef);
   const frostedCaption = useGalleryFrostedCaption();
   const estimateAitagCardHeight = React.useCallback((work: AitagWorkSummary, columnWidth: number) => {
     const ratio = aitagRatios[work.id] || aitagRatioCache[work.id] || 1;
@@ -1258,7 +1258,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
                 stableColumns
               />
             ) : (
-            <div className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid workspace-aitag-grid`} style={mobileGalleryStyle(imageDisplay)}>
+            <div className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid workspace-aitag-grid`} style={mobileGalleryStyle(imageDisplay, masonryColumns)}>
               {visibleItems.map(renderAitagCard)}
             </div>
             )

@@ -16,6 +16,8 @@ export function CodexPromptTools({ entry, boot, onOpenEntry }: { entry: CodexEnt
   const [meanings, setMeanings] = useState<Record<string, string>>();
   const [meaningError, setMeaningError] = useState('');
   const [meaningBusy, setMeaningBusy] = useState(false);
+  const [meaningsRequested, setMeaningsRequested] = useState(false);
+  const [meaningRetry, setMeaningRetry] = useState(0);
   useEffect(() => {
     if (!artists.length) return;
     let canceled = false;
@@ -36,24 +38,30 @@ export function CodexPromptTools({ entry, boot, onOpenEntry }: { entry: CodexEnt
     const weight = token.groupKind === 'numeric' ? Number(token.groupWeight || 1) : 1.05 ** ((token.groupKind === 'bracket' ? -1 : 1) * (token.groupLevel || 0));
     return url ? [{ name, book: book.id, id: String(record[0]), url, model: info === own ? version : version === 'n5' ? 'n45' : 'n5', weight }] : [];
   });
-  const readMeanings = async () => {
-    if (meanings || meaningBusy) return;
-    setMeaningBusy(true); setMeaningError('');
-    try {
-      const [local, remote, shard] = await Promise.allSettled([
-        lookupTagTranslations(tokens.map(token => token.lookupTag)), loadCodexAuxiliary(boot, 'tag_zh/core.json'), loadCodexAuxiliary(boot, `tag_zh/${entry.bookId}.json`),
-      ]);
-      const value: Record<string, string> = {};
-      for (const token of tokens) {
-        const known = local.status === 'fulfilled' ? local.value.get(token.lookupTag)?.chinese : '';
-        const lookup = (data: Record<string, any>) => [token.lookupTag, token.lookupTag.replaceAll(' ', '_'), `artist:${token.lookupTag}`].flatMap(key => [data.m?.[key], data.d?.[key], data.a?.[key]]).find(item => typeof item === 'string');
-        value[token.id] = known || (shard.status === 'fulfilled' ? lookup(shard.value) : '') || (remote.status === 'fulfilled' ? lookup(remote.value) : '') || '';
-      }
-      if ([local, remote, shard].every(result => result.status === 'rejected')) throw new Error(t('词义读取失败，请重试'));
-      setMeanings(value);
-    } catch (cause) { setMeaningError(cause instanceof Error ? cause.message : t('词义读取失败，请重试')); }
-    finally { setMeaningBusy(false); }
-  };
+  useEffect(() => {
+    setMeanings(undefined); setMeaningError(''); setMeaningBusy(false);
+    if (!meaningsRequested) return;
+    let canceled = false;
+    setMeaningBusy(true);
+    const readMeanings = async () => {
+      try {
+        const [local, remote, shard] = await Promise.allSettled([
+          lookupTagTranslations(tokens.map(token => token.lookupTag)), loadCodexAuxiliary(boot, 'tag_zh/core.json'), loadCodexAuxiliary(boot, `tag_zh/${entry.bookId}.json`),
+        ]);
+        const value: Record<string, string> = {};
+        for (const token of tokens) {
+          const known = local.status === 'fulfilled' ? local.value.get(token.lookupTag)?.chinese : '';
+          const lookup = (data: Record<string, any>) => [token.lookupTag, token.lookupTag.replaceAll(' ', '_'), `artist:${token.lookupTag}`].flatMap(key => [data.m?.[key], data.d?.[key], data.a?.[key]]).find(item => typeof item === 'string');
+          value[token.id] = known || (shard.status === 'fulfilled' ? lookup(shard.value) : '') || (remote.status === 'fulfilled' ? lookup(remote.value) : '') || '';
+        }
+        if ([local, remote, shard].every(result => result.status === 'rejected')) throw new Error(t('词义读取失败，请重试'));
+        if (!canceled) setMeanings(value);
+      } catch (cause) { if (!canceled) setMeaningError(cause instanceof Error ? cause.message : t('词义读取失败，请重试')); }
+      finally { if (!canceled) setMeaningBusy(false); }
+    };
+    void readMeanings();
+    return () => { canceled = true; };
+  }, [tokens, entry.bookId, boot.release, meaningsRequested, meaningRetry]);
   return <>
     {samples.length > 0 && <details className="rounded-xl border border-gray-200 p-3 dark:border-gray-800">
       <summary className="cursor-pointer text-sm font-semibold">{t('画师样张')}</summary>
@@ -66,10 +74,10 @@ export function CodexPromptTools({ entry, boot, onOpenEntry }: { entry: CodexEnt
       </div>)}</div>
       {samples.length > 9 && <ToolbarButton className="mt-2" onClick={() => setExpanded(value => !value)}>{t(expanded ? '收起' : '展开全部')}</ToolbarButton>}
     </details>}
-    {tokens.length > 0 && <details className="rounded-xl border border-gray-200 p-3 dark:border-gray-800" onToggle={event => { if (event.currentTarget.open) void readMeanings(); }}>
+    {tokens.length > 0 && <details className="rounded-xl border border-gray-200 p-3 dark:border-gray-800" onToggle={event => { if (event.currentTarget.open) setMeaningsRequested(true); }}>
       <summary className="cursor-pointer text-sm font-semibold">{t('中文词义')}</summary>
       {meaningBusy && <p className="mt-2 text-xs text-gray-500">{t('加载中…')}</p>}
-      {meaningError && <button className="mt-2 text-xs text-amber-600" onClick={() => void readMeanings()}>{meaningError}</button>}
+      {meaningError && <button className="mt-2 text-xs text-amber-600" onClick={() => setMeaningRetry(value => value + 1)}>{meaningError}</button>}
       {meanings && <dl className="mt-3 space-y-2">{tokens.map(token => <div key={token.id} className="grid grid-cols-2 gap-3 text-xs"><dt className="break-words text-gray-500">{token.displayTag}</dt><dd className="break-words">{meanings[token.id] || '—'}</dd></div>)}</dl>}
     </details>}
   </>;

@@ -1339,7 +1339,12 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 if (patch.prompt !== undefined) setBasePrompt(patch.prompt);
                 if (patch.negativePrompt !== undefined) setNegativePrompt(patch.negativePrompt);
                 if (patch.params) setParams(patch.params);
+                if (fragment.fullMetadata) {
+                    setSubjectPrompt(''); setModules([]);
+                    setActiveModules(Object.fromEntries([...Object.keys(activeModules), ...modules.map(module => module.id)].map(id => [id, false])));
+                }
             }
+            if (fragment.fullMetadata) clearPresetSources();
             markChange();
             notify('已取用所选内容到当前模式');
             return;

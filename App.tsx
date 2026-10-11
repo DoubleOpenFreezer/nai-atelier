@@ -695,7 +695,7 @@ const App = () => {
           onRefreshInspiration={() => loadInspirations(true)}
         />;
       case 'codex':
-        return <CodexGallery active={view === 'codex'} currentUser={currentUser} notify={notify} onNavigateToPlayground={() => handleNavigate('playground', undefined, { externalImport: true })} />;
+        return <CodexGallery active={view === 'codex'} currentUser={currentUser} notify={notify} onNavigateToPlayground={() => handleNavigate('playground', undefined, { externalImport: true })} onCreateArtistChain={handleCreateChainFromAitag} />;
       case 'inspiration':
         return <InspirationGallery
           currentUser={currentUser}

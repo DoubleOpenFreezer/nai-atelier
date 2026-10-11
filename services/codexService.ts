@@ -1,6 +1,6 @@
 import type { CharacterParams, NAIParams } from '../types';
 import { createUuid } from './id';
-import { extractMetadata, parseNovelAIMetadata } from './metadataService';
+import { extractMetadata, parseNovelAIMetadata, type PromptFragmentImport } from './metadataService';
 import { getMobileOriginalUrl } from './mobileImageCache';
 import { notifyLanAccessRequired, parseErrorResponse } from './api';
 import { CODEX_ASSETS, CODEX_SITE, validateCodexDataUrl } from '../worker/codexRemote.mjs';
@@ -32,7 +32,7 @@ export interface CodexBootstrap {
   files: Record<string, { size: number; sha256: string }>; offline?: boolean; error?: string;
 }
 export interface CodexResult { entries: CodexEntry[]; release: string; offline?: boolean; error?: string }
-export interface CodexImageMetadata { prompt: string; negativePrompt: string; params: Partial<NAIParams>; rawPrompt: string; rawNegative: string }
+export interface CodexImageMetadata { prompt: string; negativePrompt?: string; params: Partial<NAIParams>; rawPrompt: string; rawNegative: string }
 const inFlight = new Map<string, Promise<CodexResult>>();
 const loaded = new Map<string, CodexResult>();
 const searchText = new WeakMap<CodexEntry, string>();
@@ -224,7 +224,9 @@ export function codexEntryMatches(entry: CodexEntry, query: string): boolean {
   let text = searchText.get(entry);
   if (!text) {
     text = [entry.title, entry.bookTitle, entry.author, entry.path.join('/'), entry.prompt, entry.negative, entry.note,
-      ...entry.characters.flatMap(character => [character.label, character.prompt, character.negative]), ...entry.images.map(image => image.raw)].join('\n').normalize('NFKC').replaceAll('_', ' ').toLowerCase();
+      ...entry.characters.flatMap(character => [character.label, character.prompt, character.negative]),
+      ...entry.images.flatMap(image => [image.raw, image.prompt, image.negative,
+        ...(image.characters || []).flatMap(character => [character.label, character.prompt, character.negative])])].join('\n').normalize('NFKC').replaceAll('_', ' ').toLowerCase();
     searchText.set(entry, text);
   }
   return query.split(/[,，]/).map(part => part.trim().normalize('NFKC').replaceAll('_', ' ').toLowerCase()).filter(Boolean).every(part => text.includes(part));
@@ -233,6 +235,16 @@ export function codexEntryMatches(entry: CodexEntry, query: string): boolean {
 export const codexCharactersToParams = (characters: CodexCharacter[]): CharacterParams[] => characters.map(character => ({
   id: createUuid(), prompt: character.prompt, negativePrompt: character.negative, x: 0.5, y: 0.5, enabled: true,
 }));
+
+export function codexPromptImport(entry: CodexEntry, metadata?: CodexImageMetadata): PromptFragmentImport {
+  if (metadata) return { mode: 'prompt-fragments', fullMetadata: true,
+    partialMetadata: metadata.negativePrompt === undefined || ['model', 'width', 'height', 'steps', 'scale', 'sampler', 'seed'].some(key => metadata.params[key as keyof NAIParams] === undefined),
+    replace: true, prompt: metadata.prompt, negativePrompt: metadata.negativePrompt,
+    characters: metadata.params.characters, params: metadata.params, importSettings: true, importSeed: metadata.params.seed !== undefined, importModel: Boolean(metadata.params.model) };
+  return { mode: 'prompt-fragments', replace: false, ...(entry.prompt ? { prompt: entry.prompt } : {}),
+    ...(entry.negative ? { negativePrompt: entry.negative } : {}),
+    ...(entry.characters.length ? { characters: codexCharactersToParams(entry.characters) } : {}) };
+}
 
 export async function readCodexImageFile(url: string): Promise<File> {
   const response = await fetch(getMobileOriginalUrl(url), { cache: 'no-cache' });
@@ -251,10 +263,12 @@ export async function readCodexImageMetadata(file: File): Promise<CodexImageMeta
   try { raw = object(JSON.parse(text)); } catch { return null; }
   let comment: Raw;
   try { comment = typeof raw.Comment === 'string' ? object(JSON.parse(raw.Comment)) : object(raw.Comment || raw); } catch { return null; }
-  if (!hasCollectibleNaiMetadata(JSON.stringify(comment))) return null;
   const parsed = parseNovelAIMetadata(JSON.stringify(comment));
+  if (!hasCollectibleNaiMetadata(JSON.stringify(comment)) && !(parsed.params.model &&
+    (typeof comment.prompt === 'string' || typeof comment.v4_prompt?.caption?.base_caption === 'string'))) return null;
   // 解析器的缺省值用于编辑体验，外部取用只承认图片实际记录的字段。
-  const params: Partial<NAIParams> = { qualityToggle: parsed.params.qualityToggle, ucPreset: parsed.params.ucPreset };
+  const hasNegative = typeof comment.v4_negative_prompt?.caption?.base_caption === 'string' || typeof comment.uc === 'string';
+  const params: Partial<NAIParams> = { qualityToggle: parsed.params.qualityToggle, ...(hasNegative ? { ucPreset: parsed.params.ucPreset } : {}) };
   for (const key of ['width', 'height', 'steps', 'scale', 'sampler'] as const) {
     if (comment[key] !== undefined && parsed.params[key] !== undefined) Object.assign(params, { [key]: parsed.params[key] });
   }
@@ -270,6 +284,6 @@ export async function readCodexImageMetadata(file: File): Promise<CodexImageMeta
     params.transparent = parsed.params.transparent; params.transparentWeight = parsed.params.transparentWeight;
   }
   if (comment.straight_alpha !== undefined) params.alphaMode = parsed.params.alphaMode;
-  return { ...parsed, params, rawPrompt: String(comment.v4_prompt?.caption?.base_caption ?? comment.prompt ?? ''),
+  return { ...parsed, negativePrompt: hasNegative ? parsed.negativePrompt : undefined, params, rawPrompt: String(comment.v4_prompt?.caption?.base_caption ?? comment.prompt ?? ''),
     rawNegative: String(comment.v4_negative_prompt?.caption?.base_caption ?? comment.uc ?? '') };
 }

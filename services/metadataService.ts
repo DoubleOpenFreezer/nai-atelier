@@ -25,6 +25,10 @@ export const IMPORT_SESSION_KEY = 'nai_pending_import';
 /** 外部素材只投递用户选中的字段，不用默认参数冒充原图配置。 */
 export interface PromptFragmentImport {
     mode: 'prompt-fragments';
+    /** 恢复原图已知内容；字段取舍时转回片段导入。 */
+    fullMetadata?: boolean;
+    /** 参数不完整时保留当前未提供的设置。 */
+    partialMetadata?: boolean;
     prompt?: string;
     negativePrompt?: string;
     characters?: CharacterParams[];

@@ -25,6 +25,23 @@ const FilterExample = () => {
 };
 
 describe('工具栏弹层位置与连续操作', () => {
+  it('手机收起文字后仍显示筛选数量，无障碍名称只读一次数量', () => {
+    vi.stubGlobal('innerWidth', 390);
+    render(<ToolbarPopover title="筛选资料" count={2}><div /></ToolbarPopover>);
+    const trigger = screen.getByRole('button', { name: '筛选 2' });
+    expect(trigger.querySelector('span.sm\\:hidden')?.textContent).toBe('2');
+    expect(trigger.querySelector('span.hidden')?.className).toContain('sm:inline');
+  });
+  it('次级选项可沿用紧凑图标触发，保留名称、焦点与 Escape 关闭', () => {
+    render(<ToolbarPopover label="更多操作" title="更多操作" iconOnly icon={<svg />}><button>次级操作</button></ToolbarPopover>);
+    const trigger = screen.getByRole('button', { name: '更多操作' });
+    expect(trigger.textContent).toBe(''); expect(trigger.className).toContain('w-10');
+    trigger.focus(); fireEvent.click(trigger);
+    expect(trigger.getAttribute('aria-expanded')).toBe('true');
+    expect(screen.getByRole('dialog', { name: '更多操作' })).toBeTruthy();
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(screen.queryByRole('dialog')).toBeNull(); expect(document.activeElement).toBe(trigger);
+  });
   it('与触发器居中，两侧贴边时留出屏幕边距', () => {
     expect(getToolbarPopoverPosition({ left: 460, width: 80, bottom: 52 }, 400, 1000, 800)).toEqual({ left: 500, top: 60, width: 400, maxHeight: 728 });
     expect(getToolbarPopoverPosition({ left: 0, width: 40, bottom: 52 }, 400, 1000, 800).left).toBe(212);

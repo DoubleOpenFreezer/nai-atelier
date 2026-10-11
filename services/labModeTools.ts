@@ -2,8 +2,15 @@ import { GenerationMode, LabImageEditDraft, NAIParams, PromptChain } from '../ty
 import { compilePrompt, mergePromptFields } from './promptUtils';
 import { resolveTransparentWeight } from './transparentBackground.mjs';
 import type { PromptFragmentImport } from './metadataService';
+import { normalizeParams } from './labWorkspace';
 
 export function buildPromptFragmentPatch(current: { prompt: string; negativePrompt: string; params: NAIParams }, data: PromptFragmentImport) {
+  if (data.fullMetadata) {
+    const params = data.partialMetadata ? { ...current.params, ...data.params } : { ...data.params };
+    if (data.params?.qualityToggle !== undefined) delete params.qualityPresetId;
+    if (data.params?.ucPreset !== undefined) delete params.ucPresetId;
+    return { prompt: data.prompt ?? current.prompt, negativePrompt: data.negativePrompt ?? current.negativePrompt, params: normalizeParams(params) };
+  }
   const patch: Partial<typeof current> = {};
   const join = (before: string, value: string) => data.replace ? value : [before.trim(), value.trim()].filter(Boolean).join(', ');
   if (data.prompt !== undefined) patch.prompt = join(current.prompt, data.prompt);

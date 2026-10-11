@@ -48,11 +48,11 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
   useLanguage();
   const confirmAction = useConfirmDialog();
   const imageDisplay = useMobileImageDisplayPreferences();
-  const masonryColumns = useMasonryColumnCount(imageDisplay);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const uploadReadRef = useRef(0);
   const mainScrollRef = useRef<HTMLDivElement>(null);
   const galleryContentRef = useRef<HTMLDivElement>(null);
+  const masonryColumns = useMasonryColumnCount(imageDisplay, undefined, galleryContentRef);
   const active = useContext(ImageActivityContext);
   const [boards, setBoards] = useState<InspirationBoard[]>([]);
   const [collection, setCollection] = useState<SmartCollection>('all');
@@ -481,8 +481,8 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
 
       <div className={`grid min-h-0 min-w-0 flex-1 grid-cols-1 ${openedGroup ? 'lg:grid-cols-[minmax(0,1fr)_460px]' : ''}`}>
       <main ref={mainScrollRef} onScroll={() => { selectionAnchor.onScroll(); onMainScrollRestore(); }} className={`${openedGroup ? 'hidden lg:block' : 'block'} min-w-0 overflow-y-auto`}>
-        <div ref={galleryContentRef}>
-        {inspirationsData === null ? <PageSpinner className="min-h-[45vh]" /> : filtered.length > 0 ? <div className="p-3 md:p-5">
+        <div ref={galleryContentRef} className="p-3 md:p-5">
+        {inspirationsData === null ? <PageSpinner className="min-h-[45vh]" /> : filtered.length > 0 ? <>
           {imageDisplay.layout === 'masonry' ? (
             <ShortestColumnMasonry
               stableColumns
@@ -493,11 +493,11 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
               renderItem={renderCollectionCard}
             />
           ) : (
-            <div className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid`} style={mobileGalleryStyle(imageDisplay)}>
+            <div className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid`} style={mobileGalleryStyle(imageDisplay, masonryColumns)}>
               {groups.map(renderCollectionCard)}
             </div>
           )}
-        </div> : (
+        </> : (
           <EmptyState
             className="min-h-[45vh] px-6"
             icon={<Sparkles className="h-8 w-8" />}

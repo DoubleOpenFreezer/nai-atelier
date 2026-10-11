@@ -2,10 +2,41 @@
 import React from 'react';
 import { act, cleanup, render, renderHook, screen } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
-import { computeShortestColumnAssignment, resolveMasonryColumnCount, ShortestColumnMasonry } from '../../components/ShortestColumnMasonry';
-import type { MobileImageDisplayPreferences } from '../../services/imageDisplayPreferences';
+import { computeShortestColumnAssignment, resolveMasonryColumnCount, ShortestColumnMasonry, useMasonryColumnCount } from '../../components/ShortestColumnMasonry';
+import { mobileGalleryStyle, type MobileImageDisplayPreferences } from '../../services/imageDisplayPreferences';
 import { useImageRatios } from '../../components/useImageRatios';
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+it('自动列数按实际内容宽度收缩，忽略隐藏宽度，固定桌面与手机偏好不被覆盖', () => {
+  vi.stubGlobal('innerWidth', 1280); vi.stubGlobal('innerHeight', 800);
+  let resize!: (width: number) => void;
+  vi.stubGlobal('ResizeObserver', class {
+    constructor(callback: ResizeObserverCallback) { resize = width => callback([{ contentRect: { width } }] as ResizeObserverEntry[], this as unknown as ResizeObserver); }
+    observe() { resize(1100); }
+    disconnect() {}
+  });
+  const preferences: MobileImageDisplayPreferences = { layout: 'portrait', columns: 'auto', desktopColumns: 'auto' };
+  function Gallery({ value, override }: { value: MobileImageDisplayPreferences; override?: number }) {
+    const ref = React.useRef<HTMLDivElement>(null);
+    const count = useMasonryColumnCount(value, override, ref);
+    return <div ref={ref} data-testid="columns" style={mobileGalleryStyle(value, count)}>{count}</div>;
+  }
+  const { rerender } = render(<Gallery value={preferences} />);
+  const expectColumns = (value: number) => {
+    const grid = screen.getByTestId('columns'); expect(grid.textContent).toBe(String(value));
+    expect(grid.style.getPropertyValue('--mobile-gallery-columns')).toBe(String(value));
+  };
+  expectColumns(5);
+  act(() => resize(740)); expectColumns(3);
+  act(() => resize(0)); expectColumns(3);
+  act(() => resize(756)); expectColumns(4);
+  act(() => resize(1400)); expectColumns(5);
+  rerender(<Gallery value={{ ...preferences, desktopColumns: 5 }} />); act(() => resize(300)); expectColumns(5);
+  rerender(<Gallery value={preferences} override={6} />); expectColumns(6);
+  vi.stubGlobal('innerWidth', 390); act(() => window.dispatchEvent(new Event('resize'))); expectColumns(2);
+  rerender(<Gallery value={{ ...preferences, columns: 1 }} />); expectColumns(1);
+  rerender(<Gallery value={preferences} />);
+  vi.stubGlobal('innerWidth', 700); vi.stubGlobal('innerHeight', 390); act(() => window.dispatchEvent(new Event('resize'))); expectColumns(3);
+});
 it('两类目录桌面六列只覆盖桌面，手机列数与横屏仍遵循图片偏好', () => {
   const preferences: MobileImageDisplayPreferences = { layout: 'masonry', columns: 'auto', desktopColumns: 'auto' };
   expect(resolveMasonryColumnCount(preferences, 390, false, 6)).toBe(2);

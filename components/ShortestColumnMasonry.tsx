@@ -1,4 +1,4 @@
-import { Fragment, ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, ReactNode, RefObject, useEffect, useMemo, useRef, useState } from 'react';
 import { MobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 
 /**
@@ -39,8 +39,8 @@ export const resolveMasonryColumnCount = (
   return desktopColumns === 'auto' ? 6 : desktopColumns;
 };
 
-/** 响应窗口尺寸变化，返回当前请求的列数（尚未扣除卡片数量）。 */
-export const useMasonryColumnCount = (preferences: MobileImageDisplayPreferences, desktopOverride?: number): number => {
+/** 自动列数同时受图库实际宽度约束；明确列数和手机偏好保持不变。 */
+export const useMasonryColumnCount = (preferences: MobileImageDisplayPreferences, desktopOverride?: number, containerRef?: RefObject<HTMLElement | null>): number => {
   const [viewport, setViewport] = useState(() => ({
     width: typeof window === 'undefined' ? 0 : window.innerWidth,
     height: typeof window === 'undefined' ? 0 : window.innerHeight,
@@ -50,7 +50,21 @@ export const useMasonryColumnCount = (preferences: MobileImageDisplayPreferences
     window.addEventListener('resize', update);
     return () => window.removeEventListener('resize', update);
   }, []);
-  return resolveMasonryColumnCount(preferences, viewport.width, viewport.width > viewport.height, desktopOverride);
+  const [containerColumns, setContainerColumns] = useState(Infinity);
+  const automaticDesktop = viewport.width >= 768 && preferences.desktopColumns === 'auto' && desktopOverride === undefined;
+  useEffect(() => {
+    const element = containerRef?.current;
+    if (!automaticDesktop || !element || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(entries => {
+      const width = entries[0]?.contentRect.width ?? 0;
+      // 自动档保留约 180px 卡片宽度；隐藏的零宽度不改变列数，同档宽度通知不更新状态。
+      if (width > 0) setContainerColumns(Math.max(1, Math.floor((width + 12) / 192)));
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [containerRef, automaticDesktop]);
+  const requested = resolveMasonryColumnCount(preferences, viewport.width, viewport.width > viewport.height, desktopOverride);
+  return automaticDesktop ? Math.min(requested, containerColumns) : requested;
 };
 
 /**

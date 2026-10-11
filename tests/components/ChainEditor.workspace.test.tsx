@@ -478,6 +478,52 @@ it('提示词软键盘避让同时移动贴底资源与生成操作，收起后�
 });
 
 describe('法典投递当前创作模式', () => {
+  it.each(['text-to-image', 'image-to-image', 'inpaint', 'outpaint'] as const)('%s 部分元数据恢复已知内容，缺失负面与参数保留当前值', async mode => {
+    const session = fallback(); session.activeMode = mode;
+    session.textToImage.subjectPrompt = 'old subject';
+    saveLabWorkspaceSession(chain.id, session);
+    const view = setup(); const before = loadLabWorkspaceSession(chain.id, fallback());
+    const oldContent = mode === 'text-to-image' ? before.textToImage : before.edits[mode];
+    sessionStorage.setItem('nai_pending_import', JSON.stringify({ mode: 'prompt-fragments', fullMetadata: true, partialMetadata: true, replace: true,
+      prompt: 'known original scene', params: { steps: 20, seed: 0 } }));
+    view.rerender(<ChainEditor {...view.props} externalImportToken={1} />);
+    await waitFor(() => {
+      const saved = loadLabWorkspaceSession(chain.id, fallback());
+      expect(mode === 'text-to-image' ? saved.textToImage.basePrompt : saved.edits[mode].prompt).toBe('known original scene');
+    });
+    const saved = loadLabWorkspaceSession(chain.id, fallback());
+    const content = mode === 'text-to-image' ? saved.textToImage : saved.edits[mode];
+    expect(content.negativePrompt).toBe(oldContent.negativePrompt);
+    expect(content.params).toEqual({ ...oldContent.params, steps: 20, seed: 0 });
+    if (mode === 'text-to-image') {
+      expect(saved.textToImage.subjectPrompt).toBe(''); expect(Object.values(saved.textToImage.activeModules).every(value => !value)).toBe(true); expect(saved.edits).toEqual(before.edits);
+    } else expect(saved.textToImage).toEqual(before.textToImage);
+    expect(state.startJob).not.toHaveBeenCalled();
+  });
+  it.each(['text-to-image', 'image-to-image', 'inpaint', 'outpaint'] as const)('%s 完整元数据包含模型与 Seed，文生图清掉旧主体和模块，其他模式保持独立', async mode => {
+    const session = fallback(); session.activeMode = mode;
+    session.textToImage.subjectPrompt = 'old subject'; session.textToImage.activeModules = { 'old-module': true };
+    if (mode !== 'text-to-image') { session.edits[mode].prompt = 'old edit'; session.edits[mode].params.scale = 5; }
+    saveLabWorkspaceSession(chain.id, session);
+    const view = setup({ ...chain, modules: [...chain.modules, { id: 'old-module', name: '旧模块', content: 'old module content', isActive: true, position: 'post' }] });
+    const before = loadLabWorkspaceSession(chain.id, fallback());
+    sessionStorage.setItem('nai_pending_import', JSON.stringify({ mode: 'prompt-fragments', fullMetadata: true, replace: true,
+      prompt: 'weighted style, 1girl, bikini, standing', negativePrompt: 'lowres, bad anatomy', params: { model: 'nai-diffusion-5-full', width: 832, height: 1216, steps: 28, scale: 3,
+        sampler: 'k_euler_ancestral', seed: 2324135392, qualityToggle: false, ucPreset: 4, characters: [] } }));
+    view.rerender(<ChainEditor {...view.props} externalImportToken={1} />);
+    await waitFor(() => {
+      const saved = loadLabWorkspaceSession(chain.id, fallback());
+      expect(mode === 'text-to-image' ? saved.textToImage.basePrompt : saved.edits[mode].prompt).toBe('weighted style, 1girl, bikini, standing');
+    });
+    const saved = loadLabWorkspaceSession(chain.id, fallback());
+    expect(saved.activeMode).toBe(mode);
+    const content = mode === 'text-to-image' ? saved.textToImage : saved.edits[mode];
+    expect(content).toMatchObject({ negativePrompt: 'lowres, bad anatomy', params: { model: 'nai-diffusion-5-full', steps: 28, scale: 3, seed: 2324135392, characters: [] } });
+    if (mode === 'text-to-image') {
+      expect(saved.textToImage.subjectPrompt).toBe(''); expect(Object.values(saved.textToImage.activeModules).every(value => !value)).toBe(true); expect(saved.edits).toEqual(before.edits);
+    } else expect(saved.textToImage).toEqual(before.textToImage);
+    expect(state.startJob).not.toHaveBeenCalled();
+  });
   it.each(['text-to-image', 'image-to-image', 'inpaint', 'outpaint'] as const)('%s 仅修改选中的字段，保留其他模式、参考和结构', async mode => {
     const session = fallback(); session.activeMode = mode;
     if (mode !== 'text-to-image') { session.edits[mode].prompt = 'current edit'; session.edits[mode].negativePrompt = 'current negative'; }

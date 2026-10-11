@@ -339,7 +339,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, notify
   }, [active, hasMore, items.length, loading, page, showHistory]);
 
   // 瀑布流（masonry 布局时）：真实宽高比完整显示，最短列分配互相补齐。
-  const masonryColumns = useMasonryColumnCount(imageDisplay);
+  const masonryColumns = useMasonryColumnCount(imageDisplay, undefined, galleryContentRef);
   const getPostRatio = (post: DanbooruPost) => {
     const ratio = Number(post.width) / Math.max(1, Number(post.height) || 1);
     return Number.isFinite(ratio) && ratio > 0 ? ratio : 0.75;
@@ -568,7 +568,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, notify
                   renderItem={renderHistoryCard}
                 />
               ) : (
-                <div className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid`} style={mobileGalleryStyle(imageDisplay)}>
+                <div className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid`} style={mobileGalleryStyle(imageDisplay, masonryColumns)}>
                   {historyItems.map(renderHistoryCard)}
                 </div>
               )
@@ -588,7 +588,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, notify
                 renderItem={renderDanbooruCard}
               />
             ) : (
-              <div className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid`} style={mobileGalleryStyle(imageDisplay)}>
+              <div className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid`} style={mobileGalleryStyle(imageDisplay, masonryColumns)}>
                 {displayedItems.map(renderDanbooruCard)}
               </div>
             )
