@@ -134,7 +134,7 @@ const HistoryCard = React.memo(function HistoryCard({
             role="button"
             tabIndex={0}
             aria-label={t("查看生成于 {0} 的图片", [createdAt])}
-            className={`mobile-gallery-item group relative flex-col bg-white dark:bg-gray-800 rounded-lg overflow-hidden cursor-pointer border hover:border-indigo-500 transition-colors ${isSelected ? 'border-indigo-500 ring-2 ring-indigo-500' : 'border-gray-200 dark:border-gray-700'}`}
+            className={`mobile-gallery-item gallery-image-card group relative flex-col bg-white dark:bg-gray-800 rounded-lg overflow-hidden cursor-pointer border hover:border-indigo-500 transition-colors ${isSelected ? 'border-indigo-500 ring-2 ring-indigo-500' : 'border-gray-200 dark:border-gray-700'}`}
             onKeyDown={event => {
                 if (event.target !== event.currentTarget || !['Enter', ' '].includes(event.key)) return;
                 event.preventDefault();

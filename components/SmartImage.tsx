@@ -63,7 +63,8 @@ export const SmartImage: React.FC<SmartImageProps> = ({
   const [activatedSrc, setActivatedSrc] = useState('');
   const [displaySrc, setDisplaySrc] = useState('');
   const displaySrcRef = useRef('');
-  const [measuredWidth, setMeasuredWidth] = useState(160);
+  const [variantWidth, setVariantWidth] = useState(() => ratchetVariantWidth(0, 160 * Math.max(1, window.devicePixelRatio || 1)));
+  const variantFloorRef = useRef(variantWidth);
   const [loaded, setLoaded] = useState(false);
   const [failed, setFailed] = useState(false);
   const [useOriginal, setUseOriginal] = useState(false);
@@ -76,16 +77,23 @@ export const SmartImage: React.FC<SmartImageProps> = ({
   useEffect(() => { onErrorRef.current = onError; }, [onError]);
 
   useEffect(() => {
-    if (!viewActive) return;
+    if (!viewActive || thumbnailVariant || useOriginal || !canUseMediaGateway(src)) return;
     const node = containerRef.current;
     if (!node) return;
-    const updateWidth = () => setMeasuredWidth(Math.max(1, node.clientWidth));
+    const updateWidth = (entries?: ResizeObserverEntry[]) => {
+      const width = entries?.[0]?.contentRect.width ?? node.clientWidth;
+      const next = ratchetVariantWidth(variantFloorRef.current, width * Math.max(1, window.devicePixelRatio || 1));
+      // 只在需要更高清的缩略档位时更新，侧栏挤压不让每张图片逐像素重渲染。
+      if (next === variantFloorRef.current) return;
+      variantFloorRef.current = next;
+      setVariantWidth(next);
+    };
     updateWidth();
     if (!('ResizeObserver' in window)) return;
     const observer = new ResizeObserver(updateWidth);
     observer.observe(node);
     return () => observer.disconnect();
-  }, [viewActive]);
+  }, [viewActive, thumbnailVariant, src, useOriginal]);
 
   // 换图或手动重试时重置展示状态。页面隐藏/显示的切换刻意不在此列：
   // 切走时保留已显示的 <img>（display:none 不产生任何流量），切回瞬时完整呈现，
@@ -122,12 +130,7 @@ export const SmartImage: React.FC<SmartImageProps> = ({
 
   // 页面隐藏时已激活的图保持展示（见上方激活 effect）；只有真正激活过的源才算可渲染。
   const activated = eager || activatedSrc === src;
-  const pixelWidth = measuredWidth * Math.max(1, window.devicePixelRatio || 1);
-  // 档位棘轮（只升不降）：详情侧栏打开会挤压卡片、移动端详情会整栏隐藏（宽度归零），
-  // 若档位随之降档，全部卡片的缓存键跳变、整列表重新请求并闪占位。
-  const variantFloorRef = useRef(0);
-  variantFloorRef.current = ratchetVariantWidth(variantFloorRef.current, pixelWidth);
-  const variant = thumbnailVariant ?? selectThumbnailVariant(variantFloorRef.current);
+  const variant = thumbnailVariant ?? selectThumbnailVariant(variantWidth);
   const upgradeTarget = upgradeSrc && upgradeSrc !== src ? upgradeSrc : undefined;
 
   // 升级源随目标变化重置；页面隐藏/显示不重置（与主图同样保留已显示内容）。

@@ -1,3 +1,4 @@
+import { useGalleryFrostedCaption } from '../services/appearancePreferences';
 import { t, useLanguage, getLanguage } from '../services/i18n';
 import React, { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { RefreshCw, Search } from 'lucide-react';
@@ -343,13 +344,14 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, notify
     const ratio = Number(post.width) / Math.max(1, Number(post.height) || 1);
     return Number.isFinite(ratio) && ratio > 0 ? ratio : 0.75;
   };
+  const frostedCaption = useGalleryFrostedCaption();
   const estimateDanbooruCardHeight = React.useCallback((post: DanbooruPost, columnWidth: number) => {
     const imageHeight = Math.max(1, columnWidth) / Math.max(0.1, getPostRatio(post));
-    return imageHeight + 52; // 标题 + 作者文本区
-  }, []);
+    return imageHeight + (frostedCaption ? 2 : 52);
+  }, [frostedCaption]);
 
   const renderHistoryCard = (item: GalleryHistoryItem) => (
-    <PressRevealSurface as="article" key={item.id} style={{ contentVisibility: 'visible' }} data-gallery-work-id={item.sourceId} className={`mobile-gallery-item group relative flex-col overflow-hidden rounded-lg border bg-white transition-[filter,box-shadow,border-color] duration-150 dark:bg-gray-800 ${selectedId !== null && selectedId !== Number(item.sourceId) ? 'brightness-[.7]' : ''} ${selectedId === Number(item.sourceId) ? 'border-indigo-500 ring-2 ring-indigo-500' : 'border-gray-200 dark:border-gray-700 hover:border-indigo-500'}`}>
+    <PressRevealSurface as="article" key={item.id} style={{ contentVisibility: 'visible' }} data-gallery-work-id={item.sourceId} className={`mobile-gallery-item gallery-image-card group relative flex-col overflow-hidden rounded-lg border bg-white transition-[filter,box-shadow,border-color] duration-150 dark:bg-gray-800 ${selectedId !== null && selectedId !== Number(item.sourceId) ? 'brightness-[.7]' : ''} ${selectedId === Number(item.sourceId) ? 'border-indigo-500 ring-2 ring-indigo-500' : 'border-gray-200 dark:border-gray-700 hover:border-indigo-500'}`}>
       <button
         type="button"
         onClick={() => {
@@ -382,14 +384,14 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, notify
             setSelectedId(dummyPost.id);
           }
         }}
-        className="block w-full text-left"
+        className="gallery-card-visual block w-full text-left"
       >
         <div className="mobile-gallery-frame relative aspect-[3/4] overflow-hidden bg-gray-200 dark:bg-gray-800">
           <SmartImage src={item.sampleUrl} alt={item.title} />
         </div>
-        <div className="p-2.5">
+        <div className="gallery-card-caption p-2.5">
           <p className="truncate text-xs font-bold">{item.title}</p>
-          <p className="mt-1 truncate text-micro text-gray-500">{item.artistName || `Danbooru #${item.sourceId}`}</p>
+          <p className="gallery-card-meta mt-1 truncate text-micro text-gray-500">{item.artistName || `Danbooru #${item.sourceId}`}</p>
         </div>
       </button>
       {item.sampleUrl && <ImageShareOverlay imageUrl={getMobileOriginalUrl(item.sampleUrl)} filename={`danbooru-${item.sourceId}.png`} favorite={{ imageUrl: item.sampleUrl, title: item.title, sourceType: 'danbooru', sourceId: String(item.sourceId), sourceUrl: 'https://danbooru.donmai.us/posts/' + encodeURIComponent(String(item.sourceId)) }} notify={notify} />}
@@ -403,24 +405,25 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, notify
       <PressRevealSurface as="article"
         key={post.id} data-gallery-work-id={post.id}
         data-safe-mode-work="true"
-        className={`mobile-gallery-item group relative flex-col overflow-hidden rounded-lg border bg-white transition-[filter,box-shadow,border-color] duration-150 dark:bg-gray-800 ${selectedId !== null && selectedId !== post.id ? 'brightness-[.7]' : ''} ${
+        className={`mobile-gallery-item gallery-image-card group relative flex-col overflow-hidden rounded-lg border bg-white transition-[filter,box-shadow,border-color] duration-150 dark:bg-gray-800 ${selectedId !== null && selectedId !== post.id ? 'brightness-[.7]' : ''} ${
           selectedId === post.id ? 'border-indigo-500 ring-2 ring-indigo-500' : 'border-gray-200 dark:border-gray-700 hover:border-indigo-500'
         }`}
       >
-        <button type="button" onClick={() => setSelectedId(post.id)} className="block w-full text-left">
+        <button type="button" onClick={() => setSelectedId(post.id)} className="gallery-card-visual block w-full text-left">
           <div
             className="mobile-gallery-frame relative aspect-[3/4] overflow-hidden bg-gray-200 dark:bg-gray-800"
             style={{ '--mobile-image-ratio': ratio } as React.CSSProperties}
           >
             <SmartImage src={post.sampleUrl} alt={title.replaceAll('_', ' ')} />
-            <div className="absolute inset-x-0 bottom-0 flex items-end justify-between bg-gradient-to-t from-black/75 to-transparent px-2 pb-2 pt-8 text-micro text-white">
+            {!frostedCaption && <div className="absolute inset-x-0 bottom-0 flex items-end justify-between bg-gradient-to-t from-black/75 to-transparent px-2 pb-2 pt-8 text-micro text-white">
               <span>♥ {formatCount(post.favCount)}</span>
               <span>▲ {formatCount(post.score)}</span>
-            </div>
+            </div>}
           </div>
-          <div className="p-2.5">
+          <div className="gallery-card-caption p-2.5">
             <p data-safe-mode-title="true" className="truncate text-xs font-bold">{title.replaceAll('_', ' ')}</p>
-            <p className="mt-1 truncate text-micro text-gray-500">{post.tags.artist.slice(0, 2).join(', ').replaceAll('_', ' ') || `Danbooru #${post.id}`}</p>
+            <p className="gallery-card-meta mt-1 truncate text-micro text-gray-500">{post.tags.artist.slice(0, 2).join(', ').replaceAll('_', ' ') || `Danbooru #${post.id}`}</p>
+            {frostedCaption && <div className="gallery-card-meta mt-1 flex justify-between text-micro"><span>♥ {formatCount(post.favCount)}</span><span>▲ {formatCount(post.score)}</span></div>}
           </div>
         </button>
         {post.sampleUrl && <ImageShareOverlay imageUrl={getMobileOriginalUrl(post.sampleUrl)} filename={`danbooru-${post.id}.${post.fileExt}`} favorite={collectionImage(post)} notify={notify} />}
@@ -561,7 +564,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, notify
                   items={historyItems}
                   columns={masonryColumns}
                   getItemKey={item => item.id}
-                  estimateItemHeight={(_item, columnWidth) => columnWidth * 1.5 + 52}
+                  estimateItemHeight={(_item, columnWidth) => columnWidth * 1.5 + (frostedCaption ? 2 : 52)}
                   renderItem={renderHistoryCard}
                 />
               ) : (

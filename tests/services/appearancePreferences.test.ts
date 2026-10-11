@@ -21,6 +21,15 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('appearance preferences', () => {
+  it('旧偏好及旧主题默认开启卡片效果，两个开关分别保存并恢复', () => {
+    expect(normalizeAppearancePreferences({ galleryFrostedCaption: 'false', galleryHoverFloat: null })).toMatchObject({ galleryFrostedCaption: true, galleryHoverFloat: true });
+    expect(validateAppearancePreset({ name: '旧主题' })).toMatchObject({ galleryFrostedCaption: true, galleryHoverFloat: true });
+    for (const galleryFrostedCaption of [false, true]) for (const galleryHoverFloat of [false, true]) {
+      saveAppearancePreferences({ ...DEFAULT_APPEARANCE_PREFERENCES, galleryFrostedCaption, galleryHoverFloat });
+      expect(loadAppearancePreferences()).toMatchObject({ galleryFrostedCaption, galleryHoverFloat });
+      expect(parseAppearancePresetsFromJson(JSON.stringify({ name: '卡片主题', galleryFrostedCaption, galleryHoverFloat }))[0]).toMatchObject({ galleryFrostedCaption, galleryHoverFloat });
+    }
+  });
   it('旧生图偏好缺少连续生成字段时默认开启', () => {
     localStorageValues.set('nai_appearance_preferences', JSON.stringify({ generationStreamPreview: true }));
     expect(loadAppearancePreferences().continuousGenerationEnabled).toBe(true);
@@ -45,6 +54,8 @@ describe('appearance preferences', () => {
       surfaces: 'translucent',
       motion: 'reduced',
       fontScale: 'large',
+      galleryFrostedCaption: true,
+      galleryHoverFloat: true,
       tagAssistEnabled: false,
       generationStreamPreview: true,
       continuousGenerationEnabled: false,
@@ -69,6 +80,8 @@ describe('appearance preferences', () => {
       surfaces: 'translucent',
       motion: 'reduced',
       fontScale: 'large',
+      galleryFrostedCaption: true,
+      galleryHoverFloat: true,
       tagAssistEnabled: false,
       generationStreamPreview: true,
       continuousGenerationEnabled: false,

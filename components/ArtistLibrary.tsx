@@ -1,3 +1,4 @@
+import { useGalleryFrostedCaption } from '../services/appearancePreferences';
 import { collectionSnapshot, subscribeCollection } from '../services/collectionFavorites';
 import { t, useLanguage, getLanguage } from '../services/i18n';
 import { PressRevealSurface } from './PressRevealSurface';
@@ -39,11 +40,12 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, notif
     const imageDisplay = useMobileImageDisplayPreferences();
     // 瀑布流（masonry 布局时）：封面按真实宽高比完整显示，最短列分配互相补齐。
     const [artistRatios, updateImageRatio] = useImageRatios();
+    const frostedCaption = useGalleryFrostedCaption();
     const estimateArtistCardHeight = React.useCallback((artist: (typeof filteredArtists)[number], columnWidth: number) => {
       const ratio = artistRatios[artist.id] || 2 / 3;
       const imageHeight = Math.max(1, columnWidth) / Math.max(0.1, ratio);
-      return imageHeight + 78; // 名称 + 中文名 + 作品数文本区
-    }, [artistRatios]);
+      return imageHeight + (frostedCaption ? 2 : 78);
+    }, [artistRatios, frostedCaption]);
     const renderArtistCard = (artist: (typeof filteredArtists)[number]) => {
                             const isSelected = !!cart.find(c => c.name === artist.name);
                             const displayImg = artist.imageUrl || artist.previewUrl || artist.benchmarks?.[0] || '';
@@ -58,7 +60,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, notif
                                     aria-label={t("选择画师：{0}", [artist.name])}
                                     aria-pressed={isSelected}
                                     tabIndex={0}
-                                    className={`mobile-gallery-item group relative flex-col bg-white dark:bg-gray-800 rounded-lg overflow-hidden border transition-[filter,box-shadow,border-color] duration-150 cursor-pointer ${cart.length > 0 && !isSelected ? 'brightness-[.7]' : ''} ${isSelected ? 'border-indigo-500 ring-2 ring-indigo-500' : 'border-gray-200 dark:border-gray-700 hover:border-indigo-500'}`}
+                                    className={`mobile-gallery-item gallery-image-card gallery-card-visual group relative flex-col bg-white dark:bg-gray-800 rounded-lg overflow-hidden border transition-[filter,box-shadow,border-color] duration-150 cursor-pointer ${cart.length > 0 && !isSelected ? 'brightness-[.7]' : ''} ${isSelected ? 'border-indigo-500 ring-2 ring-indigo-500' : 'border-gray-200 dark:border-gray-700 hover:border-indigo-500'}`}
                                     onClick={() => toggleCart(artist.name)}
                                     onKeyDown={event => {
                                         if (event.target !== event.currentTarget || !['Enter', ' '].includes(event.key)) return;
@@ -75,16 +77,14 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, notif
                                             onFavoriteChange={() => toggleFav(artist, undefined, collectionSnapshot().some(item => item.sourceType === 'artist' && item.sourceId === artist.name && !item.archived))}
                                             onImageLoad={(width, height) => updateImageRatio(artist.id, width, height)}
                                         />
-                                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors pointer-events-none" />
-
                                         {isSelected && (
                                             <div className="absolute inset-0 border-4 border-indigo-500/80 pointer-events-none" />
                                         )}
                                     </div>
-                                    <div className="p-2 md:p-3 bg-white dark:bg-gray-800 text-center border-t border-gray-100 dark:border-gray-700">
+                                    <div className="gallery-card-caption p-2 md:p-3 bg-white dark:bg-gray-800 text-center border-t border-gray-100 dark:border-gray-700">
                                         <div data-safe-mode-title="true" className={`text-xs md:text-sm font-bold truncate ${isSelected ? 'text-indigo-600' : 'text-gray-700 dark:text-gray-300'}`}>{isSelected && <Check aria-hidden="true" className="mr-1 inline h-3 w-3" strokeWidth={4} />}{artist.name}</div>
                                         {artist.chineseName && <div data-safe-mode-title="true" className="mt-0.5 truncate text-micro text-gray-400" title={artist.chineseName}>{artist.chineseName}</div>}
-                                        {typeof artist.postCount === 'number' && <div className="mt-0.5 text-micro font-mono text-gray-500" title={t("Danbooru 关联作品数")}>{t("作品 {0}", [artist.postCount.toLocaleString(getLanguage())])}</div>}
+                                        {typeof artist.postCount === 'number' && <div className="gallery-card-meta mt-0.5 text-micro font-mono text-gray-500" title={t("Danbooru 关联作品数")}>{t("作品 {0}", [artist.postCount.toLocaleString(getLanguage())])}</div>}
                                     </div>
                                 </PressRevealSurface>
                             )

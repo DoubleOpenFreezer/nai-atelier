@@ -60,7 +60,7 @@ beforeEach(() => {
   search.mockImplementation(async options => result(options?.query, [], options?.page));
   resolve.mockImplementation(async value => value);
 });
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); delete document.documentElement.dataset.motion; });
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); delete document.documentElement.dataset.motion; delete document.documentElement.dataset.galleryFrostedCaption; });
 const setup = async () => {
   const notify = vi.fn();
   const view = render(<DanbooruGallery active currentUser={{ id: 'synthetic' } as User} notify={notify} onNavigateToPlayground={vi.fn()} />);
@@ -70,7 +70,8 @@ const setup = async () => {
 const openFilters = () => fireEvent.click(screen.getByRole('button', { name: /^筛选/ }));
 const changeFilter = (name: string, value: string) => fireEvent.change(screen.getByRole('combobox', { name }), { target: { value } });
 const submit = (value: string) => { const input = screen.getByRole('searchbox', { name: '搜索 Danbooru' }); fireEvent.change(input, { target: { value } }); fireEvent.submit(input.closest('form')!); };
-it.each(['masonry', 'portrait', 'square'])('Danbooru 足迹 %s 布局关闭屏外占位，瀑布流使用稳定分列且不改变图片比例', async layout => {
+it.each(['masonry', 'portrait', 'square'].flatMap(layout => [true, false].map(frosted => [layout, frosted] as const)))('Danbooru 足迹 %s／磨砂 %s 关闭屏外占位，瀑布流使用稳定分列且不改变图片比例', async (layout, frosted) => {
+  document.documentElement.dataset.galleryFrostedCaption = String(frosted);
   localStorage.setItem('nai_mobile_image_display', JSON.stringify({ layout, columns: 2, desktopColumns: 2 }));
   vi.mocked(galleryHistoryService.getHistory).mockReturnValue(Array.from({ length: 4 }, (_, index) => ({
     id: 'danbooru:' + (index + 1), source: 'danbooru', sourceId: index + 1,
@@ -90,7 +91,7 @@ it.each(['masonry', 'portrait', 'square'])('Danbooru 足迹 %s 布局关闭屏�
     const props = masonryRender.mock.lastCall![0];
     expect(props.stableColumns).toBe(true);
     expect(props.items.map(props.getItemKey)).toEqual(['danbooru:1', 'danbooru:2', 'danbooru:3', 'danbooru:4']);
-    expect(props.estimateItemHeight(props.items[0], 200)).toBe(352);
+    expect(props.estimateItemHeight(props.items[0], 200)).toBe(frosted ? 302 : 352);
     expect(cards[0].parentElement).toBe(cards[1].parentElement);
   }
 });
@@ -122,7 +123,7 @@ it.each(['masonry', 'portrait', 'square', 'history'])('Danbooru %s 卡片沿用 
   })));
   await setup();
   if (layout === 'history') fireEvent.click(screen.getByRole('button', { name: '浏览足迹' }));
-  const first = screen.getByRole('button', { name: /synthetic[ _]artist/ });
+  const first = await screen.findByRole('button', { name: /synthetic[ _]artist/ });
   const second = screen.getByRole('button', { name: /second[ _]artist/ });
   const cards = [first.closest('article')!, second.closest('article')!];
   const { root, scrollCalls } = mockGalleryGeometry(cards);
@@ -147,7 +148,7 @@ it('详情主操作是图片反推，原站复制／使用独立，保存实际�
   search.mockImplementation(async options => result(options?.query, [{ ...post, sampleUrl: 'https://cdn.donmai.us/original/synthetic.png' }]));
   vi.mocked(importDanbooruCoverAsDataUrl).mockResolvedValue('data:image/png;base64,c3ludGhldGlj');
   vi.mocked(api.post).mockImplementation(async (_path, body) => ({ item: body }));
-  await setup(); fireEvent.click(screen.getByRole('button', { name: /synthetic artist/ }));
+  await setup(); fireEvent.click(await screen.findByRole('button', { name: /synthetic artist/ }));
   await waitFor(() => expect(screen.getByRole('button', { name: '图片反推' }).hasAttribute('disabled')).toBe(false));
   expect(screen.queryByRole('button', { name: '更多' })).toBeNull();
   expect(screen.queryByRole('button', { name: '导入实验室' })).toBeNull();
@@ -165,7 +166,7 @@ it('同一作品更新已存反推，不重复下载或创建，保留原分类�
   search.mockImplementation(async options => result(options?.query, [post]));
   const stored = { id: 'saved', userId: 'synthetic', title: 'keep title', imageUrl: '/api/assets/saved', prompt: 'blue hair', notes: 'keep notes', boardId: 'keep board', createdAt: 1, analysis: { extra: 'keep', imageTagger: { prompt: 'blue hair', createdAt: 1, result: { model: 'test', threshold: 0.35, characterThreshold: 0.85, rating: null, tags: [], character: [], general: [] } } } };
   vi.mocked(db.getInspirationsBySource).mockResolvedValue([stored]);
-  await setup(); fireEvent.click(screen.getByRole('button', { name: /synthetic artist/ }));
+  await setup(); fireEvent.click(await screen.findByRole('button', { name: /synthetic artist/ }));
   await screen.findByRole('textbox', { name: '反推 Tag' });
   fireEvent.change(screen.getByRole('textbox', { name: '反推 Tag' }), { target: { value: 'edited hair' } });
   fireEvent.click(screen.getByRole('button', { name: '保存反推 Tag' }));
@@ -227,7 +228,7 @@ it('点击详情 Tag 沿用当前排序和筛选，不偷换成高分排序', as
   await setup(); openFilters(); changeFilter('评级范围', 'g');
   await waitFor(() => expect(search).toHaveBeenLastCalledWith(expect.objectContaining({ query: 'order:rank rating:g', page: 1, limit: 40 })));
   fireEvent.keyDown(window, { key: 'Escape' });
-  fireEvent.click(screen.getByRole('button', { name: /synthetic artist/ }));
+  fireEvent.click(await screen.findByRole('button', { name: /synthetic artist/ }));
   fireEvent.click(screen.getByRole('button', { name: 'synthetic artist' }));
   await waitFor(() => expect(search).toHaveBeenLastCalledWith(expect.objectContaining({ query: 'synthetic_artist order:rank rating:g', page: 1, limit: 40 })));
 });

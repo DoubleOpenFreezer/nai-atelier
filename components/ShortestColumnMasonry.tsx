@@ -99,12 +99,13 @@ interface ShortestColumnMasonryProps<T> {
   className?: string;
   /** 列间距与卡片间距，默认 12px（与 .75rem 一致）。 */
   gap?: number;
+  /** 默认保留已显示卡片所属列，避免侧栏挤压或图片尺寸返回时重挂载。 */
   stableColumns?: boolean;
 }
 
 /**
  * 显式列容器瀑布流：外层等宽 Grid 只负责生成列，每列是 flex column，
- * 卡片保持自然高度。容器宽度经 ResizeObserver 监听，尺寸变化即重新分列。
+ * 卡片保持自然高度。尺寸变化更新高度估算，旧卡片默认保留所属列。
  */
 export const ShortestColumnMasonry = <T,>({
   items,
@@ -114,7 +115,7 @@ export const ShortestColumnMasonry = <T,>({
   renderItem,
   className,
   gap = 12,
-  stableColumns = false,
+  stableColumns = true,
 }: ShortestColumnMasonryProps<T>) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState(0);

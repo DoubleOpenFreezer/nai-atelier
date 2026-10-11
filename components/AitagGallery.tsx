@@ -1,3 +1,4 @@
+import { useGalleryFrostedCaption } from '../services/appearancePreferences';
 import { t, useLanguage } from '../services/i18n';
 import { PressRevealSurface } from './PressRevealSurface';
 import { ViewableImage } from './ImageLightbox';
@@ -361,11 +362,12 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
   // 瀑布流（masonry 布局时）：图片加载后按真实宽高比完整显示，最短列分配互相补齐。
   const [aitagRatios, setAitagRatios] = useState<Record<number, number>>(() => aitagRatioCache);
   const masonryColumns = useMasonryColumnCount(imageDisplay);
+  const frostedCaption = useGalleryFrostedCaption();
   const estimateAitagCardHeight = React.useCallback((work: AitagWorkSummary, columnWidth: number) => {
     const ratio = aitagRatios[work.id] || aitagRatioCache[work.id] || 1;
     const imageHeight = Math.max(1, columnWidth) / Math.max(0.1, ratio);
-    return imageHeight + 74; // 标题 + 收藏 + 元信息文本区
-  }, [aitagRatios]);
+    return imageHeight + (frostedCaption ? 6 : 74);
+  }, [aitagRatios, frostedCaption]);
   const renderAitagCard = (work: AitagWorkSummary) => {
     const type = getAitagType(work);
     const isSelected = selectedId === work.id;
@@ -410,7 +412,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
             loadDetail(work);
           }
         }}
-        className={`mobile-gallery-item group relative text-left rounded-lg overflow-hidden border transition-[filter,box-shadow,border-color] duration-150 flex flex-col ${cardTone.card} ${selectedId !== null && !isSelected ? 'brightness-[.7]' : ''} ${
+        className={`mobile-gallery-item gallery-image-card gallery-card-visual group relative text-left rounded-lg overflow-hidden border transition-[filter,box-shadow,border-color] duration-150 flex flex-col ${cardTone.card} ${selectedId !== null && !isSelected ? 'brightness-[.7]' : ''} ${
           isSelected ? 'border-indigo-500 ring-2 ring-indigo-500/30' : cardTone.border
         }`}
       >
@@ -433,20 +435,21 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
           <div className="absolute top-2 left-2 px-2 py-0.5 rounded bg-black/70 text-white text-micro font-bold">
             {type || 'AI'}
           </div>
-          <div className="absolute bottom-2 right-2 px-2 py-0.5 rounded bg-black/70 text-white text-micro">
+          {!frostedCaption && <div className="absolute bottom-2 right-2 px-2 py-0.5 rounded bg-black/70 text-white text-micro">
             {t('{0}页', [imageCount])}
-          </div>
+          </div>}
         </div>
-        <div className="p-3 flex-1">
+        <div className="gallery-card-caption p-3 flex-1">
           <div className="flex items-center gap-2">
             <div data-safe-mode-title="true" className="font-semibold text-sm text-gray-900 dark:text-gray-100 truncate min-w-0 flex-1">
               {work.title || `#${work.id}`}
             </div>
           </div>
-          <div className="mt-1 flex min-w-0 items-center gap-2 text-meta text-gray-500 dark:text-gray-400 overflow-hidden">
+          <div className="gallery-card-meta mt-1 flex min-w-0 items-center gap-2 text-meta text-gray-500 dark:text-gray-400 overflow-hidden">
             <span className="truncate">#{work.id}</span>
             <span className="whitespace-nowrap">{t("阅 {0}", [formatCount(work.total_view)])}</span>
             <span className="whitespace-nowrap">{t("藏 {0}", [formatCount(work.total_bookmarks)])}</span>
+            {frostedCaption && <span className="ml-auto whitespace-nowrap">{t('{0}页', [imageCount])}</span>}
           </div>
         </div>
         <div className={`h-1 ${cardTone.marker}`} />

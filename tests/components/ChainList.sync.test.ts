@@ -37,6 +37,10 @@ it.each(['style', 'character'] as const)('%s 封面右上保留透明图片操�
   const label = type === 'character' ? '自定义角色' : '风格串';
   render(React.createElement(ChainList, { ...p, type, chains: [{ ...chains[0], type, previewImage: '/synthetic/cover.png' }] }));
   const card = screen.getByRole('button', { name: `打开${label}：风格 A` });
+  const caption = within(card).getByText('风格 A').closest('.gallery-card-caption');
+  expect(caption?.parentElement).toBe(card);
+  expect(card.querySelector(':scope > .mobile-gallery-frame')).toBeTruthy();
+  expect(card.classList.contains('gallery-card-visual')).toBe(true);
   const imageCopy = within(card).getByRole('button', { name: '复制图片' });
   const edit = within(card).getByRole('button', { name: `编辑${label}信息：风格 A` });
   const controls = edit.parentElement!;

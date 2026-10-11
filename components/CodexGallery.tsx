@@ -1,3 +1,4 @@
+import { useGalleryFrostedCaption } from '../services/appearancePreferences';
 import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { BookOpen, Copy, RefreshCw, Settings2 } from 'lucide-react';
 import { t, useLanguage } from '../services/i18n';
@@ -180,20 +181,21 @@ export const CodexGallery: React.FC<{ active: boolean; currentUser: User; notify
     <summary className="flex min-h-11 cursor-pointer items-center gap-2 px-3 text-sm font-semibold"><span className="mr-auto">{t(label)}</span><IconButton label={t('复制提示词')} onClick={event => { event.preventDefault(); void copy(text); }}><Copy /></IconButton></summary>
     <pre className="max-h-60 overflow-auto whitespace-pre-wrap break-words px-3 pb-3 text-xs leading-relaxed text-gray-600 dark:text-gray-300">{text}</pre>
   </details> : null;
+  const frostedCaption = useGalleryFrostedCaption();
   const estimateHeight = useCallback((entry: CodexEntry, width: number) => {
     const image = entry.images[entry.coverIndex];
-    return image ? width / (image.width && image.height ? image.width / image.height : 0.75) + 55 : 160;
-  }, []);
+    return image ? width / (image.width && image.height ? image.width / image.height : 0.75) + (frostedCaption ? 2 : 55) : 160;
+  }, [frostedCaption]);
   const renderCard = (entry: CodexEntry) => {
     const image = entry.images[entry.coverIndex];
     const partial = image && !collectionTargetActive(groupTarget(entry)) && entry.images.some((_, i) => collectionTargetActive(codexCollectionImage(entry, i)));
-    return <MediaCardShell pressReveal key={entry.key} data-gallery-work-id={entry.key} data-safe-mode-work="true" selected={selectedKey === entry.key} className={`mobile-gallery-item group relative flex-col ${selectedKey && selectedKey !== entry.key ? 'brightness-[.7]' : ''}`}>
-      <button type="button" onClick={() => { setSelectedKeys(current => ({ ...current, [mode]: entry.key })); setPages(current => ({ ...current, [mode]: entry.coverIndex })); }} className="block w-full text-left">
+    return <MediaCardShell pressReveal key={entry.key} data-gallery-work-id={entry.key} data-safe-mode-work="true" selected={selectedKey === entry.key} className={`mobile-gallery-item ${image ? 'gallery-image-card' : ''} group relative flex-col ${selectedKey && selectedKey !== entry.key ? 'brightness-[.7]' : ''}`}>
+      <button type="button" onClick={() => { setSelectedKeys(current => ({ ...current, [mode]: entry.key })); setPages(current => ({ ...current, [mode]: entry.coverIndex })); }} className={`block w-full text-left ${image ? 'gallery-card-visual' : ''}`}>
         {image ? <div className="mobile-gallery-frame relative aspect-[3/4] overflow-hidden bg-gray-200 dark:bg-gray-800" style={{ '--mobile-image-ratio': `${image.width || 3} / ${image.height || 4}` } as React.CSSProperties}>
           <SmartImage src={image.url} alt={entry.title} />
-          {(entry.images.length > 1 || partial) && <span className="absolute bottom-2 right-2 rounded-full bg-black/60 px-2 py-1 text-micro text-white">{partial ? `${t('部分已收藏')} · ` : ''}{t('{0}页', [entry.images.length])}</span>}
+          {!frostedCaption && (entry.images.length > 1 || partial) && <span className="absolute bottom-2 right-2 rounded-full bg-black/60 px-2 py-1 text-micro text-white">{partial ? `${t('部分已收藏')} · ` : ''}{t('{0}页', [entry.images.length])}</span>}
         </div> : <div className="max-h-40 overflow-hidden bg-gray-50 p-3 text-xs leading-relaxed text-gray-500 dark:bg-gray-950">{entry.prompt || entry.characters.map(character => character.prompt).join('\n') || entry.note}</div>}
-        <div className="p-2.5"><p data-safe-mode-title="true" className="truncate text-xs font-bold">{entry.title}</p><p className="mt-1 truncate text-micro text-gray-500">{mode === 'books' ? entry.path.join(' / ') || entry.bookTitle : entry.author || entry.path.join(' / ')}</p></div>
+        <div className={`p-2.5 ${image ? 'gallery-card-caption' : ''}`}>{frostedCaption && image && (entry.images.length > 1 || partial) && <span className="gallery-card-meta mb-1 block text-micro">{partial ? `${t('部分已收藏')} · ` : ''}{t('{0}页', [entry.images.length])}</span>}<p data-safe-mode-title="true" className="truncate text-xs font-bold">{entry.title}</p><p className="gallery-card-meta mt-1 truncate text-micro text-gray-500">{mode === 'books' ? entry.path.join(' / ') || entry.bookTitle : entry.author || entry.path.join(' / ')}</p></div>
       </button>
       {image && <ImageShareOverlay imageUrl={getMobileOriginalUrl(image.originalUrl || image.url)} filename={`${entry.id}.png`} favorite={groupTarget(entry)} notify={notify} />}
     </MediaCardShell>;

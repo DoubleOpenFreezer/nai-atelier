@@ -1,3 +1,4 @@
+import { useGalleryFrostedCaption } from '../services/appearancePreferences';
 import { t, useLanguage, getLanguage } from '../services/i18n';
 import React, { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -557,10 +558,11 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, notify, onNa
     const ratio = Number(illust.width) / Math.max(1, Number(illust.height) || 1);
     return Number.isFinite(ratio) && ratio > 0 ? ratio : 0.75;
   };
+  const frostedCaption = useGalleryFrostedCaption();
   const estimatePixivCardHeight = React.useCallback((illust: PixivIllust, columnWidth: number) => {
     const imageHeight = Math.max(1, columnWidth) / Math.max(0.1, getIllustRatio(illust));
-    return imageHeight + 52; // 标题 + 作者文本区
-  }, []);
+    return imageHeight + (frostedCaption ? 2 : 52);
+  }, [frostedCaption]);
   const renderPixivCard = (illust: PixivIllust) => {
     const title = illust.title || `Pixiv #${illust.id}`;
     const ratio = `${illust.width || 3} / ${illust.height || 4}`;
@@ -569,21 +571,22 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, notify, onNa
     // 会让每张封面的上游流量放大 5-10 倍。square 档是方形裁切版，仅作最后回退。
     // 原图不在卡片上升级加载——点开详情才加载原图（详情页自带 preview→original 链）。
     const previewSrc = illust.urls.medium || illust.urls.large || illust.urls.thumb;
-    return <MediaCardShell pressReveal key={illust.id} data-gallery-work-id={illust.id} data-safe-mode-work="true" selected={selectedId === illust.id} className={`mobile-gallery-item group relative flex-col ${selectedId !== null && selectedId !== illust.id ? 'brightness-[.7]' : ''}`}>
-      <button type="button" onClick={() => openDetail(illust)} className="block w-full text-left">
+    return <MediaCardShell pressReveal key={illust.id} data-gallery-work-id={illust.id} data-safe-mode-work="true" selected={selectedId === illust.id} className={`mobile-gallery-item gallery-image-card group relative flex-col ${selectedId !== null && selectedId !== illust.id ? 'brightness-[.7]' : ''}`}>
+      <button type="button" onClick={() => openDetail(illust)} className="gallery-card-visual block w-full text-left">
         <div className="mobile-gallery-frame relative aspect-[3/4] overflow-hidden bg-gray-200 dark:bg-gray-800" style={{ '--mobile-image-ratio': ratio } as React.CSSProperties}>
           <SmartImage
             src={previewSrc}
             alt={title}
           />
-          <div className="absolute inset-x-0 bottom-0 flex items-end justify-between bg-gradient-to-t from-black/75 to-transparent px-2 pb-2 pt-8 text-micro text-white">
+          {!frostedCaption && <div className="absolute inset-x-0 bottom-0 flex items-end justify-between bg-gradient-to-t from-black/75 to-transparent px-2 pb-2 pt-8 text-micro text-white">
             <span>♥ {formatCount(illust.totalBookmarks)}</span>
             {illust.pageCount > 1 && <span>{t("{0}页", [illust.pageCount])}</span>}
-          </div>
+          </div>}
         </div>
-        <div className="p-2.5">
+        <div className="gallery-card-caption p-2.5">
           <p data-safe-mode-title="true" className="truncate text-xs font-bold">{title}</p>
-          <p className="mt-1 truncate text-micro text-gray-500">{illust.user.name || `Pixiv #${illust.id}`}</p>
+          <p className="gallery-card-meta mt-1 truncate text-micro text-gray-500">{illust.user.name || `Pixiv #${illust.id}`}</p>
+          {frostedCaption && <div className="gallery-card-meta mt-1 flex justify-between text-micro"><span>♥ {formatCount(illust.totalBookmarks)}</span>{illust.pageCount > 1 && <span>{t('{0}页', [illust.pageCount])}</span>}</div>}
         </div>
       </button>
       <ImageShareOverlay imageUrl={buildPixivMediaUrl(illust, 0, 'original')} filename={`pixiv-${illust.id}-p1.png`} favorite={collectionGroup(illust)} notify={notify} />
@@ -591,7 +594,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, notify, onNa
   };
 
   const renderHistoryCard = (item: GalleryHistoryItem) => (
-    <MediaCardShell pressReveal key={item.id} style={{ contentVisibility: 'visible' }} data-gallery-work-id={item.sourceId} selected={selectedId === String(item.sourceId)} className={`mobile-gallery-item group relative flex-col ${selectedId !== null && selectedId !== String(item.sourceId) ? 'brightness-[.7]' : ''}`}>
+    <MediaCardShell pressReveal key={item.id} style={{ contentVisibility: 'visible' }} data-gallery-work-id={item.sourceId} selected={selectedId === String(item.sourceId)} className={`mobile-gallery-item gallery-image-card group relative flex-col ${selectedId !== null && selectedId !== String(item.sourceId) ? 'brightness-[.7]' : ''}`}>
       <button
         type="button"
         onClick={() => {
@@ -631,14 +634,14 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, notify, onNa
             openDetail(dummyIllust);
           }
         }}
-        className="block w-full text-left"
+        className="gallery-card-visual block w-full text-left"
       >
         <div className="mobile-gallery-frame relative aspect-[3/4] overflow-hidden bg-gray-200 dark:bg-gray-800">
           <SmartImage src={item.previewUrl} alt={item.title} />
         </div>
-        <div className="p-2.5">
+        <div className="gallery-card-caption p-2.5">
           <p className="truncate text-xs font-bold">{item.title}</p>
-          <p className="mt-1 truncate text-micro text-gray-500">{item.artistName || `Pixiv #${item.sourceId}`}</p>
+          <p className="gallery-card-meta mt-1 truncate text-micro text-gray-500">{item.artistName || `Pixiv #${item.sourceId}`}</p>
         </div>
       </button>
       {item.sampleUrl && <ImageShareOverlay imageUrl={getMobileOriginalUrl(item.sampleUrl)} filename={`pixiv-${item.sourceId}-p1.png`} favorite={{ imageUrl: item.sampleUrl, title: item.title, sourceType: 'pixiv', sourceId: String(item.sourceId), imageId: '0', sourceUrl: 'https://www.pixiv.net/artworks/' + encodeURIComponent(String(item.sourceId)) }} notify={notify} />}
@@ -1032,7 +1035,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, notify, onNa
                   items={historyItems}
                   columns={masonryColumns}
                   getItemKey={item => item.id}
-                  estimateItemHeight={(_item, columnWidth) => columnWidth * 1.5 + 52}
+                  estimateItemHeight={(_item, columnWidth) => columnWidth * 1.5 + (frostedCaption ? 2 : 52)}
                   renderItem={renderHistoryCard}
                 />
               ) : (

@@ -5,12 +5,12 @@ import { resolve } from 'node:path';
 import ts from 'typescript';
 import { compile } from '@tailwindcss/node';
 import { parse, type AtRule, type Node as PostCssNode } from 'postcss';
-import { cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, render, renderHook, screen } from '@testing-library/react';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LanAccessGate } from '../../components/LanAccessGate';
 import {
   applyAppearancePreferences, appearanceScrollBehavior, DEFAULT_APPEARANCE_PREFERENCES,
-  restoreAppearancePreferences, saveAppearancePreferences,
+  restoreAppearancePreferences, saveAppearancePreferences, useGalleryFrostedCaption,
 } from '../../services/appearancePreferences';
 
 const files = ['App.tsx', ...readdirSync('components', { recursive: true })
@@ -63,6 +63,39 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); localStorage.clear(); applyAppearancePreferences(DEFAULT_APPEARANCE_PREFERENCES, false); });
 
 describe('全局外观覆盖审计', () => {
+  it('Agent 侧栏保留桌面让位，但任何动效时长都不再让整个工作区逐帧改变宽度', () => {
+    expect(declarations('.agent-stage')['transition-property']).toBe('none');
+    const docked = '.agent-panel-docked .agent-stage';
+    expect(declarations(docked, '(min-width: 1024px)')['padding-right']).toBe('var(--agent-docked-width, var(--agent-panel-width, 520px))');
+    expect(declarations(docked)['padding-right']).toBeUndefined();
+  });
+
+  it('磨砂开关实时通知瀑布流，两个卡片开关独立映射到全局样式', () => {
+    const { result } = renderHook(useGalleryFrostedCaption);
+    for (const galleryFrostedCaption of [false, true]) for (const galleryHoverFloat of [false, true]) {
+      act(() => applyAppearancePreferences({ ...DEFAULT_APPEARANCE_PREFERENCES, galleryFrostedCaption, galleryHoverFloat }, false));
+      expect(result.current).toBe(galleryFrostedCaption);
+      expect(document.documentElement.dataset.galleryFrostedCaption).toBe(String(galleryFrostedCaption));
+      expect(document.documentElement.dataset.galleryHoverFloat).toBe(String(galleryHoverFloat));
+    }
+  });
+
+  it('磨砂只叠放图文，悬停浮动仅在鼠标、完整动效与系统允许时启用', () => {
+    const enabled = "html[data-gallery-frosted-caption='true']";
+    expect(declarations(`${enabled} .gallery-card-visual`, undefined, css).display).toBe('grid');
+    expect(declarations(`${enabled} .gallery-card-visual > .gallery-card-caption`, undefined, css)['grid-area']).toBe('1 / 1');
+    const frost = declarations(`${enabled} .gallery-card-caption::before`, undefined, css);
+    expect(frost['backdrop-filter']).toBe('blur(10px)');
+    expect(frost['mask-image']).toContain('transparent');
+    expect(frost['pointer-events']).toBe('none');
+    expect(declarations(`${enabled} .gallery-card-caption`, undefined, css)['text-shadow']).toBe('none');
+    const hover = "html[data-gallery-hover-float='true'][data-motion='full'] .gallery-image-card:not([data-press-input='touch']):not([data-press-input='pen']):hover";
+    const media = '(hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference)';
+    expect(declarations(hover, media, css).translate).toBe('0 -3px');
+    expect(declarations(`${hover} .mobile-gallery-frame img`, media, css).scale).toBe('1.035');
+    expect(declarations(hover, undefined, css)).toEqual({});
+    expect(declarations('.media-card:hover', undefined, css).transform).toBeUndefined();
+  });
   it('所有页面与组件的 JSX 类名没有固定像素字号或任意值圆角旁路', () => {
     const violations = classes.filter(item => /text-\[[\d.]+px\]|rounded(?:-[a-z]+)?-\[[\d.]+(?:px|rem)\]/.test(item.text));
     expect(violations).toEqual([]);

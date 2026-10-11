@@ -1,3 +1,4 @@
+import { useGalleryFrostedCaption } from '../services/appearancePreferences';
 import { collectionSnapshot, subscribeCollection } from '../services/collectionFavorites';
 import { t, useLanguage, getLanguage } from '../services/i18n';
 import { PressRevealSurface } from './PressRevealSurface';
@@ -93,18 +94,19 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
   const imageDisplay = useMobileImageDisplayPreferences();
     // 瀑布流（masonry 布局时）：封面按真实宽高比完整显示，最短列分配互相补齐。
     const [cardRatios, updateImageRatio] = useImageRatios();
+    const frostedCaption = useGalleryFrostedCaption();
     const estimateCharacterCardHeight = React.useCallback((card: CharacterCard, columnWidth: number) => {
       const ratio = cardRatios[card.key] || 2 / 3;
       const imageHeight = Math.max(1, columnWidth) / Math.max(0.1, ratio);
-      return imageHeight + 82; // 名称 + tagName/描述文本区
-    }, [cardRatios]);
+      return imageHeight + (frostedCaption ? 2 : 82);
+    }, [cardRatios, frostedCaption]);
     const renderCharacterCard = (card: CharacterCard) => {
             const selected = selectedKeys.has(card.key);
             return (
               <PressRevealSurface as="article" key={card.key} data-gallery-work-id={card.key} data-safe-mode-work="true" data-return-item-id={card.kind === 'custom' ? card.chain?.id : undefined} role="button" data-agent-action="select" aria-label={t("选择角色：{0}", [card.name])} tabIndex={0} onClick={() => toggleSelect(card)} onKeyDown={event => {
                 if (event.target !== event.currentTarget || !['Enter', ' '].includes(event.key)) return;
                 event.preventDefault(); toggleSelect(card);
-              }} aria-pressed={selected} className={`mobile-gallery-item group relative flex-col overflow-hidden rounded-2xl border bg-white transition-[filter,box-shadow,border-color] duration-150 cursor-pointer dark:bg-gray-900 ${selectedKeys.size > 0 && !selected ? 'brightness-[.7]' : ''} ${selected ? 'border-indigo-500 ring-2 ring-indigo-500/20' : 'border-gray-200 hover:border-indigo-400 dark:border-gray-800 dark:hover:border-indigo-600'}`}>
+              }} aria-pressed={selected} className={`mobile-gallery-item gallery-image-card gallery-card-visual group relative flex-col overflow-hidden rounded-2xl border bg-white transition-[filter,box-shadow,border-color] duration-150 cursor-pointer dark:bg-gray-900 ${selectedKeys.size > 0 && !selected ? 'brightness-[.7]' : ''} ${selected ? 'border-indigo-500 ring-2 ring-indigo-500/20' : 'border-gray-200 hover:border-indigo-400 dark:border-gray-800 dark:hover:border-indigo-600'}`}>
                 <div className="mobile-gallery-frame relative md:aspect-[2/3] overflow-hidden bg-gray-200 dark:bg-gray-900" style={{ '--mobile-image-ratio': cardRatios[card.key] ? `${Math.round(cardRatios[card.key] * 1000)} / 1000` : '2 / 3' } as React.CSSProperties}>
                   {card.kind === 'catalog' && card.tagName ? <DanbooruCover tag={card.tagName} kind="character" alt={card.name} fixedSrc={card.previewImage} notify={notify} onFavoriteChange={() => toggleFavorite(card, collectionSnapshot().some(item => item.sourceType === 'character' && item.sourceId === (card.chain?.id || card.tagName || card.key) && !item.archived))} onImageLoad={(width, height) => updateImageRatio(card.key, width, height)} /> : card.previewImage ? (
                     <button className="h-full w-full" onClick={event => { event.stopPropagation(); setLightbox(card); }}><LazyImage src={card.previewImage} alt={card.name} onLoad={event => updateImageRatio(card.key, event.currentTarget.naturalWidth, event.currentTarget.naturalHeight)} /></button>
@@ -127,23 +129,23 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
                     <div className="pointer-events-none absolute inset-0 z-10 border-4 border-indigo-500/80" />
                   )}
                 </div>
-                <div className="p-3">
+                <div className="gallery-card-caption p-3">
                   <div className="flex items-center justify-between gap-1.5">
                     <h2 data-safe-mode-title="true" className="truncate text-sm font-bold text-gray-900 dark:text-white" title={card.name}>{selected && <Check aria-hidden="true" className="mr-1 inline h-3 w-3 text-indigo-600 dark:text-indigo-400" strokeWidth={4} />}{card.name}</h2>
                     {card.kind === 'custom' ? (
-                      <span className="flex-none rounded bg-indigo-50 px-1.5 py-0.5 text-micro font-semibold text-indigo-600 dark:bg-indigo-950/50 dark:text-indigo-300">{t("自定义")}</span>
+                      <span className="gallery-card-badge flex-none rounded bg-indigo-50 px-1.5 py-0.5 text-micro font-semibold text-indigo-600 dark:bg-indigo-950/50 dark:text-indigo-300">{t("自定义")}</span>
                     ) : (
-                      <span className="flex-none rounded bg-gray-100 px-1.5 py-0.5 text-micro font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400">{t("Tag 词库")}</span>
+                      <span className="gallery-card-badge flex-none rounded bg-gray-100 px-1.5 py-0.5 text-micro font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400">{t("Tag 词库")}</span>
                     )}
                   </div>
                   {card.kind === 'catalog' ? <>
                     <div data-safe-mode-title="true" className="mt-0.5 truncate font-mono text-micro text-gray-400" title={card.tagName}>{card.tagName}</div>
-                    <div className="mt-1 flex items-center justify-between gap-1 text-micro">
+                    <div className="gallery-card-meta mt-1 flex items-center justify-between gap-1 text-micro">
                       <span className="text-gray-500">{t("作品 {0}", [(card.postCount || 0).toLocaleString(getLanguage())])}</span>
-                      {card.matchReason && <span className="truncate rounded bg-gray-100 px-1.5 py-0.5 text-gray-500 dark:bg-gray-700 dark:text-gray-300" title={t("匹配：{0}", [card.matchReason])}>{t("匹配：{0}", [card.matchReason])}</span>}
+                      {card.matchReason && <span className="gallery-card-badge truncate rounded bg-gray-100 px-1.5 py-0.5 text-gray-500 dark:bg-gray-700 dark:text-gray-300" title={t("匹配：{0}", [card.matchReason])}>{t("匹配：{0}", [card.matchReason])}</span>}
                     </div>
                   </> : (
-                    <div className="mt-1 flex items-center justify-between gap-1.5 text-micro">
+                    <div className="gallery-card-meta mt-1 flex items-center justify-between gap-1.5 text-micro">
                       <div className="truncate font-mono text-gray-400 dark:text-gray-500" title={card.chain?.basePrompt || card.chain?.description || ''}>
                         {card.chain?.basePrompt || card.chain?.description || t("手工组合外貌与服装提示词")}
                       </div>

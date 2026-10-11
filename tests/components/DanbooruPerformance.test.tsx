@@ -22,7 +22,7 @@ it('真实瀑布流尺寸更新不重建旧卡片，重新排序按新顺序安�
   });
   const key = (value: string) => value;
   const card = (value: string) => <span data-testid={value}>{value}</span>;
-  const view = (items: string[], tall = false) => <ShortestColumnMasonry stableColumns columns={2} items={items} getItemKey={key} renderItem={card} estimateItemHeight={value => tall && value === 'a' ? 1000 : 100} />;
+  const view = (items: string[], tall = false) => <ShortestColumnMasonry columns={2} items={items} getItemKey={key} renderItem={card} estimateItemHeight={value => tall && value === 'a' ? 1000 : 100} />;
   const { rerender } = render(view(['a', 'b', 'c', 'd']));
   const original = screen.getByTestId('c'); const column = original.parentElement;
   rerender(view(['a', 'b', 'c', 'd', 'e'], true));
@@ -30,6 +30,34 @@ it('真实瀑布流尺寸更新不重建旧卡片，重新排序按新顺序安�
   expect(screen.getByTestId('e').parentElement).toBe(screen.getByTestId('b').parentElement);
   rerender(view(['e', 'd', 'c', 'b', 'a'], true));
   expect(screen.getByTestId('e').parentElement).toBe(column);
+});
+it('默认瀑布流在侧栏反复挤压时保留所有图片节点，主动改变列数仍重新分列', () => {
+  let resize!: (width: number) => void;
+  vi.stubGlobal('ResizeObserver', class {
+    constructor(callback: ResizeObserverCallback) {
+      resize = width => callback([{ contentRect: { width } }] as ResizeObserverEntry[], this as unknown as ResizeObserver);
+    }
+    observe() { resize(612); }
+    disconnect() {}
+  });
+  const items = ['a', 'b', 'c', 'd'];
+  const view = (columns: number) => <ShortestColumnMasonry columns={columns} items={items} getItemKey={value => value}
+    estimateItemHeight={(value, width) => value === 'a' ? width * 2 : width + (value === 'b' ? 160 : 0)}
+    renderItem={value => <img data-testid={value} src={`/synthetic/${value}.png`} />} />;
+  const { container, rerender } = render(view(2));
+  const images = items.map(value => screen.getByTestId(value));
+  const columns = images.map(image => image.parentElement);
+  for (const width of [500, 400, 312, 0, 400, 612, 312, 612]) {
+    act(() => resize(width));
+    items.forEach((value, index) => {
+      expect(screen.getByTestId(value)).toBe(images[index]);
+      expect(images[index].parentElement).toBe(columns[index]);
+    });
+  }
+  rerender(view(3));
+  const newColumns = container.querySelectorAll('.chain-masonry-column');
+  expect(newColumns).toHaveLength(3);
+  items.slice(0, 3).forEach((value, index) => expect(screen.getByTestId(value).parentElement).toBe(newColumns[index]));
 });
 it('尺寸返回保留旧卡片所在列，新卡片仍选择当前最短列', () => {
   const old = new Map<string, number>(); const items = ['a', 'b', 'c', 'd'];

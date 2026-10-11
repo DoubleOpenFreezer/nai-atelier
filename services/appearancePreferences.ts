@@ -1,3 +1,5 @@
+import { useSyncExternalStore } from 'react';
+
 export type ThemeMode = 'light' | 'dark' | 'system';
 export type DesignTheme = 'nai-atelier';
 export type InterfaceDensity = 'comfortable' | 'standard' | 'compact';
@@ -93,6 +95,8 @@ export interface AppearancePreset {
   surfaces: SurfaceStyle;
   motion: MotionStyle;
   fontScale: FontScale;
+  galleryFrostedCaption: boolean;
+  galleryHoverFloat: boolean;
 }
 
 export const BUILTIN_APPEARANCE_PRESET: AppearancePreset = {
@@ -107,6 +111,8 @@ export const BUILTIN_APPEARANCE_PRESET: AppearancePreset = {
   surfaces: 'solid',
   motion: 'full',
   fontScale: 'standard',
+  galleryFrostedCaption: true,
+  galleryHoverFloat: true,
 };
 
 export interface AppearancePreferences {
@@ -118,6 +124,8 @@ export interface AppearancePreferences {
   surfaces: SurfaceStyle;
   motion: MotionStyle;
   fontScale: FontScale;
+  galleryFrostedCaption: boolean;
+  galleryHoverFloat: boolean;
   tagAssistEnabled: boolean;
   /** 在支持的模型上显示采样过程；这是当前设备的观看偏好，不写入风格串。 */
   generationStreamPreview: boolean;
@@ -148,6 +156,8 @@ export const DEFAULT_APPEARANCE_PREFERENCES: AppearancePreferences = {
   surfaces: 'solid',
   motion: 'full',
   fontScale: 'standard',
+  galleryFrostedCaption: true,
+  galleryHoverFloat: true,
   tagAssistEnabled: true,
   generationStreamPreview: false,
   continuousGenerationEnabled: true,
@@ -191,6 +201,8 @@ export const validateAppearancePreset = (input: unknown): AppearancePreset | nul
     surfaces,
     motion,
     fontScale,
+    galleryFrostedCaption: typeof obj.galleryFrostedCaption === 'boolean' ? obj.galleryFrostedCaption : true,
+    galleryHoverFloat: typeof obj.galleryHoverFloat === 'boolean' ? obj.galleryHoverFloat : true,
   };
 };
 
@@ -288,6 +300,8 @@ export const normalizeAppearancePreferences = (value: unknown): AppearancePrefer
     surfaces: isOneOf(input.surfaces, ['solid', 'translucent']) ? input.surfaces : DEFAULT_APPEARANCE_PREFERENCES.surfaces,
     motion: isOneOf(input.motion, ['full', 'reduced', 'off']) ? input.motion : DEFAULT_APPEARANCE_PREFERENCES.motion,
     fontScale: isOneOf(input.fontScale, ['small', 'standard', 'large']) ? input.fontScale : DEFAULT_APPEARANCE_PREFERENCES.fontScale,
+    galleryFrostedCaption: typeof input.galleryFrostedCaption === 'boolean' ? input.galleryFrostedCaption : DEFAULT_APPEARANCE_PREFERENCES.galleryFrostedCaption,
+    galleryHoverFloat: typeof input.galleryHoverFloat === 'boolean' ? input.galleryHoverFloat : DEFAULT_APPEARANCE_PREFERENCES.galleryHoverFloat,
     tagAssistEnabled: typeof input.tagAssistEnabled === 'boolean'
       ? input.tagAssistEnabled
       : DEFAULT_APPEARANCE_PREFERENCES.tagAssistEnabled,
@@ -357,9 +371,23 @@ export const applyAppearancePreferences = (preferences: AppearancePreferences, i
   root.dataset.surfaces = preferences.surfaces;
   root.dataset.motion = preferences.motion;
   root.dataset.fontScale = preferences.fontScale;
+  const captionChanged = root.dataset.galleryFrostedCaption !== String(preferences.galleryFrostedCaption);
+  root.dataset.galleryFrostedCaption = String(preferences.galleryFrostedCaption);
+  root.dataset.galleryHoverFloat = String(preferences.galleryHoverFloat);
+  if (captionChanged) window.dispatchEvent(new Event('nai-gallery-caption-change'));
   root.style.setProperty('--nai-accent', preferences.accentColor);
   root.style.colorScheme = isDark ? 'dark' : 'light';
 };
+
+// 信息栏高度影响瀑布流分列；切换外观时同步更新各图库的高度估算。
+const subscribeGalleryCaption = (listener: () => void) => {
+  window.addEventListener('nai-gallery-caption-change', listener);
+  return () => window.removeEventListener('nai-gallery-caption-change', listener);
+};
+export const useGalleryFrostedCaption = () => useSyncExternalStore(
+  subscribeGalleryCaption,
+  () => document.documentElement.dataset.galleryFrostedCaption !== 'false',
+);
 
 /** App 挂载前和系统明暗变化时恢复外观，访问门禁与错误页也使用同一套偏好。 */
 export const restoreAppearancePreferences = () => {

@@ -48,8 +48,9 @@ beforeEach(() => {
   vi.mocked(api.uploadFile).mockResolvedValue({ url: '/api/assets/uploaded' });
   vi.mocked(api.post).mockImplementation(async (_path, body) => ({ item: body }));
 });
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); delete document.documentElement.dataset.motion; });
-it.each(['masonry', 'portrait', 'square'])('Pixiv 足迹 %s 布局关闭屏外占位，瀑布流使用稳定分列且不改变图片比例', async layout => {
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); delete document.documentElement.dataset.motion; delete document.documentElement.dataset.galleryFrostedCaption; });
+it.each(['masonry', 'portrait', 'square'].flatMap(layout => [true, false].map(frosted => [layout, frosted] as const)))('Pixiv 足迹 %s／磨砂 %s 关闭屏外占位，瀑布流使用稳定分列且不改变图片比例', async (layout, frosted) => {
+  document.documentElement.dataset.galleryFrostedCaption = String(frosted);
   localStorage.setItem('nai_mobile_image_display', JSON.stringify({ layout, columns: 2, desktopColumns: 2 }));
   vi.mocked(galleryHistoryService.getHistory).mockReturnValue(Array.from({ length: 4 }, (_, index) => ({
     id: 'pixiv:' + (index + 1), source: 'pixiv', sourceId: String(index + 1),
@@ -71,7 +72,7 @@ it.each(['masonry', 'portrait', 'square'])('Pixiv 足迹 %s 布局关闭屏外�
     const props = masonryRender.mock.lastCall![0];
     expect(props.stableColumns).toBe(true);
     expect(props.items.map(props.getItemKey)).toEqual(['pixiv:1', 'pixiv:2', 'pixiv:3', 'pixiv:4']);
-    expect(props.estimateItemHeight(props.items[0], 200)).toBe(352);
+    expect(props.estimateItemHeight(props.items[0], 200)).toBe(frosted ? 302 : 352);
     expect(cards[0].parentElement).toBe(cards[1].parentElement);
   }
 });

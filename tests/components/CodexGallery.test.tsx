@@ -31,6 +31,18 @@ beforeEach(() => {
   mocks.file.mockResolvedValue(new File(['synthetic'], 'source.png')); mocks.metadata.mockResolvedValue(metadata);
 });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+it('图片词条叠放图文，纯文本词条保留正文和独立信息栏', async () => {
+  mocks.book.mockResolvedValue({ release: boot.release, entries: [entry, { ...entry, key: 'codex:synthetic:text', title: '纯文本词条', images: [], prompt: 'text-only prompt' }] });
+  setup();
+  const imageTitle = await screen.findByText('合成词条');
+  const textTitle = await screen.findByText('纯文本词条');
+  const caption = imageTitle.closest('.gallery-card-caption')!;
+  expect(caption.parentElement?.classList.contains('gallery-card-visual')).toBe(true);
+  expect(caption.parentElement?.querySelector(':scope > .mobile-gallery-frame')).toBeTruthy();
+  expect(textTitle.closest('.gallery-card-caption')).toBeNull();
+  expect(textTitle.closest('.gallery-image-card')).toBeNull();
+  expect(screen.getByText('text-only prompt')).toBeTruthy();
+});
 it('未进入页面不读取法典；取用默认追加正向和角色，负面需明确选择', async () => {
   const view = setup(false); expect(mocks.bootstrap).not.toHaveBeenCalled();
   view.rerender(<CodexGallery active currentUser={{ id: 'owner', username: 'user', role: 'admin', createdAt: 1 }} notify={mocks.notify} onNavigateToPlayground={mocks.navigate} />);

@@ -506,6 +506,8 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
       surfaces: preset.surfaces,
       motion: preset.motion,
       fontScale: preset.fontScale,
+      galleryFrostedCaption: preset.galleryFrostedCaption,
+      galleryHoverFloat: preset.galleryHoverFloat,
       activePresetId: preset.id,
     });
     if (preset.themeMode !== themeMode) {
@@ -528,6 +530,8 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
       surfaces: appearancePreferences.surfaces,
       motion: appearancePreferences.motion,
       fontScale: appearancePreferences.fontScale,
+      galleryFrostedCaption: appearancePreferences.galleryFrostedCaption,
+      galleryHoverFloat: appearancePreferences.galleryHoverFloat,
     };
     updateAppearance({
       customPresets: [...customPresets, newPreset],
@@ -955,6 +959,13 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                   <div><div className="mb-2 text-meta font-bold text-gray-600 dark:text-gray-300">{t("表面材质")}</div><AppearanceOptionGroup value={appearancePreferences.surfaces} onChange={value => updateAppearance({ surfaces: value as SurfaceStyle })} options={[{ value: 'solid', label: t("实色") }, { value: 'translucent', label: t("透光") }]} /></div>
                   <div><div className="mb-2 text-meta font-bold text-gray-600 dark:text-gray-300">{t("字号")}</div><AppearanceOptionGroup value={appearancePreferences.fontScale} onChange={value => updateAppearance({ fontScale: value as FontScale })} options={[{ value: 'small', label: t("偏小") }, { value: 'standard', label: t("标准") }, { value: 'large', label: t("偏大") }]} /></div>
                   <div className="lg:col-span-2"><div className="mb-2 text-meta font-bold text-gray-600 dark:text-gray-300">{t("动效")}</div><AppearanceOptionGroup value={appearancePreferences.motion} onChange={value => updateAppearance({ motion: value as MotionStyle })} options={[{ value: 'full', label: t("完整") }, { value: 'reduced', label: t("减少") }, { value: 'off', label: t("关闭动效") }]} /></div>
+                  {([
+                    ['galleryFrostedCaption', '全图磨砂卡片', '图片铺满卡片，名称叠在底部渐变磨砂上；关闭后恢复图下信息栏。'],
+                    ['galleryHoverFloat', '卡片悬停浮动', '鼠标经过时轻轻抬起并放大图片；遵循减少或关闭动效设置。'],
+                  ] as const).map(([key, label, description]) => <button key={key} type="button" role="switch" aria-checked={appearancePreferences[key]} aria-label={t(label)} onClick={() => updateAppearance({ [key]: !appearancePreferences[key] })} className="flex w-full items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-left transition hover:border-indigo-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-indigo-700">
+                    <span><span className="block text-sm font-bold">{t(label)}</span><span className="mt-1 block text-xs text-gray-500 dark:text-gray-400">{t(description)}</span></span>
+                    <span aria-hidden="true" className={`relative h-6 w-11 flex-none rounded-full transition-colors ${appearancePreferences[key] ? 'bg-indigo-500' : 'bg-gray-300 dark:bg-gray-700'}`}><span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${appearancePreferences[key] ? 'translate-x-5' : 'translate-x-0'}`} /></span>
+                  </button>)}
                 </div>
 
                 <button type="button" onClick={resetThemeCustomization} className="mobile-touch mt-4 flex w-full items-center justify-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 text-xs font-bold text-gray-600 transition hover:border-indigo-300 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-indigo-600 dark:hover:text-indigo-300"><RotateCcw className="h-3.5 w-3.5" />{t("恢复 NAI Atelier 默认外观")}</button>

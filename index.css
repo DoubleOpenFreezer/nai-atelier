@@ -34,15 +34,7 @@
   contain-intrinsic-size: auto 320px;
 }
 
-.media-card:hover {
-  transform: translateY(-1px);
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .media-card:hover {
-    transform: none;
-  }
-
   .ui-backdrop-enter,
   .ui-modal-enter,
   .ui-sheet-enter,
@@ -54,6 +46,83 @@
   .vip-username,
   .vip-badge {
     animation: none !important;
+  }
+}
+
+/* 同一张图与信息栏叠放；关闭偏好即恢复各卡片原有的正常文档流。 */
+@layer utilities {
+  html[data-gallery-frosted-caption='true'] .gallery-card-visual {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  html[data-gallery-frosted-caption='true'] .gallery-card-visual > .mobile-gallery-frame,
+  html[data-gallery-frosted-caption='true'] .gallery-card-visual > .gallery-card-caption {
+    grid-area: 1 / 1;
+    min-width: 0;
+  }
+  html[data-gallery-frosted-caption='true'] .gallery-card-caption {
+    position: relative;
+    align-self: end;
+    isolation: isolate;
+    z-index: 2;
+    height: auto;
+    min-height: 3rem;
+    padding: .875rem .75rem .75rem;
+    border: 0;
+    background: transparent;
+    color: white;
+    text-shadow: none;
+  }
+  html[data-gallery-frosted-caption='true'] .gallery-card-caption::before {
+    content: '';
+    position: absolute;
+    inset: -1.75rem 0 0;
+    z-index: -1;
+    pointer-events: none;
+    background: linear-gradient(to bottom, transparent, rgb(12 16 24 / .48) 45%, rgb(12 16 24 / .76));
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    mask-image: linear-gradient(to bottom, transparent, black 42%);
+  }
+  html[data-gallery-frosted-caption='true'] .gallery-card-caption :where(p, h2, h3, div, span, button, svg) {
+    color: inherit;
+  }
+  html[data-gallery-frosted-caption='true'] .gallery-card-caption .gallery-card-meta {
+    color: rgb(255 255 255 / .78);
+  }
+  html[data-gallery-frosted-caption='true'] .gallery-card-caption .gallery-card-badge {
+    color: rgb(255 255 255 / .94);
+    background: rgb(255 255 255 / .14);
+    border-color: rgb(255 255 255 / .28);
+  }
+  html[data-gallery-frosted-caption='true'] .gallery-card-visual > .mobile-gallery-frame {
+    border-bottom-width: 0;
+  }
+  html[data-gallery-frosted-caption='true'] .gallery-cover-navigation {
+    bottom: 7rem;
+  }
+  html[data-gallery-frosted-caption='true'] .gallery-cover-source {
+    top: .5rem;
+    bottom: auto;
+  }
+  html[data-gallery-frosted-caption='true'] .gallery-chain-status {
+    bottom: 3.75rem;
+  }
+}
+
+.gallery-image-card {
+  transition: translate 260ms cubic-bezier(.22, 1, .36, 1), box-shadow 260ms ease, border-color 150ms ease, filter 150ms ease;
+}
+.gallery-image-card .mobile-gallery-frame img {
+  transition: scale 450ms cubic-bezier(.22, 1, .36, 1), opacity 300ms ease, filter 160ms ease, transform 160ms ease;
+}
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  html[data-gallery-hover-float='true'][data-motion='full'] .gallery-image-card:not([data-press-input='touch']):not([data-press-input='pen']):hover {
+    translate: 0 -3px;
+    box-shadow: var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), 0 10px 24px rgb(15 23 42 / .18);
+  }
+  html[data-gallery-hover-float='true'][data-motion='full'] .gallery-image-card:not([data-press-input='touch']):not([data-press-input='pen']):hover .mobile-gallery-frame img {
+    scale: 1.035;
   }
 }
 
@@ -553,9 +622,8 @@ body,
   overscroll-behavior: none;
 }
 
-.agent-stage {
-  transition: padding-right 180ms ease;
-}
+/* 工作区一次让位，避免整页卡片逐帧重排；全局动效时长也不能重新开启挤压动画。 */
+.agent-stage { transition-property: none; }
 
 .ui-backdrop-enter { animation: ui-fade-in 140ms ease-out; }
 .ui-modal-enter { animation: ui-modal-in 180ms cubic-bezier(.2,.8,.2,1); }

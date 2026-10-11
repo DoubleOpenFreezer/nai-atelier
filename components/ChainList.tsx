@@ -1,3 +1,4 @@
+import { useGalleryFrostedCaption } from '../services/appearancePreferences';
 import { collectionSnapshot, subscribeCollection } from '../services/collectionFavorites';
 import { t, useLanguage, getLanguage } from '../services/i18n';
 
@@ -230,13 +231,14 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
     return () => observer.disconnect();
   }, [filteredChains.length, visibleCount]);
 
-  // 卡片预计高度：图片区（列宽 / 实际宽高比）+ 48px 标题区 + 上下边框。previewRatios 更新后自动重算分列。
+  // 卡片预计高度：图片区（列宽 / 实际宽高比）+ 图下信息栏（开启磨砂时不占额外高度）+ 边框。previewRatios 更新后自动重算分列。
+  const frostedCaption = useGalleryFrostedCaption();
   const estimateChainCardHeight = useCallback(
     (chain: PromptChain, columnWidth: number) => {
       const ratio = previewRatios[chain.id] || 4 / 3;
-      return Math.max(1, columnWidth) / Math.max(0.1, ratio) + 50 + (syncSelection.open && syncSelection.entries.has(chain.id) ? 78 : 0);
+      return Math.max(1, columnWidth) / Math.max(0.1, ratio) + (frostedCaption ? 2 : 50) + (syncSelection.open && syncSelection.entries.has(chain.id) ? 78 : 0);
     },
-    [previewRatios, syncSelection.open, syncSelection.entries],
+    [previewRatios, syncSelection.open, syncSelection.entries, frostedCaption],
   );
 
   const renderChainCard = (chain: PromptChain) => (
@@ -249,7 +251,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
       tabIndex={0}
       onKeyDown={event => { if (event.target === event.currentTarget && (event.key === ' ' || event.key === 'Enter')) { event.preventDefault(); if (syncSelection.selecting) syncSelection.toggle(chain.id); else onSelect(chain.id); } }}
       onClick={() => syncSelection.selecting ? syncSelection.toggle(chain.id) : onSelect(chain.id)}
-      className={`mobile-gallery-item group bg-white dark:bg-gray-850 border border-gray-200 dark:border-gray-800/80 hover:border-indigo-500 dark:hover:border-indigo-500/50 rounded-xl overflow-hidden transition-[border-color,box-shadow,transform] duration-200 hover:shadow-xl hover:shadow-indigo-500/10 flex flex-col cursor-pointer relative focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${syncSelection.selecting && syncSelection.selected.has(chain.id) ? '!border-indigo-500 ring-2 ring-indigo-500/20' : ''} ${syncSelection.selecting && !isStChatu8ExportableChain(chain) ? '!cursor-default opacity-60' : ''}`}>
+      className={`mobile-gallery-item gallery-image-card gallery-card-visual group bg-white dark:bg-gray-850 border border-gray-200 dark:border-gray-800/80 hover:border-indigo-500 dark:hover:border-indigo-500/50 rounded-xl overflow-hidden transition-[border-color,box-shadow,transform] duration-200 hover:shadow-xl hover:shadow-indigo-500/10 flex flex-col cursor-pointer relative focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${syncSelection.selecting && syncSelection.selected.has(chain.id) ? '!border-indigo-500 ring-2 ring-indigo-500/20' : ''} ${syncSelection.selecting && !isStChatu8ExportableChain(chain) ? '!cursor-default opacity-60' : ''}`}>
       {syncSelection.selecting && syncSelection.available.has(chain.id) && <span aria-hidden="true" className={`absolute right-2 top-2 z-10 flex h-7 w-7 items-center justify-center rounded-lg border shadow-sm ${syncSelection.selected.has(chain.id) ? 'border-indigo-500 bg-indigo-600 text-white' : 'border-gray-400 bg-white/90 text-transparent dark:border-gray-500 dark:bg-gray-900/90'}`}><Check className="h-4 w-4" /></span>}
       {syncSelection.selecting && !isStChatu8ExportableChain(chain) && <span className="absolute right-2 top-2 z-10 rounded-lg bg-white/90 px-2 py-1 text-xs text-gray-500 shadow-sm dark:bg-gray-900/90 dark:text-gray-400">{t("仅 V4.5 / V5")}</span>}
 
@@ -268,7 +270,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
           </div>}
           {isUntestedChain(chain) && (
             <div
-              className="absolute left-2 bottom-2 z-10 flex items-center gap-1 rounded-md bg-black/65 px-1.5 py-0.5 text-micro font-medium text-amber-300 backdrop-blur-md shadow-sm border border-amber-400/20"
+              className="gallery-chain-status absolute left-2 bottom-2 z-10 flex items-center gap-1 rounded-md bg-black/65 px-1.5 py-0.5 text-micro font-medium text-amber-300 backdrop-blur-md shadow-sm border border-amber-400/20"
               title={t("待实测：在此风格串生成后自动去除")}
             >
               <EyeOff className="h-3 w-3 text-amber-400 shrink-0" />
@@ -299,10 +301,10 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
           )}
       </div>
 
-      <div className="flex h-12 flex-col justify-center px-3">
+      <div className="gallery-card-caption flex h-12 flex-col justify-center px-3">
         <div className="flex items-center justify-between">
           <h3 data-safe-mode-title="true" className="w-full truncate pr-1 text-sm font-bold text-gray-900 dark:text-gray-100 md:pr-2" title={chain.name}>{chain.name}</h3>
-          <span className="ml-1 flex-shrink-0 rounded-full border border-violet-200 bg-violet-50 px-1.5 py-0.5 text-micro font-medium text-violet-700 dark:border-violet-500/30 dark:bg-violet-950/40 dark:text-violet-300" title={t("生成模型")}>{getNaiModelDisplayLabel(chain.params?.model)}</span>
+          <span className="gallery-card-badge ml-1 flex-shrink-0 rounded-full border border-violet-200 bg-violet-50 px-1.5 py-0.5 text-micro font-medium text-violet-700 dark:border-violet-500/30 dark:bg-violet-950/40 dark:text-violet-300" title={t("生成模型")}>{getNaiModelDisplayLabel(chain.params?.model)}</span>
         </div>
       </div>
       {syncSelection.open && syncSelection.entries.has(chain.id) && <div className="border-t border-gray-100 px-3 py-2 dark:border-gray-800" onClick={event => event.stopPropagation()}>

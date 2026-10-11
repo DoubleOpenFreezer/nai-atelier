@@ -31,6 +31,39 @@ beforeEach(() => {
 afterEach(() => { cleanup(); abortMobileThumbnailRequests(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe('共用缩略图加载', () => {
+  it.each([1, 2])('侧栏缩窄与同档宽度变化不重渲染已加载图片，放大仍按 %s 倍像素升级', dpr => {
+    vi.stubGlobal('devicePixelRatio', dpr);
+    width = 240;
+    const source = '/api/local-history/synthetic/image';
+    const onRender = vi.fn();
+    render(<React.Profiler id="thumbnail" onRender={onRender}><SmartImage eager src={source} alt="自适应图" /></React.Profiler>);
+    const image = screen.getByRole('img');
+    fireEvent.load(image);
+    expect(image.getAttribute('src')).toBe(buildMediaUrl(source, dpr === 1 ? 'thumb-240' : 'thumb-480'));
+    onRender.mockClear();
+    for (const nextWidth of [239, 200, 160, 0, 200, 240]) {
+      act(() => { width = nextWidth; resizeCallbacks.forEach(callback => callback()); });
+      expect(screen.getByRole('img')).toBe(image);
+      expect(image.className).toContain('opacity-100');
+    }
+    expect(onRender).not.toHaveBeenCalled();
+    act(() => { width = 241; resizeCallbacks.forEach(callback => callback()); });
+    expect(screen.getByRole('img').getAttribute('src')).toBe(buildMediaUrl(source, dpr === 1 ? 'thumb-320' : 'thumb-640'));
+  });
+
+  it('固定缩略档位和直接图片无需监听宽度，切回自适应源才开始测量', () => {
+    const source = '/api/local-history/synthetic/image';
+    const view = render(<SmartImage eager src={source} thumbnailVariant="thumb-960" alt="固定图" />);
+    expect(resizeCallbacks.size).toBe(0);
+    expect(screen.getByRole('img').getAttribute('src')).toBe(buildMediaUrl(source, 'thumb-960'));
+    view.rerender(<SmartImage eager src="/synthetic.png" alt="直接图" />);
+    expect(resizeCallbacks.size).toBe(0);
+    expect(screen.getByRole('img').getAttribute('src')).toBe('/synthetic.png');
+    view.rerender(<SmartImage eager src={source} alt="自适应图" />);
+    expect(resizeCallbacks.size).toBe(1);
+    expect(screen.getByRole('img').getAttribute('src')).toBe(buildMediaUrl(source, 'thumb-480'));
+  });
+
   it('同批先离开后进入预取区仍激活历史缩略图，离屏卡片继续等待', () => {
     const source = '/api/local-history/synthetic/image';
     render(<><SmartImage src={source} thumbnailVariant="thumb-960" alt="历史图" /><SmartImage src="/offscreen.png" alt="离屏图" /></>);
