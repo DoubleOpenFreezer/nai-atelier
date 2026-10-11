@@ -16,6 +16,7 @@ import { DEFAULT_NAI_MODEL, getNaiModelDisplayLabel, getSelectableNaiModels } fr
 import { useNaiRuntime } from '../services/naiRuntime';
 import { useRestoreListAnchor } from './useRestoreListAnchor';
 import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
+import { useGalleryLoadMore } from './useGalleryLoadMore';
 import { FolderBatchImportModal } from './chain/FolderBatchImportModal';
 import { StyleCollectorControl } from './StyleCollectorControl';
 import { useStChatu8Selection, wisdomEntryLabel } from '../services/stChatu8Sync';
@@ -219,17 +220,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
   const chainLoadSentinelRef = useRef<HTMLDivElement>(null);
   useRestoreListAnchor(chainScrollRef, returnTargetId, `${visibleCount}:${filteredChains.length}`);
   const onScrollRestore = useKeepAliveScrollRestore(chainScrollRef, 'list');
-  useEffect(() => {
-    const sentinel = chainLoadSentinelRef.current;
-    const root = chainScrollRef.current;
-    if (!sentinel || !root || visibleCount >= filteredChains.length) return;
-    if (!('IntersectionObserver' in window)) return;
-    const observer = new IntersectionObserver(entries => {
-      if (entries[0]?.isIntersecting) setVisibleCount(count => count + RENDER_BATCH_SIZE);
-    }, { root, rootMargin: '600px 0px' });
-    observer.observe(sentinel);
-    return () => observer.disconnect();
-  }, [filteredChains.length, visibleCount]);
+  useGalleryLoadMore(chainScrollRef, chainLoadSentinelRef, visibleCount < filteredChains.length, () => setVisibleCount(count => count + RENDER_BATCH_SIZE), '600px 0px');
 
   // 卡片预计高度：图片区（列宽 / 实际宽高比）+ 图下信息栏（开启磨砂时不占额外高度）+ 边框。previewRatios 更新后自动重算分列。
   const frostedCaption = useGalleryFrostedCaption();

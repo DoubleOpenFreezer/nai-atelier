@@ -34,6 +34,7 @@ import { getMobileOriginalUrl } from '../services/mobileImageCache';
 import { PressRevealSurface } from './PressRevealSurface';
 import { ImageLightbox } from './ImageLightbox';
 import { useGallerySelectionAnchor } from './useGallerySelectionAnchor';
+import { useGalleryLoadMore } from './useGalleryLoadMore';
 import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
 import {
   PixivConnectionStatus,
@@ -526,19 +527,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, selectionFoc
 
   // 滚动接近列表底部时自动加载下一页（追加模式无限滚动）；按钮保留作兜底。
   const autoLoadSentinelRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const sentinel = autoLoadSentinelRef.current;
-    const root = scrollRef.current;
-    if (!sentinel || !root || !nextCursor || loadingMore) return;
-    if (!('IntersectionObserver' in window)) return;
-    const observer = new IntersectionObserver(entries => {
-      if (entries[0]?.isIntersecting) loadMore();
-    }, { root, rootMargin: '1200px 0px' });
-    observer.observe(sentinel);
-    return () => observer.disconnect();
-    // loadMore 的闭包随 nextCursor/loadingMore/mode/searchInput 重建，无需列入依赖。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nextCursor, loadingMore, mode, searchInput]);
+  useGalleryLoadMore(scrollRef, autoLoadSentinelRef, Boolean(nextCursor) && !loadingMore, loadMore, '1200px 0px');
 
   const openAuthorWorks = (userId: string, userName: string) => {
     if (!userId) {

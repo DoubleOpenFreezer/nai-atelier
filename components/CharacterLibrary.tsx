@@ -34,6 +34,7 @@ import { GalleryActiveStateBanner } from './GalleryActiveStateBanner';
 import { TagSelectionBar } from './TagSelectionBar';
 import { useGallerySelectionAnchor } from './useGallerySelectionAnchor';
 import { useRestoreListAnchor } from './useRestoreListAnchor';
+import { useGalleryLoadMore } from './useGalleryLoadMore';
 import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
 import { ChainInfoModal, UpdateChainInfo } from './chain/ChainInfoModal';
 
@@ -356,16 +357,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
     }
   }, [gachaCards, isLoadingMore, nextPage, pageCount, searchTerm, sort, notify]);
 
-  useEffect(() => {
-    const sentinel = sentinelRef.current;
-    const root = scrollRef.current;
-    if (!sentinel || !root || searchTerm.trim() || gachaCards || nextPage >= pageCount) return;
-    const observer = new IntersectionObserver(entries => {
-      if (entries[0]?.isIntersecting) void loadMore();
-    }, { root, rootMargin: '800px' });
-    observer.observe(sentinel);
-    return () => observer.disconnect();
-  }, [gachaCards, loadMore, nextPage, pageCount, searchTerm]);
+  useGalleryLoadMore(scrollRef, sentinelRef, !searchTerm.trim() && !gachaCards && nextPage < pageCount, () => { void loadMore(); }, '800px');
 
   const catalogToCard = useCallback((entry: CharacterDictionaryEntry): CharacterCard => {
     const chain = persistedCatalog.get(entry.name.toLowerCase());

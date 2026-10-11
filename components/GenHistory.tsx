@@ -18,6 +18,7 @@ import { AlertTriangle, CalendarDays, ChevronDown, Clock3, Heart, Layers, ListCh
 import { CloseButton, EmptyState, IconButton, PageSpinner, ToolbarButton, ToolbarSelect, WorkspaceToolbar } from './DesignSystem';
 import { buildMediaUrl, canUseMediaGateway } from '../services/mobileImageCache';
 import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
+import { useGalleryLoadMore } from './useGalleryLoadMore';
 import { getLabModeLabel } from '../services/labWorkspace';
 import { syncHistoryCollectionFavorites } from '../services/collectionFavorites';
 import { ImageShareActions } from './ImageShareActions';
@@ -632,19 +633,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
     const showNewImages = () => {
         applyBrowseQuery({ ...browseQuery, sort: 'newest', seed: undefined });
     };
-    useEffect(() => {
-        const sentinel = historyPageSentinelRef.current;
-        const root = historyScrollRef.current;
-        if (!sentinel || !root || isLoading || isAppending || appendFailed || items.length === 0 || items.at(-1)?.id === dateRangeRef.current.orderIds?.at(-1)) return;
-        if (!('IntersectionObserver' in window)) return;
-        const observer = new IntersectionObserver(entries => {
-            if (entries[0]?.isIntersecting) void appendNextPage();
-        }, { root, rootMargin: '1200px 0px' });
-        observer.observe(sentinel);
-        return () => observer.disconnect();
-        // appendNextPage 闭包随 currentPage/isLoading 重建，无需列入依赖。
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [currentPage, isLoading, isAppending, appendFailed, totalPages, items.length]);
+    useGalleryLoadMore(historyScrollRef, historyPageSentinelRef, !isLoading && !isAppending && !appendFailed && items.length > 0 && items.at(-1)?.id !== dateRangeRef.current.orderIds?.at(-1), () => { void appendNextPage(); }, '1200px 0px');
 
     const applyBrowseQuery = (query: HistoryBrowseQuery) => {
         navigationRequestRef.current++;

@@ -54,7 +54,7 @@ beforeEach(() => {
     });
     vi.stubGlobal('IntersectionObserver', class {
         constructor(private callback: IntersectionObserverCallback) {}
-        observe(element: HTMLElement) { if (element.dataset.historyLoadMore) loadMore = () => this.callback([{ isIntersecting: true } as IntersectionObserverEntry], this as unknown as IntersectionObserver); }
+        observe(element: HTMLElement) { if (element.dataset.historyLoadMore || element.dataset.masonryLoadEnd) loadMore = () => { const rect = element.getBoundingClientRect(); this.callback([{ target: element, isIntersecting: true, boundingClientRect: rect, intersectionRatio: 1, intersectionRect: rect, rootBounds: null, time: performance.now() }], this as unknown as IntersectionObserver); }; }
         unobserve() {} disconnect() {}
     });
     vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, arrayBuffer: async () => new ArrayBuffer(0) })));

@@ -30,6 +30,7 @@ import { ExternalLink, Filter, FlaskConical, ImagePlus, Layers, LoaderCircle } f
 import { IconButton, ToolbarButton, ToolbarLink, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
 import { DetailSidePanel } from './DetailPanel';
 import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
+import { useGalleryLoadMore } from './useGalleryLoadMore';
 import { useGallerySelectionAnchor } from './useGallerySelectionAnchor';
 import { ImageTaggerAction } from './ImageTaggerPanel';
 import { AnchoredToolbarPopover, ToolbarPopover, TOOLBAR_MENU_CLASS } from './ToolbarPopover';
@@ -554,19 +555,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
       appendingRef.current = false;
     }
   };
-  useEffect(() => {
-    const sentinel = appendSentinelRef.current;
-    const root = mainScrollRef.current;
-    if (!sentinel || !root || !hasNextPage || isLoading || visibleItems.length >= AITAG_APPEND_LIMIT) return;
-    if (!('IntersectionObserver' in window)) return;
-    const observer = new IntersectionObserver(entries => {
-      if (entries[0]?.isIntersecting) void appendNextPage();
-    }, { root, rootMargin: '1200px 0px' });
-    observer.observe(sentinel);
-    return () => observer.disconnect();
-    // appendNextPage/loadWorks 闭包随 visibleItems.length 重建，无需列入依赖。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasNextPage, isLoading, visibleItems.length]);
+  useGalleryLoadMore(mainScrollRef, appendSentinelRef, hasNextPage && !isLoading && visibleItems.length < AITAG_APPEND_LIMIT, () => { void appendNextPage(); }, '1200px 0px');
 
   const loadWorks = async (
     targetPage = page,

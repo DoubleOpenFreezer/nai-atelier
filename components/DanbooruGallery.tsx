@@ -33,6 +33,7 @@ import { galleryHistoryService, GalleryHistoryItem } from '../services/galleryHi
 import { Clock } from 'lucide-react';
 import { useGallerySelectionAnchor } from './useGallerySelectionAnchor';
 import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
+import { useGalleryLoadMore } from './useGalleryLoadMore';
 import { matchesDanbooruImageFilters } from '../services/danbooruQuery';
 
 interface DanbooruGalleryProps {
@@ -325,19 +326,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, select
   // 追加完成后若哨兵仍在视口（用户停在底部/快速滚动）会立即再触发，
   // 实现不间断连续加载；内容增长使哨兵移出视口后自然停止。
   const appendSentinelRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const sentinel = appendSentinelRef.current;
-    const root = scrollRef.current;
-    if (!active || !sentinel || !root || showHistory || !hasMore || loading || items.length >= DANBOORU_APPEND_LIMIT) return;
-    if (!('IntersectionObserver' in window)) return;
-    const observer = new IntersectionObserver(entries => {
-      if (entries[0]?.isIntersecting) void appendNextPage();
-    }, { root, rootMargin: '1200px 0px' });
-    observer.observe(sentinel);
-    return () => observer.disconnect();
-    // appendNextPage 闭包随 items.length 重建，无需列入依赖。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, hasMore, items.length, loading, page, showHistory]);
+  useGalleryLoadMore(scrollRef, appendSentinelRef, active && !showHistory && hasMore && !loading && items.length < DANBOORU_APPEND_LIMIT, () => { void appendNextPage(); }, '1200px 0px');
 
   // 瀑布流（masonry 布局时）：真实宽高比完整显示，最短列分配互相补齐。
   const masonryColumns = useMasonryColumnCount(imageDisplay, undefined, galleryContentRef);

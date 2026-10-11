@@ -159,11 +159,9 @@ export const ShortestColumnMasonry = <T,>({
 
   const computed = useMemo(() => {
     const keys = items.map(getItemKey);
-    const keySet = new Set(keys);
-    const oldSet = new Set(committed.current.keys);
-    const retainedOrder = committed.current.keys.filter(key => keySet.has(key));
-    const reordered = keys.filter(key => oldSet.has(key)).some((key, index) => key !== retainedOrder[index]);
-    const previous = stableColumns && committed.current.count === usedColumns && !reordered
+    // 仅同序列或尾部追加沿用列；筛选删项与中途插入必须按新集合重新平衡。
+    const samePrefix = keys.length >= committed.current.keys.length && committed.current.keys.every((key, index) => key === keys[index]);
+    const previous = stableColumns && committed.current.count === usedColumns && samePrefix
       ? committed.current.placement : new Map<string, number>();
     const placement = new Map<string, number>();
     const layout = usedColumns === 0 || columnWidth <= 0 ? [] as T[][]
@@ -181,10 +179,11 @@ export const ShortestColumnMasonry = <T,>({
       style={{ gridTemplateColumns: `repeat(${requestedColumns}, minmax(0, 1fr))`, gap: `${gap}px` }}
     >
       {layout.map((column, index) => (
-        <div key={index} className="chain-masonry-column">
+        <div key={index} className="chain-masonry-column" style={{ position: 'relative' }}>
           {column.map(item => (
             <Fragment key={getItemKey(item)}>{renderItem(item)}</Fragment>
           ))}
+          <div data-masonry-load-end="true" aria-hidden="true" style={{ position: 'absolute', bottom: 0, width: 1, height: 1 }} />
         </div>
       ))}
     </div>

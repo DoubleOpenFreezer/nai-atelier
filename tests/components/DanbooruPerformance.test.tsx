@@ -98,6 +98,65 @@ it('尺寸返回保留旧卡片所在列，新卡片仍选择当前最短列', (
   for (const key of items) expect(next.get(key)).toBe(old.get(key));
   expect(columns[1]).toEqual(['b', 'd', 'e']);
 });
+it('每列末尾提供不增加列高或间距的绝对定位分页标记', () => {
+  vi.stubGlobal('ResizeObserver', class {
+    constructor(private callback: ResizeObserverCallback) {}
+    observe() { this.callback([{ contentRect: { width: 600 } }] as ResizeObserverEntry[], this as unknown as ResizeObserver); }
+    disconnect() {}
+  });
+  const { container } = render(<ShortestColumnMasonry columns={3} items={['a', 'b', 'c', 'd']}
+    getItemKey={value => value} estimateItemHeight={() => 100} renderItem={value => <span>{value}</span>} />);
+  const columns = container.querySelectorAll<HTMLElement>('.chain-masonry-column');
+  expect(columns).toHaveLength(3);
+  expect(container.querySelectorAll('[data-masonry-load-end="true"]')).toHaveLength(3);
+  for (const column of columns) {
+    const marker = column.lastElementChild as HTMLElement;
+    expect(column.style.position).toBe('relative');
+    expect(marker.dataset.masonryLoadEnd).toBe('true');
+    expect(marker.getAttribute('aria-hidden')).toBe('true');
+    expect(marker.style.position).toBe('absolute');
+    expect(marker.style.bottom).toBe('0px');
+    expect(marker.style.width).toBe('1px');
+    expect(marker.style.height).toBe('1px');
+  }
+});
+it('切换筛选重新最短列分配，首行五列之后不会沿用筛选前的第一列堆叠', () => {
+  vi.stubGlobal('ResizeObserver', class {
+    constructor(private callback: ResizeObserverCallback) {}
+    observe() { this.callback([{ contentRect: { width: 1000 } }] as ResizeObserverEntry[], this as unknown as ResizeObserver); }
+    disconnect() {}
+  });
+  const items = Array.from({ length: 30 }, (_, index) => String(index));
+  const filtered = items.filter((_, index) => index < 5 || index % 5 === 0);
+  const view = (values: string[]) => <ShortestColumnMasonry columns={5} items={values} getItemKey={value => value}
+    estimateItemHeight={() => 100} renderItem={value => <span data-testid={`filtered-${value}`}>{value}</span>} />;
+  const { container, rerender } = render(view(items));
+  const expectBalanced = (values: string[]) => {
+    const columns = container.querySelectorAll('.chain-masonry-column');
+    values.forEach((value, index) => expect(screen.getByTestId(`filtered-${value}`).parentElement).toBe(columns[index % 5]));
+  };
+  expectBalanced(items);
+  for (let count = 0; count < 3; count++) {
+    rerender(view(filtered)); expectBalanced(filtered);
+    rerender(view(items)); expectBalanced(items);
+  }
+});
+it.each([
+  [['x', 'a', 'b', 'c', 'd'], [0, 1, 0, 0, 0]],
+  [['z', 'b', 'c', 'd'], [0, 1, 0, 1]],
+] as const)('中途插入或替换卡片后重新平衡：%s', (items, expectedColumns) => {
+  vi.stubGlobal('ResizeObserver', class {
+    constructor(private callback: ResizeObserverCallback) {}
+    observe() { this.callback([{ contentRect: { width: 200 } }] as ResizeObserverEntry[], this as unknown as ResizeObserver); }
+    disconnect() {}
+  });
+  const view = (values: readonly string[]) => <ShortestColumnMasonry columns={2} items={values} getItemKey={value => value}
+    estimateItemHeight={value => value === 'a' ? 1000 : 100} renderItem={value => <span data-testid={`changed-${value}`}>{value}</span>} />;
+  const { container, rerender } = render(view(['a', 'b', 'c', 'd']));
+  rerender(view(items));
+  const columns = container.querySelectorAll('.chain-masonry-column');
+  items.forEach((value, index) => expect(screen.getByTestId(`changed-${value}`).parentElement).toBe(columns[expectedColumns[index]]));
+});
 it('真实瀑布流隐藏时保留卡片身份和列，返回与切页不因零宽度清空列表', () => {
   let resize!: (width: number) => void;
   vi.stubGlobal('ResizeObserver', class {

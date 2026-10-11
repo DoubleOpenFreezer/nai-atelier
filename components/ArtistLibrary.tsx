@@ -21,6 +21,7 @@ import { GalleryActiveStateBanner } from './GalleryActiveStateBanner';
 import { ImageActivityContext } from './SmartImage';
 import { useGallerySelectionAnchor } from './useGallerySelectionAnchor';
 import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
+import { useGalleryLoadMore } from './useGalleryLoadMore';
 
 interface CartItem {
     name: string;
@@ -270,18 +271,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, notif
         return () => window.clearTimeout(timer);
     }, [artistSort, searchTerm]);
 
-    useEffect(() => {
-        if (searchTerm.trim() || gachaArtists || !hasMoreCatalog) return;
-        const sentinel = catalogSentinelRef.current;
-        const root = scrollContainerRef.current;
-        if (!sentinel || !root) return;
-
-        const observer = new IntersectionObserver(entries => {
-            if (entries[0]?.isIntersecting) void loadNextCatalogPage();
-        }, { root, rootMargin: '800px 0px' });
-        observer.observe(sentinel);
-        return () => observer.disconnect();
-    }, [gachaArtists, hasMoreCatalog, loadNextCatalogPage, searchTerm]);
+    useGalleryLoadMore(scrollContainerRef, catalogSentinelRef, !searchTerm.trim() && !gachaArtists && hasMoreCatalog, () => { void loadNextCatalogPage(); }, '800px 0px');
 
   useEffect(() => {
     const sync = () => setFavorites(previous => {
