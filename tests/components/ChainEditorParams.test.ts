@@ -270,17 +270,20 @@ describe('ChainEditorParams', () => {
   });
 
   it.each([
-    { width: 832, height: 1216, pixels: '1,011,712', message: '在 Opus 免费像素范围内', color: 'emerald' },
-    { width: 1408, height: 2048, pixels: '2,883,584', message: '超过免费像素上限 1,048,576', color: 'amber' },
-  ])('Scale 标题区显示 $pixels 像素及免费边界状态', ({ width, height, pixels, message, color }) => {
+    { width: 832, height: 1216, message: '832 × 1,216 · 免费像素范围内', color: 'emerald' },
+    { width: 1408, height: 2048, message: '1,408 × 2,048 · 超出免费像素范围', color: 'amber' },
+  ])('始终在 Scale 标题旁简写 $width × $height 及免费边界状态', ({ width, height, message, color }) => {
     renderParams({ params: { ...params, width, height } });
     const status = screen.getByRole('status');
-    expect(status.textContent).toContain(`${pixels} 像素`);
-    expect(status.textContent).toContain(message);
+    expect(status.textContent).toBe(message);
     expect(status.classList.contains(`bg-${color}-50`)).toBe(true);
     expect(status.classList.contains(`dark:text-${color}-300`)).toBe(true);
-    const header = screen.getByText('尺寸清晰度放大（Scale）').parentElement;
+    const title = screen.getByText('尺寸清晰度放大（Scale）');
+    const header = title.parentElement;
     expect(status.parentElement).toBe(header);
+    expect(title.nextElementSibling).toBe(status);
+    expect(header?.classList.contains('grid-cols-[auto_minmax(0,1fr)_auto]')).toBe(true);
+    expect(status.className).not.toMatch(/(?:^|\s)(?:\S+:)?(?:row-start-|col-span-)/);
     expect(header?.contains(screen.getByRole('spinbutton', { name: '尺寸清晰度倍率数值' }))).toBe(true);
     expect(status.compareDocumentPosition(screen.getByRole('slider', { name: '尺寸缩放滑块' })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });

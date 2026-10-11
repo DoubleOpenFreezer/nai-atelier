@@ -242,20 +242,20 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
 
             {/* Resolution control panel: Aspect ratio scale slider */}
             {!hideResolution && (
-                <div className="@container mb-4 rounded-2xl border border-gray-200 bg-white/70 p-3.5 dark:border-gray-800 dark:bg-gray-900/60 sm:p-4">
+                <div className="mb-4 rounded-2xl border border-gray-200 bg-white/70 p-3.5 dark:border-gray-800 dark:bg-gray-900/60 sm:p-4">
                     <div className="space-y-3">
-                        <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 @2xl:grid-cols-[auto_minmax(0,1fr)_auto]">
+                        <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2">
                             <span className="min-w-0 text-xs font-medium text-gray-700 dark:text-gray-300">
                                 {t("尺寸清晰度放大（Scale）")}</span>
                             <div
                                 role="status"
-                                className={`col-span-2 row-start-2 min-w-0 w-fit max-w-full rounded-xl px-2.5 py-1 text-meta font-medium leading-relaxed tabular-nums border @2xl:col-span-1 @2xl:col-start-2 @2xl:row-start-1 ${
+                                className={`min-w-0 w-fit max-w-full rounded-xl px-2.5 py-1 text-meta font-medium leading-relaxed tabular-nums border ${
                                     isOpusFree
                                         ? 'bg-emerald-50 text-emerald-700 border-emerald-200/60 dark:bg-emerald-950/30 dark:text-emerald-300 dark:border-emerald-800/40'
                                         : 'bg-amber-50 text-amber-700 border-amber-200/60 dark:bg-amber-950/30 dark:text-amber-300 dark:border-amber-800/40'
                                 }`}
-                            >{t("当前输出 {0} × {1} = {2} 像素 · {3}", [currentWidth.toLocaleString(getLanguage()), currentHeight.toLocaleString(getLanguage()), totalPixels.toLocaleString(getLanguage()), isOpusFree ? t("在 Opus 免费像素范围内") : t("超过免费像素上限 {0}", [freeMaxArea.toLocaleString(getLanguage())])])}</div>
-                            <div className="col-start-2 row-start-1 flex items-center justify-self-end gap-1 @2xl:col-start-3">
+                            >{t("{0} × {1} · {2}", [currentWidth.toLocaleString(getLanguage()), currentHeight.toLocaleString(getLanguage()), isOpusFree ? t("免费像素范围内") : t("超出免费像素范围")])}</div>
+                            <div className="flex items-center justify-self-end gap-1">
                                 <input
                                     type="number"
                                     min="1"
@@ -294,7 +294,6 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
                             <span>{t("{0}x 官方封顶（{1}×{2}）", [activeRatioMax.maxScale.toFixed(2), activeRatioMax.width, activeRatioMax.height])}</span>
                         </div>
                     </div>
-
                 </div>
             )}
 
