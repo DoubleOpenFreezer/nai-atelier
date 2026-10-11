@@ -3,8 +3,8 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { CloudQueueStatus, InlineCloudQueueStatus } from '../../components/CloudQueueStatus';
-import { emitCloudQueueStatus } from '../../services/cloudQueue';
+import { CloudQueueButton, CloudQueueStatus, InlineCloudQueueStatus } from '../../components/CloudQueueStatus';
+import { emitCloudQueueStatus, getCloudQueuePreferences } from '../../services/cloudQueue';
 
 beforeEach(() => {
   sessionStorage.clear();
@@ -80,6 +80,31 @@ it('行内状态生成阶段显示 SSE 步数，排队阶段不误显示旧步�
   emitCloudQueueStatus({ taskId: 'next', phase: 'waiting', position: 0 });
   expect(renderStatus()).toContain('排队中 · 前方 0 个任务');
   expect(renderStatus()).not.toContain('8/28');
+});
+
+it('Key 小按钮保留零与未知，准备和中转不伪造人数，完成收起而释放失败仍可查看', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ enabled: true, serviceUrl: 'https://synthetic.example' }))));
+  await getCloudQueuePreferences();
+  const view = render(createElement(CloudQueueButton));
+  expect(screen.queryByRole('button', { name: /Key 排队/ })).toBeNull();
+  for (const status of [
+    { taskId: 'count', phase: 'waiting' as const, position: 0, queueSize: 0, fraction: '0/0' },
+    { taskId: 'count', phase: 'waiting' as const, position: -1, queueSize: Infinity, fraction: '?/?' },
+    { taskId: 'count', phase: 'ready' as const, position: 2, queueSize: 4, fraction: '2/4' },
+    { taskId: 'count', phase: 'generating' as const, position: 2, queueSize: 4, fraction: '2/4' },
+    { taskId: 'count', phase: 'joining' as const, position: 2, queueSize: 4, fraction: '?/?' },
+    { taskId: 'count', phase: 'waiting' as const, proxy: true, position: 0, queueSize: 0, fraction: '?/?' },
+  ]) {
+    const { fraction, ...queueStatus } = status;
+    act(() => emitCloudQueueStatus(queueStatus));
+    expect(screen.getByRole('button', { name: `Key 排队 ${fraction}` }).textContent).toBe(fraction);
+  }
+  act(() => emitCloudQueueStatus({ taskId: 'count', phase: 'completed' }));
+  expect(screen.queryByRole('button', { name: /Key 排队/ })).toBeNull();
+  act(() => emitCloudQueueStatus({ taskId: 'count', phase: 'completed', cleanupError: '释放失败' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Key 排队 ?/?' }));
+  expect(screen.getByRole('status').textContent).toContain('释放失败');
+  view.unmount();
 });
 
 it('取消请求期间禁用按钮并显示取消中，完成后显示已取消排队', async () => {

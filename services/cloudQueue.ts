@@ -26,6 +26,7 @@ let currentQueueStatus: CloudQueueStatus | null = null;
 let currentQueueStatusKey = '';
 let clearStatusTimer: number | null = null;
 const statusListeners = new Set<() => void>();
+const preferenceListeners = new Set<() => void>();
 
 export const isCloudQueueTaskActive = (status: CloudQueueStatus | null) => Boolean(
   status && !['completed', 'cancelled', 'error'].includes(status.phase),
@@ -65,6 +66,7 @@ export const getCloudQueuePreferences = async (): Promise<CloudQueuePreferences>
   if (getActiveApiKey() !== requestedApiKey) return getCachedCloudQueuePreferences();
   cachedPreferences = next;
   cachedPreferencesKey = requestedApiKey;
+  preferenceListeners.forEach(listener => listener());
   return cachedPreferences;
 };
 
@@ -84,8 +86,15 @@ export const setCloudQueuePreferences = async (preferences: CloudQueuePreference
   if (getActiveApiKey() !== requestedApiKey) return getCachedCloudQueuePreferences();
   cachedPreferences = next;
   cachedPreferencesKey = requestedApiKey;
+  preferenceListeners.forEach(listener => listener());
   window.dispatchEvent(new CustomEvent('nai-cloud-queue-preferences-changed', { detail: cachedPreferences }));
   return cachedPreferences;
+};
+
+export const subscribeCloudQueuePreferences = (listener: () => void) => {
+  preferenceListeners.add(listener);
+  if (preferenceListeners.size === 1) void getCloudQueuePreferences().catch(() => { /* 展示沿用已有缓存，不阻挡生成。 */ });
+  return () => { preferenceListeners.delete(listener); };
 };
 
 export const emitCloudQueueStatus = (status: CloudQueueStatus | null, sourceApiKey = getActiveApiKey()) => {
@@ -170,5 +179,7 @@ export const watchCloudQueueTask = async (taskId: string, isFinished: () => bool
 if (typeof window !== 'undefined') {
   window.addEventListener('nai-api-key-changed', () => {
     if (currentQueueStatus) emitCloudQueueStatus(null);
+    preferenceListeners.forEach(listener => listener());
+    if (preferenceListeners.size) void getCloudQueuePreferences().catch(() => { /* 新 Key 未读取成功时保持默认关闭。 */ });
   });
 }

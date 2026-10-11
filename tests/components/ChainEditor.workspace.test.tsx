@@ -86,7 +86,7 @@ vi.mock('../../services/labWorkspace', async importOriginal => ({
 // 编辑模式的预处理要读画布与像素，jsdom 下不可用；文本模式也走同一入口，便于断言组件真正提交的描述。
 vi.mock('../../services/naiService', () => ({ buildGenerationJobDescriptor: state.buildDescriptor }));
 vi.mock('../../components/ConfirmDialog', () => ({ useConfirmDialog: () => state.confirm }));
-vi.mock('../../components/CloudQueueStatus', () => ({ useCloudQueueStatus: () => null, InlineCloudQueueStatus: () => null }));
+vi.mock('../../components/CloudQueueStatus', () => ({ useCloudQueueStatus: () => null, useCloudQueueEnabled: () => false, CloudQueueButton: () => null }));
 vi.mock('../../components/LabModuleSection', () => ({ LabModuleSection: ({ children }: React.PropsWithChildren) => <div>{children}</div> }));
 vi.mock('../../components/TagAutocompleteTextarea', () => ({ TagAutocompleteTextarea: (props: { value: string; placeholder?: string; disabled?: boolean; onValueChange: (value: string) => void }) => <textarea disabled={props.disabled} value={props.value} placeholder={props.placeholder} onChange={event => props.onValueChange(event.target.value)} /> }));
 vi.mock('../../components/ChainEditorParams', () => ({ ChainEditorParams: (props: React.ComponentProps<typeof import('../../components/ChainEditorParams').ChainEditorParams>) => props.onForceEmptySeedChange

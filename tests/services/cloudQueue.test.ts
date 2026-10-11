@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { emitCloudQueueStatus, getCurrentCloudQueueStatus, reportCloudQueueCleanupError, scheduleCloudQueueStatusClear, watchCloudQueueTask } from '../../services/cloudQueue';
+import { emitCloudQueueStatus, getCachedCloudQueuePreferences, getCloudQueuePreferences, getCurrentCloudQueueStatus, reportCloudQueueCleanupError, scheduleCloudQueueStatusClear, subscribeCloudQueuePreferences, watchCloudQueueTask } from '../../services/cloudQueue';
 import { api } from '../../services/api';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -41,6 +41,33 @@ describe('cloud queue key scoping', () => {
     expect(getCurrentCloudQueueStatus()).toBeNull();
     emitCloudQueueStatus(waitingStatus('task-b'), 'key-b');
     expect(getCurrentCloudQueueStatus()?.taskId).toBe('task-b');
+  });
+
+  it('排队设置订阅随 Key 更新，旧 Key 的迟到响应不重新开启小按钮', async () => {
+    const preferences = { enabled: true, serviceUrl: 'https://synthetic.example' };
+    sessionStorage.setItem('nai_api_key', 'preferences-a');
+    let respond!: (response: Response) => void;
+    const fetchMock = vi.fn<typeof fetch>(async () => new Response(JSON.stringify(preferences)));
+    vi.stubGlobal('fetch', fetchMock);
+    await getCloudQueuePreferences();
+    expect(getCachedCloudQueuePreferences().enabled).toBe(true);
+
+    fetchMock.mockImplementationOnce(() => new Promise<Response>(resolve => { respond = resolve; }));
+    const lateRequest = getCloudQueuePreferences();
+    const listener = vi.fn();
+    const unsubscribe = subscribeCloudQueuePreferences(listener);
+    await vi.waitFor(() => expect(listener).toHaveBeenCalledOnce());
+    fetchMock.mockImplementation(async () => new Response(JSON.stringify({ ...preferences, enabled: false })));
+    sessionStorage.setItem('nai_api_key', 'preferences-b');
+    window.dispatchEvent(new Event('nai-api-key-changed'));
+    expect(getCachedCloudQueuePreferences().enabled).toBe(false);
+    await vi.waitFor(() => expect(listener).toHaveBeenCalledTimes(3));
+    respond(new Response(JSON.stringify(preferences)));
+    await lateRequest;
+    expect(getCachedCloudQueuePreferences().enabled).toBe(false);
+    expect(listener).toHaveBeenCalledTimes(3);
+    expect(fetchMock.mock.calls.at(-1)?.[1]?.headers).toEqual({ Authorization: 'Bearer preferences-b' });
+    unsubscribe();
   });
 
   it('同一任务的释放失败警告不会被随后写入的成功终态覆盖', () => {

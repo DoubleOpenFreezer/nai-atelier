@@ -1,6 +1,11 @@
 import { t, useLanguage } from '../services/i18n';
-import React, { useState, useSyncExternalStore } from 'react';
-import { cancelCloudQueueTask, CloudQueueStatus as QueueStatus, getCurrentCloudQueueStatus, isCloudQueueTaskActive, subscribeCloudQueueStatus } from '../services/cloudQueue';
+import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { UserRound } from 'lucide-react';
+import { ToolbarButton } from './DesignSystem';
+import { AnchoredToolbarPopover } from './ToolbarPopover';
+import { ImagePreviewPortal } from './ImagePreviewPortal';
+import { MobileBottomSheet } from './MobileUI';
+import { cancelCloudQueueTask, CloudQueueStatus as QueueStatus, getCachedCloudQueuePreferences, getCurrentCloudQueueStatus, isCloudQueueTaskActive, subscribeCloudQueuePreferences, subscribeCloudQueueStatus } from '../services/cloudQueue';
 import { normalizeCloudQueueCount } from '../worker/cloudQueueNumbers.mjs';
 
 type GenerationProgress = { step: number; total: number };
@@ -42,6 +47,9 @@ export const useCloudQueueStatus = () => useSyncExternalStore(
   getCurrentCloudQueueStatus,
 );
 
+const getCloudQueueEnabled = () => getCachedCloudQueuePreferences().enabled;
+export const useCloudQueueEnabled = () => useSyncExternalStore(subscribeCloudQueuePreferences, getCloudQueueEnabled, getCloudQueueEnabled);
+
 const QueueStatusBody: React.FC<{ status: QueueStatus; compact?: boolean; generationProgress?: GenerationProgress | null }> = ({ status, compact = false, generationProgress }) => {
   useLanguage();
   const [cancelling, setCancelling] = useState(false);
@@ -68,6 +76,36 @@ export const InlineCloudQueueStatus: React.FC<{ compact?: boolean; className?: s
   const status = useCloudQueueStatus();
   if (!status || (status.phase === 'completed' && !status.cleanupError)) return null;
   return <div role="status" className={`queue-status-surface relative ${statusTone(status)} ${compact ? 'min-h-12 rounded-full px-4 py-2' : 'min-h-12 rounded-lg px-4 py-3'} text-white shadow-lg ${className}`}><QueueStatusBody status={status} compact={compact} generationProgress={generationProgress} /></div>;
+};
+
+export const CloudQueueButton: React.FC<{ className?: string; generationProgress?: GenerationProgress | null }> = ({ className = '', generationProgress }) => {
+  useLanguage();
+  const status = useCloudQueueStatus();
+  const [open, setOpen] = useState(false);
+  const enabled = useCloudQueueEnabled();
+  const [mobile, setMobile] = useState(() => window.innerWidth < 768);
+  const anchorRef = useRef<HTMLDivElement>(null);
+  const close = React.useCallback(() => setOpen(false), []);
+  const visible = enabled && Boolean(status && (status.phase !== 'completed' || status.cleanupError));
+  useEffect(() => { if (!visible) close(); }, [visible, close]);
+  useEffect(() => {
+    const resize = () => { const next = window.innerWidth < 768; if (next !== mobile) { setMobile(next); close(); } };
+    window.addEventListener('resize', resize); return () => window.removeEventListener('resize', resize);
+  }, [mobile, close]);
+  if (!visible || !status) return null;
+  const hasCounts = !status.proxy && ['waiting', 'ready', 'generating'].includes(status.phase);
+  const fraction = `${hasCounts ? normalizeCloudQueueCount(status.position) ?? '?' : '?'}/${hasCounts ? normalizeCloudQueueCount(status.queueSize) ?? '?' : '?'}`;
+  const details = <InlineCloudQueueStatus generationProgress={generationProgress} />;
+  return <div ref={anchorRef} className={`flex flex-none items-stretch ${className}`}>
+    <ToolbarButton onClick={() => setOpen(value => !value)} aria-label={`${t("Key 排队")} ${fraction}`}
+      aria-expanded={open} aria-haspopup="dialog" title={`${t("Key 排队")} · ${t("前方任务数／队列总数")}`}
+      tone={status.cleanupError || status.phase === 'error' ? 'danger' : 'neutral'}
+      className="mobile-touch !h-auto min-h-10 !gap-1.5 !px-2.5 !text-xs tabular-nums">
+      <UserRound aria-hidden="true" className="h-3.5 w-3.5" /><span>{fraction}</span>
+    </ToolbarButton>
+    {open && (mobile ? <ImagePreviewPortal><MobileBottomSheet open title={t("Key 排队")} onClose={close}>{details}</MobileBottomSheet></ImagePreviewPortal>
+      : <AnchoredToolbarPopover anchorRef={anchorRef} title={t("Key 排队")} above compact width={320} onClose={close}>{details}</AnchoredToolbarPopover>)}
+  </div>;
 };
 
 export const CloudQueueStatus: React.FC<{ hidden?: boolean }> = ({ hidden = false }) => {

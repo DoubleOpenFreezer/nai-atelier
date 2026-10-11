@@ -13,8 +13,6 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { GenerationMode, ImageEditMetadata, ImageEditOperation, PromptChain, PromptModule, CharacterParams, NAIParams, LocalGenItem, PromptAgentDraft, PromptAgentGenerationResult, LabImageEditDraft, LabWorkspaceSession } from '../types';
 import { compilePrompt, mergePromptFields } from '../services/promptUtils';
 import { buildGenerationJobDescriptor } from '../services/naiService';
-import { InlineCloudQueueStatus, useCloudQueueStatus } from './CloudQueueStatus';
-import { isCloudQueueTaskActive } from '../services/cloudQueue';
 import { localHistory } from '../services/localHistory';
 import { api } from '../services/api';
 import { extractMetadata, parseNovelAIMetadata, IMPORT_SESSION_KEY, PendingImportData, PromptFragmentImport, BaseImageImport, extractRawMetadataFromJsonText } from '../services/metadataService';
@@ -81,7 +79,6 @@ interface ChainEditorProps {
 export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUpdateChain, onFork, setIsDirty, saveRef, notify, externalImportToken, agentOpenToken, tagAssistEnabled, onTagAssistEnabledChange, generationStreamPreview, forceEmptySeed = false, onForceEmptySeedChange, enforceFreeStepLimit = true, continuousGenerationEnabled = true, labPageLayouts, safeMode, onBack }) => {
   useLanguage();
     const [keyboardOffset, setKeyboardOffset] = useState(0);
-    const queueStatus = useCloudQueueStatus();
     const confirmAction = useConfirmDialog();
 
     // Distinguish Editor Mode
@@ -2463,16 +2460,14 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 {errorMsg && <div role="alert" className="max-h-[30dvh] w-[calc(100vw-2rem)] overflow-y-auto rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs leading-5 text-red-600 shadow-lg dark:border-red-900/60 dark:bg-red-950/80 dark:text-red-300">{errorMsg}</div>}
                 <div className="flex max-w-[calc(100vw-2rem)] items-center gap-2">
                     {mobileFloatingPreviewImage && <button type="button" onClick={() => setLightboxImg(mobileFloatingPreviewImage)} className="mobile-touch flex h-12 w-12 items-center justify-center overflow-hidden rounded-full border-2 border-white bg-gray-900 shadow-xl dark:border-gray-800" aria-label={t("查看当前预览图")}><SmartImage src={mobileFloatingPreviewImage || ''} alt={t("当前预览图")} /></button>}
-                    <div className="flex flex-col items-end gap-2">
-                        {queueStatus && <InlineCloudQueueStatus compact generationProgress={generationProgress} className="min-w-64 max-w-[calc(100vw-5rem)]" />}
-                        <div className="flex items-stretch justify-end gap-2">
+                    <div className="flex min-w-0 items-stretch justify-end gap-2">
                         <GenerationCountControl {...generationCountControl}
+                            generationProgress={generationProgress}
                             onGenerate={activeEditOperation ? () => imageEditGenerateFnRef.current?.() : () => { void handleGenerate(); }}
                             busy={isGenerating || externalGenerationBusy}
                             costLabel={activeEditOperation ? imageEditGenerateBar?.costLabel : generationCostLabel}
                             unavailableLabel={activeEditOperation && imageEditBaseLoading ? t("读取图片中…") : activeEditOperation ? imageEditGenerateBar?.unavailableLabel : generationUnavailableLabel}
                             disabled={isGenerating || externalGenerationBusy || imageEditBaseLoading || Boolean(activeEditOperation && !imageEditGenerateBar?.canGenerate)} />
-                        </div>
                     </div>
                 </div>
             </div>

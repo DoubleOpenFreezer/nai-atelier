@@ -1,12 +1,57 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
-import { afterEach, expect, it, vi } from 'vitest';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { GenerationCountControl } from '../../components/GenerationCountControl';
-import { emitCloudQueueStatus } from '../../services/cloudQueue';
+import { emitCloudQueueStatus, getCloudQueuePreferences, setCloudQueuePreferences } from '../../services/cloudQueue';
+const queuePreferences = { enabled: true, serviceUrl: 'https://synthetic.example', greeting: '正在生成中～', showGreeting: true };
+beforeEach(async () => {
+  sessionStorage.clear(); localStorage.clear();
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(queuePreferences))));
+  await getCloudQueuePreferences();
+});
 afterEach(() => { cleanup(); emitCloudQueueStatus(null); vi.unstubAllGlobals(); });
 const state = { busy: true, completed: 2, total: 8, paused: false, pausing: false, waiting: [] };
 const props = { count: 3, onCountChange: vi.fn(), series: null, onStop: vi.fn(), onQueue: vi.fn(), onGenerate: vi.fn(), costLabel: '90 Anlas' };
+
+it.each([1280, 390])('%s 宽度左右小按钮用图片与人物区分分数，公共状态只在点开后出现', async width => {
+  vi.stubGlobal('innerWidth', width);
+  emitCloudQueueStatus({ taskId: 'queue', phase: 'waiting', position: 2, queueSize: 4, cancelable: true });
+  render(<GenerationCountControl {...props} busy queueState={state} generationState="generating" />);
+  const left = screen.getByRole('button', { name: '暂停生成' });
+  const main = screen.getByRole('button', { name: /加入队列.*3 张/ });
+  const right = screen.getByRole('button', { name: 'Key 排队 2/4' });
+  expect(left.querySelector('.lucide-images')).toBeTruthy(); expect(left.textContent).toBe('2/8');
+  expect(right.querySelector('.lucide-user-round')).toBeTruthy(); expect(right.textContent).toBe('2/4');
+  expect(left.nextElementSibling).toBe(main); expect(main.nextElementSibling).toBe(right.parentElement);
+  expect(left.classList.contains('lg:right-full')).toBe(true);
+  expect(right.parentElement?.classList.contains('lg:left-full')).toBe(true);
+  expect(main.parentElement?.classList.contains('lg:max-w-[calc(100%-14rem)]')).toBe(true);
+  expect(main.classList.contains('max-lg:!min-w-0')).toBe(true);
+  expect(main.firstElementChild?.classList.contains('max-lg:!px-2')).toBe(true);
+  for (const button of [left, right]) expect(button.classList.contains('min-h-10')).toBe(true);
+  expect(screen.queryByRole('status')).toBeNull();
+  fireEvent.click(right);
+  expect(screen.getByRole('dialog', { name: 'Key 排队' })).toBeTruthy();
+  expect(screen.getByRole('status').textContent).toContain('前方 2 个任务');
+  expect(screen.getByRole('button', { name: '取消排队' })).toBeTruthy();
+  if (width < 768) fireEvent.click(screen.getByRole('button', { name: '关闭' }));
+  else fireEvent.keyDown(window, { key: 'Escape' });
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+});
+
+it('右侧只跟随当前 Key 公共排队勾选，关闭连续生成仍可查看，取消勾选立即收起', async () => {
+  emitCloudQueueStatus({ taskId: 'queue', phase: 'waiting', position: 0, queueSize: 0 });
+  render(<GenerationCountControl {...props} continuousGenerationEnabled={false} busy generationState="generating" />);
+  expect(screen.queryByRole('button', { name: '暂停生成' })).toBeNull();
+  const right = screen.getByRole('button', { name: 'Key 排队 0/0' });
+  fireEvent.click(right);
+  expect(screen.getByRole('dialog', { name: 'Key 排队' })).toBeTruthy();
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ ...queuePreferences, enabled: false }))));
+  await act(async () => { await setCloudQueuePreferences({ ...queuePreferences, enabled: false }); });
+  expect(screen.queryByRole('button', { name: /Key 排队/ })).toBeNull();
+  expect(screen.queryByRole('dialog')).toBeNull();
+});
 
 it.each([1280, 390])('%s 宽度恢复主按钮尺寸、图标，切换连续模式和费用显隐不缩小', width => {
   vi.stubGlobal('innerWidth', width);

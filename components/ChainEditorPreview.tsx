@@ -4,7 +4,7 @@ import { PressRevealSurface } from './PressRevealSurface';
 import React from 'react';
 import { Image as ImageIcon } from 'lucide-react';
 import { OriginalImage } from './SmartImage';
-import { InlineCloudQueueStatus, useCloudQueueStatus } from './CloudQueueStatus';
+import { CloudQueueButton, useCloudQueueStatus } from './CloudQueueStatus';
 import { isCloudQueueTaskActive } from '../services/cloudQueue';
 import { ImagePreviewActions } from './ImagePreviewActions';
 import { GenerationCountControl, type GenerationCountControlProps } from './GenerationCountControl';
@@ -169,11 +169,11 @@ export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
 
                 <div className="mt-4 flex flex-none flex-col items-center">
                     {errorMsg && <div role="alert" className="mb-2 w-full max-w-sm rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-center text-xs text-red-600 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300">{errorMsg}</div>}
-                    {showQueueStatus && queueStatus && <InlineCloudQueueStatus generationProgress={generationProgress} className="mb-2 w-full max-w-xs flex-shrink-0" />}
                     <div className={`flex w-full items-stretch justify-center gap-2 ${hideGenerateButtonOnMobile ? 'hidden lg:flex' : ''}`}>
-                    {generationCountControl ? <GenerationCountControl {...generationCountControl} onGenerate={handleGenerate} costLabel={generationCostLabel} unavailableLabel={unavailableLabel} busy={isGenerating} disabled={isGenerating || generationDisabled} /> : !(showQueueStatus && isCloudQueueTaskActive(queueStatus)) && <button data-agent-action="business" onClick={handleGenerate} disabled={isGenerating || generationDisabled} className={`generation-action-button generation-action-button--workbench flex min-h-11 w-full max-w-xs items-center justify-center gap-2 rounded-xl px-4 text-sm font-semibold ${isGenerating ? 'generation-action-button--loading' : 'disabled:opacity-50'}`}>
+                    {generationCountControl ? <GenerationCountControl {...generationCountControl} generationProgress={generationProgress} showQueueStatus={showQueueStatus} onGenerate={handleGenerate} costLabel={generationCostLabel} unavailableLabel={unavailableLabel} busy={isGenerating} disabled={isGenerating || generationDisabled} /> : <>
+                    <button data-agent-action="business" onClick={handleGenerate} disabled={isGenerating || generationDisabled || (showQueueStatus && isCloudQueueTaskActive(queueStatus))} className={`generation-action-button generation-action-button--workbench flex min-h-11 w-full max-w-xs items-center justify-center gap-2 rounded-xl px-4 text-sm font-semibold ${isGenerating && (!isCloudQueueTaskActive(queueStatus) || queueStatus?.phase === 'generating') ? 'generation-action-button--loading' : 'disabled:opacity-50'}`}>
                       <ImageIcon aria-hidden="true" className="h-4 w-4" /><span>{isGenerating ? t("生成中…") : unavailableLabel || t("生成")}</span>{!isGenerating && !unavailableLabel && <span className="generation-action-button__cost">{generationCostLabel}</span>}
-                    </button>}
+                    </button>{showQueueStatus && <CloudQueueButton generationProgress={generationProgress} />}</>}
                     </div>
                 </div>
             </div>

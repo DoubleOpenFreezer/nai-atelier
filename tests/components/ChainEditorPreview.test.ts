@@ -6,21 +6,24 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ChainEditorPreview } from '../../components/ChainEditorPreview';
 import { ImageEditPreview } from '../../components/ImageEditPreview';
 import { CloudQueueStatus } from '../../components/CloudQueueStatus';
-import { emitCloudQueueStatus, reportCloudQueueCleanupError } from '../../services/cloudQueue';
+import { emitCloudQueueStatus, getCloudQueuePreferences, reportCloudQueueCleanupError } from '../../services/cloudQueue';
 import { setCleanSharedImages } from '../../services/imageSharing';
 
 vi.mock('../../components/SmartImage', () => ({
   OriginalImage: (props: React.ImgHTMLAttributes<HTMLImageElement>) => React.createElement('img', props),
 }));
 
-beforeEach(() => {
+beforeEach(async () => {
   sessionStorage.clear();
   localStorage.clear();
   emitCloudQueueStatus(null);
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ enabled: true, serviceUrl: 'https://synthetic.example', greeting: '正在生成中～', showGreeting: true }))));
+  await getCloudQueuePreferences();
 });
 afterEach(() => {
   cleanup();
   emitCloudQueueStatus(null);
+  vi.unstubAllGlobals();
 });
 
 const renderPreview = (onGenerate: () => void, isGenerating = false) => render(React.createElement(ChainEditorPreview, {
@@ -121,7 +124,8 @@ describe('生成后的操作恢复', () => {
     emitCloudQueueStatus({ taskId: 'task', phase: 'waiting' });
     const onGenerate = vi.fn();
     const view = renderPreview(onGenerate);
-    expect(screen.queryByRole('button', { name: /^生成.*免费$/ })).toBeNull();
+    expect((screen.getByRole('button', { name: /^生成.*免费$/ }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.queryByRole('status')).toBeNull();
     act(() => emitCloudQueueStatus({ taskId: 'task', phase: 'completed' }));
     const button = screen.getByRole('button', { name: /^生成.*免费$/ }) as HTMLButtonElement;
     expect(button.disabled).toBe(false);
@@ -139,11 +143,12 @@ describe('生成后的操作恢复', () => {
     emitCloudQueueStatus({ taskId: 'task', phase: phase === 'cleanup-error' ? 'completed' : phase });
     const onGenerate = vi.fn();
     renderPreview(onGenerate);
-    expect(screen.getByRole('status')).toBeTruthy();
     const button = screen.getByRole('button', { name: /^生成.*免费$/ }) as HTMLButtonElement;
     expect(button.disabled).toBe(false);
     fireEvent.click(button);
     expect(onGenerate).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('button', { name: /Key 排队/ }));
+    expect(screen.getByRole('status')).toBeTruthy();
   });
 
   it('生成仍在处理中时继续禁用按钮，终态不绕过真实忙碌状态', () => {
@@ -198,9 +203,11 @@ describe('四模式共用生成状态', () => {
     const props = { ...common, handleGenerate: vi.fn(), errorMsg: null, generatedImage: null, previewImage: undefined, setLightboxImg: vi.fn(), isOwner: false, isUploading: false, handleSavePreview: vi.fn(), handleUploadCover: vi.fn(), getDownloadFilename: () => 'test.png' };
     const editProps = { ...common, operation: operation === 'text-to-image' ? 'image-to-image' as const : operation, image: null, error: null, canGenerate: true, onGenerate: vi.fn(), onOpenLightbox: vi.fn(), getDownloadFilename: () => 'test.png' };
     const view = render(operation === 'text-to-image' ? React.createElement(ChainEditorPreview, props) : React.createElement(ImageEditPreview, editProps));
+    expect(screen.queryByRole('status')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Key 排队 2/?' }));
     expect(screen.getByRole('status').textContent).toContain('排队中 · 前方 2 个任务');
     expect(screen.getByRole('button', { name: '取消排队' })).toBeTruthy();
-    expect(screen.queryByRole('button', { name: /生成中/ })).toBeNull();
+    expect((view.container.querySelector('.generation-action-button') as HTMLButtonElement).disabled).toBe(true);
     act(() => emitCloudQueueStatus({ taskId: 'shared', phase: 'generating', cancelable: false }));
     expect(screen.getByRole('status').textContent).toContain('生成中 8/28');
     expect(screen.queryByRole('button', { name: '取消排队' })).toBeNull();

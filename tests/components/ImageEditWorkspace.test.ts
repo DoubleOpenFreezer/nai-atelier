@@ -28,7 +28,8 @@ vi.mock('../../components/ImageEditCanvas', () => ({
 }));
 
 vi.mock('../../components/CloudQueueStatus', () => ({
-  InlineCloudQueueStatus: () => React.createElement('div', null, '队列'),
+  CloudQueueButton: () => null,
+  useCloudQueueEnabled: () => false,
   useCloudQueueStatus: () => null,
 }));
 
