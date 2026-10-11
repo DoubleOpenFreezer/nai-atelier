@@ -1108,6 +1108,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
       return;
     }
     aitagPageCache = { ...aitagPageCache, selectedId: work.id };
+    selectionAnchor.prepareSelection(work.id);
     setSelectedId(work.id);
     if (details[work.id] && !details[work.id].isPreviewOnly) return;
 

@@ -1,5 +1,6 @@
 import { toggleCollectionTarget } from '../../services/collectionFavorites';
 import { longPress } from '../support/touchEvents';
+import { mockGalleryGeometry } from '../support/galleryGeometry';
 // @vitest-environment jsdom
 import React from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
@@ -237,6 +238,20 @@ it.each(['masonry', 'portrait', 'square'])('%s 布局中选中正常亮度、其
   expect(card(1).className).toContain('brightness-[.7]');
   expect(card(2).className).not.toContain('brightness-');
   if (layout === 'masonry') expect(mocks.masonry.mock.lastCall?.[0].stableColumns).toBe(true);
+});
+
+it.each(['masonry', 'portrait', 'square'].flatMap(layout => ['click', 'Enter', ' '].map(input => [layout, input])))('%s／%s：详情缩窄前记录点击位置，先即时补偿再居中', async (layout, input) => {
+  const { container } = await setup(layout);
+  const { root, scrollCalls } = mockGalleryGeometry([card(1), card(2)], () => container.querySelector('.aitag-detail-panel--open') ? -600 : 0);
+  root.scrollTop = 1400;
+  if (input === 'click') fireEvent.click(card(1));
+  else fireEvent.keyDown(card(1), { key: input });
+  selected(1);
+  expect(scrollCalls.slice(0, 2)).toEqual([{ top: 800, behavior: 'instant' }, { top: 1050, behavior: 'smooth' }]);
+  expect(root.scrollTop).toBe(1050);
+  expect(root.parentElement!.className).toContain('lg:grid-cols-[minmax(0,1fr)_460px]');
+  fireEvent.click(screen.getByRole('button', { name: '关闭' }));
+  expect(root.scrollTop).toBe(1650);
 });
 
 it('再次点击或使用 Enter／空格取消，❌ 也取消且关闭重排不跳离原作品', async () => {

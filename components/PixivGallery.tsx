@@ -548,6 +548,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, notify, onNa
   };
 
   const openDetail = (illust: PixivIllust) => {
+    selectionAnchor.prepareSelection(illust.id);
     setSelectedId(illust.id);
     setSelectedPage(0);
   };

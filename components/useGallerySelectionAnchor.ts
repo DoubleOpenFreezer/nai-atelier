@@ -20,21 +20,23 @@ export const useGallerySelectionAnchor = (
   const suspendedRef = useRef(false);
   const writtenScrollRef = useRef<number | null>(null);
   const smoothTargetRef = useRef<number | null>(null);
+  const smoothCardPositionRef = useRef<number | null>(null);
+  const pendingSelectionRef = useRef<SelectionAnchor | null>(null);
   const stopSmoothScroll = () => {
     if (smoothTargetRef.current === null) return;
     smoothTargetRef.current = null;
+    smoothCardPositionRef.current = null;
     const root = rootRef.current;
     if (root && root.clientHeight > 0) root.scrollTo({ top: root.scrollTop, behavior: 'instant' });
   };
 
-  const getCard = () => {
-    const anchor = anchorRef.current;
-    return anchor ? Array.from(rootRef.current?.querySelectorAll<HTMLElement>('[data-gallery-work-id]') || [])
-      .find(card => card.dataset.galleryWorkId === String(anchor.id)) : null;
+  const getCard = (id = anchorRef.current?.id) => {
+    return id !== undefined ? Array.from(rootRef.current?.querySelectorAll<HTMLElement>('[data-gallery-work-id]') || [])
+      .find(card => card.dataset.galleryWorkId === String(id)) : null;
   };
-  const readOffset = () => {
+  const readOffset = (id = anchorRef.current?.id) => {
     const root = rootRef.current;
-    const card = getCard();
+    const card = getCard(id);
     if (!root || root.clientHeight === 0 || !card) return null;
     const rect = card.getBoundingClientRect();
     if (rect.height === 0) return null;
@@ -46,16 +48,24 @@ export const useGallerySelectionAnchor = (
     if (!root || !anchor || suspendedRef.current || root.clientHeight === 0) return;
     const offset = readOffset();
     if (offset === null) return;
+    const cardPosition = root.scrollTop + offset;
     const targetOffset = anchor.offset ?? root.clientHeight / 2;
-    const nextTop = Math.max(0, Math.min(root.scrollHeight - root.clientHeight, root.scrollTop + offset - targetOffset));
+    const clamp = (top: number) => Math.max(0, Math.min(root.scrollHeight - root.clientHeight, top));
+    const nextTop = clamp(cardPosition - targetOffset);
+    const shift = smoothCardPositionRef.current === null ? 0 : cardPosition - smoothCardPositionRef.current;
+    // 布局位移即时抵消，不能让正在进行的居中动画从挤压后的跳点重新滚回。
+    const shifted = smoothTargetRef.current !== null && Math.abs(shift) > 1;
+    if (shifted) root.scrollTo({ top: clamp(root.scrollTop + shift), behavior: 'instant' });
     if (Math.abs(root.scrollTop - nextTop) > 1) {
       const animate = smooth || smoothTargetRef.current !== null;
-      if (animate && smoothTargetRef.current !== null && Math.abs(smoothTargetRef.current - nextTop) <= 1) return;
+      if (animate && !shifted && smoothTargetRef.current !== null && Math.abs(smoothTargetRef.current - nextTop) <= 1) return;
       smoothTargetRef.current = animate ? nextTop : null;
+      smoothCardPositionRef.current = animate ? cardPosition : null;
       root.scrollTo({ top: nextTop, behavior: animate ? 'smooth' : 'instant' });
       writtenScrollRef.current = animate ? nextTop : root.scrollTop;
     } else if (smoothTargetRef.current !== null) {
       smoothTargetRef.current = null;
+      smoothCardPositionRef.current = null;
       writtenScrollRef.current = root.scrollTop;
     }
   };
@@ -74,6 +84,18 @@ export const useGallerySelectionAnchor = (
       closingRef.current = false;
       suspendedRef.current = false;
       writtenScrollRef.current = null;
+      const pending = pendingSelectionRef.current;
+      const root = rootRef.current;
+      if (active && root && pending && pending.id === selectedId && pending.offset !== null) {
+        const offset = readOffset();
+        if (offset !== null) {
+          // 先恢复点击前的屏幕高度，再开始主动居中；手机隐藏列表时不写滚动。
+          const top = Math.max(0, Math.min(root.scrollHeight - root.clientHeight, root.scrollTop + offset - pending.offset));
+          if (Math.abs(root.scrollTop - top) > 1) root.scrollTo({ top, behavior: 'instant' });
+          writtenScrollRef.current = root.scrollTop;
+        }
+      }
+      pendingSelectionRef.current = null;
     }
     previousRef.current = { selectedId, active };
     if (active) adjust(smooth);
@@ -83,6 +105,8 @@ export const useGallerySelectionAnchor = (
     const root = rootRef.current;
     const content = contentRef.current;
     if (!active || !root || !content) return;
+    const previousOverflowAnchor = root.style.overflowAnchor;
+    root.style.overflowAnchor = 'none';
     let adjustmentFrame: number | null = null;
     let inputFrame: number | null = null;
     let observedCard: HTMLElement | null = null;
@@ -135,6 +159,7 @@ export const useGallerySelectionAnchor = (
     schedule();
     return () => {
       stopSmoothScroll();
+      root.style.overflowAnchor = previousOverflowAnchor;
       resize.disconnect();
       mutation.disconnect();
       if (adjustmentFrame !== null) cancelAnimationFrame(adjustmentFrame);
@@ -152,13 +177,14 @@ export const useGallerySelectionAnchor = (
   return {
     // 关闭详情后的重排也交给作品锚点，避免像素恢复定时器与它争抢滚动。
     hasAnchor: selectedId !== null || anchorRef.current !== null,
+    prepareSelection: (id: string | number) => { pendingSelectionRef.current = { id, offset: readOffset(id) }; },
     preserveOnClose: () => {
       stopSmoothScroll();
       const offset = readOffset();
       if (anchorRef.current && offset !== null) anchorRef.current.offset = offset;
       closingRef.current = true;
     },
-    clearAnchor: () => { stopSmoothScroll(); anchorRef.current = null; closingRef.current = false; },
+    clearAnchor: () => { stopSmoothScroll(); anchorRef.current = null; pendingSelectionRef.current = null; closingRef.current = false; },
     onScroll: () => {
       const root = rootRef.current;
       if (!active || !root || root.clientHeight === 0 || !anchorRef.current) return;
@@ -166,6 +192,7 @@ export const useGallerySelectionAnchor = (
       if (smoothTargetRef.current !== null) {
         if (Math.abs(root.scrollTop - smoothTargetRef.current) <= 1) {
           smoothTargetRef.current = null;
+          smoothCardPositionRef.current = null;
           writtenScrollRef.current = root.scrollTop;
         }
         return;

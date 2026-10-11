@@ -238,7 +238,7 @@ export const CodexGallery: React.FC<{ active: boolean; currentUser: User; notify
     const image = entry.images[entry.coverIndex];
     const partial = image && !collectionTargetActive(groupTarget(entry)) && entry.images.some((_, i) => collectionTargetActive(codexCollectionImage(entry, i)));
     return <MediaCardShell pressReveal key={entry.key} data-gallery-work-id={entry.key} data-safe-mode-work="true" selected={selectedKey === entry.key} className={`mobile-gallery-item ${image ? 'gallery-image-card' : ''} group relative flex-col ${selectedKey && selectedKey !== entry.key ? 'brightness-[.7]' : ''}`}>
-      <button type="button" onClick={() => { setSelectedKeys(current => ({ ...current, [mode]: entry.key })); setPages(current => ({ ...current, [mode]: entry.coverIndex })); }} className={`block w-full text-left ${image ? 'gallery-card-visual' : ''}`}>
+      <button type="button" onClick={() => { anchor.prepareSelection(entry.key); setSelectedKeys(current => ({ ...current, [mode]: entry.key })); setPages(current => ({ ...current, [mode]: entry.coverIndex })); }} className={`block w-full text-left ${image ? 'gallery-card-visual' : ''}`}>
         {image ? <div className="mobile-gallery-frame relative aspect-[3/4] overflow-hidden bg-gray-200 dark:bg-gray-800" style={{ '--mobile-image-ratio': `${image.width || 3} / ${image.height || 4}` } as React.CSSProperties}>
           <SmartImage src={image.url} alt={entry.title} />
           {!frostedCaption && (entry.images.length > 1 || partial) && <span className="absolute bottom-2 right-2 rounded-full bg-black/60 px-2 py-1 text-micro text-white">{partial ? `${t('部分已收藏')} · ` : ''}{t('{0}页', [entry.images.length])}</span>}

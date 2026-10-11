@@ -63,7 +63,7 @@ const setup = (selectedId: number | null = 1) => {
 };
 
 describe('作品选择定位', () => {
-  it('点击只启动一次平滑滚动，中间帧及重渲染不改写终点，布局变化平滑更新终点', () => {
+  it('点击只启动一次平滑滚动，中间帧不改写终点，重排先即时补偿再接续居中', () => {
     const { root, geometry, rerender, draw } = setup(null);
     const scroll = vi.fn((options: ScrollToOptions) => { if (options.behavior !== 'smooth') root.scrollTop = options.top!; });
     Object.defineProperty(root, 'scrollTo', { configurable: true, value: scroll });
@@ -74,12 +74,49 @@ describe('作品选择定位', () => {
     rerender(draw(1)); resize();
     expect(root.scrollTop).toBe(800); expect(scroll).toHaveBeenCalledOnce();
     geometry.tops[1] += 200; resize();
+    expect(scroll.mock.calls.slice(-2).map(([options]) => options)).toEqual([
+      { top: 1000, behavior: 'instant' }, { top: 1850, behavior: 'smooth' },
+    ]);
     expect(scroll).toHaveBeenLastCalledWith({ top: 1850, behavior: 'smooth' });
-    expect(root.scrollTop).toBe(800);
+    expect(root.scrollTop).toBe(1000);
     root.scrollTop = 1850; fireEvent.scroll(root);
     geometry.tops[1] += 100; resize();
     expect(scroll).toHaveBeenLastCalledWith({ top: 1950, behavior: 'instant' });
     expect(root.scrollTop).toBe(1950);
+  });
+
+  it.each([-700, 300])('详情重排位移 %spx：绘制前恢复点击位置，再从原屏幕位置平滑居中', shift => {
+    const { root, geometry, rerender, draw } = setup(null);
+    const offsets: number[] = [];
+    const scroll = vi.fn((options: ScrollToOptions) => {
+      if (options.behavior === 'smooth') offsets.push(geometry.tops[1] + geometry.cardHeight / 2 - root.scrollTop);
+      else root.scrollTop = options.top!;
+    });
+    Object.defineProperty(root, 'scrollTo', { configurable: true, value: scroll });
+    root.scrollTop = 1400;
+    controls.prepareSelection(1);
+    geometry.tops[1] += shift;
+    geometry.cardHeight = 200;
+    rerender(draw(1));
+    expect(scroll.mock.calls.map(([options]) => options)).toEqual([
+      { top: 1350 + shift, behavior: 'instant' }, { top: 1600 + shift, behavior: 'smooth' },
+    ]);
+    expect(offsets).toEqual([550]);
+    rerender(draw(1)); resize();
+    expect(scroll).toHaveBeenCalledTimes(2);
+    expect(root.style.overflowAnchor).toBe('none');
+  });
+
+  it('动画中快速换作品时使用新卡片的点击位置，缩窄位移不混用旧锚点', () => {
+    const { root, geometry, rerender, draw } = setup(null);
+    const scroll = vi.fn((options: ScrollToOptions) => { if (options.behavior !== 'smooth') root.scrollTop = options.top!; });
+    Object.defineProperty(root, 'scrollTo', { configurable: true, value: scroll });
+    rerender(draw(1)); root.scrollTop = 2200;
+    controls.prepareSelection(2);
+    geometry.tops[2] -= 400;
+    rerender(draw(2));
+    expect(root.scrollTop).toBe(1800);
+    expect(scroll).toHaveBeenLastCalledWith({ top: 2050, behavior: 'smooth' });
   });
 
   it.each(['wheel', 'touchstart', 'pointerdown'])('动画中 %s 停止自动滚动并保留用户调整的位置', input => {
@@ -238,9 +275,11 @@ describe('作品选择定位', () => {
 
   it('窄屏详情隐藏列表时不写滚动，关闭详情后定位到原作品', () => {
     const { root, geometry, rerender, draw } = setup(null);
+    controls.prepareSelection(1);
     geometry.height = 0;
     rerender(draw(1));
     expect(root.scrollTop).toBe(0);
+    expect(scrollTo).not.toHaveBeenCalled();
     controls.preserveOnClose();
     geometry.height = 600;
     rerender(draw(null));

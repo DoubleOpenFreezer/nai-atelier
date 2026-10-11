@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react';
+import { mockGalleryGeometry } from '../support/galleryGeometry';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { CodexBootstrap, CodexEntry, CodexImageMetadata } from '../../services/codexService';
@@ -90,6 +91,23 @@ it('图片尚未加载或失败时仍预留比例空间，错误旁可明确改�
   expect(screen.queryByRole('alert')).toBeNull(); expect(screen.queryByRole('dialog')).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: '导入实验室' }));
   expect(JSON.parse(sessionStorage.getItem(IMPORT_SESSION_KEY)!)).toMatchObject({ prompt: entry.prompt, negativePrompt: entry.negative });
+});
+it.each(['books', 'community'])('%s 打开详情先抵消分栏位移再居中，关闭仍保留作品高度', async mode => {
+  document.documentElement.dataset.motion = 'full';
+  const { container } = setup();
+  await screen.findByRole('button', { name: /合成词条/ });
+  if (mode === 'community') chooseSource('共创广场');
+  const button = await screen.findByRole('button', { name: mode === 'community' ? /新投稿/ : /合成词条/ });
+  const card = button.closest<HTMLElement>('[data-gallery-work-id]')!;
+  const { root, scrollCalls } = mockGalleryGeometry([card], () => container.querySelector('.aitag-detail-panel--open') ? -600 : 0);
+  root.scrollTop = 1400;
+  fireEvent.click(button);
+  expect(scrollCalls.slice(0, 2)).toEqual([{ top: 800, behavior: 'instant' }, { top: 1050, behavior: 'smooth' }]);
+  expect(root.scrollTop).toBe(1050);
+  expect(root.parentElement!.className).toContain('lg:grid-cols-[minmax(0,1fr)_460px]');
+  fireEvent.click(screen.getByRole('button', { name: '关闭' }));
+  expect(root.scrollTop).toBe(1650);
+  delete document.documentElement.dataset.motion;
 });
 it('图片词条叠放图文，纯文本词条保留正文和独立信息栏', async () => {
   mocks.book.mockResolvedValue({ release: boot.release, entries: [entry, { ...entry, key: 'codex:synthetic:text', title: '纯文本词条', images: [], prompt: 'text-only prompt' }] });

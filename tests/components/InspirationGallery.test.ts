@@ -935,18 +935,19 @@ it.each([390, 1280])('宽度 %s：作品组只显示一张首图卡片，点开�
   expect(container.querySelector('main')!.classList.contains('hidden')).toBe(false);
 });
 
-it('收藏单张和多图组沿用 AITag 聚焦居中，切换及关闭保留位置，不写整理数据', () => {
+it.each(['image', 'title'])('收藏单张和多图组从 %s 打开先抵消挤压再居中，切换及关闭保留位置，不写整理数据', target => {
   const { container } = render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: [...groupedImages, mockInspirations[0]], onRefresh: vi.fn(async () => {}), notify: vi.fn() }));
   const cards = Array.from(container.querySelectorAll('article'));
-  const { root, scrollCalls } = mockGalleryGeometry(cards);
+  const { root, scrollCalls } = mockGalleryGeometry(cards, () => container.querySelector('.aitag-detail-panel--open') ? -600 : 0);
+  root.scrollTop = 1400;
   cards.forEach(card => expect(card.className).not.toContain('brightness-'));
-  fireEvent.click(within(cards[0]).getByRole('img').closest('button')!);
-  expect(root.scrollTop).toBe(1650);
-  expect(scrollCalls).toContainEqual({ top: 1650, behavior: 'smooth' });
+  fireEvent.click(target === 'image' ? within(cards[0]).getByRole('img').closest('button')! : cards[0].querySelector('button.gallery-card-caption')!);
+  expect(root.scrollTop).toBe(1050);
+  expect(scrollCalls.slice(0, 2)).toEqual([{ top: 800, behavior: 'instant' }, { top: 1050, behavior: 'smooth' }]);
   expect(cards[0].className).not.toContain('brightness-');
   expect(cards[1].className).toContain('brightness-[.7]');
   fireEvent.click(within(cards[1]).getByRole('img').closest('button')!);
-  expect(root.scrollTop).toBe(2450);
+  expect(root.scrollTop).toBe(1850);
   expect(cards[0].className).toContain('brightness-[.7]');
   expect(cards[1].className).not.toContain('brightness-');
   fireEvent.click(screen.getByRole('button', { name: '关闭' }));

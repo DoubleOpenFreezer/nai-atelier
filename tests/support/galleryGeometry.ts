@@ -1,5 +1,5 @@
 /** 合成列表几何，验证卡片相对可视区域的真实居中关系。 */
-export function mockGalleryGeometry(cards: HTMLElement[]) {
+export function mockGalleryGeometry(cards: HTMLElement[], layoutOffset = () => 0) {
   const root = cards[0].closest<HTMLElement>('.overflow-y-auto')!;
   const tops = cards.map((_, index) => 1800 + index * 800);
   const scrollCalls: ScrollToOptions[] = [];
@@ -13,6 +13,6 @@ export function mockGalleryGeometry(cards: HTMLElement[]) {
     if (typeof options === 'object') scrollCalls.push(options);
     root.scrollTop = typeof options === 'number' ? y || 0 : options?.top ?? root.scrollTop;
   } });
-  cards.forEach((card, index) => { card.getBoundingClientRect = () => rect(100 + tops[index] - root.scrollTop, 300); });
+  cards.forEach((card, index) => { card.getBoundingClientRect = () => rect(100 + tops[index] + layoutOffset() - root.scrollTop, 300); });
   return { root, tops, scrollCalls };
 }
