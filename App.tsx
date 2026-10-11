@@ -169,7 +169,7 @@ const App = () => {
   const chainCreateRevisionRef = useRef(0);
   const recentCreatedChainsRef = useRef(new Map<string, { chain: PromptChain; revision: number }>());
   const refreshData = async (force = false) => {
-    // Chains (Always load all chains so we can filter client side and do mutual imports)
+    // 加载全部串，供列表过滤和角色库就地引用使用。
     if (!force && chains.length > 0 && Date.now() - lastChainFetch < CACHE_TTL) return;
 
     const refreshSeq = ++refreshDataSeqRef.current;
@@ -439,7 +439,7 @@ const App = () => {
     setPlaygroundChain(previous => previous || {
       id: 'playground',
       name: '生图实验室',
-      description: '临时生图实验，点击 Fork 可保存到库',
+      description: '临时生图实验',
       userId: currentUser?.id || 'local-owner',
       basePrompt: '',
       negativePrompt: '',
@@ -548,6 +548,14 @@ const App = () => {
     }
   };
 
+  const handleSaveCharacterToLibrary = async (chain: PromptChain) => {
+    const saved = await db.createChainWithData(chain.name, chain.description, chain, 'character');
+    recentCreatedChainsRef.current.set(saved.id, { chain: saved, revision: ++chainCreateRevisionRef.current });
+    setChains(current => [saved, ...current.filter(item => item.id !== saved.id)]);
+    setLastChainFetch(0);
+    await refreshData(true);
+  };
+
   const handleUpdateChain = async (id: string, updates: Partial<PromptChain>) => {
     try {
       await db.updateChain(id, updates);
@@ -649,6 +657,7 @@ const App = () => {
           allChains={chains}
           onUpdateChain={handleUpdateChain}
           onFork={handleForkChain}
+          onCreateCharacter={handleSaveCharacterToLibrary}
           setIsDirty={setIsEditorDirty}
           saveRef={editorSaveRef}
           notify={notify}
@@ -721,6 +730,7 @@ const App = () => {
           allChains={chains}
           onUpdateChain={handleUpdatePlaygroundChain}
           onFork={handleForkChain}
+          onCreateCharacter={handleSaveCharacterToLibrary}
           setIsDirty={() => { }}
           notify={notify}
           externalImportToken={playgroundImportToken}

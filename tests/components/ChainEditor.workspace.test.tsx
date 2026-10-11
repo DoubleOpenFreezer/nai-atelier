@@ -103,9 +103,7 @@ vi.mock('../../components/ChainEditorPreview', () => ({ ChainEditorPreview: (pro
 </section> }));
 vi.mock('../../components/VibeManager', () => ({ VibeManager: () => null }));
 vi.mock('../../components/CharacterReferenceManager', () => ({ CharacterReferenceManager: () => null }));
-vi.mock('../../components/ImageTaggerPanel', () => ({ ImageTaggerPanel: () => null }));
 vi.mock('../../components/chain/ChainEditorCharacters', () => ({ ChainEditorCharacters: () => null }));
-vi.mock('../../components/chain/ChainEditorPresetModal', () => ({ ChainEditorPresetModal: () => null }));
 vi.mock('../../components/chain/PresetSourceBadges', async importOriginal => ({
   ...await importOriginal<typeof import('../../components/chain/PresetSourceBadges')>(),
   PromptAgentOverlayController: (props: React.ComponentProps<typeof import('../../components/chain/PresetSourceBadges').PromptAgentOverlayController>) => { state.agent = props; return null; },

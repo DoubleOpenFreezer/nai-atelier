@@ -1,6 +1,6 @@
 import { t, useLanguage } from '../../services/i18n';
 import React, { useLayoutEffect, useRef, useState } from 'react';
-import { Copy, FileDown, ImagePlus, MoreHorizontal, Quote, RotateCcw, Save, Tags } from 'lucide-react';
+import { Copy, FileDown, Languages, LoaderCircle, MoreHorizontal, RotateCcw, Save, Tags } from 'lucide-react';
 import { GenerationMode } from '../../types';
 import { ChainEditorModeHeader } from '../ChainEditorModeHeader';
 import { IconButton } from '../DesignSystem';
@@ -56,8 +56,8 @@ export interface ChainEditorHeaderProps {
     handleFork: () => void;
     handleSaveAll: () => void;
     handleImportImage: (event: React.ChangeEvent<HTMLInputElement>) => void;
-    setShowImportPreset: (value: boolean) => void;
-    setTaggerOpen: (value: boolean) => void;
+    onTranslateMissingPrompts: () => void;
+    translationPending?: boolean;
     notify: (msg: string, type?: 'success' | 'error') => void;
 }
 
@@ -82,8 +82,8 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
     handleFork,
     handleSaveAll,
     handleImportImage,
-    setShowImportPreset,
-    setTaggerOpen,
+    onTranslateMissingPrompts,
+    translationPending = false,
     notify,
 }) => {
   useLanguage();
@@ -170,8 +170,7 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
             {!compact && <div className="chain-editor-actions flex flex-none items-center justify-end gap-2 ml-auto">
                 {canEdit && <>
                     <IconButton label={t("导入图片或 JSON 配置")} onClick={() => importInputRef.current?.click()}><FileDown /></IconButton>
-                    <IconButton label={t("引用预设")} onClick={() => setShowImportPreset(true)}><Quote /></IconButton>
-                    <IconButton label={t("图片反推 Tag")} onClick={() => setTaggerOpen(true)}><ImagePlus /></IconButton>
+                    <IconButton label={t(translationPending ? "正在翻译提示词" : "翻译所有未翻译提示词")} title={t("使用当前助手模型翻译当前模式所有提示词框里的未翻译 Tag，可能产生模型调用费用")} disabled={translationPending} onClick={onTranslateMissingPrompts}>{translationPending ? <LoaderCircle className="animate-spin" /> : <Languages />}</IconButton>
                 </>}
                 <IconButton
                     label={tagAssistEnabled ? t("关闭 Tag 辅助") : t("开启 Tag 辅助")}
@@ -207,8 +206,7 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
     function renderActions() {
         return <div className="flex flex-col gap-1">
                 {canEdit && <ActionRow icon={<FileDown className="h-4 w-4" />} label={t("导入图片或 JSON 配置")} onClick={() => { closeActions(); importInputRef.current?.click(); }} />}
-                {canEdit && <ActionRow icon={<Quote className="h-4 w-4" />} label={t("引用预设")} onClick={() => { closeActions(); setShowImportPreset(true); }} />}
-                {canEdit && <ActionRow icon={<ImagePlus className="h-4 w-4" />} label={t("图片反推 Tag")} onClick={() => { closeActions(); setTaggerOpen(true); }} />}
+                {canEdit && <ActionRow icon={translationPending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Languages className="h-4 w-4" />} label={t(translationPending ? "正在翻译提示词" : "翻译所有未翻译提示词")} detail={translationPending ? t("翻译中") : undefined} disabled={translationPending} onClick={() => { closeActions(); onTranslateMissingPrompts(); }} />}
                 <ActionRow
                     icon={<Tags className="h-4 w-4" />}
                     label={t("Tag 辅助")}

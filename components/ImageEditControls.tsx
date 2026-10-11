@@ -1,7 +1,7 @@
 import { t, useLanguage } from '../services/i18n';
 import React from 'react';
 import { ClipboardPaste, Contrast, Eraser, ImagePlus, Images, RotateCcw, RotateCw, Trash2 } from 'lucide-react';
-import { ImageEditCanvasExpansion, ImageEditOperation, ImageToImageSizeMode, LabImageEditDraft, LocalGenItem, NAIParams } from '../types';
+import { CharacterParams, ImageEditCanvasExpansion, ImageEditOperation, ImageToImageSizeMode, LabImageEditDraft, LocalGenItem, NAIParams, PromptChain } from '../types';
 import { DEFAULT_LAB_PAGE_LAYOUTS, LabPageLayout } from '../services/appearancePreferences';
 import { isNaiMediumModel, getRuntimeNaiModelInfo } from '../services/naiModels';
 import { useNaiRuntime } from '../services/naiRuntime';
@@ -41,6 +41,10 @@ interface ImageEditControlsProps {
   onForceEmptySeedChange?: (enabled: boolean) => void;
   enforceFreeStepLimit?: boolean;
   apiKey: string;
+  allChains?: PromptChain[];
+  showCharacterReference?: boolean;
+  canSaveCharacter?: boolean;
+  onSaveCharacter?: (character: CharacterParams, name: string) => Promise<void>;
   /** 图生图模式底图缩略图（dataUrl），显示在底图来源区；右侧预览只显示结果。 */
   baseImagePreview?: string | null;
   notify: (message: string, type?: 'success' | 'error') => void;
@@ -74,7 +78,7 @@ const getModuleOrder = (layout: LabPageLayout, moduleId: keyof LabPageLayout['co
 const isModuleCollapsed = (layout: LabPageLayout, moduleId: keyof LabPageLayout['collapsed']) => Boolean(layout.collapsed[moduleId]);
 
 export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
-  operation, draft, layout = DEFAULT_LAB_PAGE_LAYOUTS[operation], fileInputRef, canvasProps, latestTextToImageItem, selectableParams, strength, noise, brushSize, focused, minimumContextArea, tool, expansion, outpaintSourceSize, isBusy = false, safeMode = false, tagAssistEnabled, forceEmptySeed = false, onForceEmptySeedChange, enforceFreeStepLimit = true, apiKey, baseImagePreview, notify,
+  operation, draft, layout = DEFAULT_LAB_PAGE_LAYOUTS[operation], fileInputRef, canvasProps, latestTextToImageItem, selectableParams, strength, noise, brushSize, focused, minimumContextArea, tool, expansion, outpaintSourceSize, isBusy = false, safeMode = false, tagAssistEnabled, forceEmptySeed = false, onForceEmptySeedChange, enforceFreeStepLimit = true, apiKey, allChains = [], showCharacterReference = false, canSaveCharacter = false, onSaveCharacter, baseImagePreview, notify,
   onPromptChange, onNegativePromptChange, onDraftChange, onFileChange, onPasteImage, onSelectImageSource, onStrengthChange, onNoiseChange, onBrushSizeChange, onFocusedChange,
   onMinimumContextAreaChange, onToolChange, manualMaskEditing = false, onManualMaskEditingChange = () => undefined, onClearMask, onInvertMask, onUndo, onRedo, onExpansionChange, onApplyOutpaint, onResetFocusedRect = () => undefined, normalization = null, onNormalize = () => undefined,
   mobileTab = 'canvas',
@@ -187,6 +191,11 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
         canEdit={!isBusy}
         tagAssistEnabled={tagAssistEnabled}
         characterPresetSources={{}}
+        allChains={allChains}
+        showCharacterReference={showCharacterReference}
+        canSaveCharacter={canSaveCharacter}
+        onSaveCharacter={onSaveCharacter}
+        notify={notify}
         markPresetSectionModified={() => undefined}
         markChange={() => undefined}
         activeLabLayout={layout}

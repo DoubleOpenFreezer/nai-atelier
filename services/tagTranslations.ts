@@ -387,20 +387,24 @@ export const resolvePromptTranslations = async (tokens: PromptTagToken[]): Promi
 };
 
 export const translateMissingPromptTags = async (tags: string[]) => {
-  const normalized = [...new Set(tags.map(normalizeTagQuery).filter(Boolean))].slice(0, 50);
-  const response = await fetch('/api/prompt-agent/tag-translations', {
-    method: 'POST',
-    credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'translate', tags: normalized }),
-  });
-  const payload = await response.json().catch(() => ({})) as { items?: Array<{ tag?: string; chinese?: string }>; error?: string };
-  if (!response.ok) throw new Error(payload.error || '翻译失败');
-  for (const item of payload.items || []) {
-    const tag = normalizeTagQuery(item.tag || '');
-    const chinese = String(item.chinese || '').trim();
-    if (tag && chinese) aiTranslations.set(tag, chinese);
+  const normalized = [...new Set(tags.map(normalizeTagQuery).filter(Boolean))];
+  const translated: Array<{ tag?: string; chinese?: string }> = [];
+  for (let index = 0; index < normalized.length; index += 50) {
+    const response = await fetch('/api/prompt-agent/tag-translations', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'translate', tags: normalized.slice(index, index + 50) }),
+    });
+    const payload = await response.json().catch(() => ({})) as { items?: Array<{ tag?: string; chinese?: string }>; error?: string };
+    if (!response.ok) throw new Error(payload.error || '翻译失败');
+    for (const item of payload.items || []) {
+      const tag = normalizeTagQuery(item.tag || '');
+      const chinese = String(item.chinese || '').trim();
+      if (tag && chinese) aiTranslations.set(tag, chinese);
+    }
+    translated.push(...(payload.items || []));
+    emitTranslationChange();
   }
-  emitTranslationChange();
-  return payload.items || [];
+  return translated;
 };

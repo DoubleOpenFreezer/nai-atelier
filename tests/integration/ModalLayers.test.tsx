@@ -2,14 +2,13 @@
 import React from 'react';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
-import type { NAIParams, PromptChain } from '../../types';
+import type { NAIParams } from '../../types';
 import { VibeManager } from '../../components/VibeManager';
 import { CharacterReferenceManager } from '../../components/CharacterReferenceManager';
 import { ImageTaggerPanel } from '../../components/ImageTaggerPanel';
 import { HistoryImagePicker } from '../../components/HistoryImagePicker';
 import { InspirationImagePicker } from '../../components/InspirationImagePicker';
 import { ChainEditorForkModal } from '../../components/chain/ChainEditorForkModal';
-import { ChainEditorPresetModal, type ChainEditorPresetModalProps } from '../../components/chain/ChainEditorPresetModal';
 
 // 只读合成资料，不接触本地图片、编码或生成接口。
 vi.mock('../../components/ConfirmDialog', () => ({ useConfirmDialog: () => vi.fn(async () => false) }));
@@ -26,21 +25,11 @@ vi.mock('../../services/dbService', () => ({ db: { getAllInspirations: async () 
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 const params: NAIParams = { model: 'nai-diffusion-4-5-full', width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler_ancestral' };
-const candidate: PromptChain = { id: 'synthetic', userId: 'local', type: 'style', name: '合成预设', description: '', tags: [], basePrompt: '', negativePrompt: '', modules: [], params, createdAt: 1, updatedAt: 1 };
-const presetProps: ChainEditorPresetModalProps = {
-  showImportPreset: true, importCandidate: null, setImportCandidate: vi.fn(), quickImportMode: false, setQuickImportMode: vi.fn(),
-  importTab: 'style', setImportTab: vi.fn(), setShowImportPreset: vi.fn(), allChains: [], importModalSearch: '', setImportModalSearch: vi.fn(),
-  importModalSelectedTags: new Set(), setImportModalSelectedTags: vi.fn(), favorites: new Set(), initiateImport: vi.fn(),
-  importOptions: { importBasePrompt: true, importSubject: false, importNegative: true, importModules: true, appendModules: false, importCharacters: true, appendCharacters: false, importSettings: true, importSeed: false },
-  setImportOptions: vi.fn(), selectedImportModuleIds: new Set(), setSelectedImportModuleIds: vi.fn(), confirmImport: vi.fn(),
-};
 const actions = { setParams: vi.fn(), markChange: vi.fn(), notify: vi.fn() };
 const cases: Array<[string, () => React.ReactElement, string?]> = [
   ['Vibe 管理', () => <VibeManager params={params} {...actions} apiKey="" />, '管理'],
   ['图生图 Vibe 管理', () => <VibeManager params={params} {...actions} apiKey="" operation="image-to-image" />, '管理'],
   ['角色参考', () => <CharacterReferenceManager params={params} {...actions} />, '角色参考'],
-  ['引用预设', () => <ChainEditorPresetModal {...presetProps} />],
-  ['预设导入确认', () => <ChainEditorPresetModal {...presetProps} importCandidate={candidate} />],
   ['保存到库', () => <ChainEditorForkModal showForkModal setShowForkModal={vi.fn()} confirmFork={vi.fn()} isUploading={false} currentPreviewCover={{ source: null, needsUpload: false }} />],
   ['自由实验室反推', () => <ImageTaggerPanel open onClose={vi.fn()} onInsert={vi.fn()} notify={vi.fn()} />],
   ['预设工作台反推', () => <ImageTaggerPanel contextual open onClose={vi.fn()} onInsert={vi.fn()} notify={vi.fn()} />],

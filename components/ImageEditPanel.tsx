@@ -1,7 +1,7 @@
 import type { GenerationPlacement } from '../services/generationTask';
 import { t, useLanguage } from '../services/i18n';
 import type { GenerationCountControlProps } from './GenerationCountControl';
-import type { PromptAgentDraft, PromptAgentGenerationResult, NAIParams } from '../types';
+import type { CharacterParams, PromptAgentDraft, PromptAgentGenerationResult, NAIParams, PromptChain } from '../types';
 import { agentOperationError } from '../services/agentOperation.mjs';
 import React, { useEffect, useId, useRef, useState } from 'react';
 import { ImageEditBaseImageSource, ImageEditCanvasExpansion, ImageEditOperation, LabImageEditDraft, LocalGenItem } from '../types';
@@ -58,6 +58,10 @@ interface ImageEditPanelProps {
   onForceEmptySeedChange?: (enabled: boolean) => void;
   enforceFreeStepLimit?: boolean;
   apiKey: string;
+  allChains?: PromptChain[];
+  showCharacterReference?: boolean;
+  canSaveCharacter?: boolean;
+  onSaveCharacter?: (character: CharacterParams, name: string) => Promise<void>;
   notify: (message: string, type?: 'success' | 'error') => void;
   onPromptChange: (value: string) => void;
   onNegativePromptChange: (value: string) => void;
@@ -122,6 +126,10 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
   onForceEmptySeedChange,
   enforceFreeStepLimit = true,
   apiKey,
+  allChains = [],
+  showCharacterReference = false,
+  canSaveCharacter = false,
+  onSaveCharacter,
   notify,
   onPromptChange,
   onNegativePromptChange,
@@ -1203,6 +1211,10 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
           safeMode={safeMode}
           tagAssistEnabled={tagAssistEnabled}
           apiKey={apiKey}
+          allChains={allChains}
+          showCharacterReference={showCharacterReference}
+          canSaveCharacter={canSaveCharacter}
+          onSaveCharacter={onSaveCharacter}
           notify={notify}
           onPromptChange={onPromptChange}
           onNegativePromptChange={onNegativePromptChange}

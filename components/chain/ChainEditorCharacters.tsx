@@ -1,16 +1,19 @@
 import { t, useLanguage } from '../../services/i18n';
 import React, { useEffect, useState } from 'react';
-import { ArrowDown, ArrowUp, MapPin, Trash2 } from 'lucide-react';
-import { CharacterParams, NAIParams } from '../../types';
+import { ArrowDown, ArrowUp, MapPin, Save, Trash2, UserRound } from 'lucide-react';
+import { CharacterParams, NAIParams, PromptChain } from '../../types';
 import { LabPageLayout } from '../../services/appearancePreferences';
 import { LabModuleSection } from '../LabModuleSection';
 import { TagAutocompleteTextarea } from '../TagAutocompleteTextarea';
 import { PresetSection, PresetSource, PresetSourceBadges } from './PresetSourceBadges';
-import { mergePromptFields } from '../../services/promptUtils';
+import { compilePrompt, mergePromptFields } from '../../services/promptUtils';
 import { CharacterTaggerReference } from './CharacterTaggerReference';
 import { moveCharacter, normalizeCharacterCoordinate } from '../../services/characterPrompts';
 import { CharacterPositionStage } from './CharacterPositionStage';
 import { isNaiMediumModel } from '../../services/naiModels';
+import { ImagePreviewPortal } from '../ImagePreviewPortal';
+import { useModalA11y, isTopmostModal } from '../useModalA11y';
+import { SmartImage } from '../SmartImage';
 
 const CoordinateInput: React.FC<{ value: number; freeform: boolean; disabled: boolean; label: string; onCommit: (value: number) => void }> = ({ value, freeform, disabled, label, onCommit }) => {
   useLanguage();
@@ -48,6 +51,11 @@ export interface ChainEditorCharactersProps {
     freeformPosition?: boolean;
     positionImage?: string | null;
     positionSize?: { width: number; height: number };
+    allChains?: PromptChain[];
+    showCharacterReference?: boolean;
+    canSaveCharacter?: boolean;
+    onSaveCharacter?: (character: CharacterParams, name: string) => Promise<void>;
+    notify?: (message: string, type?: 'success' | 'error') => void;
 }
 
 export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
@@ -69,16 +77,47 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
     freeformPosition = false,
     positionImage,
     positionSize,
+    allChains = [],
+    showCharacterReference = false,
+    canSaveCharacter = false,
+    onSaveCharacter,
+    notify,
 }) => {
   useLanguage();
     const [positionOpen, setPositionOpen] = useState(false);
+    const [activeAction, setActiveAction] = useState<{ kind: 'save'; character: CharacterParams } | { kind: 'reference'; index: number } | null>(null);
+    const [characterName, setCharacterName] = useState('');
+    const [savingCharacter, setSavingCharacter] = useState(false);
+    const actionDialogRef = useModalA11y<HTMLDivElement>(Boolean(activeAction));
+    useEffect(() => {
+        if (!activeAction) return;
+        const onKeyDown = (event: KeyboardEvent) => {
+            if (event.key === 'Escape' && !savingCharacter && isTopmostModal(actionDialogRef.current)) setActiveAction(null);
+        };
+        window.addEventListener('keydown', onKeyDown);
+        return () => window.removeEventListener('keydown', onKeyDown);
+    }, [activeAction, savingCharacter]);
+    const saveCharacter = async (event: React.FormEvent) => {
+        event.preventDefault();
+        if (activeAction?.kind !== 'save' || !onSaveCharacter || !characterName.trim() || savingCharacter) return;
+        setSavingCharacter(true);
+        try {
+            await onSaveCharacter(activeAction.character, characterName.trim());
+            setActiveAction(null);
+            setCharacterName('');
+        } catch (error) {
+            notify?.(error instanceof Error ? error.message : '保存角色失败', 'error');
+        } finally {
+            setSavingCharacter(false);
+        }
+    };
     const negativeLocked = isNaiMediumModel(params.model);
     const reorder = (index: number, direction: -1 | 1) => {
         if (!canEdit) return;
         setParams({ ...params, characters: moveCharacter(characters, index, direction) });
         markChange();
     };
-    return (
+    return (<>
     <LabModuleSection
         moduleId="characters"
         label={t("角色专属提示词")}
@@ -138,6 +177,8 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
                                 {t("角色 ")}{idx + 1}{char.enabled === false && <span className="text-gray-400">{t("· 已停用")}</span>}
                             </label>
                             <div className="flex items-center gap-1">
+                                {canSaveCharacter && onSaveCharacter && <button type="button" aria-label={t("保存到角色库")} title={t("保存到角色库")} disabled={!char.prompt.trim() || savingCharacter} onClick={() => { setCharacterName(''); setActiveAction({ kind: 'save', character: char }); }} className="mobile-touch rounded p-1 text-gray-400 hover:bg-emerald-50 hover:text-emerald-600 disabled:opacity-25 dark:hover:bg-emerald-950/30 dark:hover:text-emerald-300"><Save className="h-4 w-4" /></button>}
+                                {showCharacterReference && <button type="button" aria-label={t("从角色库引用")} title={t("从角色库引用")} onClick={() => setActiveAction({ kind: 'reference', index: idx })} className="mobile-touch rounded p-1 text-gray-400 hover:bg-indigo-50 hover:text-indigo-600 dark:hover:bg-indigo-950/30 dark:hover:text-indigo-300"><UserRound className="h-4 w-4" /></button>}
                                 <button type="button" title={t("上移")} aria-label={t("上移角色 {0}", [idx + 1])} disabled={!canEdit || idx === 0} onClick={() => reorder(idx, -1)} className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700 disabled:opacity-25 dark:hover:bg-gray-700 dark:hover:text-gray-200"><ArrowUp className="h-4 w-4" /></button>
                                 <button type="button" title={t("下移")} aria-label={t("下移角色 {0}", [idx + 1])} disabled={!canEdit || idx === characters.length - 1} onClick={() => reorder(idx, 1)} className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700 disabled:opacity-25 dark:hover:bg-gray-700 dark:hover:text-gray-200"><ArrowDown className="h-4 w-4" /></button>
                                 <button type="button" title={t("移除角色提示词")} aria-label={t("移除角色提示词")} disabled={!canEdit} onClick={() => removeCharacter(idx)} className="rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-500 disabled:opacity-25 dark:hover:bg-red-950/30"><Trash2 className="h-4 w-4" /></button>
@@ -189,5 +230,24 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
             </div>
         </section>
     </LabModuleSection>
-    );
+    {activeAction && <ImagePreviewPortal><div className="ui-backdrop-enter fixed inset-0 z-[1250] flex items-center justify-center bg-black/55 p-4 backdrop-blur-sm" onMouseDown={event => { if (event.target === event.currentTarget && !savingCharacter) setActiveAction(null); }}>
+        <div ref={actionDialogRef} role="dialog" aria-modal="true" aria-label={t(activeAction.kind === 'save' ? "保存到角色库" : "选择角色库角色")} className="appearance-panel ui-modal-enter max-h-[min(80dvh,36rem)] w-full max-w-md overflow-y-auto rounded-2xl border border-gray-200 bg-white p-5 shadow-2xl dark:border-gray-800 dark:bg-gray-900" onClick={event => event.stopPropagation()}>
+            {activeAction.kind === 'save' ? <form onSubmit={event => void saveCharacter(event)}>
+                <h2 className="text-base font-bold">{t("保存到角色库")}</h2>
+                <label className="mt-4 block text-xs font-semibold text-gray-500">{t("角色名称")}<input autoFocus value={characterName} disabled={savingCharacter} onChange={event => setCharacterName(event.target.value)} placeholder={t("输入角色名称")} className="mt-1.5 h-11 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm dark:border-gray-700 dark:bg-gray-800" /></label>
+                <div className="mt-5 flex justify-end gap-2"><button type="button" disabled={savingCharacter} onClick={() => setActiveAction(null)} className="mobile-touch rounded-xl px-4 text-sm text-gray-500">{t("取消")}</button><button type="submit" disabled={!characterName.trim() || savingCharacter} className="mobile-touch rounded-xl bg-emerald-600 px-4 text-sm font-bold text-white disabled:opacity-40">{savingCharacter ? t("正在保存…") : t("保存")}</button></div>
+            </form> : <>
+                <div className="mb-3 flex items-center justify-between"><h2 className="text-base font-bold">{t("选择角色库角色")}</h2><button type="button" onClick={() => setActiveAction(null)} className="mobile-touch rounded px-2 py-1 text-gray-500">{t("关闭")}</button></div>
+                <div className="space-y-2">{allChains.filter(item => item.type === 'character').map(item => <button key={item.id} type="button" onClick={() => {
+                    if (activeAction.kind === 'reference') updateCharacter(activeAction.index, { prompt: compilePrompt(item, item.variableValues?.subject || ''), negativePrompt: item.negativePrompt || '' });
+                    setActiveAction(null);
+                }} className="mobile-touch flex w-full items-center gap-3 rounded-xl border border-gray-200 p-2 text-left hover:border-indigo-400 dark:border-gray-700 dark:hover:border-indigo-500">
+                    {item.previewImage ? <SmartImage src={item.previewImage} alt="" className="h-12 w-12 flex-none rounded-lg object-cover" /> : <span className="flex h-12 w-12 flex-none items-center justify-center rounded-lg bg-gray-100 text-gray-500 dark:bg-gray-800"><UserRound className="h-5 w-5" /></span>}
+                    <span className="min-w-0"><b className="block truncate text-sm">{item.name}</b><span className="block truncate text-xs text-gray-500">{compilePrompt(item, item.variableValues?.subject || '')}</span></span>
+                </button>)}</div>
+                {allChains.every(item => item.type !== 'character') && <p className="py-10 text-center text-sm text-gray-500">{t("角色库中暂无自定义角色")}</p>}
+            </>}
+        </div>
+    </div></ImagePreviewPortal>}
+    </>);
 };

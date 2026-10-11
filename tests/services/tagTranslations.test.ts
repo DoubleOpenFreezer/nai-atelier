@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { parsePromptTags, removePromptTagTokens, transformPromptWeight, wrapPromptTag, wrapPromptTagTokens } from '../../services/tagTranslations';
+import { describe, expect, it, vi } from 'vitest';
+import { parsePromptTags, removePromptTagTokens, translateMissingPromptTags, transformPromptWeight, wrapPromptTag, wrapPromptTagTokens } from '../../services/tagTranslations';
 
 describe('removePromptTagTokens', () => {
   it.each([
@@ -180,5 +180,26 @@ describe('parsePromptTags', () => {
       expect(wrapPromptTagTokens(prompt, selected, 'brace')).toBe('{A}, {B}, C');
       expect(wrapPromptTagTokens(prompt, selected, 'bracket')).toBe('[A], [B], C');
     });
+  });
+});
+
+describe('translateMissingPromptTags', () => {
+  it('超过接口单次上限时分批翻译所有 Tag', async () => {
+    const batches: string[][] = [];
+    const originalFetch = globalThis.fetch;
+    const fetchMock = vi.fn(async (_url: string, init: RequestInit) => {
+      const tags = (JSON.parse(String(init.body)) as { tags: string[] }).tags;
+      batches.push(tags);
+      return { ok: true, json: async () => ({ items: tags.map(tag => ({ tag, chinese: `译:${tag}` })) }) } as Response;
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      const tags = Array.from({ length: 51 }, (_, index) => `translation-batch-test-${index}`);
+      const translated = await translateMissingPromptTags(tags);
+      expect(batches.map(batch => batch.length)).toEqual([50, 1]);
+      expect(translated).toHaveLength(tags.length);
+    } finally {
+      vi.stubGlobal('fetch', originalFetch);
+    }
   });
 });

@@ -8,6 +8,7 @@ import { ImagePreviewPortal } from './ImagePreviewPortal';
 import { MobileIconButton } from './MobileUI';
 import { useModalA11y, isTopmostModal } from './useModalA11y';
 import { taggerProgressText, useImageTaggerStatus } from './useImageTaggerStatus';
+import { getPastedImageFile, isTextPasteTarget } from '../services/imageClipboard';
 
 interface ImageTaggerPanelProps {
   /** 资料页面采用识别语义；实验室保留原展示。 */
@@ -187,7 +188,13 @@ export const ImageTaggerPanel: React.FC<ImageTaggerPanelProps> = ({ open, onClos
 
   if (!open) return null;
 
-  return <ImagePreviewPortal><div ref={dialogRef} role="dialog" aria-modal="true" aria-label={contextual ? t("识别图片 Tag") : t("图片反推 Tag")} className={`fixed inset-0 ${contextual ? 'z-[2000]' : 'z-[1250]'} flex items-end justify-center bg-black/55 p-0 backdrop-blur-sm md:items-center md:p-5`} onMouseDown={event => { if (event.target === event.currentTarget && !busy) onClose(); }}>
+  return <ImagePreviewPortal><div ref={dialogRef} role="dialog" aria-modal="true" aria-label={contextual ? t("识别图片 Tag") : t("图片反推 Tag")} className={`fixed inset-0 ${contextual ? 'z-[2000]' : 'z-[1250]'} flex items-end justify-center bg-black/55 p-0 backdrop-blur-sm md:items-center md:p-5`} onMouseDown={event => { if (event.target === event.currentTarget && !busy) onClose(); }} onPaste={event => {
+    if (busy || !modelReady || lockImage || isTextPasteTarget(event.target)) return;
+    const pastedImage = getPastedImageFile(event.clipboardData);
+    if (!pastedImage) return;
+    event.preventDefault();
+    chooseFile(pastedImage);
+  }}>
     <div className="operation-dialog flex flex-col border border-gray-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-950">
       <header className="flex h-14 flex-none items-center justify-between border-b border-gray-200 px-4 dark:border-gray-800">
         <div><h2 className="text-sm font-black">{contextual ? t("识别图片 Tag") : t("图片反推 Danbooru Tag")}</h2><p className="text-micro text-gray-500">{t("{0} · 本地处理", [t(selectedModel?.label) || 'WD Tagger V3'])}</p></div>
@@ -197,8 +204,8 @@ export const ImageTaggerPanel: React.FC<ImageTaggerPanelProps> = ({ open, onClos
         <section className="space-y-4 border-b border-gray-200 p-4 dark:border-gray-800 md:overflow-y-auto md:border-b-0 md:border-r">
           <input aria-label={t("上传反推图片")} ref={inputRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={event => chooseFile(event.target.files?.[0])} />
           {modelStatusError && <p role="alert" className="text-xs text-red-600 dark:text-red-300">{modelStatusError}</p>}
-          <button type="button" disabled={busy || !modelReady || lockImage} onClick={() => inputRef.current?.click()} className="relative flex aspect-[3/4] w-full items-center justify-center overflow-hidden rounded-2xl border border-dashed border-gray-200 bg-gray-50 text-gray-400 hover:border-violet-400 dark:border-gray-800 dark:bg-gray-900">
-            {preview ? <img src={preview} alt={t("待识别图片")} className="h-full w-full object-contain" /> : <span className="flex flex-col items-center gap-2 text-xs"><ImagePlus className="h-8 w-8" />{t("选择图片")}</span>}
+          <button type="button" title={t("也可在此按 Ctrl+V 粘贴")} disabled={busy || !modelReady || lockImage} onClick={() => inputRef.current?.click()} className="relative flex aspect-[3/4] w-full items-center justify-center overflow-hidden rounded-2xl border border-dashed border-gray-200 bg-gray-50 text-gray-400 hover:border-violet-400 dark:border-gray-800 dark:bg-gray-900">
+            {preview ? <img src={preview} alt={t("待识别图片")} className="h-full w-full object-contain" /> : <span className="flex flex-col items-center gap-2 text-xs"><ImagePlus className="h-8 w-8" /><span>{t("选择或粘贴图片")}</span><span className="text-micro text-gray-500">{t("也可在此按 Ctrl+V 粘贴")}</span></span>}
             {busy && <span className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/70 px-6 text-center text-xs text-white"><LoaderCircle className="h-7 w-7 animate-spin" />{selectedModel && !selectedModel.downloaded ? taggerProgressText(selectedModel) : t("正在本地识别图片…")}{selectedModel && ['downloading', 'verifying'].includes(selectedModel.stage) && <progress aria-label={t("模型下载进度")} max={selectedModel.totalBytes} value={selectedModel.receivedBytes} className="h-1.5 w-full accent-white" />}</span>}
           </button>
           <div className="space-y-3 rounded-2xl border border-gray-200 p-3 dark:border-gray-800">

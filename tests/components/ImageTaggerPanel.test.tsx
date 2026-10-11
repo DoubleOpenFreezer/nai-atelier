@@ -46,6 +46,15 @@ describe('图片识别入口与当前图片衔接', () => {
     expect(screen.getByRole('button', { name: '追加 0 个 Tag 到全局提示词' })).toBeTruthy();
   });
 
+  it('面板打开时可直接粘贴图片并开始识别', async () => {
+    render(<ImageTaggerPanel open onClose={vi.fn()} onInsert={vi.fn()} notify={vi.fn()} />);
+    await waitFor(() => expect((screen.getByTitle('也可在此按 Ctrl+V 粘贴') as HTMLButtonElement).disabled).toBe(false));
+    const image = new File(['image'], 'pasted.png', { type: 'image/png' });
+    fireEvent.paste(screen.getByRole('dialog', { name: '图片反推 Tag' }), { clipboardData: { files: [image], items: [] } });
+    await waitFor(() => expect(imageTaggerService.tagFile).toHaveBeenCalledWith(image, { threshold: 0.35, characterThreshold: 0.85 }));
+    expect(screen.getByAltText('待识别图片')).toBeTruthy();
+  });
+
   it('图片识别直接可达，不单独藏进更多，绑定图片并仅追加勾选结果', async () => {
     const onInsert = vi.fn();
     render(<div className="agent-stage"><ImageTaggerAction text imageUrl="/api/media/test-original.png" onInsert={onInsert} notify={vi.fn()} /></div>);

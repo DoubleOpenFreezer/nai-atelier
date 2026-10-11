@@ -11,7 +11,7 @@ import { AgentDraftReview } from './AgentDraftReview';
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { GenerationMode, ImageEditMetadata, ImageEditOperation, PromptChain, PromptModule, CharacterParams, NAIParams, LocalGenItem, PromptAgentDraft, PromptAgentGenerationResult, LabImageEditDraft, LabWorkspaceSession } from '../types';
-import { compilePrompt, mergePromptFields } from '../services/promptUtils';
+import { compilePrompt } from '../services/promptUtils';
 import { buildGenerationJobDescriptor } from '../services/naiService';
 import { localHistory } from '../services/localHistory';
 import { api } from '../services/api';
@@ -23,13 +23,12 @@ import { MobileGenerationResources } from './MobileGenerationResources';
 import { ImageEditPanel, ImageEditRequest } from './ImageEditPanel';
 import { TagAutocompleteTextarea } from './TagAutocompleteTextarea';
 import { dataUrlToBlob } from '../services/imageEdit';
-import { ImageTaggerPanel } from './ImageTaggerPanel';
 import { useConfirmDialog } from './ConfirmDialog';
 import { SmartImage } from './SmartImage';
 import { createUuid } from '../services/id';
 import { VibeManager } from './VibeManager';
 import { CharacterReferenceManager } from './CharacterReferenceManager';
-import { appendTagsToImageEditDraft, buildImageEditMetadataPatch, buildImageEditPresetPatch, buildPromptFragmentPatch, canSaveLabModeToLibrary, LabPresetImportOptions, mergePresetSettings } from '../services/labModeTools';
+import { buildImageEditMetadataPatch, buildPromptFragmentPatch, canSaveLabModeToLibrary } from '../services/labModeTools';
 import { normalizeVibeSelections } from '../services/vibeUtils';
 import { LabPageLayouts } from '../services/appearancePreferences';
 import { isActiveOpusSubscription, useNovelaiUsage } from '../services/naiUsage';
@@ -41,11 +40,11 @@ import { splitNovelAiPrompt } from '../services/promptImport';
 import { decideCurrentPreviewCover } from '../services/chainCover';
 import { LabModuleSection } from './LabModuleSection';
 import { FileDown } from 'lucide-react';
+import { parsePromptTags, resolvePromptTranslations, translateMissingPromptTags } from '../services/tagTranslations';
 import { UNTESTED_CHAIN_TAG } from './DesignSystem';
 import { ChainEditorHeader } from './chain/ChainEditorHeader';
 import { ChainEditorPromptInputs } from './chain/ChainEditorPromptInputs';
 import { ChainEditorCharacters } from './chain/ChainEditorCharacters';
-import { ChainEditorPresetModal } from './chain/ChainEditorPresetModal';
 import { ChainEditorForkModal } from './chain/ChainEditorForkModal';
 import { PresetSection, PresetSource, PresetSourceBadge, PromptCopyButton, PromptAgentOverlayController } from './chain/PresetSourceBadges';
 
@@ -56,9 +55,10 @@ export interface ChainEditorSaveHandle {
 
 interface ChainEditorProps {
     chain: PromptChain;
-    allChains: PromptChain[]; // Need access to other chains for importing
+    allChains: PromptChain[]; // 角色卡就地引用角色库。
     onUpdateChain: (id: string, updates: Partial<PromptChain>) => Promise<void> | void;
     onFork: (chain: PromptChain, targetType?: 'style' | 'character') => Promise<void> | void;
+    onCreateCharacter?: (chain: PromptChain) => Promise<void>;
     setIsDirty: (isDirty: boolean) => void;
     saveRef?: React.Ref<ChainEditorSaveHandle>;
     notify: (msg: string, type?: 'success' | 'error') => void;
@@ -76,7 +76,7 @@ interface ChainEditorProps {
     onBack: () => void | Promise<void>;
 }
 
-export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUpdateChain, onFork, setIsDirty, saveRef, notify, externalImportToken, agentOpenToken, tagAssistEnabled, onTagAssistEnabledChange, generationStreamPreview, forceEmptySeed = false, onForceEmptySeedChange, enforceFreeStepLimit = true, continuousGenerationEnabled = true, labPageLayouts, safeMode, onBack }) => {
+export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUpdateChain, onFork, onCreateCharacter, setIsDirty, saveRef, notify, externalImportToken, agentOpenToken, tagAssistEnabled, onTagAssistEnabledChange, generationStreamPreview, forceEmptySeed = false, onForceEmptySeedChange, enforceFreeStepLimit = true, continuousGenerationEnabled = true, labPageLayouts, safeMode, onBack }) => {
   useLanguage();
     const [keyboardOffset, setKeyboardOffset] = useState(0);
     const confirmAction = useConfirmDialog();
@@ -128,41 +128,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
 
     const [hasChanges, setHasChanges] = useState(false);
     const [lightboxImg, setLightboxImg] = useState<string | null>(null);
-
-    // --- Import Preset Modal State ---
-    // New state for import modal search and tags
-    const [importModalSearch, setImportModalSearch] = useState('');
-    const [importModalSelectedTags, setImportModalSelectedTags] = useState<Set<string>>(new Set());
-    const [showImportPreset, setShowImportPreset] = useState(false);
-    const [quickImportMode, setQuickImportMode] = useState(true); // 快速导入模式：默认开启，跳过模块选择
-    // Detailed Import Config State
-    const [importCandidate, setImportCandidate] = useState<PromptChain | null>(null);
-    const [importOptions, setImportOptions] = useState<LabPresetImportOptions>({
-        importBasePrompt: true,  // Renamed from importPrompt
-        importSubject: true,     // New: Subject Prompt
-        importNegative: true,    // Negative Prompt
-        importModules: true,     // Modules array
-        appendModules: false,    // New: Append Modules
-        importCharacters: true,  // Characters params
-        appendCharacters: false, // Append Characters (if false, replace)
-        importSettings: true,    // Resolution, Steps, Scale, Sampler...
-        importSeed: true,        // Seed
-    });
-    const [selectedImportModuleIds, setSelectedImportModuleIds] = useState<Set<string>>(new Set());
-    // New: Tab state for import modal
-    const [importTab, setImportTab] = useState<'style' | 'character'>('style');
-
-    // --- Favorites (for preset sort), re-read when opening modal ---
-    const [favorites, setFavorites] = useState<Set<string>>(new Set());
-    useEffect(() => {
-        if (typeof window === 'undefined') return;
-        try {
-            const saved = localStorage.getItem('nai_chain_favs');
-            if (saved) setFavorites(new Set(JSON.parse(saved) as string[]));
-        } catch { /* ignore */ }
-        // Default tab: if I am Character, I likely want to import Artist (style). If I am Artist (style), I likely want Character.
-        setImportTab(chain.type === 'character' ? 'style' : 'character');
-    }, [showImportPreset, chain.type]);
 
     // Sync dirty state with parent.
     useEffect(() => {
@@ -295,7 +260,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     const importDragDepthRef = useRef(0);
     const [showForkModal, setShowForkModal] = useState(false);
     const [isImportDragActive, setIsImportDragActive] = useState(false);
-    const [taggerOpen, setTaggerOpen] = useState(false);
+    const [translationPending, setTranslationPending] = useState(false);
     const [mobileEditorTab, setMobileEditorTab] = useState<'global' | 'character' | 'params'>('global');
     const [agentProposal, setAgentProposal] = useState<PromptAgentDraft | null>(null);
     const agentTargetRef = useRef<PromptAgentDraft['target']>(undefined);
@@ -1025,134 +990,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         markChange();
     };
 
-    // --- Smart Import Logic ---
-    const getDefaultImportOptions = (c: PromptChain) => {
-        // Determine type-based defaults
-        const isTargetChar = c.type === 'character';
-        const hasModules = c.modules && c.modules.length > 0;
-
-        // Default options based on target type
-        return {
-            importBasePrompt: !isTargetChar,     // Artist: Checked, Char: Unchecked (per Rule 6 & 5)
-            importSubject: isTargetChar,         // Char: Checked, Artist: Unchecked (per Rule 5 & 6)
-            importNegative: !isTargetChar,       // Artist: Checked, Char: Unchecked
-            importModules: hasModules,           // Both: Checked only if modules exist
-            appendModules: false,                // Both: Unchecked
-            importCharacters: isTargetChar,      // Char: Checked, Artist: Unchecked
-            appendCharacters: false,
-            importSettings: !isTargetChar,       // Artist: Checked, Char: Unchecked
-            importSeed: false,                   // Both: Unchecked
-        };
-    };
-
-    const initiateImport = (c: PromptChain) => {
-        // 快速导入模式：直接使用默认设置导入，不弹出详细配置
-        if (quickImportMode) {
-            const defaultOptions = getDefaultImportOptions(c);
-            executeImport(c, defaultOptions, new Set((c.modules || []).map(m => m.id)));
-            return;
-        }
-
-        // 详细模式：弹出配置窗口
-        setImportCandidate(c);
-        setImportOptions(getDefaultImportOptions(c));
-        // Select all modules by default
-        setSelectedImportModuleIds(new Set((c.modules || []).map(m => m.id)));
-    };
-
-    // 执行导入的核心逻辑（提取为独立函数）
-    const executeImport = (
-        target: PromptChain,
-        options: LabPresetImportOptions,
-        moduleIds: Set<string>
-    ) => {
-        if (activeEditOperation && activeEditDraft) {
-            updateEditDraft(activeEditOperation, buildImageEditPresetPatch(activeEditDraft, target, options, moduleIds, createUuid));
-            notify(`已将 "${target.name}" 导入当前${activeEditOperation === 'image-to-image' ? '图生图' : activeEditOperation === 'inpaint' ? '局部重绘' : '扩图'}配置`);
-            setImportCandidate(null);
-            setShowImportPreset(false);
-            return;
-        }
-        const source: PresetSource = { name: target.name, modified: false };
-
-        // 1. Prompt (Base + Subject)
-        if (options.importBasePrompt) {
-            setBasePrompt(current => mergePromptFields(current, target.basePrompt || ''));
-            setPresetSources(previous => ({ ...previous, base: source }));
-        }
-        if (options.importSubject) {
-            const targetSubject = target.variableValues?.['subject'] || '';
-            setSubjectPrompt(targetSubject);
-            setPresetSources(previous => ({ ...previous, subject: source }));
-        }
-
-        // 2. Negative
-        if (options.importNegative) {
-            setNegativePrompt(target.negativePrompt || '');
-            setPresetSources(previous => ({ ...previous, negative: source }));
-        }
-
-        // 3. Modules
-        if (options.importModules && target.modules && target.modules.length > 0) {
-            const modulesToImport = target.modules.filter(m => moduleIds.has(m.id));
-            const newModules = modulesToImport.map(m => ({ ...m, id: createUuid() }));
-
-            if (options.appendModules) {
-                setModules(prev => [...prev, ...newModules]); // Append
-            } else {
-                setModules(newModules); // Replace
-            }
-
-            // Update active state
-            setActiveModules(prev => {
-                const next = options.appendModules ? { ...prev } : {};
-                newModules.forEach(m => next[m.id] = m.isActive);
-                return next;
-            });
-        }
-
-        // 4. Characters
-        if (options.importCharacters && target.params?.characters) {
-            const newChars = target.params.characters.map(c => ({
-                ...c,
-                id: createUuid() // Regen IDs
-            }));
-
-            if (options.appendCharacters) {
-                setParams(prev => ({ ...prev, characters: [...(prev.characters || []), ...newChars] }));
-                setCharacterPresetSources(previous => ({
-                    ...previous,
-                    ...Object.fromEntries(newChars.map(character => [character.id, source]))
-                }));
-            } else {
-                setParams(prev => ({ ...prev, characters: newChars }));
-                setCharacterPresetSources(Object.fromEntries(newChars.map(character => [character.id, source])));
-            }
-        }
-
-        // 5. Settings
-        if (options.importSettings) {
-            setParams(prev => mergePresetSettings(prev, target.params, compilePrompt(target, target.variableValues?.subject || '')));
-            setPresetSources(previous => ({ ...previous, settings: source }));
-        }
-
-        // 6. Seed
-        if (options.importSeed && target.params?.seed !== undefined) {
-            setParams(prev => ({ ...prev, seed: target.params.seed }));
-            setPresetSources(previous => ({ ...previous, settings: source }));
-        }
-
-        notify(`已从 "${target.name}" 导入配置`);
-        markChange();
-        setImportCandidate(null);
-        setShowImportPreset(false);
-    };
-
-    const confirmImport = () => {
-        if (!importCandidate) return;
-        executeImport(importCandidate, importOptions, selectedImportModuleIds);
-    };
-
     // --- Import Logic ---
     const isJsonMetadataFile = (file: File) => {
         return file.type === 'application/json' || file.name.toLowerCase().endsWith('.json');
@@ -1413,8 +1250,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         }
     };
 
-    const prepareCurrentPreviewCover = async (forceUpload = false): Promise<{ previewImage?: string; changed: boolean }> => {
-        const decision = decideCurrentPreviewCover(displayedPreviewImage, chain.previewImage, forceUpload);
+    const prepareCurrentPreviewCover = async (forceUpload = false, sourceImage = displayedPreviewImage): Promise<{ previewImage?: string; changed: boolean }> => {
+        const decision = decideCurrentPreviewCover(sourceImage, chain.previewImage, forceUpload);
         if (!decision.source || !decision.needsUpload) {
             return { previewImage: decision.source || undefined, changed: false };
         }
@@ -1513,6 +1350,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
 
     const handleFork = () => {
         if (!canSaveActiveModeToLibrary || isUploading) return;
+        if (chain.id === 'playground') { void confirmFork('style'); return; }
         setShowForkModal(true);
     };
 
@@ -1584,7 +1422,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             await onFork({
                 ...chain,
                 name: chainName,
-                description: chainDesc,
+                description: chain.id === 'playground' ? '' : chainDesc,
                 tags: chainTags,
                 basePrompt,
                 negativePrompt,
@@ -1596,6 +1434,32 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             setShowForkModal(false);
         } catch (error: any) {
             notify(`保存失败：${error?.message || '未知错误'}`, 'error');
+        } finally {
+            setIsUploading(false);
+        }
+    };
+
+    const saveCharacterToLibrary = async (character: CharacterParams, name: string) => {
+        if (!onCreateCharacter || isUploading) throw new Error('当前无法保存角色');
+        setIsUploading(true);
+        try {
+            const roleParams = activeEditOperation && activeEditDraft ? activeEditDraft.params : params;
+            const coverSource = activeEditOperation ? imageEditPreviewImage : displayedPreviewImage;
+            const cover = await prepareCurrentPreviewCover(true, coverSource);
+            await onCreateCharacter({
+                ...chain,
+                type: 'character',
+                name,
+                description: '',
+                tags: [],
+                basePrompt: character.prompt,
+                negativePrompt: character.negativePrompt || '',
+                modules: [],
+                params: { ...roleParams, characters: [], vibes: undefined, characterReferences: undefined },
+                variableValues: { subject: '' },
+                previewImage: cover.previewImage,
+            });
+            notify('角色已保存到角色库');
         } finally {
             setIsUploading(false);
         }
@@ -2076,6 +1940,29 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         notify(`${label}已复制`);
     };
 
+    const translateAllMissingPromptTags = async () => {
+        if (translationPending) return;
+        const characterPrompts = (activeEditDraft?.params || params).characters || [];
+        const promptValues = activeEditDraft
+            ? [activeEditDraft.prompt, activeEditDraft.negativePrompt, ...characterPrompts.flatMap(character => [character.prompt, character.negativePrompt || ''])]
+            : [basePrompt, negativePrompt, ...characterPrompts.flatMap(character => [character.prompt, character.negativePrompt || ''])];
+        const tokens = promptValues.flatMap(value => parsePromptTags(value || ''));
+        if (!tokens.length) { notify(t("当前提示词没有未翻译 Tag")); return; }
+
+        setTranslationPending(true);
+        try {
+            const resolved = await resolvePromptTranslations(tokens);
+            const missingTags = [...new Set(resolved.filter(item => item.source === 'missing').map(item => item.lookupTag))];
+            if (!missingTags.length) { notify(t("当前提示词没有未翻译 Tag")); return; }
+            await translateMissingPromptTags(missingTags);
+            notify(t("提示词 Tag 翻译完成"), 'success');
+        } catch (error) {
+            notify(error instanceof Error ? error.message : t("提示词 Tag 翻译失败"), 'error');
+        } finally {
+            setTranslationPending(false);
+        }
+    };
+
     return (
         <div
             className="chain-editor-workspace flex-1 flex flex-col h-full bg-gray-50 dark:bg-gray-900 transition-colors relative"
@@ -2117,8 +2004,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 handleFork={handleFork}
                 handleSaveAll={handleSaveAll}
                 handleImportImage={handleImportImage}
-                setShowImportPreset={setShowImportPreset}
-                setTaggerOpen={setTaggerOpen}
+                onTranslateMissingPrompts={() => { void translateAllMissingPromptTags(); }}
+                translationPending={translationPending}
                 notify={notify}
             />
 
@@ -2145,23 +2032,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 splitPromptFields={false}
             />
             {agentProposal && <AgentDraftReview current={currentAgentDraft()} proposed={agentProposal} onClose={() => setAgentProposal(null)} onApply={draft => { setAgentUndoSnapshot(currentAgentDraft()); applyAgentDraft(draft); setAgentProposal(null); }}/>}
-            <ImageTaggerPanel
-                contextual={chain.id !== 'playground'}
-                open={taggerOpen}
-                onClose={() => setTaggerOpen(false)}
-                notify={notify}
-                onInsert={(tags) => {
-                    if (activeEditOperation && activeEditDraft) {
-                        updateEditDraft(activeEditOperation, appendTagsToImageEditDraft(activeEditDraft, tags));
-                    } else {
-                        setBasePrompt(current => mergePromptFields(current, tags));
-                        setSubjectPrompt('');
-                        markPresetSectionModified('base');
-                        markChange();
-                    }
-                    notify(`已追加 ${tags.split(',').length} 个识别 Tag`);
-                }}
-            />
             {activeGenerationMode === 'text-to-image' ? <>
             <nav className="grid h-10 grid-cols-3 border-b border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950 lg:hidden">
                 {([['global', '全局'], ['character', '角色'], ['params', '参数']] as const).map(([value, label]) => <button key={value} onClick={() => setMobileEditorTab(value)} className={`relative min-w-0 text-sm font-bold ${mobileEditorTab === value ? 'text-indigo-600 dark:text-indigo-300' : 'text-gray-500 dark:text-gray-400'}`}>{t(label)}{mobileEditorTab === value && <span className="absolute inset-x-6 bottom-0 h-0.5 rounded-full bg-indigo-500" />}</button>)}
@@ -2195,6 +2065,11 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                             canEdit={true}
                             tagAssistEnabled={tagAssistEnabled}
                             characterPresetSources={characterPresetSources}
+                            allChains={allChains}
+                            showCharacterReference
+                            canSaveCharacter
+                            onSaveCharacter={saveCharacterToLibrary}
+                            notify={notify}
                             markPresetSectionModified={markPresetSectionModified}
                             markChange={markChange}
                             addCharacter={addCharacter}
@@ -2353,6 +2228,10 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 onRemoveCurrentHistory={() => { void handleRemoveCurrentHistory(imageEditPreviewItem); }}
                 onClearHistoryGroup={handleClearHistoryGroup}
                 apiKey={apiKey}
+                allChains={allChains}
+                showCharacterReference
+                canSaveCharacter
+                onSaveCharacter={saveCharacterToLibrary}
                 notify={notify}
                 onPromptChange={value => updateEditDraft(activeEditOperation, { prompt: value, promptSource: 'custom' })}
                 onNegativePromptChange={value => updateEditDraft(activeEditOperation, { negativePrompt: value })}
@@ -2381,7 +2260,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                     await deleteLabWorkspaceAsset(getLabWorkspaceAssetId(workspaceKey, activeEditOperation, 'mask'));
                     if (changeRevision !== editBaseResolveRevisionRef.current || !mountedRef.current) return;
 
-                    // 图生图选底图只更新图片工作区，配置由「导入图片或 JSON 配置」或引用预设主动导入。
+                    // 图生图选底图只更新图片工作区，完整配置通过「导入图片或 JSON 配置」主动导入。
                     // 不回写捕获的旧提示词，避免异步保存期间覆盖后来编辑的内容。
                     const inheritedConfig: Partial<LabImageEditDraft> = {};
                     if (activeEditOperation !== 'image-to-image') {
@@ -2455,7 +2334,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 onGenerateBarChange={handleImageEditGenerateBarChange}
             /> : null}
 
-            {!lightboxImg && !showImportPreset && !importCandidate && <>
+            {!lightboxImg && <>
             <div className="mobile-generation-actions flex fixed right-4 z-[900] flex-col items-end gap-2 lg:hidden" style={keyboardOffset > 0 ? { bottom: `calc(${keyboardOffset}px + var(--mobile-generation-bottom))` } : undefined}>
                 {errorMsg && <div role="alert" className="max-h-[30dvh] w-[calc(100vw-2rem)] overflow-y-auto rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs leading-5 text-red-600 shadow-lg dark:border-red-900/60 dark:bg-red-950/80 dark:text-red-300">{errorMsg}</div>}
                 <div className="flex max-w-[calc(100vw-2rem)] items-center gap-2">
@@ -2530,29 +2409,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
 
                 </ImageLightbox>
             )}
-
-            <ChainEditorPresetModal
-                showImportPreset={showImportPreset}
-                importCandidate={importCandidate}
-                setImportCandidate={setImportCandidate}
-                quickImportMode={quickImportMode}
-                setQuickImportMode={setQuickImportMode}
-                importTab={importTab}
-                setImportTab={setImportTab}
-                setShowImportPreset={setShowImportPreset}
-                allChains={allChains}
-                importModalSearch={importModalSearch}
-                setImportModalSearch={setImportModalSearch}
-                importModalSelectedTags={importModalSelectedTags}
-                setImportModalSelectedTags={setImportModalSelectedTags}
-                favorites={favorites}
-                initiateImport={initiateImport}
-                importOptions={importOptions}
-                setImportOptions={setImportOptions}
-                selectedImportModuleIds={selectedImportModuleIds}
-                setSelectedImportModuleIds={setSelectedImportModuleIds}
-                confirmImport={confirmImport}
-            />
 
             <ChainEditorForkModal
                 showForkModal={showForkModal}

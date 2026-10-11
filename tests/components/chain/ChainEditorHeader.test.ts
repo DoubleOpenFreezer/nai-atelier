@@ -74,8 +74,7 @@ const renderHeader = (props: Partial<Parameters<typeof ChainEditorHeader>[0]> = 
   handleFork: vi.fn(),
   handleSaveAll: vi.fn(),
   handleImportImage: vi.fn(),
-  setShowImportPreset: vi.fn(),
-  setTaggerOpen: vi.fn(),
+  onTranslateMissingPrompts: vi.fn(),
   notify: vi.fn(),
   ...props,
   });
@@ -113,8 +112,8 @@ describe('ChainEditorHeader 工具栏', () => {
     expect(dialog.closest('.mobile-layer')?.parentElement).toBe(dialog.closest('.agent-stage'));
     expect(dialog.closest('.safe-mode.dark')).toBeTruthy();
     expect(within(dialog).getByRole('button', { name: '导入图片或 JSON 配置' })).toBeTruthy();
-    expect(within(dialog).getByRole('button', { name: '引用预设' })).toBeTruthy();
-    expect(within(dialog).getByRole('button', { name: '图片反推 Tag' })).toBeTruthy();
+    expect(within(dialog).getByRole('button', { name: '翻译所有未翻译提示词' })).toBeTruthy();
+    expect(within(dialog).queryByRole('button', { name: '图片反推 Tag' })).toBeNull();
     expect(within(dialog).getByRole('button', { name: /^Tag 辅助/ })).toBeTruthy();
     expect(within(dialog).getByRole('button', { name: '重置当前模式' })).toBeTruthy();
     expect(within(dialog).getByRole('button', { name: '保存到库' })).toBeTruthy();
@@ -137,24 +136,24 @@ describe('ChainEditorHeader 工具栏', () => {
   });
 
   it.each([false, true])('两种资料入口和自由实验室共用工具顺序，角色模式=%s', isCharacterMode => {
-    const setShowImportPreset = vi.fn(); const setTaggerOpen = vi.fn(); const handleReset = vi.fn();
-    const { container } = renderHeader({ chainId: 'asset-1', isCharacterMode, hasChanges: true, setShowImportPreset, setTaggerOpen, handleReset });
+    const onTranslateMissingPrompts = vi.fn(); const handleReset = vi.fn();
+    const { container } = renderHeader({ chainId: 'asset-1', isCharacterMode, hasChanges: true, onTranslateMissingPrompts, handleReset });
     const actions = container.querySelector('.chain-editor-actions') as HTMLElement;
     expect(within(actions).getAllByRole('button').map(button => button.getAttribute('aria-label'))).toEqual([
-      '导入图片或 JSON 配置', '引用预设', '图片反推 Tag', '开启 Tag 辅助', '重置当前模式', isCharacterMode ? '保存自定义角色' : '保存风格串',
+      '导入图片或 JSON 配置', '翻译所有未翻译提示词', '开启 Tag 辅助', '重置当前模式', isCharacterMode ? '保存自定义角色' : '保存风格串',
     ]);
-    fireEvent.click(within(actions).getByRole('button', { name: '引用预设' }));
-    expect(setShowImportPreset).toHaveBeenCalledWith(true);
-    fireEvent.click(within(actions).getByRole('button', { name: '图片反推 Tag' }));
-    expect(setTaggerOpen).toHaveBeenCalledWith(true);
+    fireEvent.click(within(actions).getByRole('button', { name: '翻译所有未翻译提示词' }));
+    expect(onTranslateMissingPrompts).toHaveBeenCalledOnce();
     fireEvent.click(within(actions).getByRole('button', { name: '重置当前模式' }));
     expect(handleReset).toHaveBeenCalledOnce();
     resizeWorkspace(900);
     fireEvent.click(screen.getByRole('button', { name: '更多操作' }));
     const more = screen.getByRole('dialog', { name: '更多操作' });
     expect(within(more).getAllByRole('button').map(button => button.textContent?.trim()).filter(Boolean)).toEqual([
-      '导入图片或 JSON 配置', '引用预设', '图片反推 Tag', 'Tag 辅助已关闭', '重置当前模式',
+      '导入图片或 JSON 配置', '翻译所有未翻译提示词', 'Tag 辅助已关闭', '重置当前模式',
     ]);
+    fireEvent.click(within(more).getByRole('button', { name: '翻译所有未翻译提示词' }));
+    expect(onTranslateMissingPrompts).toHaveBeenCalledOnce();
   });
 
   it.each([390, 1280])('保存菜单区分修改原串与另存新串，宽度=%s', width => {
@@ -214,7 +213,7 @@ describe('ChainEditorHeader 工具栏', () => {
     expect(dialog.closest('main')).toBeNull();
     expect(dialog.closest('.safe-mode.dark')).toBeTruthy();
     expect(within(dialog).getAllByRole('button').map(button => button.textContent?.trim())).toEqual([
-      '导入图片或 JSON 配置', '引用预设', '图片反推 Tag', 'Tag 辅助已关闭', '重置当前模式', '保存到库',
+      '导入图片或 JSON 配置', '翻译所有未翻译提示词', 'Tag 辅助已关闭', '重置当前模式', '保存到库',
     ]);
     fireEvent.click(within(dialog).getByRole('button', { name: '保存到库' }));
     expect(handleFork).toHaveBeenCalledOnce();
