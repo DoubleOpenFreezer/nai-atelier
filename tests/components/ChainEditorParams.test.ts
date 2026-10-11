@@ -269,10 +269,20 @@ describe('ChainEditorParams', () => {
     expect(setParams).toHaveBeenCalledWith(expect.objectContaining({ width: 1344, height: 768 }));
   });
 
-  it('清晰显示当前像素是否在 Opus 免费范围内', () => {
-    renderParams({ params: { ...params, width: 832, height: 1216 } });
-    expect(screen.getByRole('status').textContent).toContain('1,011,712 像素');
-    expect(screen.getByRole('status').textContent).toContain('在 Opus 免费像素范围内');
+  it.each([
+    { width: 832, height: 1216, pixels: '1,011,712', message: '在 Opus 免费像素范围内', color: 'emerald' },
+    { width: 1408, height: 2048, pixels: '2,883,584', message: '超过免费像素上限 1,048,576', color: 'amber' },
+  ])('Scale 标题区显示 $pixels 像素及免费边界状态', ({ width, height, pixels, message, color }) => {
+    renderParams({ params: { ...params, width, height } });
+    const status = screen.getByRole('status');
+    expect(status.textContent).toContain(`${pixels} 像素`);
+    expect(status.textContent).toContain(message);
+    expect(status.classList.contains(`bg-${color}-50`)).toBe(true);
+    expect(status.classList.contains(`dark:text-${color}-300`)).toBe(true);
+    const header = screen.getByText('尺寸清晰度放大（Scale）').parentElement;
+    expect(status.parentElement).toBe(header);
+    expect(header?.contains(screen.getByRole('spinbutton', { name: '尺寸清晰度倍率数值' }))).toBe(true);
+    expect(status.compareDocumentPosition(screen.getByRole('slider', { name: '尺寸缩放滑块' })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('CFG Scale 和 CFG Rescale 支持直接输入精确数值', () => {
@@ -302,6 +312,7 @@ describe('ChainEditorParams', () => {
     renderParams({ hideResolution: true, mode });
     expect(screen.queryByText('图片画幅比例')).toBeNull();
     expect(screen.queryByText(/当前画布|等待底图/)).toBeNull();
+    expect(screen.queryByRole('status')).toBeNull();
   });
 
   it('切换到 V5 系列模型时自动将默认步数调整为 23', () => {
