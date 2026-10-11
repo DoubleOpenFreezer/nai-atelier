@@ -19,8 +19,6 @@ const entry: CodexEntry = { key: 'codex:synthetic:one', id: 'one', source: 'code
   images: [0, 1].map(page => ({ id: `image-${page}`, url: `https://assets.quicktagcloud.com/images/synthetic/${page}.jpg`, originalUrl: `https://assets.quicktagcloud.com/originals/synthetic/${page}.png`, width: 640, height: 960, raw: '', parameterSource: '' })), coverIndex: 0, nsfw: false, r18g: false, createdAt: 1000, likeCount: 10, updates: [], isNew: false };
 const metadata: CodexImageMetadata = { prompt: 'image prompt, 1girl, bikini, standing', negativePrompt: 'image negative', rawPrompt: 'image raw prompt', rawNegative: 'image raw negative', params: { steps: 28, scale: 3, sampler: 'k_euler_ancestral', seed: 88, width: 832, height: 1216, model: 'nai-diffusion-5-full', characters: [{ id: 'original-role', prompt: 'original girl', negativePrompt: 'original boy', x: 0.2, y: 0.8 }], qualityToggle: false, ucPreset: 4 } };
 const setup = (active = true, role: 'admin' | 'guest' = 'admin') => render(<CodexGallery active={active} currentUser={{ id: 'owner', username: 'user', role, createdAt: 1 }} notify={mocks.notify} onNavigateToPlayground={mocks.navigate} onCreateArtistChain={mocks.create} />);
-const openOptions = () => { fireEvent.click(screen.getByRole('button', { name: '更多操作' })); return screen.getByRole('dialog', { name: '更多操作' }); };
-const closeOptions = () => fireEvent.keyDown(window, { key: 'Escape' });
 const ready = () => screen.findByText('image raw prompt');
 const chooseSource = (name: string | RegExp) => {
   fireEvent.click(screen.getByTitle('法典来源'));
@@ -74,7 +72,7 @@ it('手机明确当前来源，全书卡片保留书名，目录和筛选独立�
   chooseSource(/另一本书/); await screen.findByRole('status', { name: '1 条结果' });
   expect(screen.getByTitle('法典来源').textContent).toBe('另一本书');
 });
-it('图片尚未加载或失败时仍预留比例空间，错误旁可明确改用条目提示词', async () => {
+it('图片尚未加载或读取失败时仍预留比例空间，重试后可导入', async () => {
   mocks.metadata.mockRejectedValueOnce(new Error('原图不可用'));
   setup(); fireEvent.click(await screen.findByRole('button', { name: /合成词条/ }));
   const preview = screen.getAllByAltText('合成词条').find(image => image.getAttribute('src')?.includes('originals'))!;
@@ -87,10 +85,10 @@ it('图片尚未加载或失败时仍预留比例空间，错误旁可明确改�
   expect(stage.style.aspectRatio).toBe('640 / 960');
   await screen.findByRole('alert');
   expect((screen.getByRole('button', { name: '导入实验室' }) as HTMLButtonElement).disabled).toBe(true);
-  fireEvent.click(screen.getByRole('button', { name: '使用条目提示词' }));
-  expect(screen.queryByRole('alert')).toBeNull(); expect(screen.queryByRole('dialog')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '重试' }));
+  await ready();
   fireEvent.click(screen.getByRole('button', { name: '导入实验室' }));
-  expect(JSON.parse(sessionStorage.getItem(IMPORT_SESSION_KEY)!)).toMatchObject({ prompt: entry.prompt, negativePrompt: entry.negative });
+  expect(JSON.parse(sessionStorage.getItem(IMPORT_SESSION_KEY)!)).toMatchObject({ prompt: metadata.prompt, negativePrompt: metadata.negativePrompt });
 });
 it.each(['books', 'community'])('%s 打开详情先抵消分栏位移再居中，关闭仍保留作品高度', async mode => {
   document.documentElement.dataset.motion = 'full';
@@ -156,19 +154,6 @@ it('原图参数读取迟到时不会改写另一页的默认导入', async () =
   fireEvent.click(screen.getByRole('button', { name: '导入实验室' }));
   expect(JSON.parse(sessionStorage.getItem(IMPORT_SESSION_KEY)!)).toMatchObject({ prompt: 'next image', replace: true, params: { seed: 99 } });
 });
-it('完整元数据默认全选，次级字段选择只有用户主动调整后才生效', async () => {
-  setup(); fireEvent.click(await screen.findByRole('button', { name: /合成词条/ })); await ready();
-  expect(screen.queryByRole('button', { name: '读取原图配置' })).toBeNull();
-  openOptions();
-  await screen.findByRole('checkbox', { name: 'Seed' });
-  expect((screen.getByRole('checkbox', { name: 'Seed' }) as HTMLInputElement).checked).toBe(true);
-  expect((screen.getByRole('checkbox', { name: /模型：/ }) as HTMLInputElement).checked).toBe(true);
-  fireEvent.click(screen.getByRole('checkbox', { name: 'Seed' })); fireEvent.click(screen.getByRole('checkbox', { name: /模型：/ }));
-  fireEvent.click(screen.getByRole('checkbox', { name: '生成参数' }));
-  closeOptions(); fireEvent.click(screen.getByRole('button', { name: '导入实验室' }));
-  expect(JSON.parse(sessionStorage.getItem(IMPORT_SESSION_KEY)!)).toMatchObject({ targetMode: 'text-to-image', fullMetadata: false, prompt: 'image raw prompt', negativePrompt: 'image raw negative', importSettings: false, importSeed: false, importModel: false });
-  expect(screen.queryByRole('dialog')).toBeNull(); expect(mocks.navigate).toHaveBeenCalledOnce();
-});
 it('多图收藏用稳定文件编号去重，保留展示词与当前图片的来源快照', () => {
   const image = codexCollectionImage(entry, 1);
   expect(image).toMatchObject({ sourceId: 'synthetic:one', imageId: 'image-1', analysis: { externalSourcePage: 1, collectionGroupSize: 2, codex: { prompt: 'weighted prompt', note: '说明' } } });
@@ -192,26 +177,6 @@ it.each(['books', 'community'] as const)('%s 的保存图标一键创建风格�
   expect(screen.queryByRole('dialog')).toBeNull(); expect(mocks.file).toHaveBeenCalledOnce(); expect(mocks.navigate).not.toHaveBeenCalled();
 });
 
-it('次级字段选择在收起后保留，导入和保存共用当前选择，翻页后恢复默认值', async () => {
-  setup(); fireEvent.click(await screen.findByRole('button', { name: /合成词条/ })); await ready();
-  const panel = openOptions();
-  fireEvent.click(within(panel).getByRole('button', { name: '使用条目提示词' }));
-  expect((within(panel).getByRole('checkbox', { name: '负面提示词' }) as HTMLInputElement).checked).toBe(true);
-  fireEvent.click(within(panel).getByRole('checkbox', { name: '负面提示词' }));
-  fireEvent.click(within(panel).getByRole('checkbox', { name: '角色 1' }));
-  fireEvent.click(within(panel).getByRole('button', { name: '替换所选字段' }));
-  closeOptions(); fireEvent.click(screen.getByRole('button', { name: '保存到风格串' }));
-  await waitFor(() => expect(mocks.notify).toHaveBeenCalledWith('已保存到风格串'));
-  expect(mocks.create.mock.calls[0][0]).toMatchObject({ negativePrompt: '', params: { characters: [] } });
-  fireEvent.click(screen.getByRole('button', { name: '导入实验室' }));
-  expect(JSON.parse(sessionStorage.getItem(IMPORT_SESSION_KEY)!)).toMatchObject({ prompt: 'weighted prompt', replace: true });
-  expect(JSON.parse(sessionStorage.getItem(IMPORT_SESSION_KEY)!)).not.toHaveProperty('negativePrompt');
-  expect(JSON.parse(sessionStorage.getItem(IMPORT_SESSION_KEY)!)).not.toHaveProperty('characters');
-  fireEvent.click(screen.getByRole('button', { name: '下一页' })); await ready();
-  fireEvent.click(screen.getByRole('button', { name: '导入实验室' }));
-  expect(JSON.parse(sessionStorage.getItem(IMPORT_SESSION_KEY)!)).toMatchObject({ fullMetadata: true, replace: true, prompt: metadata.prompt, negativePrompt: metadata.negativePrompt });
-});
-
 it.each((['books', 'community'] as const).flatMap(mode => ['图生图', '局部重绘', '扩图'].map(label => [mode, label] as const)))('%s 的第三个紫色按钮投递%s当前页底图，不混入参数', async (mode, label) => {
   vi.stubGlobal('innerWidth', mode === 'books' ? 390 : 1280);
   setup(); await screen.findByRole('button', { name: /合成词条/ });
@@ -220,17 +185,13 @@ it.each((['books', 'community'] as const).flatMap(mode => ['图生图', '局部�
   fireEvent.click(screen.getByRole('button', { name: '下一页' }));
   const trigger = screen.getByRole('button', { name: '用作底图' });
   const actions = trigger.parentElement!.parentElement!;
-  expect(within(actions).getAllByRole('button').map(button => button.getAttribute('aria-label'))).toEqual(['保存到风格串', '导入实验室', '用作底图', '更多操作']);
+  expect(within(actions).getAllByRole('button').map(button => button.getAttribute('aria-label'))).toEqual(['保存到风格串', '导入实验室', '用作底图']);
   expect(actions.classList.contains('ml-auto')).toBe(true);
   expect(actions.parentElement!.classList.contains('flex-wrap')).toBe(true);
   expect(trigger.classList.contains('bg-purple-600')).toBe(true);
   expect(trigger.classList.contains('dark:bg-purple-600/90')).toBe(true);
   expect(trigger.querySelector('svg.lucide-image-plus')).toBeTruthy();
   expect(screen.queryByRole('button', { name: label })).toBeNull();
-  const options = openOptions();
-  expect(within(options).queryByRole('button', { name: label })).toBeNull();
-  if (mode === 'books') fireEvent.click(within(options).getByRole('button', { name: '关闭' }));
-  else closeOptions();
   fireEvent.click(trigger);
   const panel = screen.getByRole('dialog', { name: '用作底图' });
   expect(panel.classList.contains('mobile-sheet')).toBe(mode === 'books');
@@ -305,8 +266,8 @@ it('原图读取失败时阻止导入和保存，不悄悄回退展示词；重�
   fireEvent.click(screen.getByRole('button', { name: '导入实验室' }));
   expect(JSON.parse(sessionStorage.getItem(IMPORT_SESSION_KEY)!)).toMatchObject({ fullMetadata: true, params: metadata.params });
   mocks.metadata.mockRejectedValueOnce(new Error('再次读取失败'));
-  openOptions(); fireEvent.click(screen.getByRole('button', { name: '读取原图配置' }));
-  expect(await screen.findByRole('alert')).toHaveProperty('textContent', '再次读取失败'); closeOptions();
+  fireEvent.click(screen.getByRole('button', { name: '重试' }));
+  expect(await screen.findByRole('alert')).toHaveProperty('textContent', '再次读取失败');
   expect((screen.getByRole('button', { name: '导入实验室' }) as HTMLButtonElement).disabled).toBe(true);
   expect((screen.getByRole('button', { name: '保存到风格串' }) as HTMLButtonElement).disabled).toBe(true);
 });
@@ -327,8 +288,6 @@ it('部分原图元数据仍一键取用所有已知字段，并标明未提供�
   mocks.metadata.mockResolvedValueOnce(partial);
   setup(); fireEvent.click(await screen.findByRole('button', { name: /合成词条/ }));
   await screen.findByText('部分元数据，缺失参数保留当前设置');
-  openOptions();
-  expect((screen.getByRole('checkbox', { name: '模型' }) as HTMLInputElement).disabled).toBe(true);
-  closeOptions(); fireEvent.click(screen.getByRole('button', { name: '导入实验室' }));
+  fireEvent.click(screen.getByRole('button', { name: '导入实验室' }));
   expect(JSON.parse(sessionStorage.getItem(IMPORT_SESSION_KEY)!)).toMatchObject({ fullMetadata: true, partialMetadata: true, params: partial.params, importSettings: true, importSeed: true, importModel: false });
 });

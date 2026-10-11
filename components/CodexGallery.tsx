@@ -1,9 +1,9 @@
 import { useGalleryFrostedCaption } from '../services/appearancePreferences';
 import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { BookOpen, ChevronLeft, ChevronRight, Copy, FlaskConical, FolderTree, ImagePlus, Layers, LoaderCircle, MoreHorizontal, RefreshCw, Settings2 } from 'lucide-react';
+import { BookOpen, ChevronLeft, ChevronRight, Copy, FlaskConical, FolderTree, ImagePlus, Layers, LoaderCircle, RefreshCw } from 'lucide-react';
 import { t, useLanguage } from '../services/i18n';
 import type { User, ImageEditOperation, PromptChain } from '../types';
-import { IMPORT_SESSION_KEY, type BaseImageImport, type PromptFragmentImport } from '../services/metadataService';
+import { IMPORT_SESSION_KEY, type BaseImageImport } from '../services/metadataService';
 import { codexCharactersToParams, codexEntryMatches, codexPromptImport, loadCodexBook, loadCodexBootstrap, loadCodexCommunity, readCodexImageFile, readCodexImageMetadata, type CodexBootstrap, type CodexEntry, type CodexImageMetadata, type CodexResult } from '../services/codexService';
 import { collectionRevision, collectionTargetActive, subscribeCollection, type CollectionImage, type CollectionTarget } from '../services/collectionFavorites';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
@@ -18,7 +18,6 @@ import { ToolbarPopover, TOOLBAR_FIELD_CLASS, TOOLBAR_MENU_CLASS } from './Toolb
 import { useMobileHistoryLayer } from './MobileUI';
 import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
 import { useGallerySelectionAnchor } from './useGallerySelectionAnchor';
-import { CodexImportOptions } from './CodexImportOptions';
 import { CodexPromptTools } from './CodexPromptTools';
 import { buildPromptFragmentPatch } from '../services/labModeTools';
 import { DEFAULT_PARAMS } from './inspiration/InspirationShared';
@@ -63,8 +62,6 @@ export const CodexGallery: React.FC<{ active: boolean; currentUser: User; notify
   const [visibleLimit, setVisibleLimit] = useState(120);
   const [metadata, setMetadata] = useState<CodexImageMetadata | null>();
   const [metadataError, setMetadataError] = useState('');
-  const [entryOnly, setEntryOnly] = useState(false);
-  const [importChoice, setImportChoice] = useState<PromptFragmentImport>();
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
   const [reading, setReading] = useState(false);
@@ -87,12 +84,11 @@ export const CodexGallery: React.FC<{ active: boolean; currentUser: User; notify
   const selectedImage = selected?.images[page];
   const sourceEntry = useMemo(() => selected && { ...selected, prompt: selectedImage?.prompt ?? selected.prompt,
     negative: selectedImage?.negative ?? selected.negative, characters: selectedImage?.characters ?? selected.characters }, [selected, selectedImage]);
-  const importSource = useMemo(() => sourceEntry && (entryOnly || !selectedImage?.originalUrl || metadata !== undefined)
-    ? codexPromptImport(sourceEntry, entryOnly ? undefined : metadata || undefined) : undefined, [sourceEntry, selectedImage?.originalUrl, entryOnly, metadata]);
-  const importValue = importChoice || importSource;
-  const detailEntry = metadata && !entryOnly && sourceEntry ? { ...sourceEntry, prompt: metadata.rawPrompt, negative: metadata.rawNegative,
+  const importValue = useMemo(() => sourceEntry && (!selectedImage?.originalUrl || metadata !== undefined)
+    ? codexPromptImport(sourceEntry, metadata || undefined) : undefined, [sourceEntry, selectedImage?.originalUrl, metadata]);
+  const detailEntry = metadata && sourceEntry ? { ...sourceEntry, prompt: metadata.rawPrompt, negative: metadata.rawNegative,
     characters: (metadata.params.characters || []).map((character, index) => ({ label: t('角色 {0}', [index + 1]), prompt: character.prompt, negative: character.negativePrompt || '' })) } : sourceEntry;
-  const canImport = Boolean((!metadataError || entryOnly) && importValue && (importValue.prompt !== undefined || importValue.negativePrompt !== undefined || importValue.characters?.length
+  const canImport = Boolean(!metadataError && importValue && (importValue.prompt !== undefined || importValue.negativePrompt !== undefined || importValue.characters?.length
     || importValue.importSettings || importValue.importSeed || importValue.importModel));
   const anchor = useGallerySelectionAnchor(scrollRef, galleryRef, selectedKey, active);
   const scrollRestore = useKeepAliveScrollRestore(scrollRef, `codex-${mode}`, { skipRestore: anchor.hasAnchor });
@@ -209,21 +205,20 @@ export const CodexGallery: React.FC<{ active: boolean; currentUser: User; notify
     try {
       const metadata = await readCodexImageMetadata(await readCodexImageFile(selectedImage.originalUrl));
       if (revision !== originalRevision.current) return;
-      setMetadata(metadata); setImportChoice(undefined); setEntryOnly(false);
+      setMetadata(metadata);
     } catch (cause) { if (revision === originalRevision.current) setMetadataError(cause instanceof Error ? cause.message : t('原图读取失败')); }
     finally { if (revision === originalRevision.current) setReading(false); }
   }, [selectedImage?.originalUrl]);
   useEffect(() => {
-    originalRevision.current++; setReading(false); setMetadata(undefined); setMetadataError(''); setImportChoice(undefined); setEntryOnly(false);
+    originalRevision.current++; setReading(false); setMetadata(undefined); setMetadataError('');
     if (active) void readOriginal();
     return () => { originalRevision.current++; };
   }, [active, selectedKey, page, readOriginal]);
-  const useEntryPrompt = () => { originalRevision.current++; setReading(false); setEntryOnly(true); setImportChoice(undefined); };
   const sendBaseImage = (operation: ImageEditOperation) => {
     if (!selectedImage) return;
     try {
       const payload: BaseImageImport = { mode: 'base-image', imageEditOperation: operation, baseImageUrl: getMobileOriginalUrl(selectedImage.originalUrl || selectedImage.url) };
-      // 缺省配置让工作台保留当前创作；原图配置由另一个明确动作取用。
+      // 用作底图只投递图片；图片元数据由「导入实验室」自动取用。
       sessionStorage.setItem(IMPORT_SESSION_KEY, JSON.stringify(payload)); onNavigateToPlayground();
     } catch (error) {
       notify(error instanceof Error ? error.message : t('导入失败'), 'error');
@@ -319,22 +314,15 @@ export const CodexGallery: React.FC<{ active: boolean; currentUser: User; notify
               <ToolbarPopover key={`base:${selected.key}:${page}`} label="用作底图" title={t('用作底图')} icon={<ImagePlus />} iconOnly iconTone="edit" disabled={!selectedImage} width={208}>
                 {close => <>{([['image-to-image', '图生图'], ['inpaint', '局部重绘'], ['outpaint', '扩图']] as const).map(([operation, label]) => <button key={operation} type="button" className={TOOLBAR_MENU_CLASS} onClick={() => { close(); sendBaseImage(operation); }}><ImagePlus />{t(label)}</button>)}</>}
               </ToolbarPopover>
-              <ToolbarPopover key={`${selected.key}:${page}`} label="更多操作" title={t('更多操作')} icon={<MoreHorizontal />} iconOnly width={360}>
-                {close => <div className="space-y-3">
-                  {selectedImage?.originalUrl && <button type="button" className={TOOLBAR_MENU_CLASS} disabled={reading} aria-busy={reading} onClick={() => void readOriginal()}>{reading ? <LoaderCircle className="animate-spin" /> : <Settings2 />}{t(reading ? '读取中…' : '读取原图配置')}</button>}
-                  {selectedImage?.originalUrl && <button type="button" className={TOOLBAR_MENU_CLASS} onClick={useEntryPrompt}>{t('使用条目提示词')}</button>}
-                  {importSource && importValue && <CodexImportOptions entry={sourceEntry} metadata={entryOnly ? undefined : metadata || undefined} source={importSource} value={importValue} onChange={setImportChoice} />}
-                </div>}
-              </ToolbarPopover>
             </div>
           </div>
-          {metadata && !entryOnly && <p className="text-xs text-gray-500">{[metadata.params.model && getNaiModelDisplayLabel(metadata.params.model), metadata.params.width && metadata.params.height && `${metadata.params.width} × ${metadata.params.height}`, metadata.params.steps && `${metadata.params.steps} ${t('步')}`, metadata.params.scale !== undefined && `CFG ${metadata.params.scale}`].filter(Boolean).join(' · ')}</p>}
+          {metadata && <p className="text-xs text-gray-500">{[metadata.params.model && getNaiModelDisplayLabel(metadata.params.model), metadata.params.width && metadata.params.height && `${metadata.params.width} × ${metadata.params.height}`, metadata.params.steps && `${metadata.params.steps} ${t('步')}`, metadata.params.scale !== undefined && `CFG ${metadata.params.scale}`].filter(Boolean).join(' · ')}</p>}
           {reading && <p role="status" className="text-xs text-gray-500">{t('读取中…')}</p>}
-          {!entryOnly && metadata === null && <p role="status" className="text-xs text-gray-500">{t('无可用原图配置，取用条目内容')}</p>}
-          {!entryOnly && importSource?.partialMetadata && <p role="status" className="text-xs text-gray-500">{t('部分元数据，缺失参数保留当前设置')}</p>}
-          {metadataError && !entryOnly && <div className="space-y-2"><p role="alert" className="text-xs text-amber-700 dark:text-amber-300">{metadataError}</p><div className="flex flex-wrap gap-2"><ToolbarButton onClick={() => void readOriginal()}>{t('重试')}</ToolbarButton><ToolbarButton onClick={useEntryPrompt}>{t('使用条目提示词')}</ToolbarButton></div></div>}
+          {metadata === null && <p role="status" className="text-xs text-gray-500">{t('无可用原图配置，取用条目内容')}</p>}
+          {importValue?.partialMetadata && <p role="status" className="text-xs text-gray-500">{t('部分元数据，缺失参数保留当前设置')}</p>}
+          {metadataError && <div className="space-y-2"><p role="alert" className="text-xs text-amber-700 dark:text-amber-300">{metadataError}</p><ToolbarButton onClick={() => void readOriginal()}>{t('重试')}</ToolbarButton></div>}
           {selectedImage?.parameterSource && <p className="text-xs text-gray-500">{t('图片来源：{0}', [selectedImage.parameterSource])}</p>}
-          {promptSection(metadata && !entryOnly ? '正向提示词' : '条目提示词', detailEntry.prompt, true)}
+          {promptSection(metadata ? '正向提示词' : '条目提示词', detailEntry.prompt, true)}
           {promptSection('负面提示词', detailEntry.negative)}
           {detailEntry.characters.map((character, i) => <div key={`${selected.key}:char:${i}`} className="space-y-1"><p className="text-xs font-semibold text-gray-500">{character.label}</p>{promptSection(t('角色 {0} 正向', [i + 1]), character.prompt)}{promptSection(t('角色 {0} 负面', [i + 1]), character.negative)}</div>)}
           </div>
@@ -342,7 +330,7 @@ export const CodexGallery: React.FC<{ active: boolean; currentUser: User; notify
           {selected.path.length > 0 && <p className="text-xs text-gray-500">{selected.path.join(' / ')}</p>}
           {selectedImage?.raw && promptSection('当前图片原文', selectedImage.raw)}
           {selected.note && promptSection('说明', selected.note)}
-          {boot && <CodexPromptTools key={`${selected.key}:${page}:${entryOnly}`} entry={detailEntry} boot={boot} onOpenEntry={async (id, entryId) => {
+          {boot && <CodexPromptTools key={`${selected.key}:${page}`} entry={detailEntry} boot={boot} onOpenEntry={async (id, entryId) => {
             const book = boot.books.find(item => item.id === id); if (!book) return;
             try { const next = await loadCodexBook(book, boot); setData(current => ({ ...current, books: next })); setBookId(id); setMode('books'); setFilters(current => ({ ...current, books: defaults() })); setSelectedKeys(current => ({ ...current, books: next.entries.find(entry => entry.id === entryId)?.key || null })); setPages(current => ({ ...current, books: 0 })); } catch (cause) { notify(String(cause), 'error'); }
           }} />}
