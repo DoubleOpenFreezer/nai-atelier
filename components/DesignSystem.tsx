@@ -91,11 +91,15 @@ export const IconLink: React.FC<React.AnchorHTMLAttributes<HTMLAnchorElement> & 
 
 export const IconButton: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement> & {
   label: string;
-  tone?: 'neutral' | 'primary' | 'danger' | 'favorite';
+  tone?: 'neutral' | 'primary' | 'save' | 'edit' | 'danger' | 'favorite';
 }> = ({ label, tone = 'neutral', className = '', children, ...props }) => {
   useLanguage();
   const toneClass = tone === 'primary'
     ? 'border-indigo-600 bg-indigo-600 text-white hover:bg-indigo-500 dark:border-indigo-500/40 dark:bg-indigo-600/90 dark:hover:bg-indigo-500'
+    : tone === 'save'
+      ? 'border-emerald-600 bg-emerald-600 text-white hover:bg-emerald-500 dark:border-emerald-500/40 dark:bg-emerald-600/90 dark:hover:bg-emerald-500'
+    : tone === 'edit'
+      ? 'border-purple-600 bg-purple-600 text-white hover:bg-purple-500 dark:border-purple-500/40 dark:bg-purple-600/90 dark:hover:bg-purple-500'
     : tone === 'favorite'
       ? 'border-rose-500 bg-rose-500 text-white hover:bg-rose-400 dark:border-rose-500 dark:bg-rose-500 dark:text-white'
     : tone === 'danger'

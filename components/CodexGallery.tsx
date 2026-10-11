@@ -1,6 +1,6 @@
 import { useGalleryFrostedCaption } from '../services/appearancePreferences';
 import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { BookOpen, ChevronLeft, ChevronRight, Copy, FlaskConical, FolderTree, ImagePlus, LoaderCircle, MoreHorizontal, Package, RefreshCw, Settings2 } from 'lucide-react';
+import { BookOpen, ChevronLeft, ChevronRight, Copy, FlaskConical, FolderTree, ImagePlus, Layers, LoaderCircle, MoreHorizontal, RefreshCw, Settings2 } from 'lucide-react';
 import { t, useLanguage } from '../services/i18n';
 import type { User, ImageEditOperation, PromptChain } from '../types';
 import { IMPORT_SESSION_KEY, type BaseImageImport, type PromptFragmentImport } from '../services/metadataService';
@@ -221,9 +221,13 @@ export const CodexGallery: React.FC<{ active: boolean; currentUser: User; notify
   const useEntryPrompt = () => { originalRevision.current++; setReading(false); setEntryOnly(true); setImportChoice(undefined); };
   const sendBaseImage = (operation: ImageEditOperation) => {
     if (!selectedImage) return;
-    const payload: BaseImageImport = { mode: 'base-image', imageEditOperation: operation, baseImageUrl: getMobileOriginalUrl(selectedImage.originalUrl || selectedImage.url) };
-    // 缺省配置让工作台保留当前创作；原图配置由另一个明确动作取用。
-    sessionStorage.setItem(IMPORT_SESSION_KEY, JSON.stringify(payload)); onNavigateToPlayground();
+    try {
+      const payload: BaseImageImport = { mode: 'base-image', imageEditOperation: operation, baseImageUrl: getMobileOriginalUrl(selectedImage.originalUrl || selectedImage.url) };
+      // 缺省配置让工作台保留当前创作；原图配置由另一个明确动作取用。
+      sessionStorage.setItem(IMPORT_SESSION_KEY, JSON.stringify(payload)); onNavigateToPlayground();
+    } catch (error) {
+      notify(error instanceof Error ? error.message : t('导入失败'), 'error');
+    }
   };
   const promptSection = (label: string, text: string, open = false) => text ? <details key={`${selectedKey}:${page}:${label}`} open={open} className="rounded-lg border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950">
     <summary className="flex min-h-9 cursor-pointer items-center gap-2 px-2 text-xs font-semibold"><span className="mr-auto">{t(label)}</span><IconButton label={t('复制提示词')} className="!h-8 !w-8 !border-0 !bg-transparent" onClick={event => { event.preventDefault(); void copy(text); }}><Copy /></IconButton></summary>
@@ -301,23 +305,25 @@ export const CodexGallery: React.FC<{ active: boolean; currentUser: User; notify
             <ImageShareOverlay imageUrl={getMobileOriginalUrl(selectedImage.originalUrl || selectedImage.url)} filename={`${selected.id}-${page + 1}.png`} favorite={codexCollectionImage(selected, page)} notify={notify} />
           </PressRevealSurface>}
           <div className="space-y-2 p-3">
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex min-w-0 items-center gap-1 text-xs text-gray-500">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-none items-center gap-1 text-xs text-gray-500">
               {selected.images.length > 1 ? <>
                 <IconButton label={t('上一页')} className="!h-8 !w-8" disabled={page <= 0} onClick={() => setPages(current => ({ ...current, [mode]: page - 1 }))}><ChevronLeft /></IconButton>
                 <span className="whitespace-nowrap">{page + 1} / {selected.images.length}</span>
                 <IconButton label={t('下一页')} className="!h-8 !w-8" disabled={page >= selected.images.length - 1} onClick={() => setPages(current => ({ ...current, [mode]: page + 1 }))}><ChevronRight /></IconButton>
               </> : selectedImage ? 'P1' : t('纯文本')}
             </div>
-            <div className="flex flex-none items-center gap-2">
-              <IconButton label={t('保存到风格串')} disabled={!canImport || reading || saving || currentUser.role === 'guest'} aria-busy={saving} onClick={() => void saveAsChain()}>{saving ? <LoaderCircle className="animate-spin" /> : <Package />}</IconButton>
+            <div className="ml-auto flex flex-none items-center gap-2">
+              <IconButton label={t('保存到风格串')} tone="save" disabled={!canImport || reading || saving || currentUser.role === 'guest'} aria-busy={saving} onClick={() => void saveAsChain()}>{saving ? <LoaderCircle className="animate-spin" /> : <Layers />}</IconButton>
               <IconButton label={t('导入实验室')} tone="primary" disabled={!canImport || reading} aria-busy={reading} onClick={applyImport}>{reading ? <LoaderCircle className="animate-spin" /> : <FlaskConical />}</IconButton>
+              <ToolbarPopover key={`base:${selected.key}:${page}`} label="用作底图" title={t('用作底图')} icon={<ImagePlus />} iconOnly iconTone="edit" disabled={!selectedImage} width={208}>
+                {close => <>{([['image-to-image', '图生图'], ['inpaint', '局部重绘'], ['outpaint', '扩图']] as const).map(([operation, label]) => <button key={operation} type="button" className={TOOLBAR_MENU_CLASS} onClick={() => { close(); sendBaseImage(operation); }}><ImagePlus />{t(label)}</button>)}</>}
+              </ToolbarPopover>
               <ToolbarPopover key={`${selected.key}:${page}`} label="更多操作" title={t('更多操作')} icon={<MoreHorizontal />} iconOnly width={360}>
                 {close => <div className="space-y-3">
                   {selectedImage?.originalUrl && <button type="button" className={TOOLBAR_MENU_CLASS} disabled={reading} aria-busy={reading} onClick={() => void readOriginal()}>{reading ? <LoaderCircle className="animate-spin" /> : <Settings2 />}{t(reading ? '读取中…' : '读取原图配置')}</button>}
                   {selectedImage?.originalUrl && <button type="button" className={TOOLBAR_MENU_CLASS} onClick={useEntryPrompt}>{t('使用条目提示词')}</button>}
                   {importSource && importValue && <CodexImportOptions entry={sourceEntry} metadata={entryOnly ? undefined : metadata || undefined} source={importSource} value={importValue} onChange={setImportChoice} />}
-                  {selectedImage && <div className="border-t border-gray-200 pt-2 dark:border-gray-800"><p className="px-3 py-1 text-xs text-gray-500">{t('用作底图')}</p>{([['image-to-image', '图生图'], ['inpaint', '局部重绘'], ['outpaint', '扩图']] as const).map(([operation, label]) => <button key={operation} type="button" className={TOOLBAR_MENU_CLASS} onClick={() => { close(); sendBaseImage(operation); }}><ImagePlus />{t(label)}</button>)}</div>}
                 </div>}
               </ToolbarPopover>
             </div>

@@ -17,21 +17,21 @@ import {
   getAitagModelLabel,
   getAitagType,
 } from '../services/aitagService';
-import { IMPORT_SESSION_KEY, parseNovelAIMetadata } from '../services/metadataService';
-import { NAIParams, PromptChain, User } from '../types';
+import { IMPORT_SESSION_KEY, parseNovelAIMetadata, type BaseImageImport } from '../services/metadataService';
+import { NAIParams, PromptChain, User, type ImageEditOperation } from '../types';
 import { SmartImage } from './SmartImage';
 import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMasonry';
 import { MobileBottomSheet, MobileIconButton, useMobileHistoryLayer } from './MobileUI';
 import { createUuid } from '../services/id';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { useStaleGuard } from './useStaleGuard';
-import { ExternalLink, Filter, FlaskConical, LoaderCircle, Package } from 'lucide-react';
+import { ExternalLink, Filter, FlaskConical, ImagePlus, Layers, LoaderCircle } from 'lucide-react';
 import { IconButton, ToolbarButton, ToolbarLink, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
 import { DetailSidePanel } from './DetailPanel';
 import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
 import { useGallerySelectionAnchor } from './useGallerySelectionAnchor';
 import { ImageTaggerAction } from './ImageTaggerPanel';
-import { AnchoredToolbarPopover } from './ToolbarPopover';
+import { AnchoredToolbarPopover, ToolbarPopover, TOOLBAR_MENU_CLASS } from './ToolbarPopover';
 import { ImagePreviewPortal } from './ImagePreviewPortal';
 import { ImageShareOverlay } from './ImageShareActions';
 import { collectionSnapshot, subscribeCollection, aitagCollectionImages, type CollectionTarget } from '../services/collectionFavorites';
@@ -1142,6 +1142,16 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
     }
   };
 
+  const sendBaseImage = (image: AitagImage, operation: ImageEditOperation) => {
+    try {
+      const payload: BaseImageImport = { mode: 'base-image', imageEditOperation: operation, baseImageUrl: getMobileOriginalUrl(buildAitagImageUrl(image)) };
+      sessionStorage.setItem(IMPORT_SESSION_KEY, JSON.stringify(payload));
+      onNavigateToPlayground();
+    } catch (error) {
+      notify(error instanceof Error ? error.message : t('导入失败'), 'error');
+    }
+  };
+
   const saveAsArtistChain = async (image: AitagImage, index: number) => {
     if (savingImageRef.current !== null) return;
     const imageKey = `${image.work_id}-${image.file_name}`;
@@ -1374,8 +1384,11 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
                               </div>
                             </div>
                             <div className="flex flex-none gap-2">
-                              <IconButton label={t("保存到风格串")} disabled={savingImage !== null} aria-busy={savingImage === `${image.work_id}-${image.file_name}`} onClick={() => saveAsArtistChain(image, index)}>{savingImage === `${image.work_id}-${image.file_name}` ? <LoaderCircle className="animate-spin" /> : <Package />}</IconButton>
+                              <IconButton label={t("保存到风格串")} tone="save" disabled={savingImage !== null} aria-busy={savingImage === `${image.work_id}-${image.file_name}`} onClick={() => saveAsArtistChain(image, index)}>{savingImage === `${image.work_id}-${image.file_name}` ? <LoaderCircle className="animate-spin" /> : <Layers />}</IconButton>
                               <IconButton label={t("导入实验室")} tone="primary" onClick={() => importToPlayground(image)}><FlaskConical /></IconButton>
+                              <ToolbarPopover key={`${image.work_id}-${image.file_name}`} label="用作底图" title={t('用作底图')} icon={<ImagePlus />} iconOnly iconTone="edit" disabled={!buildAitagImageUrl(image)} width={208}>
+                                {close => <>{([['image-to-image', '图生图'], ['inpaint', '局部重绘'], ['outpaint', '扩图']] as const).map(([operation, label]) => <button key={operation} type="button" className={TOOLBAR_MENU_CLASS} onClick={() => { close(); sendBaseImage(image, operation); }}><ImagePlus />{t(label)}</button>)}</>}
+                              </ToolbarPopover>
                               {!promptText.trim() && <ImageTaggerAction
                                 notify={notify}
                                 imageUrl={image.local_image_url || buildMediaUrl(buildAitagImageUrl(image), 'original')}

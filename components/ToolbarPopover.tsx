@@ -79,9 +79,11 @@ export const ToolbarPopover: React.FC<{
   width?: number;
   above?: boolean;
   iconOnly?: boolean;
+  iconTone?: React.ComponentProps<typeof IconButton>['tone'];
+  disabled?: boolean;
   className?: string;
   children: React.ReactNode | ((close: () => void, mobile: boolean) => React.ReactNode);
-}> = ({ label = '筛选', title, icon = <Filter />, count = 0, active, width, above, iconOnly, className = '', children }) => {
+}> = ({ label = '筛选', title, icon = <Filter />, count = 0, active, width, above, iconOnly, iconTone, disabled, className = '', children }) => {
   useLanguage();
   const anchorRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
@@ -99,7 +101,7 @@ export const ToolbarPopover: React.FC<{
   const content = typeof children === 'function' ? children(close, mobile) : children;
   const countValue = typeof count === 'function' ? count(mobile) : count;
   return <div ref={anchorRef} className={`flex-none ${className}`}>
-    {iconOnly ? <IconButton label={label} onClick={() => setOpen(value => !value)} aria-expanded={open} aria-haspopup="dialog">{icon}</IconButton> : <ToolbarButton onClick={() => setOpen(value => !value)} aria-label={`${t(label)}${countValue > 0 ? ` ${countValue}` : ''}`} aria-expanded={open} aria-haspopup="dialog" title={title} className={`mobile-touch !px-2.5 md:!px-3 ${(active ?? countValue > 0) ? '!border-indigo-300 !bg-indigo-50 !text-indigo-600 dark:!border-indigo-700 dark:!bg-indigo-950/40 dark:!text-indigo-300' : ''}`}>
+    {iconOnly ? <IconButton label={label} tone={iconTone} disabled={disabled} onClick={() => setOpen(value => !value)} aria-expanded={open} aria-haspopup="dialog">{icon}</IconButton> : <ToolbarButton disabled={disabled} onClick={() => setOpen(value => !value)} aria-label={`${t(label)}${countValue > 0 ? ` ${countValue}` : ''}`} aria-expanded={open} aria-haspopup="dialog" title={title} className={`mobile-touch !px-2.5 md:!px-3 ${(active ?? countValue > 0) ? '!border-indigo-300 !bg-indigo-50 !text-indigo-600 dark:!border-indigo-700 dark:!bg-indigo-950/40 dark:!text-indigo-300' : ''}`}>
       {icon}<span className="hidden sm:inline">{t(label)}{countValue > 0 ? ` ${countValue}` : ''}</span>{countValue > 0 && <span className="sm:hidden">{countValue}</span>}
     </ToolbarButton>}
     {open && (mobile ? <ImagePreviewPortal><MobileBottomSheet open title={title} onClose={close}>{content}</MobileBottomSheet></ImagePreviewPortal> : <AnchoredToolbarPopover anchorRef={anchorRef} title={title} width={width} above={above} onClose={close}>{content}</AnchoredToolbarPopover>)}

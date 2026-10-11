@@ -179,7 +179,12 @@ it.each(['books', 'community'] as const)('%s 的保存图标一键创建风格�
   if (mode === 'community') chooseSource('共创广场');
   fireEvent.click(await screen.findByRole('button', { name: mode === 'community' ? /新投稿/ : /合成词条/ }));
   await ready();
-  fireEvent.click(screen.getByRole('button', { name: '保存到风格串' }));
+  const save = screen.getByRole('button', { name: '保存到风格串' });
+  expect(save.querySelector('svg.lucide-layers')).toBeTruthy();
+  expect(save.classList.contains('bg-emerald-600')).toBe(true);
+  expect(save.classList.contains('dark:bg-emerald-600/90')).toBe(true);
+  expect(save.classList.contains('text-white')).toBe(true);
+  fireEvent.click(save);
   await waitFor(() => expect(mocks.create).toHaveBeenCalledOnce());
   const chain = mocks.create.mock.calls[0][0];
   expect(chain).toMatchObject({ userId: 'owner', type: 'style', basePrompt: metadata.prompt, negativePrompt: metadata.negativePrompt, description: entry.sourceUrl,
@@ -207,12 +212,48 @@ it('次级字段选择在收起后保留，导入和保存共用当前选择，�
   expect(JSON.parse(sessionStorage.getItem(IMPORT_SESSION_KEY)!)).toMatchObject({ fullMetadata: true, replace: true, prompt: metadata.prompt, negativePrompt: metadata.negativePrompt });
 });
 
-it.each(['图生图', '局部重绘', '扩图'])('底图%s只在次级选项中提供，直接投递目标模式，不混入参数', async label => {
-  setup(); fireEvent.click(await screen.findByRole('button', { name: /合成词条/ }));
+it.each((['books', 'community'] as const).flatMap(mode => ['图生图', '局部重绘', '扩图'].map(label => [mode, label] as const)))('%s 的第三个紫色按钮投递%s当前页底图，不混入参数', async (mode, label) => {
+  vi.stubGlobal('innerWidth', mode === 'books' ? 390 : 1280);
+  setup(); await screen.findByRole('button', { name: /合成词条/ });
+  if (mode === 'community') chooseSource('共创广场');
+  fireEvent.click(await screen.findByRole('button', { name: mode === 'community' ? /新投稿/ : /合成词条/ }));
+  fireEvent.click(screen.getByRole('button', { name: '下一页' }));
+  const trigger = screen.getByRole('button', { name: '用作底图' });
+  const actions = trigger.parentElement!.parentElement!;
+  expect(within(actions).getAllByRole('button').map(button => button.getAttribute('aria-label'))).toEqual(['保存到风格串', '导入实验室', '用作底图', '更多操作']);
+  expect(actions.classList.contains('ml-auto')).toBe(true);
+  expect(actions.parentElement!.classList.contains('flex-wrap')).toBe(true);
+  expect(trigger.classList.contains('bg-purple-600')).toBe(true);
+  expect(trigger.classList.contains('dark:bg-purple-600/90')).toBe(true);
+  expect(trigger.querySelector('svg.lucide-image-plus')).toBeTruthy();
   expect(screen.queryByRole('button', { name: label })).toBeNull();
-  const panel = openOptions(); fireEvent.click(within(panel).getByRole('button', { name: label }));
-  expect(JSON.parse(sessionStorage.getItem(IMPORT_SESSION_KEY)!)).toEqual({ mode: 'base-image', imageEditOperation: { '图生图': 'image-to-image', '局部重绘': 'inpaint', '扩图': 'outpaint' }[label], baseImageUrl: expect.stringContaining(encodeURIComponent(entry.images[0].originalUrl)) });
+  const options = openOptions();
+  expect(within(options).queryByRole('button', { name: label })).toBeNull();
+  if (mode === 'books') fireEvent.click(within(options).getByRole('button', { name: '关闭' }));
+  else closeOptions();
+  fireEvent.click(trigger);
+  const panel = screen.getByRole('dialog', { name: '用作底图' });
+  expect(panel.classList.contains('mobile-sheet')).toBe(mode === 'books');
+  fireEvent.click(within(panel).getByRole('button', { name: label }));
+  expect(JSON.parse(sessionStorage.getItem(IMPORT_SESSION_KEY)!)).toEqual({ mode: 'base-image', imageEditOperation: { '图生图': 'image-to-image', '局部重绘': 'inpaint', '扩图': 'outpaint' }[label], baseImageUrl: expect.stringContaining(encodeURIComponent(entry.images[1].originalUrl)) });
   expect(screen.queryByRole('dialog')).toBeNull(); expect(mocks.navigate).toHaveBeenCalledOnce();
+  expect(mocks.create).not.toHaveBeenCalled();
+});
+
+it('原图元数据读取失败仍可取用图片作底图，无原图时使用当前展示图片', async () => {
+  mocks.metadata.mockRejectedValueOnce(new Error('合成元数据读取失败'));
+  const view = setup(); fireEvent.click(await screen.findByRole('button', { name: /合成词条/ }));
+  await screen.findByRole('alert');
+  fireEvent.click(screen.getByRole('button', { name: '用作底图' }));
+  fireEvent.click(within(screen.getByRole('dialog', { name: '用作底图' })).getByRole('button', { name: '图生图' }));
+  expect(JSON.parse(sessionStorage.getItem(IMPORT_SESSION_KEY)!)).toEqual({ mode: 'base-image', imageEditOperation: 'image-to-image', baseImageUrl: expect.stringContaining(encodeURIComponent(entry.images[0].originalUrl)) });
+  view.unmount(); sessionStorage.clear(); mocks.navigate.mockClear();
+  mocks.book.mockResolvedValue({ entries: [{ ...entry, images: entry.images.map(image => ({ ...image, originalUrl: '' })) }] });
+  setup(); fireEvent.click(await screen.findByRole('button', { name: /合成词条/ }));
+  fireEvent.click(screen.getByRole('button', { name: '用作底图' }));
+  fireEvent.click(within(screen.getByRole('dialog', { name: '用作底图' })).getByRole('button', { name: '扩图' }));
+  expect(JSON.parse(sessionStorage.getItem(IMPORT_SESSION_KEY)!)).toEqual({ mode: 'base-image', imageEditOperation: 'outpaint', baseImageUrl: expect.stringContaining(encodeURIComponent(entry.images[0].url)) });
+  expect(mocks.navigate).toHaveBeenCalledOnce(); expect(mocks.create).not.toHaveBeenCalled();
 });
 
 it('保存中不重复创建，失败保留详情并可重试；纯文本条目也能保存', async () => {
@@ -221,9 +262,17 @@ it('保存中不重复创建，失败保留详情并可重试；纯文本条目�
   mocks.create.mockImplementationOnce(() => new Promise((_, fail) => { reject = fail; }));
   setup(); fireEvent.click(await screen.findByRole('button', { name: /合成词条/ }));
   const save = screen.getByRole('button', { name: '保存到风格串' });
+  const base = screen.getByRole('button', { name: '用作底图' });
+  expect((base as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(base); expect(screen.queryByRole('dialog', { name: '用作底图' })).toBeNull();
+  expect(save.querySelector('svg.lucide-layers')).toBeTruthy();
   fireEvent.click(save); fireEvent.click(save); expect(mocks.create).toHaveBeenCalledOnce();
+  expect((save as HTMLButtonElement).disabled).toBe(true);
+  expect(save.getAttribute('aria-busy')).toBe('true');
+  expect(save.querySelector('svg.animate-spin')).toBeTruthy();
   await act(async () => reject(new Error('合成保存失败')));
   expect(mocks.notify).toHaveBeenCalledWith('合成保存失败', 'error'); expect((save as HTMLButtonElement).disabled).toBe(false);
+  expect(save.querySelector('svg.lucide-layers')).toBeTruthy();
   fireEvent.click(save); await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(2));
   expect(mocks.create.mock.calls[1][0].previewImage).toBeUndefined();
 });

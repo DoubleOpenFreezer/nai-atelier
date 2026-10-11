@@ -406,16 +406,50 @@ it('详情请求尚未完成时取消，迟到结果不会重开详情或恢复�
   expect(document.querySelector('aside')!.className).toContain('aitag-detail-panel--closed');
 });
 
+it.each([1280, 390].flatMap(width => ['图生图', '局部重绘', '扩图'].map(label => [width, label] as const)))('%spx 第三个紫色按钮将对应图片送入%s，不取用元数据或自动保存', async (width, label) => {
+  vi.stubGlobal('innerWidth', width);
+  mocks.getWork.mockResolvedValue({ work: works[0], images: [works[0].firstImage, {
+    ...works[0].firstImage!, id: 12, file_name: 'second.png', prompt_text: '', ai_json: undefined,
+    local_image_url: width === 1280 ? '/synthetic/base-second.png' : undefined,
+    remote_image_url: 'https://ai-img.10118899.xyz/NAI/1/second.webp',
+  }] });
+  await setup(); fireEvent.click(card(1));
+  const trigger = await waitFor(() => {
+    const buttons = screen.getAllByRole('button', { name: '用作底图' });
+    expect(buttons).toHaveLength(2); return buttons[1];
+  });
+  const actions = trigger.parentElement!.parentElement!;
+  expect(within(actions).getAllByRole('button').slice(0, 3).map(button => button.getAttribute('aria-label'))).toEqual(['保存到风格串', '导入实验室', '用作底图']);
+  expect(trigger.classList.contains('bg-purple-600')).toBe(true);
+  expect(trigger.classList.contains('dark:bg-purple-600/90')).toBe(true);
+  expect(trigger.querySelector('svg.lucide-image-plus')).toBeTruthy();
+  fireEvent.click(trigger);
+  const panel = screen.getByRole('dialog', { name: '用作底图' });
+  expect(panel.classList.contains('mobile-sheet')).toBe(width === 390);
+  fireEvent.click(within(panel).getByRole('button', { name: label }));
+  expect(JSON.parse(sessionStorage.getItem('nai_pending_import')!)).toEqual({ mode: 'base-image',
+    imageEditOperation: { '图生图': 'image-to-image', '局部重绘': 'inpaint', '扩图': 'outpaint' }[label],
+    baseImageUrl: width === 1280 ? '/synthetic/base-second.png' : '/api/media?source=https%3A%2F%2Fai-img.10118899.xyz%2FNAI%2F1%2Fsecond.webp&variant=original',
+  });
+  expect(screen.queryByRole('dialog')).toBeNull(); expect(mocks.navigate).toHaveBeenCalledOnce();
+  expect(mocks.createChain).not.toHaveBeenCalled(); expect(mocks.getWork).toHaveBeenCalledOnce();
+});
+
 it('用已显示的 JSON 和本地图片保存，立即显示忙碌并阻止连点，完成后才通知成功', async () => {
   let resolve!: () => void;
   mocks.createChain.mockImplementation(() => new Promise<void>(done => { resolve = done; }));
   const { notify } = await setup();
   fireEvent.click(card(1));
   const button = await screen.findByRole('button', { name: '保存到风格串' });
+  expect(button.querySelector('svg.lucide-layers')).toBeTruthy();
+  expect(button.classList.contains('bg-emerald-600')).toBe(true);
+  expect(button.classList.contains('dark:bg-emerald-600/90')).toBe(true);
+  expect(button.classList.contains('text-white')).toBe(true);
   fireEvent.click(button); fireEvent.click(button);
   expect(mocks.createChain).toHaveBeenCalledTimes(1);
   expect((button as HTMLButtonElement).disabled).toBe(true);
   expect(button.getAttribute('aria-busy')).toBe('true');
+  expect(button.querySelector('svg.animate-spin')).toBeTruthy();
   expect(notify).not.toHaveBeenCalledWith('已保存到风格串');
   expect(mocks.createChain.mock.calls[0][0]).toMatchObject({
     name: '合成作品 1 P1', basePrompt: 'synthetic prompt 1', negativePrompt: 'synthetic negative',
@@ -425,6 +459,7 @@ it('用已显示的 JSON 和本地图片保存，立即显示忙碌并阻止连�
   await act(async () => resolve());
   await waitFor(() => expect(notify).toHaveBeenCalledWith('已保存到风格串'));
   expect((button as HTMLButtonElement).disabled).toBe(false);
+  expect(button.querySelector('svg.lucide-layers')).toBeTruthy();
 });
 
 it('失败只显示错误并恢复按钮，重试可以保存，其他复用入口仍使用当前元数据', async () => {

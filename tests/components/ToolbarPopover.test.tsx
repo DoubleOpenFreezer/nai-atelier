@@ -25,6 +25,18 @@ const FilterExample = () => {
 };
 
 describe('工具栏弹层位置与连续操作', () => {
+  it('图标触发器沿用紫色动作和禁用状态，启用后才可打开', () => {
+    const draw = (disabled: boolean) => <ToolbarPopover label="用作底图" title="用作底图" iconOnly iconTone="edit" disabled={disabled}><button>图生图</button></ToolbarPopover>;
+    const view = render(draw(true));
+    const trigger = screen.getByRole('button', { name: '用作底图' });
+    expect(trigger.classList.contains('bg-purple-600')).toBe(true);
+    expect(trigger.classList.contains('dark:bg-purple-600/90')).toBe(true);
+    fireEvent.click(trigger); expect(screen.queryByRole('dialog')).toBeNull();
+    view.rerender(draw(false)); fireEvent.click(trigger);
+    expect(screen.getByRole('dialog', { name: '用作底图' })).toBeTruthy();
+    fireEvent.keyDown(window, { key: 'Escape' }); expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
   it('手机收起文字后仍显示筛选数量，无障碍名称只读一次数量', () => {
     vi.stubGlobal('innerWidth', 390);
     render(<ToolbarPopover title="筛选资料" count={2}><div /></ToolbarPopover>);

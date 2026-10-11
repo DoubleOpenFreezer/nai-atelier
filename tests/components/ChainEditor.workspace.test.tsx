@@ -578,15 +578,19 @@ describe('法典投递当前创作模式', () => {
     }
     expect(sessionStorage.getItem('nai_pending_import')).toBeNull(); expect(state.startJob).not.toHaveBeenCalled();
   });
-  it('从编辑模式选外部底图时保留当前提示词与参数，不借用文生图配置', async () => {
+  it.each(['image-to-image', 'inpaint', 'outpaint'] as const)('%s 外部底图保留当前提示词与参数，不借用文生图配置或自动生成', async operation => {
     const session = fallback(); session.activeMode = 'inpaint'; session.edits.inpaint.prompt = 'active edit';
     session.edits.inpaint.negativePrompt = 'active negative'; session.edits.inpaint.params.steps = 12;
     saveLabWorkspaceSession(chain.id, session);
-    sessionStorage.setItem('nai_pending_import', JSON.stringify({ mode: 'base-image', imageEditOperation: 'image-to-image', baseImageUrl: 'data:image/png;base64,AQID' }));
+    sessionStorage.setItem('nai_pending_import', JSON.stringify({ mode: 'base-image', imageEditOperation: operation, baseImageUrl: 'data:image/png;base64,AQID' }));
     setup();
-    await waitFor(() => expect(loadLabWorkspaceSession(chain.id, fallback()).activeMode).toBe('image-to-image'));
+    await waitFor(() => {
+      const saved = loadLabWorkspaceSession(chain.id, fallback());
+      expect(saved.activeMode).toBe(operation); expect(saved.edits[operation].baseImageRef).toBeTruthy();
+    });
     const saved = loadLabWorkspaceSession(chain.id, fallback());
-    expect(saved.edits['image-to-image']).toMatchObject({ prompt: 'active edit', negativePrompt: 'active negative', params: { steps: 12 } });
+    expect(saved.edits[operation]).toMatchObject({ prompt: 'active edit', negativePrompt: 'active negative' });
+    expect(saved.edits[operation].params).toEqual(session.edits.inpaint.params);
     expect(saved.textToImage.basePrompt).toBe(session.textToImage.basePrompt); expect(state.startJob).not.toHaveBeenCalled();
   });
 });
