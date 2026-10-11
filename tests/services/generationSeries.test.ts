@@ -8,9 +8,9 @@ import {
 import type { GenerationJobDescriptor, GenerationJobSnapshot } from '../../services/generationJob';
 
 // 只替换四个网络函数；状态判定与全部状态机逻辑走真实实现。
-const job = vi.hoisted(() => ({ start: vi.fn(), get: vi.fn(), cancel: vi.fn(), approve: vi.fn() }));
+const job = vi.hoisted(() => ({ start: vi.fn(), get: vi.fn(), cancel: vi.fn(), approve: vi.fn(), observe: vi.fn() }));
 vi.mock('../../services/generationJob', async importOriginal => Object.assign({}, await importOriginal(), {
-    startGenerationJob: job.start, getGenerationJob: job.get, cancelGenerationJob: job.cancel, updateGenerationJobApproval: job.approve,
+    startGenerationJob: job.start, getGenerationJob: job.get, cancelGenerationJob: job.cancel, updateGenerationJobApproval: job.approve, observeGenerationJob: job.observe,
 }));
 
 const MODEL = 'nai-diffusion-4-5-full';
@@ -35,6 +35,53 @@ beforeEach(() => {
     job.get.mockReset().mockResolvedValue(snapshot({ state: 'succeeded', completedCount: 3, historyIds: ['h1', 'h2', 'h3'] }));
     job.cancel.mockReset().mockResolvedValue(undefined);
     job.approve.mockReset().mockResolvedValue(undefined);
+    job.observe.mockReset();
+});
+
+it('开启预览后实时观察每步与保存终态，不再等待一秒轮询，重连不重复 POST', async () => {
+    const steps: number[] = [];
+    let publishSnapshot: (snapshot: GenerationJobSnapshot) => void = () => {};
+    let disconnect: () => void = () => {};
+    job.start.mockResolvedValueOnce(snapshot({ state: 'generating', previewVersion: 0 }));
+    job.observe.mockImplementationOnce((_key, _token, _signal, onSnapshot) => {
+        publishSnapshot = onSnapshot;
+        return new Promise<void>((_resolve, reject) => { disconnect = () => reject(new Error('synthetic-disconnect')); });
+    }).mockImplementationOnce(async (_key, _token, _signal, onSnapshot) => {
+        onSnapshot(snapshot({ state: 'succeeded', completedCount: 1, requestedCount: 1, historyIds: ['h1'] }));
+    });
+    job.get.mockResolvedValueOnce(snapshot({ state: 'generating', previewVersion: 8 }));
+    const { session, settle } = beginGenerationSeries({ scope: nextScope(), key: 'synthetic-key', count: 1, agent: false, descriptor: { ...descriptor(), stream: true } });
+    await vi.advanceTimersByTimeAsync(0);
+    const unsubscribe = subscribeGenerationSeries(() => { if (session.preview?.step) steps.push(session.preview.step); });
+    for (let step = 1; step <= 8; step++) publishSnapshot(snapshot({ state: 'generating', previewVersion: step, preview: { image: 'data:image/png;base64,AQID', step } }));
+    expect(steps).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+    expect(session.steps).toBe(28);
+    expect(job.get).not.toHaveBeenCalled();
+    unsubscribe(); disconnect();
+    await vi.advanceTimersByTimeAsync(1_000);
+    await expect(settle).resolves.toMatchObject({ success: true, completedCount: 1 });
+    expect(job.observe).toHaveBeenCalledTimes(2);
+    expect(job.start).toHaveBeenCalledOnce();
+    expect(job.cancel).not.toHaveBeenCalled();
+});
+
+it('实时观察冻结后回前台立即重连，保留后台任务和最新状态', async () => {
+    const scope = nextScope();
+    job.start.mockResolvedValueOnce(snapshot({ state: 'generating' }));
+    job.observe.mockImplementationOnce((_key, _token, signal) => new Promise<void>((_resolve, reject) => {
+        signal.addEventListener('abort', () => reject(new DOMException('重新观察', 'AbortError')));
+    })).mockImplementationOnce(async (_key, _token, _signal, onSnapshot) => {
+        onSnapshot(snapshot({ state: 'succeeded', completedCount: 1, requestedCount: 1, historyIds: ['h1'] }));
+    });
+    job.get.mockResolvedValueOnce(snapshot({ state: 'generating', previewVersion: 8 }));
+    const { settle } = beginGenerationSeries({ scope, key: 'synthetic-key', count: 1, agent: false, descriptor: { ...descriptor(), stream: true } });
+    await vi.advanceTimersByTimeAsync(0);
+    window.dispatchEvent(new Event('visibilitychange'));
+    await vi.advanceTimersByTimeAsync(0);
+    await expect(settle).resolves.toMatchObject({ success: true });
+    expect(job.observe).toHaveBeenCalledTimes(2);
+    expect(job.get).toHaveBeenCalledOnce(); expect(job.start).toHaveBeenCalledOnce();
+    expect(job.cancel).not.toHaveBeenCalled();
 });
 
 it('未变化的预览不重复传图，版本变化清除已保存预览，旧快照仍兼容', async () => {

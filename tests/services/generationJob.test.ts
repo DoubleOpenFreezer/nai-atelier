@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from 'vitest';
 import {
-    cancelGenerationJob, getGenerationJob, isGenerationJobState, isGenerationJobTerminal, startGenerationJob, updateGenerationJobApproval,
+    cancelGenerationJob, getGenerationJob, isGenerationJobState, isGenerationJobTerminal, observeGenerationJob, startGenerationJob, updateGenerationJobApproval,
 } from '../../services/generationJob';
 import type { GenerationJobDescriptor, GenerationJobSnapshot, GenerationJobState } from '../../services/generationJob';
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 const MODEL = 'nai-diffusion-4-5-full';
 const params = { model: MODEL, width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler' };
@@ -17,6 +17,50 @@ const descriptor: GenerationJobDescriptor = {
 const snapshot: GenerationJobSnapshot = {
     token: 'synthetic-token', state: 'generating', completedCount: 1, requestedCount: 3, historyIds: ['h1'],
 };
+
+it('实时 GET 携带鉴权，同块及分片 SSE 的每步按顺序绘制，同图片仍通知步数', async () => {
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal('requestAnimationFrame', vi.fn((callback: FrameRequestCallback) => { frames.push(callback); return frames.length; }));
+    vi.stubGlobal('cancelAnimationFrame', vi.fn());
+    const snapshots: GenerationJobSnapshot[] = [1, 2, 3].map(step => ({ ...snapshot, previewVersion: step, preview: { image: 'data:image/png;base64,AQID', step } }));
+    snapshots.push({ ...snapshot, state: 'succeeded', previewVersion: 4 });
+    const text = snapshots.map(value => `event: snapshot\r\ndata: ${JSON.stringify(value)}\r\n\r\n`).join('');
+    const stream = new ReadableStream<Uint8Array>({ start(controller) {
+        const encoded = new TextEncoder().encode(text);
+        controller.enqueue(encoded.slice(0, 23)); controller.enqueue(encoded.slice(23)); controller.close();
+    } });
+    const fetch = vi.fn(async () => new Response(stream, { headers: { 'Content-Type': 'text/event-stream' } }));
+    vi.stubGlobal('fetch', fetch);
+    const steps: number[] = [], abort = new AbortController();
+    const observing = observeGenerationJob('synthetic-key', 'a b/c', abort.signal, value => { if (value.preview?.step) steps.push(value.preview.step); }, 0);
+    for (let step = 1; step <= 3; step++) {
+        await vi.waitFor(() => expect(steps).toEqual(Array.from({ length: step }, (_, index) => index + 1)));
+        expect(frames).toHaveLength(1);
+        frames.shift()!(0);
+        await Promise.resolve();
+        expect(steps).toHaveLength(step);
+        frames.shift()!(0);
+    }
+    await observing;
+    expect(steps).toEqual([1, 2, 3]);
+    expect(fetch).toHaveBeenCalledOnce();
+    expect(fetch.mock.calls[0]).toEqual(['/api/generation-job?token=a%20b%2Fc&events=1&previewVersion=0', {
+        headers: { Authorization: 'Bearer synthetic-key', Accept: 'text/event-stream' }, cache: 'no-store', signal: abort.signal,
+    }]);
+});
+
+it('实时观察不伪报断流成功，错误状态与取消保留原有语义', async () => {
+    const fetch = vi.fn()
+        .mockResolvedValueOnce(new Response(JSON.stringify({ error: '任务不存在', code: 'generation_job_not_found' }), { status: 404 }))
+        .mockResolvedValueOnce(new Response('event: snapshot\ndata: {"state":"generating"}\n\n', { headers: { 'Content-Type': 'text/event-stream' } }))
+        .mockResolvedValueOnce(new Response('{}'));
+    vi.stubGlobal('fetch', fetch);
+    const signal = new AbortController().signal;
+    await expect(observeGenerationJob('key', 'token', signal, () => {})).rejects.toMatchObject({ status: 404, code: 'generation_job_not_found' });
+    await expect(observeGenerationJob('key', 'token', signal, () => {})).rejects.toThrow('连接已断开');
+    await expect(observeGenerationJob('key', 'token', signal, () => {})).rejects.toThrow('连接不可用');
+});
 
 it('状态取值只接受后端约定，终态仅成功、取消与失败', () => {
     const states: GenerationJobState[] = ['waiting', 'preparing', 'generating', 'saving', 'paused', 'awaiting_confirmation', 'succeeded', 'cancelled', 'failed'];

@@ -1,7 +1,7 @@
 import { agentGenerationFailure, agentOperationError, normalizeAgentGenerationResult, validateGenerationCount } from './agentOperation.mjs';
 import type { LocalGenItem, PromptAgentGenerationResult } from '../types';
 import {
-    cancelGenerationJob, getGenerationJob, isGenerationJobState, isGenerationJobTerminal, startGenerationJob, updateGenerationJobApproval,
+    cancelGenerationJob, getGenerationJob, isGenerationJobState, isGenerationJobTerminal, observeGenerationJob, startGenerationJob, updateGenerationJobApproval,
     type GenerationJobDescriptor, type GenerationJobPreview, type GenerationJobSnapshot, type GenerationJobState,
 } from './generationJob';
 import type { GenerationPlacement } from './generationTask';
@@ -16,6 +16,7 @@ export interface GenerationSeriesSession {
     key: string;
     token: string;
     count: number;
+    steps: number;
     agent: boolean;
     placement?: GenerationPlacement;
     progress: GenerationSeriesProgress;
@@ -183,6 +184,30 @@ const supervise = async (entry: SupervisedSeries, descriptor: GenerationJobDescr
             applySnapshot(session, snapshot);
             if (isGenerationJobTerminal(snapshot.state)) return settleSeries(entry, settleSnapshot(session, snapshot));
         }
+        if (descriptor.stream) {
+            const controller = new AbortController();
+            entry.wake = () => controller.abort();
+            try {
+                await observeGenerationJob(session.key, session.token, controller.signal, next => {
+                    snapshot = next;
+                    session.connectionError = undefined;
+                    applySnapshot(session, next);
+                }, session.previewVersion);
+                if (snapshot && isGenerationJobTerminal(snapshot.state)) return settleSeries(entry, settleSnapshot(session, snapshot));
+            } catch (error) {
+                if (isJobGone(error)) return settleSeries(entry, failureReceipt(session, error));
+                if (!controller.signal.aborted) {
+                    session.connectionError = `暂时无法读取后台任务状态：${describeError(error, '连接失败')}`;
+                    publish();
+                }
+            } finally { entry.wake = null; }
+            // 回到前台主动重连时立即补查，避免冻结连接或旧定时器拖住显示。
+            if (controller.signal.aborted) {
+                try { snapshot = await getGenerationJob(session.key, session.token, session.previewVersion); }
+                catch (error) { if (isJobGone(error)) return settleSeries(entry, failureReceipt(session, error)); }
+                continue;
+            }
+        }
         await new Promise<void>(resolve => {
             let settled = false;
             const wake = () => { if (settled) return; settled = true; clearTimeout(timer); entry.wake = null; resolve(); };
@@ -218,7 +243,7 @@ export const beginGenerationSeries = (options: {
     if (!key) throw agentOperationError('请先配置 NovelAI API Key', 'missing_key');
     if (!options.placement && (groups.get(options.scope) || []).length > 0) throw agentOperationError('已有图片正在生成，请等待完成', 'generation_busy');
     const session: GenerationSeriesSession = {
-        scope: options.scope, key, token: crypto.randomUUID(), count: options.count, agent: options.agent,
+        scope: options.scope, key, token: crypto.randomUUID(), count: options.count, steps: options.descriptor.history.params.steps ?? 0, agent: options.agent,
         ...(options.placement ? { placement: options.placement } : {}),
         progress: { current: 0, total: options.count, stopping: false }, stopped: false,
         queued: Boolean(options.placement), state: options.placement ? 'waiting' : 'preparing', historyIds: [],

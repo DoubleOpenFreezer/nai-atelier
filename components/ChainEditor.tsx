@@ -185,7 +185,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     const generationSeriesRef = useRef(getGenerationSeriesSession(chain.id));
     // 后台任务的观察态：过程预览、成图、费用确认都来自后端状态，不靠本页逐张回调。
     const lastSeriesStreamImageRef = useRef<string | undefined>(undefined);
-    const currentGenerationStepsRef = useRef(0);
     const awaitingApprovalRef = useRef('');
     const connectionNoticeRef = useRef('');
     const activeEditOperationRef = useRef<ImageEditOperation | null>(null);
@@ -837,6 +836,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             // 后台任务的过程预览独立于成图：最终图到达后再由 lastSavedItem 接管。
             const preview = session.preview;
             const hasUnsavedPreview = session.state === 'failed' && Boolean(preview?.image);
+            const keepPreview = hasUnsavedPreview || (session.state === 'generating' && Boolean(preview?.image));
             if (preview?.image && (preview.image !== lastSeriesStreamImageRef.current || hasUnsavedPreview)) {
                 lastSeriesStreamImageRef.current = preview.image;
                 // 保存失败的终态会带完整未保存成图：先展示，再按失败态标注为未保存。
@@ -848,8 +848,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                     setGeneratedImage(preview.image);
                     setPreviewMode(previewState);
                 }
-                setGenerationProgress(preview.step ? { step: preview.step, total: currentGenerationStepsRef.current } : null);
             }
+            setGenerationProgress(preview?.step ? { step: preview.step, total: session.steps } : null);
             if (session.connectionError && session.connectionError !== connectionNoticeRef.current) {
                 connectionNoticeRef.current = session.connectionError;
                 notify(session.connectionError, 'error');
@@ -867,14 +867,14 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             lastSeriesPreviewRef.current = item.id;
             previewSelectionRevisionRef.current += 1;
             setPreviewHistory(previous => [item, ...previous.filter(saved => saved.id !== item.id)]);
-            if (item.edit && !hasUnsavedPreview) setImageEditPreviewImage(item.imageUrl);
-            if (!hasUnsavedPreview && (!item.edit || chain.id !== 'playground')) {
+            if (item.edit && !keepPreview) setImageEditPreviewImage(item.imageUrl);
+            if (!keepPreview && (!item.edit || chain.id !== 'playground')) {
                 setGeneratedImage(item.imageUrl);
                 setPreviewIndex(0);
                 setPreviewMode('history');
                 if (session.count === 1 && !item.edit && window.matchMedia('(max-width: 1023px)').matches) setLightboxImg(item.imageUrl);
             }
-            setGenerationProgress(null);
+            if (!keepPreview) setGenerationProgress(null);
             // 历史变更与额度刷新广播由后台任务监督器统一发出，本页不再重复 add。
             checkAndRemoveUntestedTag();
         };
@@ -1721,7 +1721,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         try {
             const streamSupported = getRuntimeNaiModelInfo(applyNaiModelSettings(draft.params, naiRuntimeConfig || DEFAULT_NAI_RUNTIME).model, naiRuntimeConfig || DEFAULT_NAI_RUNTIME).supportsStreamedResponses;
             const descriptor = await startTextToImageJob(draft, generationStreamPreview && streamSupported, approvedCost);
-            currentGenerationStepsRef.current = descriptor.history.params.steps ?? 0;
             return await runBackgroundJob(descriptor, count, options);
         } finally {
             generationInFlightRef.current = false;
@@ -1879,7 +1878,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                     minimumContextArea: request.minimumContextArea, expansion: request.expansion,
                 },
             });
-            currentGenerationStepsRef.current = job.history.params.steps ?? 0;
             const result = await runBackgroundJob(job, count, {
                 agent: options?.agent, autoApproveCost: fullAccess, placement: options?.placement, onApproved: options?.onApproved,
                 onCompleted: persistEditResultAsset,

@@ -1,4 +1,4 @@
-import { GenerationJobs } from '../worker/generationJobs.mjs';
+import { GenerationJobs, generationJobEventResponse } from '../worker/generationJobs.mjs';
 import { generationImageBytes, readGenerationResponse, composeGenerationOutput, generationHistoryForm } from './generation-output.mjs';
 
 const REQUEST_LIMIT = 60 * 1024 * 1024;
@@ -56,7 +56,28 @@ export async function handleGenerationJobRequest(req, res, jobs, { allowed, keyH
   const url = new URL(req.url, 'http://localhost');
   const token = String(req.headers['x-nai-generation-task'] || url.searchParams.get('token') || '');
   try {
-    if (req.method === 'GET') return sendJson(res, 200, jobs.snapshot(jobs.get(key, token), url.searchParams.get('previewVersion')));
+    if (req.method === 'GET') {
+      const job = jobs.get(key, token), version = url.searchParams.get('previewVersion');
+      if (url.searchParams.get('events') !== '1') return sendJson(res, 200, jobs.snapshot(job, version));
+      const controller = new AbortController(), close = () => controller.abort();
+      const response = generationJobEventResponse(jobs, job, version, controller.signal);
+      res.on('close', close);
+      res.writeHead(200, Object.fromEntries(response.headers));
+      const reader = response.body.getReader();
+      try {
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done || res.destroyed) break;
+          res.write(value);
+        }
+      } finally {
+        await reader.cancel().catch(() => {});
+        reader.releaseLock();
+        res.off('close', close);
+        if (!res.destroyed) res.end();
+      }
+      return;
+    }
     if (req.method === 'DELETE') return sendJson(res, 200, jobs.cancel(key, token));
     if (req.method === 'PATCH') {
       const body = JSON.parse((await readBody(req, 4096)).toString('utf8'));

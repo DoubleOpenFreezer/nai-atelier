@@ -1,4 +1,4 @@
-import { notifyLanAccessRequired, parseErrorResponse } from './api';
+import { createSseParser, notifyLanAccessRequired, parseErrorResponse } from './api';
 import type { GenerationPlacement } from './generationTask';
 import type { GenerationJobDescriptor, GenerationJobSnapshot, GenerationJobState } from '../worker/generationJobs.mjs';
 
@@ -54,6 +54,53 @@ export const startGenerationJob = async (
 });
 
 export const getGenerationJob = async (key: string, token: string, previewVersion?: number): Promise<GenerationJobSnapshot> => send('GET', key, token, { viaQuery: true, previewVersion });
+
+/** 同一数据块里的多步预览也逐帧提交，给浏览器留出绘制机会，隐藏页无需回放。 */
+const previewPaint = (signal: AbortSignal) => new Promise<void>(resolve => {
+    if (document.visibilityState !== 'visible' || signal.aborted) { resolve(); return; }
+    let frame: number;
+    const finish = () => { cancelAnimationFrame(frame); signal.removeEventListener('abort', finish); resolve(); };
+    signal.addEventListener('abort', finish, { once: true });
+    frame = requestAnimationFrame(() => { frame = requestAnimationFrame(finish); });
+});
+
+/** 只订阅已建立的后台任务，重连不提交新的生图请求。 */
+export const observeGenerationJob = async (key: string, token: string, signal: AbortSignal,
+    onSnapshot: (snapshot: GenerationJobSnapshot) => void | Promise<void>, previewVersion?: number): Promise<void> => {
+    const response = await fetch(`${JOB_PATH}?token=${encodeURIComponent(token)}&events=1${previewVersion === undefined ? '' : `&previewVersion=${previewVersion}`}`, {
+        headers: { Authorization: `Bearer ${key}`, Accept: 'text/event-stream' }, cache: 'no-store', signal,
+    });
+    notifyLanAccessRequired(response);
+    if (!response.ok) throw await parseErrorResponse(response);
+    if (!response.body || !response.headers.get('content-type')?.includes('text/event-stream')) {
+        await response.body?.cancel();
+        throw new Error('后台任务实时预览连接不可用');
+    }
+    const reader = response.body.getReader(), decoder = new TextDecoder();
+    const pending: GenerationJobSnapshot[] = [];
+    const parser = createSseParser(({ event, data }) => {
+        if (event !== 'snapshot') return;
+        if (!data || typeof data !== 'object' || !('state' in data) || !isGenerationJobState(data.state)) throw new Error('后台任务实时状态无效');
+        pending.push(data as GenerationJobSnapshot);
+    });
+    try {
+        for (;;) {
+            const { done, value } = await reader.read();
+            parser.push(decoder.decode(value, { stream: !done }));
+            if (done) parser.finish();
+            for (const snapshot of pending.splice(0)) {
+                signal.throwIfAborted();
+                await onSnapshot(snapshot);
+                if (isGenerationJobTerminal(snapshot.state)) return;
+                if (snapshot.preview) await previewPaint(signal);
+            }
+            if (done) throw new Error('后台任务实时预览连接已断开');
+        }
+    } finally {
+        await reader.cancel().catch(() => {});
+        reader.releaseLock();
+    }
+};
 
 /** 取消入口按 Key 访问；关闭/刷新页面用 keepalive 让请求在卸载后仍能送达。 */
 export const cancelGenerationJob = async (key: string, token: string, options: { keepalive?: boolean } = {}): Promise<void> => {

@@ -2,7 +2,7 @@ import '../support/node-environment.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { GenerationTasks } from '../../worker/generationTasks.mjs';
-import { GenerationJobs } from '../../worker/generationJobs.mjs';
+import { GenerationJobs, generationJobEventResponse } from '../../worker/generationJobs.mjs';
 
 const a = 'a'.repeat(32), b = 'b'.repeat(32), c = 'c'.repeat(32);
 const descriptor = (approvedCost = 0) => ({ payload: { model: 'nai-diffusion-4-5-full', action: 'generate', parameters: { n_samples: 1, width: 832, height: 1216 } }, history: { prompt: 'synthetic', negativePrompt: '', params: { width: 832, height: 1216 } }, randomSeed: true, stream: false, approvedCost });
@@ -25,6 +25,71 @@ const setup = (overrides = {}) => {
   });
   return { tasks, jobs, calls, advance: value => { now += value; } };
 };
+
+for (const operation of ['generate', 'img2img', 'inpaint', 'outpaint']) test(`${operation} 每步立即推送，断开观察仍完成后台保存`, async () => {
+  let emit, finish;
+  const f = setup({ generate: async (_job, _payload, onPreview) => {
+    emit = onPreview;
+    await new Promise(resolve => { finish = resolve; });
+    return {};
+  } });
+  const data = descriptor(); data.stream = true;
+  data.payload.action = operation === 'generate' ? 'generate' : operation === 'img2img' ? 'img2img' : 'infill';
+  if (operation === 'outpaint') data.payload.parameters._local_edit_operation = 'outpaint';
+  f.jobs.start('key', a, 1, undefined, data, {});
+  await until(() => Boolean(emit));
+  const job = f.jobs.get('key', a), abort = new AbortController();
+  const response = generationJobEventResponse(f.jobs, job, undefined, abort.signal);
+  assert.match(response.headers.get('content-type'), /text\/event-stream/);
+  const reader = response.body.getReader();
+  await reader.read();
+  // 模拟一个上游数据块内连续返回八步，图片内容相同也必须保留每个步数事件。
+  for (let step = 1; step <= 8; step++) emit({ image: 'data:image/png;base64,AQID', step });
+  const received = [];
+  for (let i = 0; i < 8; i++) received.push(JSON.parse(new TextDecoder().decode((await reader.read()).value).split('data: ')[1]).preview.step);
+  assert.deepEqual(received, [1, 2, 3, 4, 5, 6, 7, 8]);
+  abort.abort();
+  assert.equal((await reader.read()).done, true);
+  assert.equal(job.cancelled, false);
+  finish(); await job.running;
+  assert.equal(f.jobs.snapshot(job).state, 'succeeded');
+  assert.equal(f.jobs.snapshot(job).completedCount, 1);
+});
+
+test('实时观察终态带保存回执并关闭，重连只收最新帧，取消 reader 释放订阅', async () => {
+  let emit, finish;
+  const f = setup({ generate: async (_job, _payload, onPreview) => { emit = onPreview; await new Promise(resolve => { finish = resolve; }); return {}; } });
+  f.jobs.start('key', a, 1, undefined, descriptor(), {}); await until(() => Boolean(emit));
+  const job = f.jobs.get('key', a);
+  emit({ image: 'data:image/png;base64,AQID', step: 3 });
+  const first = generationJobEventResponse(f.jobs, job).body.getReader();
+  assert.equal(JSON.parse(new TextDecoder().decode((await first.read()).value).split('data: ')[1]).preview.step, 3);
+  await first.cancel(); assert.equal(job.listeners.size, 0);
+  const reader = generationJobEventResponse(f.jobs, job, job.previewVersion).body.getReader();
+  assert.equal(JSON.parse(new TextDecoder().decode((await reader.read()).value).split('data: ')[1]).preview, undefined);
+  finish(); await job.running;
+  const states = [];
+  for (;;) {
+    const { done, value } = await reader.read(); if (done) break;
+    states.push(JSON.parse(new TextDecoder().decode(value).split('data: ')[1]));
+  }
+  assert.equal(states.at(-1).state, 'succeeded');
+  assert.equal(states.at(-1).lastSavedItem.id, job.historyIds[0]);
+  assert.equal(job.listeners.size, 0);
+});
+
+test('终态推送入缓冲不冒充手机已读取，冻结超过清理时间仍能 GET 补查', async () => {
+  let finish;
+  const f = setup({ generate: async () => { await new Promise(resolve => { finish = resolve; }); return {}; } });
+  f.jobs.start('key', a, 1, undefined, descriptor(), {}); await until(() => Boolean(finish));
+  const job = f.jobs.get('key', a), reader = generationJobEventResponse(f.jobs, job).body.getReader();
+  await reader.read(); finish(); await job.running;
+  assert.equal(job.observedAt, undefined);
+  f.advance(360_000);
+  assert.equal(f.jobs.get('key', a), job);
+  assert.equal(f.jobs.snapshot(job).state, 'succeeded');
+  await reader.cancel();
+});
 
 test('预览按客户端版本发送，保存后等待与暂停释放图片，旧客户端仍可读取', async () => {
   let releaseSave, emitPreview;

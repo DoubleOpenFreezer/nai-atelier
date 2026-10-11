@@ -37,7 +37,7 @@ const createFakeJobs = () => {
     return job;
   };
   return {
-    store, completions, snapshot,
+    store, completions, snapshot, subscribe: () => () => {},
     has: (key: string, token: string) => store.has(`${key}:${token}`),
     get: require_,
     start: (key: string, token: string, count: number, placement: 'end' | 'next' | undefined, descriptor: GenerationJobDescriptor, context: FakeContext) => {
@@ -85,6 +85,42 @@ it('手机 GET 将可选预览版本交给共享任务快照，旧查询仍可�
   expect(snapshot).toHaveBeenLastCalledWith(f.jobs.get(KEY, TOKEN), '7');
   expect((await f.handler(new Request(query.url.replace('&previewVersion=7', ''), query))).status).toBe(200);
   expect(snapshot).toHaveBeenLastCalledWith(f.jobs.get(KEY, TOKEN), null);
+});
+
+it.each(['generate', 'img2img', 'inpaint', 'outpaint'])('独立手机 %s 实时每步推送，观察断开仍保存且释放保活', async operation => {
+  const tasks = new GenerationTasks({ intervalSeconds: 0 });
+  let emit: (preview: NonNullable<GenerationJobSnapshot['preview']>) => void = () => {};
+  let finish = () => {};
+  const save = vi.fn(async (_job: GenerationJob<RealContext>, _output: RealOutput, metadata: Omit<LocalGenItem, 'imageUrl'>) => ({ ...metadata, imageUrl: '/synthetic/saved.png' }));
+  const jobs = new GenerationJobs<RealContext, RealOutput>({ tasks, validate: () => {}, estimate: async () => 0, readCleanup: () => undefined,
+    generate: async (job, _payload, onPreview) => {
+      const release = tasks.enter(job.key, job.token); emit = onPreview;
+      await new Promise<void>(resolve => { finish = resolve; }); release();
+      return { bytes: new Uint8Array([1, 2, 3]), mime: 'image/png', queueTaskId: 'synthetic' };
+    }, save,
+  });
+  const retain = vi.fn(), release = vi.fn();
+  const handler = createGenerationJobHandler({ jobs, keyOf: value => value.replace(/^Bearer /, ''), contextOf: request => ({ authorization: request.headers.get('authorization') || '' }), retain, release });
+  const data = descriptorOf(); data.stream = true;
+  data.payload.action = operation === 'generate' ? 'generate' : operation === 'img2img' ? 'img2img' : 'infill';
+  if (operation === 'outpaint') data.payload.parameters._local_edit_operation = 'outpaint';
+  expect((await handler(new Request('https://localhost/api/generation-job', { method: 'POST', headers: { Authorization: `Bearer ${KEY}`, 'X-Nai-Generation-Task': TOKEN }, body: JSON.stringify(data) }))).status).toBe(200);
+  await flush();
+  const abort = new AbortController();
+  const response = await handler(new Request(`https://localhost/api/generation-job?token=${TOKEN}&events=1`, { headers: { Authorization: `Bearer ${KEY}` }, signal: abort.signal }));
+  expect(response.headers.get('content-type')).toContain('text/event-stream');
+  const reader = response.body!.getReader(); await reader.read();
+  for (let step = 1; step <= 8; step++) emit({ image: 'data:image/png;base64,AQID', step });
+  const steps = [];
+  for (let step = 1; step <= 8; step++) steps.push(JSON.parse(new TextDecoder().decode((await reader.read()).value).split('data: ')[1]).preview.step);
+  expect(steps).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+  const other = await handler(new Request(`https://localhost/api/generation-job?token=${TOKEN}&events=1`, { headers: { Authorization: 'Bearer other-key' } }));
+  expect(other.status).toBe(404);
+  abort.abort(); expect((await reader.read()).done).toBe(true);
+  expect(jobs.get(KEY, TOKEN).cancelled).toBe(false); expect(release).not.toHaveBeenCalled();
+  finish(); await jobs.get(KEY, TOKEN).running; await flush();
+  expect(save).toHaveBeenCalledOnce(); expect(release).toHaveBeenCalledExactlyOnceWith(idOf(KEY));
+  expect(jobs.snapshot(jobs.get(KEY, TOKEN)).state).toBe('succeeded');
 });
 
 const request = (method: string, options: { body?: unknown; authorization?: string; token?: string; count?: string; placement?: string } = {}) =>

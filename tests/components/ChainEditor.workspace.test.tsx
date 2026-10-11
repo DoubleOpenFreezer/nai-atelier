@@ -33,6 +33,7 @@ const state = vi.hoisted(() => ({
   buildDescriptor: vi.fn<(input: GenerationJobDescriptorInput) => Promise<GenerationJobDescriptor>>(),
   startJob: vi.fn<(key: string, token: string, descriptor: GenerationJobDescriptor, count: number, placement?: GenerationPlacement) => Promise<GenerationJobSnapshot>>(),
   getJob: vi.fn<(key: string, token: string) => Promise<GenerationJobSnapshot>>(),
+  observeJob: vi.fn<typeof import('../../services/generationJob').observeGenerationJob>(),
   cancelJob: vi.fn<(key: string, token: string, options?: { keepalive?: boolean }) => Promise<void>>(),
   approveJob: vi.fn<(key: string, token: string, approvedCost: number) => Promise<GenerationJobSnapshot>>(),
   started: [] as { key: string; token: string; descriptor: GenerationJobDescriptor; count: number; placement?: GenerationPlacement }[],
@@ -53,7 +54,7 @@ const state = vi.hoisted(() => ({
 vi.mock('../../services/promptAgent', () => ({ promptAgentService: { getConfig: state.agentConfig } }));
 vi.mock('../../services/generationJob', async importOriginal => {
   const actual = await importOriginal<typeof import('../../services/generationJob')>();
-  return { ...actual, startGenerationJob: state.startJob, getGenerationJob: state.getJob, cancelGenerationJob: state.cancelJob, updateGenerationJobApproval: state.approveJob };
+  return { ...actual, startGenerationJob: state.startJob, getGenerationJob: state.getJob, cancelGenerationJob: state.cancelJob, updateGenerationJobApproval: state.approveJob, observeGenerationJob: state.observeJob };
 });
 vi.mock('../../services/naiRuntime', async importOriginal => {
   const actual = await importOriginal<typeof import('../../services/naiRuntime')>();
@@ -92,6 +93,7 @@ vi.mock('../../components/ChainEditorParams', () => ({ ChainEditorParams: (props
   ? <button onClick={() => props.onForceEmptySeedChange?.(!props.forceEmptySeed)}>{props.forceEmptySeed ? '强制置空 ON' : '强制置空 OFF'}</button> : null }));
 vi.mock('../../components/ChainEditorPreview', () => ({ ChainEditorPreview: (props: React.ComponentProps<typeof import('../../components/ChainEditorPreview').ChainEditorPreview>) => <section aria-label="文生图预览">
   <output aria-label="文生图结果">{props.generatedImage}</output>
+  <output aria-label="文生图步数">{props.generationProgress && `${props.generationProgress.step}/${props.generationProgress.total}`}</output>
   <output aria-label="文生图费用">{props.generationCostLabel}</output>
   <output aria-label="预览历史编号">{props.historyLabel}</output>
   {props.canNavigateHistory && <button onClick={props.onNextHistory}>浏览下一张</button>}
@@ -134,6 +136,7 @@ vi.mock('../../components/ImageEditPanel', () => ({ ImageEditPanel: (props: Imag
   <output aria-label="编辑底图读取状态">{String(props.isBaseImageLoading)}</output>
   <output aria-label="编辑蒙版">{props.maskData}</output>
   <output aria-label="编辑结果">{props.previewImage}</output>
+  <output aria-label="编辑步数">{props.generationProgress && `${props.generationProgress.step}/${props.generationProgress.total}`}</output>
   {props.canNavigateHistory && <button onClick={props.onNextHistory}>浏览编辑下一张</button>}
   {props.canManageHistoryGroup && <button onClick={props.onRemoveCurrentHistory}>移除编辑历史</button>}
   <button onClick={() => { void props.onBaseImageChange('data:image/png;base64,cGFzdGVk', 'clipboard', 'old-parent'); }}>粘贴合成底图</button>
@@ -261,6 +264,7 @@ beforeEach(() => {
     return { ...script[0], token, requestedCount: count };
   });
   state.getJob.mockReset().mockImplementation(async (_key, token) => nextSnapshotFor(token));
+  state.observeJob.mockReset();
   state.cancelJob.mockReset().mockResolvedValue(undefined);
   state.approveJob.mockReset().mockResolvedValue({ token: 'synthetic-approval', state: 'generating', completedCount: 0, requestedCount: 0, historyIds: [] });
   state.assets.clear();
@@ -1250,6 +1254,42 @@ describe('后台任务只提交一次并只观察后端状态', () => {
   };
   const mobileActions = () => within(document.querySelector('.mobile-generation-actions') as HTMLElement);
 
+  it.each([['text-to-image', '文生图'], ['image-to-image', '图生图'], ['inpaint', '局部重绘'], ['outpaint', '扩图']] as const)('实时预览 %s 每步显示，同图片更新步数，新预览不被上一张历史覆盖', async (operation, label) => {
+    prepare();
+    vi.stubGlobal('createImageBitmap', vi.fn(async () => ({ width: 832, height: 1216, close: vi.fn() })));
+    scriptJobs([{ state: 'generating', completedCount: 0, requestedCount: 2, historyIds: [], previewVersion: 0 }]);
+    let push: Parameters<typeof import('../../services/generationJob').observeGenerationJob>[3] = () => {};
+    let finish = () => {};
+    state.observeJob.mockImplementation((_key, _token, _signal, onSnapshot) => {
+      push = onSnapshot; return new Promise<void>(resolve => { finish = resolve; });
+    });
+    const view = setupSeries();
+    view.rerender(<ChainEditor {...view.props} generationStreamPreview={true} />);
+    if (operation !== 'text-to-image') {
+      await switchTo(label);
+      await act(async () => fireEvent.click(screen.getByRole('button', { name: '粘贴合成底图' })));
+    }
+    fireEvent.change(countInput(operation === 'text-to-image' ? '文生图预览' : operation), { target: { value: '2' } });
+    fireEvent.click(screen.getByRole('button', { name: operation === 'text-to-image' ? '生成合成文生图' : operation === 'image-to-image' ? '生成合成编辑' : '生成合成蒙版编辑' }));
+    await waitFor(() => expect(state.observeJob).toHaveBeenCalledOnce());
+    const image = 'data:image/png;base64,UFJPQ0VTUw==', token = state.started[0].token;
+    for (let step = 1; step <= 3; step++) {
+      await act(async () => { await push({ token, state: 'generating', completedCount: 1, requestedCount: 2, historyIds: ['job-1'], lastSavedItem: savedItem('job-1'), previewVersion: step, preview: { image, step } }); });
+      expect(screen.getByLabelText(operation === 'text-to-image' ? '文生图结果' : '编辑结果').textContent).toBe(image);
+      expect(screen.getByLabelText(operation === 'text-to-image' ? '文生图步数' : '编辑步数').textContent).toBe(`${step}/${state.started[0].descriptor.history.params.steps}`);
+    }
+    if (operation === 'text-to-image') {
+      view.unmount(); setupSeries();
+      expect(screen.getByLabelText('文生图步数').textContent).toBe(`3/${state.started[0].descriptor.history.params.steps}`);
+    }
+    await act(async () => {
+      await push({ ...backgroundResult('job-2', 2, { historyIds: ['job-1', 'job-2'] }), token, previewVersion: 4 }); finish();
+    });
+    await waitFor(() => expect(getGenerationSeriesSession(chain.id)).toBeNull());
+    expect(state.startJob).toHaveBeenCalledOnce(); expect(state.getJob).not.toHaveBeenCalled();
+    expect(state.cancelJob).not.toHaveBeenCalled(); expect(state.addHistory).not.toHaveBeenCalled();
+  });
+
   it.each([['text-to-image', '文生图'], ['image-to-image', '图生图'], ['inpaint', '局部重绘'], ['outpaint', '扩图']] as const)('四模式 %s 将真实执行与暂停状态同步到桌面和手机生成特效', async (operation, label) => {
     prepare();
     vi.stubGlobal('createImageBitmap', vi.fn(async () => ({ width: 832, height: 1216, close: vi.fn() })));
@@ -1475,7 +1515,7 @@ describe('后台任务只提交一次并只观察后端状态', () => {
     fireEvent.click(screen.getByText('生成合成文生图'));
     await waitFor(() => expect(state.startJob).toHaveBeenCalledOnce());
     await waitFor(() => expect(state.notifySaved).toHaveBeenCalledWith('job-1'));
-    await waitFor(() => expect(screen.getByLabelText('文生图结果').textContent).toBe('/synthetic/job-1.png'));
+    await waitFor(() => expect(screen.getByLabelText('文生图结果').textContent).toBe('data:image/png;base64,UFJPQ0VTUw=='));
     await waitFor(() => expect(state.getJob).toHaveBeenCalledOnce(), { timeout: 3000 });
     await waitFor(() => expect(state.notifySaved).toHaveBeenCalledWith('job-2'), { timeout: 3000 });
     await waitFor(() => expect(screen.getByLabelText('文生图结果').textContent).toBe('/synthetic/job-2.png'));

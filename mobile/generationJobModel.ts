@@ -1,4 +1,5 @@
 import type { GenerationJobDescriptor, GenerationJobOutput, GenerationJobs } from '../worker/generationJobs.mjs';
+import { generationJobEventResponse } from '../worker/generationJobs.mjs';
 import type { GenerationPlacement } from '../services/generationTask';
 import { json } from '../worker/routes/types';
 
@@ -79,7 +80,7 @@ export const normalizedBillingPayload = (payload: GenerationJobDescriptor['paylo
 };
 
 export interface GenerationJobHandlerOptions<Context, Output extends GenerationJobOutput> {
-  jobs: Pick<GenerationJobs<Context, Output>, 'has' | 'get' | 'snapshot' | 'start' | 'cancel' | 'approve'>;
+  jobs: Pick<GenerationJobs<Context, Output>, 'has' | 'get' | 'snapshot' | 'subscribe' | 'start' | 'cancel' | 'approve'>;
   keyOf: (authorization: string) => string;
   contextOf: (request: Request) => Context;
   /**
@@ -112,7 +113,12 @@ export const createGenerationJobHandler = <Context, Output extends GenerationJob
     try {
       const key = keyOf(request.headers.get('authorization') || '');
       if (!key) return json({ error: '缺少 NovelAI API Key', code: 'missing_key' }, 401);
-      if (request.method === 'GET') return json(jobs.snapshot(jobs.get(key, token), url.searchParams.get('previewVersion')));
+      if (request.method === 'GET') {
+        const job = jobs.get(key, token), version = url.searchParams.get('previewVersion');
+        return url.searchParams.get('events') === '1'
+          ? generationJobEventResponse(jobs, job, version, request.signal)
+          : json(jobs.snapshot(job, version));
+      }
       if (request.method === 'DELETE') return json(jobs.cancel(key, token));
       if (request.method === 'PATCH') {
         let parsed: unknown;

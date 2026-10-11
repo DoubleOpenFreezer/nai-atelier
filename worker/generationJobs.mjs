@@ -40,8 +40,20 @@ export class GenerationJobs {
     return job;
   }
   has(key, token) { this.prune(); return this.jobs.has(index(key, token)); }
-  snapshot(job, previewVersion) {
-    if (terminal(job.state) && job.observedAt === undefined) {
+  subscribe(job, listener) {
+    job.listeners ||= new Set();
+    job.listeners.add(listener);
+    return () => { job.listeners.delete(listener); };
+  }
+  notify(job) {
+    if (!job.listeners?.size) return;
+    const snapshot = this.snapshot(job, undefined, false);
+    for (const listener of job.listeners) {
+      try { listener(snapshot); } catch { job.listeners.delete(listener); }
+    }
+  }
+  snapshot(job, previewVersion, observed = true) {
+    if (observed && terminal(job.state) && job.observedAt === undefined) {
       job.observedAt = this.now();
       setTimeout(() => this.prune(), this.terminalMs + 1).unref?.();
     }
@@ -140,7 +152,7 @@ export class GenerationJobs {
         job.state = 'generating';
         let output;
         try {
-          output = await this.generate(job, payload, preview => { job.preview = preview; job.previewVersion++; });
+          output = await this.generate(job, payload, preview => { job.preview = preview; job.previewVersion++; this.notify(job); });
         } catch (error) {
           // 只有后端明确在上游提交前拒绝的调度回执可以等待，不重试失败的真实生图。
           if (error.status === 409 && ['generation_paused', 'generation_waiting', 'generation_interval'].includes(error.code)) { job.needsRefresh = true; await this.sleep(250); continue; }
@@ -162,6 +174,7 @@ export class GenerationJobs {
         job.lastSavedItem = item;
         job.preview = undefined;
         job.previewVersion++;
+        this.notify(job);
         job.lastQueueTaskId = output.queueTaskId;
         this.tasks.renew(job.key, job.token, job.historyIds.length);
         while (this.tasks.current(job.key)?.token === job.token && this.tasks.current(job.key).inFlight) await this.sleep(50);
@@ -183,6 +196,7 @@ export class GenerationJobs {
       job.descriptor = undefined;
       job.context = undefined;
       if (job.state !== 'failed') { job.preview = undefined; job.previewVersion++; }
+      this.notify(job);
       setTimeout(() => this.prune(), this.terminalMs + 1).unref?.();
     }
   }
@@ -190,4 +204,43 @@ export class GenerationJobs {
     this.closed = true;
     for (const job of this.jobs.values()) if (!terminal(job.state)) job.cancelled = true;
   }
+}
+
+/** 观察连接只推送任务回执；断开不会取消生成、回贴或保存。电脑与独立手机共用。 */
+export function generationJobEventResponse(jobs, job, previewVersion, signal) {
+  const encoder = new TextEncoder();
+  let stop = () => {};
+  const stream = new ReadableStream({
+    start(controller) {
+      let closed = false, timer, version = previewVersion;
+      const close = () => {
+        if (closed) return;
+        stop();
+        controller.close();
+      };
+      stop = () => {
+        closed = true;
+        clearInterval(timer);
+        unsubscribe();
+        signal?.removeEventListener('abort', close);
+      };
+      const send = snapshot => {
+        if (closed) return;
+        const next = { ...snapshot };
+        if (String(version) === String(next.previewVersion)) delete next.preview;
+        version = next.previewVersion;
+        controller.enqueue(encoder.encode(`event: snapshot\ndata: ${JSON.stringify(next)}\n\n`));
+        if (terminal(next.state)) close();
+      };
+      const unsubscribe = jobs.subscribe(job, send);
+      signal?.addEventListener('abort', close, { once: true });
+      if (signal?.aborted) { close(); return; }
+      // 推送入缓冲不等于页面已收取终态，冻结的手机回来后仍能通过 GET 补查。
+      send(jobs.snapshot(job, version, false));
+      // 排队、暂停及费用状态沿用一秒观察；每个预览回调立即推送，不等待定时器。
+      if (!closed) timer = setInterval(() => send(jobs.snapshot(job, version, false)), 1_000);
+    },
+    cancel() { stop(); },
+  });
+  return new Response(stream, { headers: { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'private, no-store', 'X-Accel-Buffering': 'no' } });
 }

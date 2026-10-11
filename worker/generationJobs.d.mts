@@ -42,9 +42,11 @@ export class GenerationJobs<Context = unknown, Output extends GenerationJobOutpu
   jobs: Map<string, GenerationJob<Context>>;
   has(key: string, token: string): boolean;
   get(key: string, token: string): GenerationJob<Context>;
-  snapshot(job: GenerationJob<Context>, previewVersion?: number | string | null): GenerationJobSnapshot;
+  snapshot(job: GenerationJob<Context>, previewVersion?: number | string | null, observed?: boolean): GenerationJobSnapshot;
+  subscribe(job: GenerationJob<Context>, listener: (snapshot: GenerationJobSnapshot) => void): () => void;
   start(key: string, token: string, count: number, placement: 'end' | 'next' | undefined, descriptor: GenerationJobDescriptor, context: Context): GenerationJobSnapshot;
   cancel(key: string, token: string): GenerationJobSnapshot;
   approve(key: string, token: string, approvedCost: number): GenerationJobSnapshot;
   close(): void;
 }
+export function generationJobEventResponse<Context, Output extends GenerationJobOutput>(jobs: Pick<GenerationJobs<Context, Output>, 'snapshot' | 'subscribe'>, job: GenerationJob<Context>, previewVersion?: number | string | null, signal?: AbortSignal): Response;

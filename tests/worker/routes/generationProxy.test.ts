@@ -19,7 +19,7 @@ const fixture = (gateway: string | undefined = 'http://127.0.0.1:3000/__internal
 afterEach(() => vi.restoreAllMocks());
 
 describe('纯 Worker 生成代理', () => {
-  it.each(['', '&previewVersion=7'])('状态 GET 完整透传 token 和可选预览版本 %s', async suffix => {
+  it.each(['', '&previewVersion=7', '&events=1&previewVersion=7'])('状态 GET 完整透传 token 和可选预览版本 %s', async suffix => {
     const { route, prepare } = fixture();
     const upstream = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{"state":"generating"}'));
     const path = '/api/generation-job?token=synthetic%2Dtoken-0001' + suffix;

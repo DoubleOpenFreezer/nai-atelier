@@ -1,11 +1,13 @@
 import '../support/node-environment.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { EventEmitter } from 'node:events';
 import sharp from 'sharp';
 import JSZip from 'jszip';
 import { composeGenerationOutput, generationImageBytes, readGenerationResponse } from '../../scripts/generation-output.mjs';
 import { createDesktopGenerationJobs, handleGenerationJobRequest } from '../../scripts/generation-gateway.mjs';
 import { GenerationTasks } from '../../worker/generationTasks.mjs';
+import { GenerationJobs } from '../../worker/generationJobs.mjs';
 
 const png = async (width, height, rgba) => sharp({ create: { width, height, channels: 4, background: { r: rgba[0], g: rgba[1], b: rgba[2], alpha: rgba[3] / 255 } } }).png().toBuffer();
 const uri = bytes => 'data:image/png;base64,' + bytes.toString('base64');
@@ -16,6 +18,32 @@ test('电脑 GET 传递预览版本，未带版本的旧客户端保留完整快
   const options = { allowed: () => true, keyHash: () => 'synthetic', sendJson: (_res, status) => assert.equal(status, 200) };
   for (const suffix of ['&previewVersion=7', '']) await handleGenerationJobRequest({ method: 'GET', url: '/api/generation-job?token=synthetic' + suffix, headers: {} }, {}, jobs, options);
   assert.deepEqual(seen, ['7', null]);
+});
+
+test('电脑真实预览解析与 HTTP 推送逐步交付，同块八步不覆盖，终态仍保存一次', async () => {
+  let begin;
+  const frames = Array.from({ length: 8 }, (_, step) => `event: intermediate\ndata: ${JSON.stringify({ image: 'iVBORw0KGgo=', step_ix: step })}\n\n`).join('') + 'event: final\ndata: {"image":"iVBORw0KGgo="}\n\n';
+  let saves = 0;
+  const jobs = new GenerationJobs({ tasks: new GenerationTasks({ intervalSeconds: 0 }), validate: () => {}, estimate: async () => 0, readCleanup: () => undefined,
+    generate: async (_job, _payload, preview) => {
+      await new Promise(resolve => { begin = resolve; });
+      return readGenerationResponse(new Response(frames, { headers: { 'Content-Type': 'text/event-stream' } }), preview);
+    },
+    save: async (_job, _output, metadata) => { saves++; return { ...metadata, imageUrl: '/synthetic/saved.png' }; },
+  });
+  const token = 'synthetic-preview-token-0001';
+  jobs.start('key', token, 1, undefined, { payload: { model: 'synthetic', action: 'generate', parameters: { n_samples: 1 } }, history: { prompt: 'synthetic', params: {} }, approvedCost: 0, stream: true }, {});
+  const chunks = [], res = new EventEmitter();
+  res.writeHead = (status, headers) => { assert.equal(status, 200); assert.match(headers['content-type'], /text\/event-stream/); };
+  res.write = value => { chunks.push(new TextDecoder().decode(value)); return true; };
+  res.end = () => {};
+  const request = handleGenerationJobRequest({ method: 'GET', url: `/api/generation-job?token=${token}&events=1`, headers: {} }, res, jobs, { allowed: () => true, keyHash: () => 'key', sendJson: () => assert.fail('不能退为 JSON') });
+  await new Promise(resolve => setTimeout(resolve, 0)); begin();
+  await request;
+  const events = chunks.map(chunk => JSON.parse(chunk.split('data: ')[1]));
+  assert.deepEqual(events.filter(event => event.preview?.step).map(event => event.preview.step), [1, 2, 3, 4, 5, 6, 7, 8]);
+  assert.equal(events.at(-1).state, 'succeeded'); assert.equal(saves, 1);
+  assert.equal(res.listenerCount('close'), 0);
 });
 
 for (const failure of ['composition', 'storage', 'receipt']) test(`电脑真实 ZIP 保存链路：${failure} 失败保留产物且不补发生图`, async t => {
