@@ -88,7 +88,8 @@ vi.mock('../../components/ConfirmDialog', () => ({ useConfirmDialog: () => state
 vi.mock('../../components/CloudQueueStatus', () => ({ useCloudQueueStatus: () => null, InlineCloudQueueStatus: () => null }));
 vi.mock('../../components/LabModuleSection', () => ({ LabModuleSection: ({ children }: React.PropsWithChildren) => <div>{children}</div> }));
 vi.mock('../../components/TagAutocompleteTextarea', () => ({ TagAutocompleteTextarea: (props: { value: string; placeholder?: string; disabled?: boolean; onValueChange: (value: string) => void }) => <textarea disabled={props.disabled} value={props.value} placeholder={props.placeholder} onChange={event => props.onValueChange(event.target.value)} /> }));
-vi.mock('../../components/ChainEditorParams', () => ({ ChainEditorParams: () => null }));
+vi.mock('../../components/ChainEditorParams', () => ({ ChainEditorParams: (props: React.ComponentProps<typeof import('../../components/ChainEditorParams').ChainEditorParams>) => props.onForceEmptySeedChange
+  ? <button onClick={() => props.onForceEmptySeedChange?.(!props.forceEmptySeed)}>{props.forceEmptySeed ? '强制置空 ON' : '强制置空 OFF'}</button> : null }));
 vi.mock('../../components/ChainEditorPreview', () => ({ ChainEditorPreview: (props: React.ComponentProps<typeof import('../../components/ChainEditorPreview').ChainEditorPreview>) => <section aria-label="文生图预览">
   <output aria-label="文生图结果">{props.generatedImage}</output>
   <output aria-label="文生图费用">{props.generationCostLabel}</output>
@@ -119,6 +120,7 @@ vi.mock('../../components/ImageEditPanel', () => ({ ImageEditPanel: (props: Imag
     baseImageSource, parentHistoryId: linkedParentHistoryId,
   }, { params: draft.params, onApproved, agent: true, count, placement }).then(value => value ?? true)); });
   return <section aria-label={props.operation}>
+  {props.onForceEmptySeedChange && <button onClick={() => props.onForceEmptySeedChange?.(!props.forceEmptySeed)}>{props.forceEmptySeed ? '强制置空 ON' : '强制置空 OFF'}</button>}
   {props.generationCountControl && <GenerationCountControl {...props.generationCountControl} disabled={props.isGenerating} busy={props.isGenerating} />}
   <input aria-label="编辑提示词" value={props.draft.prompt} onChange={event => props.onPromptChange(event.target.value)} />
   <input aria-label="编辑负面词" value={props.draft.negativePrompt} onChange={event => props.onNegativePromptChange(event.target.value)} />
@@ -199,6 +201,22 @@ const setup = (entry: PromptChain = chain) => {
   return { ...render(<ChainEditor {...props} />), props };
 };
 const textPrompt = () => screen.getByPlaceholderText('输入全局提示词，英文逗号分隔') as HTMLTextAreaElement;
+
+it.each(['text-to-image', 'image-to-image', 'inpaint', 'outpaint'] as const)('%s 工作台传递强制置空状态与回调，原种子继续留在当前模式草稿', mode => {
+  const session = fallback(); session.activeMode = mode;
+  const content = mode === 'text-to-image' ? session.textToImage : session.edits[mode];
+  content.params.seed = 987654321; saveLabWorkspaceSession(chain.id, session);
+  const view = setup(), onForceEmptySeedChange = vi.fn();
+  view.rerender(<ChainEditor {...view.props} forceEmptySeed onForceEmptySeedChange={onForceEmptySeedChange} />);
+  fireEvent.click(screen.getByRole('button', { name: '强制置空 ON' }));
+  expect(onForceEmptySeedChange).toHaveBeenLastCalledWith(false);
+  view.rerender(<ChainEditor {...view.props} forceEmptySeed={false} onForceEmptySeedChange={onForceEmptySeedChange} />);
+  fireEvent.click(screen.getByRole('button', { name: '强制置空 OFF' }));
+  expect(onForceEmptySeedChange).toHaveBeenLastCalledWith(true);
+  const saved = loadLabWorkspaceSession(chain.id, fallback());
+  expect((mode === 'text-to-image' ? saved.textToImage : saved.edits[mode]).params.seed).toBe(987654321);
+  expect(state.startJob).not.toHaveBeenCalled();
+});
 
 it.each([false, true])('队列忙碌=%s 时按需查询，隐藏页暂停，回前台立即补查', async busy => {
   vi.useFakeTimers();

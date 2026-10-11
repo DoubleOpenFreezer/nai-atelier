@@ -24,6 +24,7 @@ interface ChainEditorParamsProps {
     hideResolution?: boolean;
     mode?: 'text-to-image' | ImageEditOperation;
     forceEmptySeed?: boolean;
+    onForceEmptySeedChange?: (enabled: boolean) => void;
     /** 免费步数上限开关（全局设置）；开启时步数锁定在官方同步的免费门槛内，关闭后放宽到 NovelAI 硬上限 50。 */
     enforceFreeStepLimit?: boolean;
 }
@@ -40,6 +41,7 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
     hideResolution = false,
     mode = 'text-to-image',
     forceEmptySeed = false,
+    onForceEmptySeedChange,
     enforceFreeStepLimit = true,
 }) => {
   useLanguage();
@@ -338,17 +340,29 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
                 </div>
 
                 <div className="flex flex-col gap-1">
-                    <label className="text-xs text-gray-500 dark:text-gray-500 flex items-center justify-between font-medium">
+                    <div className="text-xs text-gray-500 dark:text-gray-500 flex items-center justify-between gap-2 font-medium">
                         <span>{t("随机种子")}</span>
-                        {forceEmptySeed && (
-                            <InfoPopover label={t("强制随机说明")} content={params.seed !== undefined && params.seed !== null ? t("原保存种子: {0}（关闭设置后恢复）", [params.seed]) : t("当前已在全局设置中强制随机")} className="text-micro text-amber-600 dark:text-amber-400 font-normal underline decoration-dotted underline-offset-2">
-                                {t("已强制置空")}</InfoPopover>
-                        )}
-                    </label>
+                        <button
+                            type="button"
+                            role="switch"
+                            aria-label={t("强制置空")}
+                            aria-checked={forceEmptySeed}
+                            disabled={!canEdit || !onForceEmptySeedChange}
+                            onClick={() => onForceEmptySeedChange?.(!forceEmptySeed)}
+                            className="flex shrink-0 items-center gap-1.5 rounded-md py-1 font-normal transition-colors hover:text-indigo-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:text-indigo-400"
+                        >
+                            <span className="text-micro">{t("强制置空")}</span>
+                            <span aria-hidden="true" className={`relative h-5 w-11 flex-none rounded-full transition-colors ${forceEmptySeed ? 'bg-indigo-500' : 'bg-gray-300 dark:bg-gray-700'}`}>
+                                <span className={`absolute inset-y-0 flex items-center text-micro font-medium ${forceEmptySeed ? 'left-1 text-white' : 'right-1 text-gray-600 dark:text-gray-300'}`}>{forceEmptySeed ? 'ON' : 'OFF'}</span>
+                                <span className={`absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform duration-200 ${forceEmptySeed ? 'translate-x-6' : 'translate-x-0'}`} />
+                            </span>
+                        </button>
+                    </div>
                     <input
                         type="number"
-                        className={`w-full bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl px-3 py-2 text-xs md:text-sm text-gray-800 dark:text-gray-200 outline-none transition-colors focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 disabled:opacity-50 ${forceEmptySeed ? 'bg-amber-50/40 dark:bg-amber-950/20' : ''}`}
-                        disabled={!canEdit}
+                        aria-label={t("随机种子")}
+                        className="w-full bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl px-3 py-2 text-xs md:text-sm text-gray-800 dark:text-gray-200 outline-none transition-colors focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 disabled:opacity-50"
+                        disabled={!canEdit || forceEmptySeed}
                         placeholder={forceEmptySeed ? t("已强制置空 (随机)") : t("随机")}
                         value={forceEmptySeed ? '' : (params.seed === undefined || params.seed === null ? '' : params.seed)}
                         onChange={(e) => {

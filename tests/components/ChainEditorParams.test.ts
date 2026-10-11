@@ -103,11 +103,11 @@ describe('ChainEditorParams', () => {
     expect(effort.disabled).toBe(true);
   });
 
-  it('重要提示可点按读取，保留完整预设来源、原种子及收费含义，不改写参数', () => {
+  it('重要提示可点按读取，保留完整预设来源及收费含义，不改写参数', () => {
     const changed = vi.fn();
     const name = '很长的预设名称'.repeat(10);
     renderParams({ params: { ...params, seed: 987654321 }, presetSource: { name, modified: true }, forceEmptySeed: true, enforceFreeStepLimit: false, setParams: changed });
-    for (const [label, text] of [['预设来源详情', name], ['强制随机说明', '987654321'], ['步数上限说明', '将消耗 Anlas']] as const) {
+    for (const [label, text] of [['预设来源详情', name], ['步数上限说明', '将消耗 Anlas']] as const) {
       fireEvent.click(screen.getByRole('button', { name: label }));
       expect(screen.getByRole('dialog', { name: label }).textContent).toContain(text);
       fireEvent.click(screen.getByRole('button', { name: '关闭说明' }));
@@ -369,20 +369,41 @@ describe('ChainEditorParams', () => {
     }));
   });
 
-  it('开启 forceEmptySeed 时随机种子输入框显示为空，关闭时显示原种子数值', () => {
-    const { rerender } = renderParams({ params: { ...params, seed: 987654321 }, forceEmptySeed: true });
-    const seedInput = screen.getByPlaceholderText('已强制置空 (随机)') as HTMLInputElement;
-    expect(seedInput.value).toBe('');
+  it.each(['text-to-image', 'image-to-image', 'inpaint', 'outpaint'] as const)('%s 强制置空开关 ON 留空禁用，OFF 恢复种子并可编辑，切换不改写草稿', mode => {
+    const changed = vi.fn(), markChange = vi.fn();
+    const Harness = () => {
+      const [value, setValue] = React.useState<NAIParams>({ ...params, seed: 987654321 });
+      const [forceEmptySeed, setForceEmptySeed] = React.useState(true);
+      return React.createElement(ChainEditorParams, { params: value, setParams: next => { changed(next); setValue(next); }, canEdit: true,
+        markChange, mode, forceEmptySeed, onForceEmptySeedChange: setForceEmptySeed });
+    };
+    render(React.createElement(Harness));
+    const toggle = screen.getByRole('switch', { name: '强制置空' });
+    const input = screen.getByRole('spinbutton', { name: '随机种子' }) as HTMLInputElement;
+    expect(toggle.getAttribute('aria-checked')).toBe('true');
+    expect(toggle.textContent).toContain('ON');
+    expect(input.value).toBe(''); expect(input.disabled).toBe(true);
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute('aria-checked')).toBe('false');
+    expect(toggle.textContent).toContain('OFF');
+    expect(input.value).toBe('987654321'); expect(input.disabled).toBe(false);
+    expect(changed).not.toHaveBeenCalled(); expect(markChange).not.toHaveBeenCalled();
+    fireEvent.change(input, { target: { value: '123' } });
+    expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ seed: 123 }));
+    fireEvent.click(toggle); expect(input.value).toBe('');
+    fireEvent.click(toggle); expect(input.value).toBe('123');
+    fireEvent.change(input, { target: { value: '' } });
+    expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ seed: undefined }));
+    expect(markChange).toHaveBeenCalledTimes(2);
+  });
 
-    rerender(React.createElement(ChainEditorParams, {
-      params: { ...params, seed: 987654321 },
-      setParams: vi.fn(),
-      canEdit: true,
-      markChange: vi.fn(),
-      forceEmptySeed: false,
-    }));
-    const restoredInput = screen.getByPlaceholderText('随机') as HTMLInputElement;
-    expect(restoredInput.value).toBe('987654321');
+  it('只读时强制置空开关和种子输入均不可修改', () => {
+    const onForceEmptySeedChange = vi.fn();
+    renderParams({ canEdit: false, onForceEmptySeedChange });
+    const toggle = screen.getByRole('switch', { name: '强制置空' }) as HTMLButtonElement;
+    expect(toggle.disabled).toBe(true);
+    expect((screen.getByRole('spinbutton', { name: '随机种子' }) as HTMLInputElement).disabled).toBe(true);
+    fireEvent.click(toggle); expect(onForceEmptySeedChange).not.toHaveBeenCalled();
   });
 
   it('当 params 为空对象或缺少宽高时优雅渲染且不崩溃', () => {

@@ -55,6 +55,7 @@ interface ImageEditPanelProps {
   safeMode?: boolean;
   tagAssistEnabled: boolean;
   forceEmptySeed?: boolean;
+  onForceEmptySeedChange?: (enabled: boolean) => void;
   enforceFreeStepLimit?: boolean;
   apiKey: string;
   notify: (message: string, type?: 'success' | 'error') => void;
@@ -118,6 +119,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
   generationCostLabel,
   tagAssistEnabled,
   forceEmptySeed = false,
+  onForceEmptySeedChange,
   enforceFreeStepLimit = true,
   apiKey,
   notify,
@@ -1165,6 +1167,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
           mobileTab={mobileTab}
           fileInputRef={fileInputRef}
           forceEmptySeed={forceEmptySeed}
+          onForceEmptySeedChange={onForceEmptySeedChange}
           enforceFreeStepLimit={enforceFreeStepLimit}
           baseImagePreview={baseImage}
           canvasProps={{

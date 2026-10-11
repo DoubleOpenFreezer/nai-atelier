@@ -11,7 +11,8 @@ import { imageTaggerService } from '../../services/imageTaggerService';
 const canvasState = vi.hoisted(() => ({ focused: false }));
 
 vi.mock('../../components/ChainEditorParams', () => ({
-  ChainEditorParams: () => React.createElement('div', { 'data-testid': 'common-params' }, '公共参数'),
+  ChainEditorParams: (props: React.ComponentProps<typeof import('../../components/ChainEditorParams').ChainEditorParams>) => React.createElement('div', { 'data-testid': 'common-params' }, '公共参数',
+    props.onForceEmptySeedChange && React.createElement('button', { onClick: () => props.onForceEmptySeedChange?.(!props.forceEmptySeed) }, props.forceEmptySeed ? '强制置空 ON' : '强制置空 OFF')),
 }));
 
 vi.mock('../../components/VibeManager', () => ({
@@ -143,6 +144,24 @@ const renderControls = (operation: 'image-to-image' | 'inpaint' | 'outpaint', ma
 };
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+
+it.each(['image-to-image', 'inpaint', 'outpaint'] as const)('%s 编辑面板将强制置空状态与回调传给公共参数，切换不改草稿', operation => {
+  const onDraftChange = vi.fn();
+  const draft = createLabImageEditDraft(operation, 'synthetic', '', { ...params, seed: 123 });
+  const Harness = () => {
+    const [forceEmptySeed, setForceEmptySeed] = React.useState(true);
+    return React.createElement(ImageEditPanel, { baseImage: null, previewImage: null, operation, draft,
+      layout: { order: ['prompt', 'baseImage', 'params', 'editSettings'], collapsed: {} }, generationCostLabel: () => '估算', apiKey: '', notify: vi.fn(),
+      forceEmptySeed, onForceEmptySeedChange: setForceEmptySeed,
+      onPromptChange: vi.fn(), onNegativePromptChange: vi.fn(), onPromptSource: vi.fn(), onDraftChange, onBaseImageChange: vi.fn(), onCanvasChange: vi.fn(),
+      onGenerate: vi.fn(), onOpenLightbox: vi.fn(), getDownloadFilename: () => 'test.png', tagAssistEnabled: false });
+  };
+  render(React.createElement(Harness));
+  fireEvent.click(screen.getByRole('button', { name: '强制置空 ON' }));
+  fireEvent.click(screen.getByRole('button', { name: '强制置空 OFF' }));
+  expect(screen.getByRole('button', { name: '强制置空 ON' })).toBeTruthy();
+  expect(draft.params.seed).toBe(123); expect(onDraftChange).not.toHaveBeenCalled();
+});
 
 describe('ImageEditControls', () => {
   it.each(['canvas', 'params'] as const)('图生图输出尺寸随 %s Tab 正确显隐，选择不影响其他编辑模式', mobileTab => {

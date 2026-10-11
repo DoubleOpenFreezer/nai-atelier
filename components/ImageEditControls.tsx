@@ -38,6 +38,7 @@ interface ImageEditControlsProps {
   safeMode?: boolean;
   tagAssistEnabled: boolean;
   forceEmptySeed?: boolean;
+  onForceEmptySeedChange?: (enabled: boolean) => void;
   enforceFreeStepLimit?: boolean;
   apiKey: string;
   /** 图生图模式底图缩略图（dataUrl），显示在底图来源区；右侧预览只显示结果。 */
@@ -73,7 +74,7 @@ const getModuleOrder = (layout: LabPageLayout, moduleId: keyof LabPageLayout['co
 const isModuleCollapsed = (layout: LabPageLayout, moduleId: keyof LabPageLayout['collapsed']) => Boolean(layout.collapsed[moduleId]);
 
 export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
-  operation, draft, layout = DEFAULT_LAB_PAGE_LAYOUTS[operation], fileInputRef, canvasProps, latestTextToImageItem, selectableParams, strength, noise, brushSize, focused, minimumContextArea, tool, expansion, outpaintSourceSize, isBusy = false, safeMode = false, tagAssistEnabled, forceEmptySeed = false, enforceFreeStepLimit = true, apiKey, baseImagePreview, notify,
+  operation, draft, layout = DEFAULT_LAB_PAGE_LAYOUTS[operation], fileInputRef, canvasProps, latestTextToImageItem, selectableParams, strength, noise, brushSize, focused, minimumContextArea, tool, expansion, outpaintSourceSize, isBusy = false, safeMode = false, tagAssistEnabled, forceEmptySeed = false, onForceEmptySeedChange, enforceFreeStepLimit = true, apiKey, baseImagePreview, notify,
   onPromptChange, onNegativePromptChange, onDraftChange, onFileChange, onPasteImage, onSelectImageSource, onStrengthChange, onNoiseChange, onBrushSizeChange, onFocusedChange,
   onMinimumContextAreaChange, onToolChange, manualMaskEditing = false, onManualMaskEditingChange = () => undefined, onClearMask, onInvertMask, onUndo, onRedo, onExpansionChange, onApplyOutpaint, onResetFocusedRect = () => undefined, normalization = null, onNormalize = () => undefined,
   mobileTab = 'canvas',
@@ -388,7 +389,7 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
           {sizeMode === 'custom' && validateImageEditDimensions(outputSize.width, outputSize.height) && <div role="status" className="text-amber-700 dark:text-amber-300">{validateImageEditDimensions(outputSize.width, outputSize.height)}</div>}
           {sizeMode !== 'original' && <div className="text-gray-500 dark:text-gray-400">{t("等比保留底图，比例不同处填白。{0}", [sizeMode === 'free' && t("仅调整像素范围，实际费用见生成按钮。")])}</div>}
         </div>}
-        <ChainEditorParams params={selectableParams} prompt={draft.prompt} setParams={params => onDraftChange({ params })} canEdit={!isBusy} markChange={() => undefined} hideResolution mode={operation} forceEmptySeed={forceEmptySeed} enforceFreeStepLimit={enforceFreeStepLimit} />
+        <ChainEditorParams params={selectableParams} prompt={draft.prompt} setParams={params => onDraftChange({ params })} canEdit={!isBusy} markChange={() => undefined} hideResolution mode={operation} forceEmptySeed={forceEmptySeed} onForceEmptySeedChange={onForceEmptySeedChange} enforceFreeStepLimit={enforceFreeStepLimit} />
       </LabModuleSection>
 
       <LabModuleSection moduleId="editSettings" label={t("编辑参数")} order={getModuleOrder(layout, 'editSettings')} defaultCollapsed={isModuleCollapsed(layout, 'editSettings')} className={mobileTab === 'params' ? 'block' : 'hidden lg:block'}>

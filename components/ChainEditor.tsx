@@ -70,6 +70,7 @@ interface ChainEditorProps {
     onTagAssistEnabledChange: (enabled: boolean) => void;
     generationStreamPreview: boolean;
     forceEmptySeed?: boolean;
+    onForceEmptySeedChange?: (enabled: boolean) => void;
     enforceFreeStepLimit?: boolean;
     continuousGenerationEnabled?: boolean;
     labPageLayouts: LabPageLayouts;
@@ -77,7 +78,7 @@ interface ChainEditorProps {
     onBack: () => void | Promise<void>;
 }
 
-export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUpdateChain, onFork, setIsDirty, saveRef, notify, externalImportToken, agentOpenToken, tagAssistEnabled, onTagAssistEnabledChange, generationStreamPreview, forceEmptySeed = false, enforceFreeStepLimit = true, continuousGenerationEnabled = true, labPageLayouts, safeMode, onBack }) => {
+export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUpdateChain, onFork, setIsDirty, saveRef, notify, externalImportToken, agentOpenToken, tagAssistEnabled, onTagAssistEnabledChange, generationStreamPreview, forceEmptySeed = false, onForceEmptySeedChange, enforceFreeStepLimit = true, continuousGenerationEnabled = true, labPageLayouts, safeMode, onBack }) => {
   useLanguage();
     const [keyboardOffset, setKeyboardOffset] = useState(0);
     const queueStatus = useCloudQueueStatus();
@@ -2277,6 +2278,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                             markChange={markChange}
                             presetSource={presetSources.settings}
                             forceEmptySeed={forceEmptySeed}
+                            onForceEmptySeedChange={onForceEmptySeedChange}
                             enforceFreeStepLimit={enforceFreeStepLimit}
                         />
                         </LabModuleSection>
@@ -2338,6 +2340,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 safeMode={safeMode}
                 tagAssistEnabled={tagAssistEnabled}
                 forceEmptySeed={forceEmptySeed}
+                onForceEmptySeedChange={onForceEmptySeedChange}
                 enforceFreeStepLimit={enforceFreeStepLimit}
                 latestTextToImageItem={latestTextToImageItem}
                 onOpenLightbox={image => {
