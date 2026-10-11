@@ -1,7 +1,7 @@
 import { compareReleaseVersions, releaseVersion, RELEASE_PAGE } from '../services/appReleases.mjs';
 
 /** 更新器只接收固定操作；安装前由主进程冻结请求并等待自身后台退出。 */
-export function createDesktopUpdater({ updater, version, allowPrerelease = true, savePreference, publish, prepareInstall, stopBackend, resumeBackend, openReleasePage }) {
+export function createDesktopUpdater({ updater, version, allowPrerelease = true, savePreference, publish, prepareInstall, stopBackend, resumeBackend, openReleasePage, onBeforeQuitForUpdate = () => {} }) {
   let state = { phase: 'idle', currentVersion: version, version: '', progress: 0, allowPrerelease, message: '', releaseNotes: '' };
   let pending = false;
   updater.autoDownload = false;
@@ -17,6 +17,7 @@ export function createDesktopUpdater({ updater, version, allowPrerelease = true,
     update({ phase: 'downloaded', message: error.message || '安装未完成' });
     void resumeBackend().catch(fail);
   });
+  updater.on('before-quit-for-update', onBeforeQuitForUpdate);
   updater.on('update-available', info => {
     if (!releaseVersion(info.version) || compareReleaseVersions(info.version, version) <= 0) return fail(new Error('发行版本号无效或低于当前版本'));
     update({ phase: 'available', version: info.version, progress: 0, message: '', releaseNotes: typeof info.releaseNotes === 'string' ? info.releaseNotes.slice(0, 8000) : '' });

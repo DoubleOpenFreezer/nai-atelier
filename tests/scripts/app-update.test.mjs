@@ -21,8 +21,8 @@ const fixture = (options = {}) => {
   const order = [], states = [], updater = new EventEmitter();
   updater.checkForUpdates = async () => { order.push('check'); updater.emit('update-available', { version: '1.2.0', releaseNotes: '更新说明' }); };
   updater.downloadUpdate = async () => { order.push('download'); updater.emit('download-progress', { percent: 53.6 }); updater.emit('update-downloaded', { version: '1.2.0' }); };
-  updater.quitAndInstall = () => order.push('install');
-  const service = createDesktopUpdater({ updater, version: '1.1.0', savePreference: async () => order.push('preference'), publish: state => states.push(state), prepareInstall: async () => order.push('prepare'), stopBackend: async () => order.push('stop'), resumeBackend: async () => order.push('resume'), openReleasePage: async () => order.push('open'), ...options });
+  updater.quitAndInstall = () => { order.push('install'); updater.emit('before-quit-for-update'); };
+  const service = createDesktopUpdater({ updater, version: '1.1.0', savePreference: async () => order.push('preference'), publish: state => states.push(state), prepareInstall: async () => order.push('prepare'), stopBackend: async () => order.push('stop'), resumeBackend: async () => order.push('resume'), openReleasePage: async () => order.push('open'), onBeforeQuitForUpdate: () => order.push('allow-window-close'), ...options });
   return { service, updater, order, states };
 };
 test('只自动检查，显式下载后先检查任务并停服，再安装；进度和说明真实反馈', async () => {
@@ -33,7 +33,7 @@ test('只自动检查，显式下载后先检查任务并停服，再安装；�
   await f.service.action('download'); assert.equal(f.service.status().phase, 'downloaded');
   assert.ok(f.states.some(state => state.progress === 54));
   assert.equal(f.service.status().releaseNotes, '更新说明');
-  await f.service.action('install'); assert.deepEqual(f.order, ['check', 'download', 'prepare', 'stop', 'install']);
+  await f.service.action('install'); assert.deepEqual(f.order, ['check', 'download', 'prepare', 'stop', 'install', 'allow-window-close']);
 });
 test('进行中的任务和跨主要版本阻止安装，保留下载包，正常退出也不会自动安装', async () => {
   const f = fixture({ prepareInstall: async () => { throw new Error('生成仍在进行'); } });

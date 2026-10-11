@@ -34,6 +34,7 @@ const setStatus = (phase, message) => {
   if (window && !window.isDestroyed()) window.webContents.send('atelier-status', localizedStatus());
 };
 const showWindow = () => { window?.show(); window?.focus(); };
+const quitApp = () => { quitting = true; app.quit(); };
 
 function createWindow() {
   window = new BrowserWindow({
@@ -71,7 +72,7 @@ function createWindow() {
 function updateMenus() {
   const roles = (items) => items.map(([role, label]) => ({ role, label: t(label) }));
   const dataItem = { label: t('打开数据目录'), click: () => void shell.openPath(workspace || dataRoot) };
-  const quitItem = { label: t('退出工坊'), accelerator: 'Alt+F4', click: () => app.quit() };
+  const quitItem = { label: t('退出工坊'), accelerator: 'Alt+F4', click: quitApp };
   Menu.setApplicationMenu(Menu.buildFromTemplate([
     { label: t('工坊'), submenu: [dataItem, { label: t('查看启动日志'), click: () => void shell.openPath(logFile) }, { type: 'separator' }, quitItem] },
     { label: t('编辑'), submenu: roles([['undo', '撤销'], ['redo', '重做'], ['cut', '剪切'], ['copy', '复制'], ['paste', '粘贴'], ['selectAll', '全选']]) },
@@ -151,7 +152,7 @@ ipcMain.handle('atelier-desktop', async (event, action) => {
   if (action === 'status') return localizedStatus();
   if (action === 'retry') return startBackend();
   if (action === 'logs') return shell.openPath(logFile);
-  if (action === 'quit') return app.quit();
+  if (action === 'quit') return quitApp();
   throw new Error('未知操作');
 });
 
@@ -211,6 +212,7 @@ async function startUpdates() {
     updater: autoUpdater, version: app.getVersion(), allowPrerelease: preference.allowPrerelease !== false,
     savePreference: value => writeFile(preferenceFile, JSON.stringify({ allowPrerelease: value }) + '\n'),
     publish: state => { if (window && !window.isDestroyed()) window.webContents.send('atelier-update-status', state); },
+    onBeforeQuitForUpdate: () => { quitting = true; },
     prepareInstall: prepareUpdate, stopBackend: stopForUpdate,
     resumeBackend: async () => { quitting = false; if (backend?.connected) backend.send({ type: 'atelier-cancel-update' }); else if (!backend) await startBackend(); },
     openReleasePage: url => shell.openExternal(url),

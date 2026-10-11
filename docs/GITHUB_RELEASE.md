@@ -14,9 +14,9 @@ Release 是项目的版本下载页：一个版本标签指向一份确定的代
 
 2026-10-11 发布 **[v1.70.0 · 创作工作流与浏览体验升级](https://github.com/HelloQun54321/nai-atelier/releases/tag/v1.70.0)**。发行说明汇总五语界面、全局收藏、后台连续生成、V5 档位、提示词编辑、实验室与角色复用、法典资源页、中转接入、助手授权和图库体验等更新。
 
-四份附件为 `NAI-Atelier-Setup-1.70.0-x64.exe`、同名 `.sha256`、本次构建生成的 `latest.yml` 与 `INSTALL-Windows-zh-CN.txt`。安装包 265,612,542 字节，SHA-256 为 `83dfad0b88c522b18f2438cac8e7a58aec3100d24b1a70828eae51c8cc3ecbb5`；更新元数据版本为 1.70.0，引用相同安装包及其 SHA-512。发布后核对四份公开附件与本地文件一致，Release 标签绑定 1.70.0 构建提交。
+四份附件为 `NAI-Atelier-Setup-1.70.0-x64.exe`、同名 `.sha256`、本次构建生成的 `latest.yml` 与 `INSTALL-Windows-zh-CN.txt`。发布后发现应用内安装时窗口关闭逻辑会把进程隐藏到托盘，导致 NSIS 误报应用仍在运行；修复更新退出和托盘显式退出后，在保持 1.70.0 版本号的前提下重建并替换安装包、校验文件与更新元数据。修复版安装包 265,612,618 字节，SHA-256 为 `957a8c9500e307ca41566d7f615f64e51b4c010aaccfeabe10375f8c2836481f`；`latest.yml` 版本为 1.70.0，SHA-512 为 `TPwcO/74pFBl4t7S6UsPjqRYOrjzuA+0HBtuGvUgb8hhwGkx3/fLUm8uWTV0qCcsv6H9TCo20jQGJKkgbouasQ==`。替换后的四份公开附件通过远端大小和校验值核对，Release 标签绑定包含修复的 1.70.0 构建提交。
 
-打包前 `npm run test:node` 为 612 项通过、0 项失败、2 项按环境跳过；受影响的 159 项前端／Worker 回归、桌面构建测试和实际打包集成测试均通过。Windows 10 尚未单独实测，安装包未配置发布者代码签名；发布任务没有使用私人资料或发起付费请求。
+修复版打包的 `npm run test:node` 为 612 项通过、0 项失败、2 项按环境跳过；实际打包集成测试通过，验证窗口启动、合成 D1/R2 持久化与退出回收。Windows 10 尚未单独实测，安装包未配置发布者代码签名；发布任务没有使用私人资料或发起付费请求。
 
 ## v1.51.0 发布与撤回记录
 
