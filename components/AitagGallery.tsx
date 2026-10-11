@@ -1134,7 +1134,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
   const importToPlayground = (image: AitagImage) => {
     try {
       const importData = parseImageImportData(image);
-      sessionStorage.setItem(IMPORT_SESSION_KEY, JSON.stringify(importData));
+      sessionStorage.setItem(IMPORT_SESSION_KEY, JSON.stringify({ ...importData, mode: 'prompt-fragments', fullMetadata: true, targetMode: 'text-to-image' }));
       notify('参数已导入实验室，正在跳转...');
       onNavigateToPlayground();
     } catch (e: any) {

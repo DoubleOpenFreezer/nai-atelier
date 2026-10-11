@@ -184,7 +184,7 @@ export const CodexGallery: React.FC<{ active: boolean; currentUser: User; notify
   const copy = async (text: string) => { try { await navigator.clipboard.writeText(text); notify(t('已复制提示词')); } catch { notify(t('无法复制，请手动选择文本'), 'error'); } };
   const applyImport = () => {
     if (!importValue || !canImport || reading) return;
-    try { sessionStorage.setItem(IMPORT_SESSION_KEY, JSON.stringify(importValue)); onNavigateToPlayground(); }
+    try { sessionStorage.setItem(IMPORT_SESSION_KEY, JSON.stringify({ ...importValue, targetMode: 'text-to-image' })); onNavigateToPlayground(); }
     catch (cause) { notify(cause instanceof Error ? cause.message : t('导入失败'), 'error'); }
   };
   const saveAsChain = async () => {

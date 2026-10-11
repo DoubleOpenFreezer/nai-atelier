@@ -505,7 +505,71 @@ it('提示词软键盘避让同时移动贴底资源与生成操作，收起后�
   expect(actions.style.bottom).toBe('');
 });
 
-describe('法典投递当前创作模式', () => {
+describe('蓝色导入明确指定文生图', () => {
+  it('首次打开实验室也切到文生图，部分元数据保留已存文生图设置', async () => {
+    const session = fallback(); session.activeMode = 'inpaint';
+    session.textToImage.negativePrompt = 'retained text negative'; session.textToImage.params.scale = 4;
+    session.edits.inpaint.params.scale = 9;
+    saveLabWorkspaceSession(chain.id, session);
+    const before = loadLabWorkspaceSession(chain.id, fallback());
+    sessionStorage.setItem('nai_pending_import', JSON.stringify({ mode: 'prompt-fragments', targetMode: 'text-to-image', fullMetadata: true,
+      partialMetadata: true, prompt: 'known original prompt', params: { seed: 0 } }));
+    setup();
+    await waitFor(() => expect(textPrompt().value).toBe('known original prompt'));
+    const saved = loadLabWorkspaceSession(chain.id, fallback());
+    expect(saved.activeMode).toBe('text-to-image');
+    expect(saved.textToImage.negativePrompt).toBe('retained text negative');
+    expect(saved.textToImage.params).toEqual({ ...session.textToImage.params, seed: 0 });
+    expect(saved.edits).toEqual(before.edits);
+  });
+  it.each(['text-to-image', 'image-to-image', 'inpaint', 'outpaint'] as const)('从 %s 完整恢复文生图，保留全部编辑草稿和资产', async mode => {
+    const session = fallback(); session.activeMode = mode;
+    session.textToImage.params.vibes = { enabled: true, normalizeStrengths: true, slots: [] };
+    for (const [operation, draft] of Object.entries(session.edits)) {
+      draft.prompt = `retained ${operation}`; draft.negativePrompt = `negative ${operation}`; draft.params.seed = 77;
+      draft.baseImageRef = `base-${operation}`; draft.maskRef = `mask-${operation}`;
+    }
+    saveLabWorkspaceSession(chain.id, session);
+    const view = setup(); const before = loadLabWorkspaceSession(chain.id, fallback());
+    const params = { model: 'nai-diffusion-5-full', width: 1024, height: 1024, steps: 20, scale: 3, sampler: 'k_euler', seed: 0,
+      qualityToggle: false, ucPreset: 4, cfgRescale: 0.3, variety: true, useCoords: true,
+      characters: [{ id: 'imported', prompt: 'girl', negativePrompt: 'hat', x: 0.2, y: 0.8, enabled: true }] };
+    sessionStorage.setItem('nai_pending_import', JSON.stringify({ mode: 'prompt-fragments', targetMode: 'text-to-image', fullMetadata: true,
+      prompt: 'complete original prompt', negativePrompt: '', params }));
+    view.rerender(<ChainEditor {...view.props} externalImportToken={1} />);
+    await waitFor(() => expect(textPrompt().value).toBe('complete original prompt'));
+    const saved = loadLabWorkspaceSession(chain.id, fallback());
+    expect(saved.activeMode).toBe('text-to-image');
+    expect(saved.textToImage).toMatchObject({ basePrompt: 'complete original prompt', subjectPrompt: '', negativePrompt: '', params });
+    expect(saved.textToImage.params.vibes).toBeUndefined();
+    expect(Object.values(saved.textToImage.activeModules).every(value => !value)).toBe(true);
+    expect(saved.edits).toEqual(before.edits);
+    expect(sessionStorage.getItem('nai_pending_import')).toBeNull(); expect(state.startJob).not.toHaveBeenCalled();
+  });
+  it.each(['image-to-image', 'inpaint', 'outpaint'] as const)('从 %s 取用部分元数据或所选字段，缺失内容沿用文生图草稿', async mode => {
+    const session = fallback(); session.activeMode = mode;
+    session.edits[mode].negativePrompt = 'edit negative'; session.edits[mode].params.scale = 9;
+    saveLabWorkspaceSession(chain.id, session);
+    const view = setup(); const before = loadLabWorkspaceSession(chain.id, fallback());
+    sessionStorage.setItem('nai_pending_import', JSON.stringify({ mode: 'prompt-fragments', targetMode: 'text-to-image', fullMetadata: true,
+      partialMetadata: true, prompt: 'known original prompt', params: { steps: 20, seed: 0 } }));
+    view.rerender(<ChainEditor {...view.props} externalImportToken={1} />);
+    await waitFor(() => expect(textPrompt().value).toBe('known original prompt'));
+    const partial = loadLabWorkspaceSession(chain.id, fallback());
+    expect(partial.activeMode).toBe('text-to-image'); expect(partial.edits).toEqual(before.edits);
+    expect(partial.textToImage.negativePrompt).toBe(before.textToImage.negativePrompt);
+    expect(partial.textToImage.params).toEqual({ ...before.textToImage.params, steps: 20, seed: 0 });
+    await switchTo(mode === 'image-to-image' ? '图生图' : mode === 'inpaint' ? '局部重绘' : '扩图');
+    sessionStorage.setItem('nai_pending_import', JSON.stringify({ mode: 'prompt-fragments', targetMode: 'text-to-image', prompt: 'selected tag', replace: false }));
+    view.rerender(<ChainEditor {...view.props} externalImportToken={2} />);
+    await waitFor(() => expect(textPrompt().value).toBe('known original prompt, selected tag'));
+    const selected = loadLabWorkspaceSession(chain.id, fallback());
+    expect(selected.edits).toEqual(before.edits); expect(selected.textToImage.params).toEqual(partial.textToImage.params);
+    expect(state.startJob).not.toHaveBeenCalled();
+  });
+});
+
+describe('未指定目标的外部内容沿用当前创作模式', () => {
   it.each(['text-to-image', 'image-to-image', 'inpaint', 'outpaint'] as const)('%s 部分元数据恢复已知内容，缺失负面与参数保留当前值', async mode => {
     const session = fallback(); session.activeMode = mode;
     session.textToImage.subjectPrompt = 'old subject';

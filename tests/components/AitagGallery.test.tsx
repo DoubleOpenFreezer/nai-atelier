@@ -488,6 +488,16 @@ it('用已显示的 JSON 和本地图片保存，立即显示忙碌并阻止连�
   expect(button.querySelector('svg.lucide-layers')).toBeTruthy();
 });
 
+it('蓝色导入按钮明确恢复当前图片的完整配置到文生图', async () => {
+  await setup(); fireEvent.click(card(2));
+  fireEvent.click(await screen.findByRole('button', { name: '导入实验室' }));
+  expect(JSON.parse(sessionStorage.getItem('nai_pending_import')!)).toMatchObject({
+    mode: 'prompt-fragments', fullMetadata: true, targetMode: 'text-to-image', prompt: 'synthetic prompt 2', negativePrompt: 'synthetic negative',
+    params: { model: 'nai-diffusion-5-full', width: 832, height: 1216, steps: 23, seed: 123 },
+  });
+  expect(mocks.navigate).toHaveBeenCalledOnce(); expect(mocks.createChain).not.toHaveBeenCalled();
+});
+
 it('失败只显示错误并恢复按钮，重试可以保存，其他复用入口仍使用当前元数据', async () => {
   const { notify } = await setup();
   mocks.createChain.mockRejectedValueOnce(new Error('模拟写入失败'));

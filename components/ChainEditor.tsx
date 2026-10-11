@@ -1331,13 +1331,19 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 activeEditDraft?.params ?? params).catch(error => notify(error instanceof Error ? error.message : '底图读取失败', 'error'));
             return;
         }
+        if (data.targetMode === 'text-to-image') {
+            updateWorkspace(previous => ({ ...previous, activeMode: 'text-to-image' }));
+        }
         if (data.mode === 'prompt-fragments' || data.mode === 'append-prompt') {
             const fragment: PromptFragmentImport = data.mode === 'prompt-fragments' ? data : { mode: 'prompt-fragments', prompt: data.prompt };
-            if (activeEditOperation && activeEditDraft) {
+            if (data.targetMode !== 'text-to-image' && activeEditOperation && activeEditDraft) {
                 const patch = buildPromptFragmentPatch(activeEditDraft, fragment);
                 updateEditDraft(activeEditOperation, { ...patch, promptSource: 'custom' });
             } else {
-                const patch = buildPromptFragmentPatch({ prompt: basePrompt, negativePrompt, params }, fragment);
+                const textDraft = workspaceSession.textToImage;
+                const patch = buildPromptFragmentPatch(data.targetMode === 'text-to-image'
+                    ? { prompt: textDraft.basePrompt, negativePrompt: textDraft.negativePrompt, params: textDraft.params }
+                    : { prompt: basePrompt, negativePrompt, params }, fragment);
                 if (patch.prompt !== undefined) setBasePrompt(patch.prompt);
                 if (patch.negativePrompt !== undefined) setNegativePrompt(patch.negativePrompt);
                 if (patch.params) setParams(patch.params);
@@ -1367,9 +1373,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             );
             notify('已载入底图，正在打开对应图片编辑模式。');
             return;
-        }
-        if (data.targetMode === 'text-to-image') {
-            updateWorkspace(previous => ({ ...previous, activeMode: 'text-to-image' }));
         }
         if (data.mode === 'prompt-only') {
             setBasePrompt(data.prompt || '');

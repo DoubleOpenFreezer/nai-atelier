@@ -129,7 +129,7 @@ it('未进入页面不读取法典；紧凑图标一键导入，不打开确认�
   const button = screen.getByRole('button', { name: '导入实验室' });
   expect(button.textContent).toBe(''); expect(screen.getByRole('button', { name: '保存到风格串' }).textContent).toBe('');
   fireEvent.click(button); expect(screen.queryByRole('dialog')).toBeNull();
-  expect(JSON.parse(sessionStorage.getItem(IMPORT_SESSION_KEY)!)).toMatchObject({ mode: 'prompt-fragments', fullMetadata: true, prompt: metadata.prompt, negativePrompt: metadata.negativePrompt,
+  expect(JSON.parse(sessionStorage.getItem(IMPORT_SESSION_KEY)!)).toMatchObject({ mode: 'prompt-fragments', targetMode: 'text-to-image', fullMetadata: true, prompt: metadata.prompt, negativePrompt: metadata.negativePrompt,
     replace: true, importSettings: true, importSeed: true, importModel: true, params: metadata.params, characters: metadata.params.characters });
   expect(mocks.navigate).toHaveBeenCalledOnce(); expect(mocks.file).toHaveBeenCalledOnce();
 });
@@ -166,7 +166,7 @@ it('完整元数据默认全选，次级字段选择只有用户主动调整后�
   fireEvent.click(screen.getByRole('checkbox', { name: 'Seed' })); fireEvent.click(screen.getByRole('checkbox', { name: /模型：/ }));
   fireEvent.click(screen.getByRole('checkbox', { name: '生成参数' }));
   closeOptions(); fireEvent.click(screen.getByRole('button', { name: '导入实验室' }));
-  expect(JSON.parse(sessionStorage.getItem(IMPORT_SESSION_KEY)!)).toMatchObject({ fullMetadata: false, prompt: 'image raw prompt', negativePrompt: 'image raw negative', importSettings: false, importSeed: false, importModel: false });
+  expect(JSON.parse(sessionStorage.getItem(IMPORT_SESSION_KEY)!)).toMatchObject({ targetMode: 'text-to-image', fullMetadata: false, prompt: 'image raw prompt', negativePrompt: 'image raw negative', importSettings: false, importSeed: false, importModel: false });
   expect(screen.queryByRole('dialog')).toBeNull(); expect(mocks.navigate).toHaveBeenCalledOnce();
 });
 it('多图收藏用稳定文件编号去重，保留展示词与当前图片的来源快照', () => {
