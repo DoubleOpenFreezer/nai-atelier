@@ -11,7 +11,7 @@ import { getMobileOriginalUrl } from '../../services/mobileImageCache';
 vi.mock('../../services/imageSharing', async original => ({ ...await original<typeof import('../../services/imageSharing')>(), copySharedImage: vi.fn(async () => {}), downloadSharedImage: vi.fn(async () => {}) }));
 
 vi.mock('../../services/danbooruService', () => ({ danbooruService: { getCoverSet: vi.fn(), getCoverCandidatePage: vi.fn(), getCoverFallback: vi.fn() } }));
-vi.mock('../../components/SmartImage', () => ({ ImageActivityContext: React.createContext(true), SmartImage: ({ src, alt, onError }: { src: string; alt: string; onError: () => void }) => <img src={src} alt={alt} onError={onError} /> }));
+vi.mock('../../components/SmartImage', () => ({ ImageActivityContext: React.createContext(true), SmartImage: ({ src, alt, className, onError, onLoad }: { src: string; alt: string; className?: string; onError: () => void; onLoad?: React.ReactEventHandler<HTMLImageElement> }) => <img src={src} alt={alt} className={className} onError={onError} onLoad={onLoad} /> }));
 const covers = vi.mocked(danbooruService.getCoverSet);
 const pages = vi.mocked(danbooruService.getCoverCandidatePage);
 const fallback = vi.mocked(danbooruService.getCoverFallback);
@@ -19,6 +19,16 @@ const candidate = (id: number): DanbooruCoverCandidate => ({ id, score: 20, prev
 const set = (candidates = [candidate(1)], hasMore = false, nextPage = 1) => ({ candidates, representative: candidates[0] || null, hasMore, nextPage });
 const image = () => screen.getByRole('img') as HTMLImageElement;
 const failImage = () => fireEvent.error(image());
+it('封面接受瀑布流图片适配类并在加载后回报真实尺寸', async () => {
+  const onImageLoad = vi.fn();
+  render(<DanbooruCover tag="sizing" kind="artist" alt="封面" imageClassName="h-full w-full object-contain" onImageLoad={onImageLoad} />);
+  await waitFor(() => expect(image().src).toBe(candidate(1).sampleUrl));
+  expect(image().className).toBe('h-full w-full object-contain');
+  Object.defineProperties(image(), { naturalWidth: { configurable: true, value: 1200 }, naturalHeight: { configurable: true, value: 800 } });
+  fireEvent.load(image());
+  expect(onImageLoad).toHaveBeenCalledWith(1200, 800);
+});
+
 it('封面预取和可见性取同批最后记录，先离开后进入仍检索，最后离开时及时取消', async () => {
   const callbacks: IntersectionObserverCallback[] = [];
   vi.stubGlobal('IntersectionObserver', class {

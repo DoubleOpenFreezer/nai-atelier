@@ -21,13 +21,18 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('appearance preferences', () => {
-  it('旧偏好及旧主题默认开启卡片效果，两个开关分别保存并恢复', () => {
-    expect(normalizeAppearancePreferences({ galleryFrostedCaption: 'false', galleryHoverFloat: null })).toMatchObject({ galleryFrostedCaption: true, galleryHoverFloat: true });
-    expect(validateAppearancePreset({ name: '旧主题' })).toMatchObject({ galleryFrostedCaption: true, galleryHoverFloat: true });
+  it('旧偏好及旧主题默认开启卡片效果和选中聚焦，开关分别保存并恢复', () => {
+    expect(normalizeAppearancePreferences({ galleryFrostedCaption: 'false', galleryHoverFloat: null })).toMatchObject({ galleryFrostedCaption: true, galleryHoverFloat: true, gallerySelectionFocus: true });
+    expect(validateAppearancePreset({ name: '旧主题' })).toMatchObject({ galleryFrostedCaption: true, galleryHoverFloat: true, gallerySelectionFocus: true });
     for (const galleryFrostedCaption of [false, true]) for (const galleryHoverFloat of [false, true]) {
       saveAppearancePreferences({ ...DEFAULT_APPEARANCE_PREFERENCES, galleryFrostedCaption, galleryHoverFloat });
       expect(loadAppearancePreferences()).toMatchObject({ galleryFrostedCaption, galleryHoverFloat });
       expect(parseAppearancePresetsFromJson(JSON.stringify({ name: '卡片主题', galleryFrostedCaption, galleryHoverFloat }))[0]).toMatchObject({ galleryFrostedCaption, galleryHoverFloat });
+    }
+    for (const gallerySelectionFocus of [false, true]) {
+      saveAppearancePreferences({ ...DEFAULT_APPEARANCE_PREFERENCES, gallerySelectionFocus });
+      expect(loadAppearancePreferences().gallerySelectionFocus).toBe(gallerySelectionFocus);
+      expect(parseAppearancePresetsFromJson(JSON.stringify({ name: '聚焦模式', gallerySelectionFocus }))[0].gallerySelectionFocus).toBe(gallerySelectionFocus);
     }
   });
   it('旧生图偏好缺少连续生成字段时默认开启', () => {
@@ -56,6 +61,7 @@ describe('appearance preferences', () => {
       fontScale: 'large',
       galleryFrostedCaption: true,
       galleryHoverFloat: true,
+      gallerySelectionFocus: true,
       tagAssistEnabled: false,
       generationStreamPreview: true,
       continuousGenerationEnabled: false,
@@ -82,6 +88,7 @@ describe('appearance preferences', () => {
       fontScale: 'large',
       galleryFrostedCaption: true,
       galleryHoverFloat: true,
+      gallerySelectionFocus: true,
       tagAssistEnabled: false,
       generationStreamPreview: true,
       continuousGenerationEnabled: false,

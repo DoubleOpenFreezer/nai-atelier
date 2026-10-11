@@ -13,9 +13,10 @@ export const useGallerySelectionAnchor = (
   contentRef: RefObject<HTMLDivElement | null>,
   selectedId: string | number | null,
   active: boolean,
+  enabled = true,
 ) => {
   const anchorRef = useRef<SelectionAnchor | null>(null);
-  const previousRef = useRef({ selectedId: null as string | number | null, active: false });
+  const previousRef = useRef({ selectedId: null as string | number | null, active: false, enabled: true });
   const closingRef = useRef(false);
   const suspendedRef = useRef(false);
   const writtenScrollRef = useRef<number | null>(null);
@@ -45,7 +46,7 @@ export const useGallerySelectionAnchor = (
   const adjust = (smooth = false) => {
     const root = rootRef.current;
     const anchor = anchorRef.current;
-    if (!root || !anchor || suspendedRef.current || root.clientHeight === 0) return;
+    if (!enabled || !root || !anchor || suspendedRef.current || root.clientHeight === 0) return;
     const offset = readOffset();
     if (offset === null) return;
     const cardPosition = root.scrollTop + offset;
@@ -72,9 +73,10 @@ export const useGallerySelectionAnchor = (
 
   useLayoutEffect(() => {
     const previous = previousRef.current;
-    const smooth = active && previous.active && selectedId !== null && selectedId !== previous.selectedId
+    const smooth = enabled && active && selectedId !== null
+      && ((previous.active && selectedId !== previous.selectedId) || !previous.enabled)
       && appearanceScrollBehavior() === 'smooth';
-    if (selectedId !== previous.selectedId || active !== previous.active) {
+    if (selectedId !== previous.selectedId || active !== previous.active || enabled !== previous.enabled) {
       stopSmoothScroll();
       if (selectedId !== null) {
         anchorRef.current = { id: selectedId, offset: null };
@@ -97,14 +99,14 @@ export const useGallerySelectionAnchor = (
       }
       pendingSelectionRef.current = null;
     }
-    previousRef.current = { selectedId, active };
-    if (active) adjust(smooth);
+    previousRef.current = { selectedId, active, enabled };
+    if (enabled && active) adjust(smooth);
   });
 
   useEffect(() => {
     const root = rootRef.current;
     const content = contentRef.current;
-    if (!active || !root || !content) return;
+    if (!enabled || !active || !root || !content) return;
     const previousOverflowAnchor = root.style.overflowAnchor;
     root.style.overflowAnchor = 'none';
     let adjustmentFrame: number | null = null;
@@ -172,13 +174,14 @@ export const useGallerySelectionAnchor = (
     };
     // 观察器读取 ref 中的最新锚点，不随图片与收藏状态重建。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, rootRef, contentRef]);
+  }, [active, enabled, rootRef, contentRef]);
 
   return {
     // 关闭详情后的重排也交给作品锚点，避免像素恢复定时器与它争抢滚动。
-    hasAnchor: selectedId !== null || anchorRef.current !== null,
-    prepareSelection: (id: string | number) => { pendingSelectionRef.current = { id, offset: readOffset(id) }; },
+    hasAnchor: enabled && (selectedId !== null || anchorRef.current !== null),
+    prepareSelection: (id: string | number) => { if (enabled) pendingSelectionRef.current = { id, offset: readOffset(id) }; },
     preserveOnClose: () => {
+      if (!enabled) return;
       stopSmoothScroll();
       const offset = readOffset();
       if (anchorRef.current && offset !== null) anchorRef.current.offset = offset;
@@ -187,7 +190,7 @@ export const useGallerySelectionAnchor = (
     clearAnchor: () => { stopSmoothScroll(); anchorRef.current = null; pendingSelectionRef.current = null; closingRef.current = false; },
     onScroll: () => {
       const root = rootRef.current;
-      if (!active || !root || root.clientHeight === 0 || !anchorRef.current) return;
+      if (!enabled || !active || !root || root.clientHeight === 0 || !anchorRef.current) return;
       // 原生平滑滚动的中间帧不改变居中目标，手动输入会先停止动画。
       if (smoothTargetRef.current !== null) {
         if (Math.abs(root.scrollTop - smoothTargetRef.current) <= 1) {

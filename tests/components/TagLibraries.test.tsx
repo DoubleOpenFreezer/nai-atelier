@@ -49,8 +49,8 @@ vi.mock('../../services/collectionFavorites', async original => ({
 vi.mock('../../services/generationJob', async importOriginal => ({ ...await importOriginal<typeof import('../../services/generationJob')>(), startGenerationJob: vi.fn() }));
 const confirmAction = vi.hoisted(() => vi.fn(async () => true));
 vi.mock('../../components/ConfirmDialog', () => ({ useConfirmDialog: () => confirmAction }));
-vi.mock('../../components/DanbooruCover', () => ({ DanbooruCover: ({ tag, fixedSrc, kind, notify, onFavoriteChange }: any) =>
-  <div data-testid={`cover-${tag}`} data-fixed-src={fixedSrc}>{tag}<ImageShareOverlay imageUrl={fixedSrc || '/synthetic/' + tag + '.png'} filename={tag + '.png'} notify={notify} favorite={{ imageUrl: fixedSrc || '/synthetic/' + tag + '.png', sourceType: kind, sourceId: tag }} onFavoriteChange={onFavoriteChange} /></div>,
+vi.mock('../../components/DanbooruCover', () => ({ DanbooruCover: ({ tag, fixedSrc, kind, notify, onFavoriteChange, imageClassName }: any) =>
+  <div data-testid={`cover-${tag}`} data-fixed-src={fixedSrc} data-image-class={imageClassName}>{tag}<ImageShareOverlay imageUrl={fixedSrc || '/synthetic/' + tag + '.png'} filename={tag + '.png'} notify={notify} favorite={{ imageUrl: fixedSrc || '/synthetic/' + tag + '.png', sourceType: kind, sourceId: tag }} onFavoriteChange={onFavoriteChange} /></div>,
 }));
 // jsdom 没有容器宽度；布局由既有测试覆盖，这里直接渲染条目以验证目录状态。
 vi.mock('../../components/ShortestColumnMasonry', () => ({ useMasonryColumnCount: () => 6, ShortestColumnMasonry: ({ items, renderItem }: { items: unknown[]; renderItem: (item: unknown) => React.ReactNode }) =>
@@ -105,7 +105,7 @@ const getEntriesFor = (kind: Kind) => kind === 'artist' ? getArtistDictionaryEnt
 const favoritesKey = (kind: Kind) => kind === 'artist' ? 'nai_fav_artists' : 'nai_character_favorites';
 const favoriteId = (kind: Kind, name: string) => kind === 'artist' ? name : `catalog:${name}`;
 
-function renderLibrary(kind: Kind, width = 1280, chains: PromptChain[] = []) {
+function renderLibrary(kind: Kind, width = 1280, chains: PromptChain[] = [], selectionFocusEnabled = true) {
   vi.stubGlobal('innerWidth', width);
   const notify = vi.fn();
   const navigate = vi.fn();
@@ -114,8 +114,8 @@ function renderLibrary(kind: Kind, width = 1280, chains: PromptChain[] = []) {
   const onUpdateChain = vi.fn();
   const onDelete = vi.fn(async (_id: string) => {});
   const view = kind === 'artist'
-    ? render(<ArtistLibrary artistsData={[]} notify={notify} onNavigateToPlayground={navigate} />)
-    : render(<CharacterLibrary chains={chains} onCreate={onCreate} onSelect={onSelect} onDelete={onDelete} onUpdateChain={onUpdateChain} onNavigateToPlayground={navigate} notify={notify} />);
+    ? render(<ArtistLibrary artistsData={[]} selectionFocusEnabled={selectionFocusEnabled} notify={notify} onNavigateToPlayground={navigate} />)
+    : render(<CharacterLibrary chains={chains} selectionFocusEnabled={selectionFocusEnabled} onCreate={onCreate} onSelect={onSelect} onDelete={onDelete} onUpdateChain={onUpdateChain} onNavigateToPlayground={navigate} notify={notify} />);
   return { ...view, navigate, onCreate, onSelect, onUpdateChain, onDelete, notify };
 }
 
@@ -165,6 +165,14 @@ afterEach(() => {
 });
 
 describe.each<Kind>(['artist', 'character'])('%s 目录只负责 Tag 取用', kind => {
+  it('瀑布流封面在真实比例测出前完整显示', async () => {
+    localStorage.setItem('nai_mobile_image_display', JSON.stringify({ layout: 'masonry' }));
+    renderLibrary(kind);
+    const tag = kind === 'artist' ? fixtures.artists[0].name : fixtures.characters[0].name;
+    const cover = await screen.findByTestId(`cover-${tag}`);
+    expect(cover.getAttribute('data-image-class')).toBe('h-full w-full object-contain');
+  });
+
   it.each([1280, 390])('宽度 %s 多选保留已选亮度，其余沿用 AITag 暗度；取消、清空和导入后恢复', async width => {
     localStorage.setItem('nai_mobile_image_display', JSON.stringify({ layout: width === 390 ? 'portrait' : 'masonry' }));
     const { container } = renderLibrary(kind, width, kind === 'character' ? [custom] : []);
@@ -230,6 +238,20 @@ describe.each<Kind>(['artist', 'character'])('%s 目录只负责 Tag 取用', ki
     await act(async () => { root.style.paddingTop = '1px'; await new Promise(resolve => setTimeout(resolve, 40)); });
     expect(root.scrollTop).toBe(400);
     expect(cards[0].getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('关闭选中聚焦后仍可多选，但不会压暗或自动居中', async () => {
+    renderLibrary(kind, 1280, [], false);
+    const entries = entriesFor(kind);
+    await screen.findByTestId(`cover-${entries[0].name}`);
+    const cards = entries.map(entry => screen.getByTestId(`cover-${entry.name}`).closest<HTMLElement>('[aria-pressed]')!);
+    const { root, scrollCalls } = mockGalleryGeometry(cards);
+    root.scrollTop = 200;
+    fireEvent.click(cards[0]);
+    expect(cards[0].getAttribute('aria-pressed')).toBe('true');
+    expect(root.scrollTop).toBe(200);
+    expect(scrollCalls).toEqual([]);
+    cards.forEach(card => expect(card.className).not.toContain('brightness-'));
   });
 
   it.each([1280, 390])('Agent 在宽度 %s 选择卡片并读取真实状态，重复 check 不取消选择', async width => {

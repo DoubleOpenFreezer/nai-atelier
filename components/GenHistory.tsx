@@ -99,6 +99,7 @@ const resolveHistoryImageRatio = (item: LocalGenItem, measuredRatio?: number) =>
 const HistoryCard = React.memo(function HistoryCard({
     item,
     measuredRatio,
+    preserveRatioUntilMeasured,
     isSelected,
     selectionMode,
     isFavoritePending,
@@ -112,6 +113,7 @@ const HistoryCard = React.memo(function HistoryCard({
     item: LocalGenItem;
     /** 已加载测量的真实比例（纠正错误元数据），缺省时卡片用 params/默认比例兜底 */
     measuredRatio?: number;
+    preserveRatioUntilMeasured: boolean;
     isSelected: boolean;
     selectionMode: boolean;
     isFavoritePending: boolean;
@@ -146,7 +148,7 @@ const HistoryCard = React.memo(function HistoryCard({
             }}
         >
             <div className="mobile-gallery-frame md:aspect-square relative w-full overflow-hidden bg-gray-200 dark:bg-gray-900" style={{ '--mobile-image-ratio': `${ratio}` } as React.CSSProperties}>
-                <SmartImage src={item.imageUrl} thumbnailVariant={HISTORY_THUMBNAIL_VARIANT} alt={t("生成于 {0} 的图片", [createdAt])} className="w-full h-full object-cover" onLoad={event => {
+                <SmartImage src={item.imageUrl} thumbnailVariant={HISTORY_THUMBNAIL_VARIANT} alt={t("生成于 {0} 的图片", [createdAt])} className={`w-full h-full ${preserveRatioUntilMeasured && !measuredRatio ? 'object-contain' : 'object-cover'}`} onLoad={event => {
                     const image = event.currentTarget;
                     const imageRatio = image.naturalWidth / Math.max(1, image.naturalHeight);
                     if (Number.isFinite(imageRatio) && imageRatio > 0) onImageLoadRatio(item.id, imageRatio);
@@ -1002,6 +1004,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
             key={item.id}
             item={item}
             measuredRatio={actualImageRatios[item.id]}
+            preserveRatioUntilMeasured={imageDisplay.layout === 'masonry'}
             isSelected={selectedIds.has(item.id)}
             selectionMode={selectionMode}
             isFavoritePending={pendingFavoriteIds.has(item.id)}

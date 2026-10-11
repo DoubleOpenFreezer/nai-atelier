@@ -27,6 +27,7 @@ interface CartItem {
 }
 
 interface ArtistLibraryProps {
+    selectionFocusEnabled?: boolean;
     // 既有封面只读展示，不在目录中生成或维护基准图。
     artistsData: Artist[] | null;
     notify: (msg: string, type?: 'success' | 'error') => void;
@@ -35,7 +36,7 @@ interface ArtistLibraryProps {
 
 type ArtistGachaMode = 'mixed' | 'uniform' | 'popular';
 
-export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, notify, onNavigateToPlayground }) => {
+export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, notify, onNavigateToPlayground, selectionFocusEnabled = true }) => {
   useLanguage();
     const imageDisplay = useMobileImageDisplayPreferences();
     // 瀑布流（masonry 布局时）：封面按真实宽高比完整显示，最短列分配互相补齐。
@@ -60,7 +61,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, notif
                                     aria-label={t("选择画师：{0}", [artist.name])}
                                     aria-pressed={isSelected}
                                     tabIndex={0}
-                                    className={`mobile-gallery-item gallery-image-card gallery-card-visual group relative flex-col bg-white dark:bg-gray-800 rounded-lg overflow-hidden border transition-[filter,box-shadow,border-color] duration-150 cursor-pointer ${cart.length > 0 && !isSelected ? 'brightness-[.7]' : ''} ${isSelected ? 'border-indigo-500 ring-2 ring-indigo-500' : 'border-gray-200 dark:border-gray-700 hover:border-indigo-500'}`}
+                                    className={`mobile-gallery-item gallery-image-card gallery-card-visual group relative flex-col bg-white dark:bg-gray-800 rounded-lg overflow-hidden border transition-[filter,box-shadow,border-color] duration-150 cursor-pointer ${selectionFocusEnabled && cart.length > 0 && !isSelected ? 'brightness-[.7]' : ''} ${isSelected ? 'border-indigo-500 ring-2 ring-indigo-500' : 'border-gray-200 dark:border-gray-700 hover:border-indigo-500'}`}
                                     onClick={() => toggleCart(artist.name)}
                                     onKeyDown={event => {
                                         if (event.target !== event.currentTarget || !['Enter', ' '].includes(event.key)) return;
@@ -73,6 +74,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, notif
                                             kind="artist"
                                             alt={artist.chineseName || artist.name}
                                             fixedSrc={displayImg}
+                                            imageClassName={imageDisplay.layout === 'masonry' && !artistRatios[artist.id] ? 'h-full w-full object-contain' : undefined}
                                             notify={notify}
                                             onFavoriteChange={() => toggleFav(artist, undefined, collectionSnapshot().some(item => item.sourceType === 'artist' && item.sourceId === artist.name && !item.archived))}
                                             onImageLoad={(width, height) => updateImageRatio(artist.id, width, height)}
@@ -104,7 +106,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, notif
     const [usePrefix, setUsePrefix] = useState(true);
     const scrollContainerRef = useRef<HTMLDivElement>(null);
     const active = useContext(ImageActivityContext);
-    const selectionAnchor = useGallerySelectionAnchor(scrollContainerRef, scrollContainerRef, cart.some(item => item.name === focusedName) ? focusedName : null, active);
+    const selectionAnchor = useGallerySelectionAnchor(scrollContainerRef, scrollContainerRef, cart.some(item => item.name === focusedName) ? focusedName : null, active, selectionFocusEnabled);
     const onScrollRestore = useKeepAliveScrollRestore(scrollContainerRef, 'library', { skipRestore: selectionAnchor.hasAnchor });
     const [loadedCatalogArtists, setLoadedCatalogArtists] = useState<ArtistDictionaryEntry[]>([]);
     const [catalogSearchResults, setCatalogSearchResults] = useState<ArtistDictionaryEntry[]>([]);

@@ -508,6 +508,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
       fontScale: preset.fontScale,
       galleryFrostedCaption: preset.galleryFrostedCaption,
       galleryHoverFloat: preset.galleryHoverFloat,
+      gallerySelectionFocus: preset.gallerySelectionFocus,
       activePresetId: preset.id,
     });
     if (preset.themeMode !== themeMode) {
@@ -532,6 +533,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
       fontScale: appearancePreferences.fontScale,
       galleryFrostedCaption: appearancePreferences.galleryFrostedCaption,
       galleryHoverFloat: appearancePreferences.galleryHoverFloat,
+      gallerySelectionFocus: appearancePreferences.gallerySelectionFocus,
     };
     updateAppearance({
       customPresets: [...customPresets, newPreset],
@@ -958,7 +960,14 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                   <div><div className="mb-2 text-meta font-bold text-gray-600 dark:text-gray-300">{t("圆角语言")}</div><AppearanceOptionGroup value={appearancePreferences.corners} onChange={value => updateAppearance({ corners: value as CornerStyle })} options={[{ value: 'soft', label: t("柔和") }, { value: 'standard', label: t("标准") }, { value: 'sharp', label: t("锐利") }]} /></div>
                   <div><div className="mb-2 text-meta font-bold text-gray-600 dark:text-gray-300">{t("表面材质")}</div><AppearanceOptionGroup value={appearancePreferences.surfaces} onChange={value => updateAppearance({ surfaces: value as SurfaceStyle })} options={[{ value: 'solid', label: t("实色") }, { value: 'translucent', label: t("透光") }]} /></div>
                   <div><div className="mb-2 text-meta font-bold text-gray-600 dark:text-gray-300">{t("字号")}</div><AppearanceOptionGroup value={appearancePreferences.fontScale} onChange={value => updateAppearance({ fontScale: value as FontScale })} options={[{ value: 'small', label: t("偏小") }, { value: 'standard', label: t("标准") }, { value: 'large', label: t("偏大") }]} /></div>
-                  <div className="lg:col-span-2"><div className="mb-2 text-meta font-bold text-gray-600 dark:text-gray-300">{t("动效")}</div><AppearanceOptionGroup value={appearancePreferences.motion} onChange={value => updateAppearance({ motion: value as MotionStyle })} options={[{ value: 'full', label: t("完整") }, { value: 'reduced', label: t("减少") }, { value: 'off', label: t("关闭动效") }]} /></div>
+                  <div className="lg:col-span-2">
+                    <div className="mb-2 text-meta font-bold text-gray-600 dark:text-gray-300">{t("动效")}</div>
+                    <AppearanceOptionGroup value={appearancePreferences.motion} onChange={value => updateAppearance({ motion: value as MotionStyle })} options={[{ value: 'full', label: t("完整") }, { value: 'reduced', label: t("减少") }, { value: 'off', label: t("关闭动效") }]} />
+                    <button type="button" role="switch" aria-checked={appearancePreferences.gallerySelectionFocus} aria-label={t("选中作品聚焦模式")} onClick={() => updateAppearance({ gallerySelectionFocus: !appearancePreferences.gallerySelectionFocus })} className="mt-3 flex w-full items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-left transition hover:border-indigo-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-indigo-700">
+                      <span><span className="block text-sm font-bold">{t("选中作品聚焦模式")}</span><span className="mt-1 block text-xs text-gray-500 dark:text-gray-400">{t("选中作品时淡化其他作品并垂直居中；居中滚动遵循上方动效设置。")}</span></span>
+                      <span aria-hidden="true" className={`relative h-6 w-11 flex-none rounded-full transition-colors ${appearancePreferences.gallerySelectionFocus ? 'bg-indigo-500' : 'bg-gray-300 dark:bg-gray-700'}`}><span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${appearancePreferences.gallerySelectionFocus ? 'translate-x-5' : 'translate-x-0'}`} /></span>
+                    </button>
+                  </div>
                   {([
                     ['galleryFrostedCaption', '全图磨砂卡片', '图片铺满卡片，名称叠在底部渐变磨砂上；关闭后恢复图下信息栏。'],
                     ['galleryHoverFloat', '卡片悬停浮动', '鼠标经过时轻轻抬起并放大图片；遵循减少或关闭动效设置。'],

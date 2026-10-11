@@ -55,6 +55,7 @@ import { galleryHistoryService, GalleryHistoryItem } from '../services/galleryHi
 
 interface PixivGalleryProps {
   active: boolean;
+  selectionFocusEnabled?: boolean;
   currentUser: User;
   notify: (message: string, type?: 'success' | 'error') => void;
   onNavigateToPlayground: () => void;
@@ -104,7 +105,7 @@ const formatCount = (value: number) => new Intl.NumberFormat(getLanguage(), {
   maximumFractionDigits: 1,
 }).format(value);
 
-export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, notify, onNavigateToPlayground, onRefreshInspiration }) => {
+export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, selectionFocusEnabled = true, notify, onNavigateToPlayground, onRefreshInspiration }) => {
   useLanguage();
   const imageDisplay = useMobileImageDisplayPreferences();
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -125,7 +126,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, notify, onNa
   const [items, setItems] = useState<PixivIllust[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const selectionAnchor = useGallerySelectionAnchor(scrollRef, galleryContentRef, selectedId, active);
+  const selectionAnchor = useGallerySelectionAnchor(scrollRef, galleryContentRef, selectedId, active, selectionFocusEnabled);
   const onScrollRestore = useKeepAliveScrollRestore(scrollRef, 'pixiv', { skipRestore: selectionAnchor.hasAnchor });
   const [selectedPage, setSelectedPage] = useState(0);
   const [zoomPage, setZoomPage] = useState<number | null>(null);
@@ -572,7 +573,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, notify, onNa
     // 会让每张封面的上游流量放大 5-10 倍。square 档是方形裁切版，仅作最后回退。
     // 原图不在卡片上升级加载——点开详情才加载原图（详情页自带 preview→original 链）。
     const previewSrc = illust.urls.medium || illust.urls.large || illust.urls.thumb;
-    return <MediaCardShell pressReveal key={illust.id} data-gallery-work-id={illust.id} data-safe-mode-work="true" selected={selectedId === illust.id} className={`mobile-gallery-item gallery-image-card group relative flex-col ${selectedId !== null && selectedId !== illust.id ? 'brightness-[.7]' : ''}`}>
+    return <MediaCardShell pressReveal key={illust.id} data-gallery-work-id={illust.id} data-safe-mode-work="true" selected={selectedId === illust.id} className={`mobile-gallery-item gallery-image-card group relative flex-col ${selectionFocusEnabled && selectedId !== null && selectedId !== illust.id ? 'brightness-[.7]' : ''}`}>
       <button type="button" onClick={() => openDetail(illust)} className="gallery-card-visual block w-full text-left">
         <div className="mobile-gallery-frame relative aspect-[3/4] overflow-hidden bg-gray-200 dark:bg-gray-800" style={{ '--mobile-image-ratio': ratio } as React.CSSProperties}>
           <SmartImage
@@ -595,7 +596,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, notify, onNa
   };
 
   const renderHistoryCard = (item: GalleryHistoryItem) => (
-    <MediaCardShell pressReveal key={item.id} style={{ contentVisibility: 'visible' }} data-gallery-work-id={item.sourceId} selected={selectedId === String(item.sourceId)} className={`mobile-gallery-item gallery-image-card group relative flex-col ${selectedId !== null && selectedId !== String(item.sourceId) ? 'brightness-[.7]' : ''}`}>
+    <MediaCardShell pressReveal key={item.id} style={{ contentVisibility: 'visible' }} data-gallery-work-id={item.sourceId} selected={selectedId === String(item.sourceId)} className={`mobile-gallery-item gallery-image-card group relative flex-col ${selectionFocusEnabled && selectedId !== null && selectedId !== String(item.sourceId) ? 'brightness-[.7]' : ''}`}>
       <button
         type="button"
         onClick={() => {

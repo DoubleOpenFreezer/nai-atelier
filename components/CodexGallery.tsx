@@ -14,6 +14,7 @@ import { ImageShareOverlay } from './ImageShareActions';
 import { SmartImage } from './SmartImage';
 import { ViewableImage } from './ImageLightbox';
 import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMasonry';
+import { useImageRatios } from './useImageRatios';
 import { ToolbarPopover, TOOLBAR_FIELD_CLASS, TOOLBAR_MENU_CLASS } from './ToolbarPopover';
 import { useMobileHistoryLayer } from './MobileUI';
 import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
@@ -46,7 +47,8 @@ const groupTarget = (entry: CodexEntry): CollectionTarget => ({ ...codexCollecti
   getGroup: async () => entry.images.map((_, page) => codexCollectionImage(entry, page)),
 });
 
-export const CodexGallery: React.FC<{ active: boolean; currentUser: User; notify: (message: string, type?: 'success' | 'error') => void; onNavigateToPlayground: () => void; onCreateArtistChain: (chain: PromptChain) => Promise<void> }> = ({ active, currentUser, notify, onNavigateToPlayground, onCreateArtistChain }) => {
+export const CodexGallery: React.FC<{ active: boolean; selectionFocusEnabled?: boolean; currentUser: User; notify: (message: string, type?: 'success' | 'error') => void; onNavigateToPlayground: () => void; onCreateArtistChain: (chain: PromptChain) => Promise<void> }> = ({ active, selectionFocusEnabled = true, currentUser, notify, onNavigateToPlayground, onCreateArtistChain }) => {
+  const [imageRatios, updateImageRatio] = useImageRatios();
   useLanguage();
   const [mode, setMode] = useState<Mode>('books');
   const [bookId, setBookId] = useState(savedBook);
@@ -90,7 +92,7 @@ export const CodexGallery: React.FC<{ active: boolean; currentUser: User; notify
     characters: (metadata.params.characters || []).map((character, index) => ({ label: t('角色 {0}', [index + 1]), prompt: character.prompt, negative: character.negativePrompt || '' })) } : sourceEntry;
   const canImport = Boolean(!metadataError && importValue && (importValue.prompt !== undefined || importValue.negativePrompt !== undefined || importValue.characters?.length
     || importValue.importSettings || importValue.importSeed || importValue.importModel));
-  const anchor = useGallerySelectionAnchor(scrollRef, galleryRef, selectedKey, active);
+  const anchor = useGallerySelectionAnchor(scrollRef, galleryRef, selectedKey, active, selectionFocusEnabled);
   const scrollRestore = useKeepAliveScrollRestore(scrollRef, `codex-${mode}`, { skipRestore: anchor.hasAnchor });
   const closeDetail = useMobileHistoryLayer(Boolean(active && selected), () => { anchor.preserveOnClose(); setSelectedKeys(current => ({ ...current, [mode]: null })); }, 'codex-detail');
   const favoritesVersion = useSyncExternalStore(subscribeCollection, collectionRevision, collectionRevision);
@@ -231,15 +233,17 @@ export const CodexGallery: React.FC<{ active: boolean; currentUser: User; notify
   const frostedCaption = useGalleryFrostedCaption();
   const estimateHeight = useCallback((entry: CodexEntry, width: number) => {
     const image = entry.images[entry.coverIndex];
-    return image ? width / (image.width && image.height ? image.width / image.height : 0.75) + (frostedCaption ? 2 : 55) : 160;
-  }, [frostedCaption]);
+    const ratio = image ? imageRatios[entry.key] || (image.width && image.height ? image.width / image.height : 0.75) : 0.75;
+    return image ? width / ratio + (frostedCaption ? 2 : 55) : 160;
+  }, [frostedCaption, imageRatios]);
   const renderCard = (entry: CodexEntry) => {
     const image = entry.images[entry.coverIndex];
     const partial = image && !collectionTargetActive(groupTarget(entry)) && entry.images.some((_, i) => collectionTargetActive(codexCollectionImage(entry, i)));
-    return <MediaCardShell pressReveal key={entry.key} data-gallery-work-id={entry.key} data-safe-mode-work="true" selected={selectedKey === entry.key} className={`mobile-gallery-item ${image ? 'gallery-image-card' : ''} group relative flex-col ${selectedKey && selectedKey !== entry.key ? 'brightness-[.7]' : ''}`}>
+    const imageRatio = image ? imageRatios[entry.key] || (image.width && image.height ? image.width / image.height : 0.75) : 0.75;
+    return <MediaCardShell pressReveal key={entry.key} data-gallery-work-id={entry.key} data-safe-mode-work="true" selected={selectedKey === entry.key} className={`mobile-gallery-item ${image ? 'gallery-image-card' : ''} group relative flex-col ${selectionFocusEnabled && selectedKey && selectedKey !== entry.key ? 'brightness-[.7]' : ''}`}>
       <button type="button" onClick={() => { anchor.prepareSelection(entry.key); setSelectedKeys(current => ({ ...current, [mode]: entry.key })); setPages(current => ({ ...current, [mode]: entry.coverIndex })); }} className={`block w-full text-left ${image ? 'gallery-card-visual' : ''}`}>
-        {image ? <div className="mobile-gallery-frame relative aspect-[3/4] overflow-hidden bg-gray-200 dark:bg-gray-800" style={{ '--mobile-image-ratio': `${image.width || 3} / ${image.height || 4}` } as React.CSSProperties}>
-          <SmartImage src={image.url} alt={entry.title} />
+        {image ? <div className="mobile-gallery-frame relative aspect-[3/4] overflow-hidden bg-gray-200 dark:bg-gray-800" style={{ '--mobile-image-ratio': `${imageRatio}` } as React.CSSProperties}>
+          <SmartImage src={image.url} alt={entry.title} className={display.layout === 'masonry' && !imageRatios[entry.key] ? 'h-full w-full object-contain' : undefined} onLoad={event => updateImageRatio(entry.key, event.currentTarget.naturalWidth, event.currentTarget.naturalHeight)} />
           {!frostedCaption && (entry.images.length > 1 || partial) && <span className="absolute bottom-2 right-2 rounded-full bg-black/60 px-2 py-1 text-micro text-white">{partial ? `${t('部分已收藏')} · ` : ''}{t('{0}页', [entry.images.length])}</span>}
         </div> : <div className="max-h-40 overflow-hidden bg-gray-50 p-3 text-xs leading-relaxed text-gray-500 dark:bg-gray-950">{entry.prompt || entry.characters.map(character => character.prompt).join('\n') || entry.note}</div>}
         <div className={`p-2.5 ${image ? 'gallery-card-caption' : ''}`}>{frostedCaption && image && (entry.images.length > 1 || partial) && <span className="gallery-card-meta mb-1 block text-micro">{partial ? `${t('部分已收藏')} · ` : ''}{t('{0}页', [entry.images.length])}</span>}<p data-safe-mode-title="true" className="truncate text-xs font-bold">{entry.title}</p><p className="gallery-card-meta mt-1 truncate text-micro text-gray-500">{mode === 'books' ? [filter.scope === 'all' && entry.bookTitle, entry.path.join(' / ') || (filter.scope === 'book' && entry.bookTitle)].filter(Boolean).join(' · ') : entry.author || entry.path.join(' / ')}</p></div>

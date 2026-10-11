@@ -37,6 +37,7 @@ import { matchesDanbooruImageFilters } from '../services/danbooruQuery';
 
 interface DanbooruGalleryProps {
   active: boolean;
+  selectionFocusEnabled?: boolean;
   currentUser: User;
   notify: (message: string, type?: 'success' | 'error') => void;
   onNavigateToPlayground: () => void;
@@ -78,7 +79,7 @@ type DanbooruSort = 'rank' | 'score' | 'favcount' | 'latest';
 type DanbooruRating = 'all' | 'g' | 's' | 'q' | 'e';
 type DanbooruRatio = 'all' | 'portrait' | 'landscape' | 'square';
 
-export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, notify, onNavigateToPlayground, onRefreshInspiration }) => {
+export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, selectionFocusEnabled = true, notify, onNavigateToPlayground, onRefreshInspiration }) => {
   useLanguage();
   const imageDisplay = useMobileImageDisplayPreferences();
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -93,7 +94,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, notify
   const [historyItems, setHistoryItems] = useState<GalleryHistoryItem[]>([]);
   const [items, setItems] = useState<DanbooruPost[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
-  const selectionAnchor = useGallerySelectionAnchor(scrollRef, galleryContentRef, selectedId, active);
+  const selectionAnchor = useGallerySelectionAnchor(scrollRef, galleryContentRef, selectedId, active, selectionFocusEnabled);
   const onScrollRestore = useKeepAliveScrollRestore(scrollRef, 'danbooru', { skipRestore: selectionAnchor.hasAnchor });
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
@@ -351,7 +352,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, notify
   }, [frostedCaption]);
 
   const renderHistoryCard = (item: GalleryHistoryItem) => (
-    <PressRevealSurface as="article" key={item.id} style={{ contentVisibility: 'visible' }} data-gallery-work-id={item.sourceId} className={`mobile-gallery-item gallery-image-card group relative flex-col overflow-hidden rounded-lg border bg-white transition-[filter,box-shadow,border-color] duration-150 dark:bg-gray-800 ${selectedId !== null && selectedId !== Number(item.sourceId) ? 'brightness-[.7]' : ''} ${selectedId === Number(item.sourceId) ? 'border-indigo-500 ring-2 ring-indigo-500' : 'border-gray-200 dark:border-gray-700 hover:border-indigo-500'}`}>
+    <PressRevealSurface as="article" key={item.id} style={{ contentVisibility: 'visible' }} data-gallery-work-id={item.sourceId} className={`mobile-gallery-item gallery-image-card group relative flex-col overflow-hidden rounded-lg border bg-white transition-[filter,box-shadow,border-color] duration-150 dark:bg-gray-800 ${selectionFocusEnabled && selectedId !== null && selectedId !== Number(item.sourceId) ? 'brightness-[.7]' : ''} ${selectedId === Number(item.sourceId) ? 'border-indigo-500 ring-2 ring-indigo-500' : 'border-gray-200 dark:border-gray-700 hover:border-indigo-500'}`}>
       <button
         type="button"
         onClick={() => {
@@ -406,7 +407,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, notify
       <PressRevealSurface as="article"
         key={post.id} data-gallery-work-id={post.id}
         data-safe-mode-work="true"
-        className={`mobile-gallery-item gallery-image-card group relative flex-col overflow-hidden rounded-lg border bg-white transition-[filter,box-shadow,border-color] duration-150 dark:bg-gray-800 ${selectedId !== null && selectedId !== post.id ? 'brightness-[.7]' : ''} ${
+        className={`mobile-gallery-item gallery-image-card group relative flex-col overflow-hidden rounded-lg border bg-white transition-[filter,box-shadow,border-color] duration-150 dark:bg-gray-800 ${selectionFocusEnabled && selectedId !== null && selectedId !== post.id ? 'brightness-[.7]' : ''} ${
           selectedId === post.id ? 'border-indigo-500 ring-2 ring-indigo-500' : 'border-gray-200 dark:border-gray-700 hover:border-indigo-500'
         }`}
       >

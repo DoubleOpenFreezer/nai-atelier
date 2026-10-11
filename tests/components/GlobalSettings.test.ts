@@ -95,27 +95,31 @@ const SettingsHarness: React.FC<SettingsHarnessProps> = ({ initialSection = 'app
 };
 
 describe('GlobalSettings', () => {
-  it('全图磨砂与悬停浮动独立切换，外观预设保存并恢复两个开关', async () => {
+  it('图库效果独立切换，外观预设保存并恢复选中聚焦模式', async () => {
     const changed = vi.fn<(preferences: AppearancePreferences) => void>();
     render(React.createElement(SettingsHarness, { onAppearancePreferencesChange: changed }));
     const caption = await screen.findByRole('switch', { name: '全图磨砂卡片' });
     const hover = screen.getByRole('switch', { name: '卡片悬停浮动' });
+    const focus = screen.getByRole('switch', { name: '选中作品聚焦模式' });
     expect(caption.getAttribute('aria-checked')).toBe('true');
     expect(hover.getAttribute('aria-checked')).toBe('true');
+    expect(focus.getAttribute('aria-checked')).toBe('true');
     fireEvent.click(caption);
     expect(changed.mock.lastCall?.[0]).toMatchObject({ galleryFrostedCaption: false, galleryHoverFloat: true });
     fireEvent.click(hover);
+    fireEvent.click(focus);
     fireEvent.click(screen.getByRole('button', { name: '另存当前主题' }));
     fireEvent.change(screen.getByPlaceholderText(/例如：晴空午夜/), { target: { value: '安静卡片' } });
     fireEvent.click(screen.getByRole('button', { name: '保存' }));
-    await waitFor(() => expect(changed.mock.lastCall?.[0].customPresets.at(-1)).toMatchObject({ galleryFrostedCaption: false, galleryHoverFloat: false }));
+    await waitFor(() => expect(changed.mock.lastCall?.[0].customPresets.at(-1)).toMatchObject({ galleryFrostedCaption: false, galleryHoverFloat: false, gallerySelectionFocus: false }));
     fireEvent.click(caption);
     fireEvent.click(hover);
-    expect(changed.mock.lastCall?.[0]).toMatchObject({ galleryFrostedCaption: true, galleryHoverFloat: true });
+    fireEvent.click(focus);
+    expect(changed.mock.lastCall?.[0]).toMatchObject({ galleryFrostedCaption: true, galleryHoverFloat: true, gallerySelectionFocus: true });
     fireEvent.click(screen.getByRole('button', { name: '应用外观预设：安静卡片' }));
-    expect(changed.mock.lastCall?.[0]).toMatchObject({ galleryFrostedCaption: false, galleryHoverFloat: false });
+    expect(changed.mock.lastCall?.[0]).toMatchObject({ galleryFrostedCaption: false, galleryHoverFloat: false, gallerySelectionFocus: false });
     fireEvent.click(screen.getByRole('button', { name: '恢复 NAI Atelier 默认外观' }));
-    expect(changed.mock.lastCall?.[0]).toMatchObject({ galleryFrostedCaption: true, galleryHoverFloat: true });
+    expect(changed.mock.lastCall?.[0]).toMatchObject({ galleryFrostedCaption: true, galleryHoverFloat: true, gallerySelectionFocus: true });
   });
   it('连续生成开关默认开启，点击后即时关闭', async () => {
     const onAppearancePreferencesChange = vi.fn<(preferences: AppearancePreferences) => void>();

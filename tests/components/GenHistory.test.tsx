@@ -13,6 +13,11 @@ import { LANGUAGES, setLanguage, t } from '../../services/i18n';
 
 const { confirmAction, listeners } = vi.hoisted(() => ({ confirmAction: vi.fn(async () => false), listeners: new Set<(event: { type: string; id?: string; external?: boolean; favorite?: boolean }) => void>() }));
 vi.mock('../../components/ConfirmDialog', () => ({ useConfirmDialog: () => confirmAction }));
+vi.mock('../../components/SmartImage', () => ({
+    ImageActivityContext: React.createContext(true),
+    SmartImage: ({ src, alt, className, onLoad }: { src: string; alt: string; className?: string; onLoad?: React.ReactEventHandler<HTMLImageElement> }) => <img src={src} alt={alt} className={className} onLoad={onLoad} />,
+    OriginalImage: ({ src, alt, className, onLoad, onError, style }: React.ImgHTMLAttributes<HTMLImageElement>) => <img src={src} alt={alt} className={className} onLoad={onLoad} onError={onError} style={style} />,
+}));
 
 vi.mock('../../services/localHistory', () => ({ localHistory: {
     prepare: vi.fn(async () => 0), subscribe: (listener: (event: { type: string; id?: string; external?: boolean; favorite?: boolean }) => void) => { listeners.add(listener); return () => listeners.delete(listener); },
@@ -73,6 +78,19 @@ const setup = async (width = 1280, expectedCount = 2) => {
 };
 
 describe('历史缩略图就地操作', () => {
+    it.each(['masonry', 'portrait'])('历史 %s 布局仅在瀑布流测量前完整显示图片', async layout => {
+        localStorage.setItem('nai_mobile_image_display', JSON.stringify({ layout, columns: 2 }));
+        const { cards } = await setup();
+        const image = within(cards[0]).getByRole('img');
+        expect(image.className).toContain(layout === 'masonry' ? 'object-contain' : 'object-cover');
+        if (layout === 'masonry') {
+            Object.defineProperties(image, { naturalWidth: { configurable: true, value: 1200 }, naturalHeight: { configurable: true, value: 800 } });
+            fireEvent.load(image);
+            await waitFor(() => expect(image.className).toContain('object-cover'));
+            expect(cards[0].querySelector('.mobile-gallery-frame')?.getAttribute('style')).toContain('1.5');
+        }
+    });
+
     it('五种语言保留历史图片和用户内容，日期与操作文字立即更新', async () => {
         const { container, cards } = await setup();
         for (const language of LANGUAGES) {

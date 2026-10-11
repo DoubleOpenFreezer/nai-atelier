@@ -9,7 +9,7 @@ vi.mock('../../services/codexService', async original => ({ ...await original<ty
 vi.mock('../../services/collectionFavorites', () => ({ collectionRevision: () => 0, subscribeCollection: () => () => {}, collectionTargetActive: () => false }));
 vi.mock('../../components/ImageShareActions', () => ({ ImageShareOverlay: () => null }));
 vi.mock('../../components/ImageLightbox', () => ({ ViewableImage: ({ src, alt, width, height, className }: React.ImgHTMLAttributes<HTMLImageElement>) => <img src={src} alt={alt} width={width} height={height} className={className} /> }));
-vi.mock('../../components/SmartImage', async original => ({ ...await original<typeof import('../../components/SmartImage')>(), SmartImage: ({ src, alt }: { src: string; alt: string }) => <img src={src} alt={alt} /> }));
+vi.mock('../../components/SmartImage', async original => ({ ...await original<typeof import('../../components/SmartImage')>(), SmartImage: ({ src, alt, className = 'h-full w-full object-cover', onLoad }: { src: string; alt: string; className?: string; onLoad?: React.ReactEventHandler<HTMLImageElement> }) => <img src={src} alt={alt} className={className} onLoad={onLoad} /> }));
 import { CodexGallery, codexCollectionImage } from '../../components/CodexGallery';
 import { IMPORT_SESSION_KEY } from '../../services/metadataService';
 
@@ -118,6 +118,34 @@ it('图片词条叠放图文，纯文本词条保留正文和独立信息栏', a
   expect(textTitle.closest('.gallery-card-caption')).toBeNull();
   expect(textTitle.closest('.gallery-image-card')).toBeNull();
   expect(screen.getByText('text-only prompt')).toBeTruthy();
+});
+it('法典瀑布流的无尺寸图片先完整显示，加载后按真实比例更新卡片', async () => {
+  localStorage.setItem('nai_mobile_image_display', JSON.stringify({ layout: 'masonry', columns: 2 }));
+  const pendingFrames: FrameRequestCallback[] = [];
+  vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { pendingFrames.push(callback); return pendingFrames.length; });
+  vi.stubGlobal('cancelAnimationFrame', vi.fn());
+  vi.stubGlobal('ResizeObserver', class {
+    constructor(private callback: ResizeObserverCallback) {}
+    observe() { this.callback([{ contentRect: { width: 400 } } as ResizeObserverEntry], this as unknown as ResizeObserver); }
+    disconnect() {}
+    unobserve() {}
+  });
+  mocks.book.mockResolvedValue({ release: boot.release, entries: [{ ...entry, images: [{ ...entry.images[0], width: 0, height: 0 }] }] });
+  const { container } = setup();
+  const card = await waitFor(() => {
+    const element = container.querySelector<HTMLElement>('[data-gallery-work-id]');
+    expect(element).toBeTruthy();
+    return element!;
+  });
+  const image = within(card).getByRole('img') as HTMLImageElement;
+  const frame = card.querySelector<HTMLElement>('.mobile-gallery-frame')!;
+  expect(image.className).toContain('object-contain');
+  Object.defineProperties(image, { naturalWidth: { configurable: true, value: 1200 }, naturalHeight: { configurable: true, value: 800 } });
+  fireEvent.load(image);
+  act(() => pendingFrames.splice(0).forEach(callback => callback(0)));
+  expect(frame.style.getPropertyValue('--mobile-image-ratio')).toBe('1.5');
+  expect(image.className).toContain('object-cover');
+  expect(container.querySelector('.chain-masonry-column')).toBeTruthy();
 });
 it('未进入页面不读取法典；紧凑图标一键导入，不打开确认窗口', async () => {
   const view = setup(false); expect(mocks.bootstrap).not.toHaveBeenCalled();
@@ -266,7 +294,7 @@ it('原图读取失败时阻止导入和保存，不悄悄回退展示词；重�
   fireEvent.click(screen.getByRole('button', { name: '导入实验室' }));
   expect(JSON.parse(sessionStorage.getItem(IMPORT_SESSION_KEY)!)).toMatchObject({ fullMetadata: true, params: metadata.params });
   mocks.metadata.mockRejectedValueOnce(new Error('再次读取失败'));
-  fireEvent.click(screen.getByRole('button', { name: '重试' }));
+  fireEvent.click(screen.getByRole('button', { name: '下一页' }));
   expect(await screen.findByRole('alert')).toHaveProperty('textContent', '再次读取失败');
   expect((screen.getByRole('button', { name: '导入实验室' }) as HTMLButtonElement).disabled).toBe(true);
   expect((screen.getByRole('button', { name: '保存到风格串' }) as HTMLButtonElement).disabled).toBe(true);

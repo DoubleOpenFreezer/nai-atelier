@@ -27,9 +27,11 @@ import { CollectionFolderSelect, CollectionTagInput } from './inspiration/Collec
 import { useGallerySelectionAnchor } from './useGallerySelectionAnchor';
 import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
 import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMasonry';
+import { useImageRatios } from './useImageRatios';
 import { BOARD_COLORS, canEditItem, CollectionButton, SmartCollection, sourceIcon, splitTags } from './inspiration/InspirationShared';
 
 interface InspirationGalleryProps {
+  selectionFocusEnabled?: boolean;
   currentUser: User;
   inspirationsData: Inspiration[] | null;
   labModuleOrder?: LabPageModuleId[];
@@ -44,7 +46,7 @@ interface InspirationGalleryProps {
 interface UploadDraft { title: string; prompt: string; negativePrompt: string; tags: string; boardId: string; params?: NAIParams; }
 const EMPTY_UPLOAD: UploadDraft = { title: '', prompt: '', negativePrompt: '', tags: '', boardId: '' };
 
-export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentUser, inspirationsData, onRefresh, notify, onNavigateToPlayground, labModuleOrder = DEFAULT_LAB_MODULE_ORDER }) => {
+export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentUser, inspirationsData, onRefresh, notify, onNavigateToPlayground, labModuleOrder = DEFAULT_LAB_MODULE_ORDER, selectionFocusEnabled = true }) => {
   useLanguage();
   const confirmAction = useConfirmDialog();
   const imageDisplay = useMobileImageDisplayPreferences();
@@ -78,7 +80,7 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
   const [tagManagerOpen, setTagManagerOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [workGroup, setWorkGroup] = useState<string | null>(null);
-  const selectionAnchor = useGallerySelectionAnchor(mainScrollRef, galleryContentRef, workGroup, active);
+  const selectionAnchor = useGallerySelectionAnchor(mainScrollRef, galleryContentRef, workGroup, active, selectionFocusEnabled);
   const onMainScrollRestore = useKeepAliveScrollRestore(mainScrollRef, 'inspiration', { skipRestore: selectionAnchor.hasAnchor });
   const closeGroup = useMobileHistoryLayer(Boolean(workGroup), () => { selectionAnchor.preserveOnClose(); setWorkGroup(null); }, 'collection-work');
   const openGroup = (key: string) => { selectionAnchor.prepareSelection(key); setWorkGroup(key); };
@@ -411,11 +413,13 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
   </div>;
 
   const frostedCaption = useGalleryFrostedCaption();
+  const [imageRatios, updateImageRatio] = useImageRatios();
   const estimateCollectionCardHeight = React.useCallback((group: Inspiration[], columnWidth: number) => {
     const item = group[0];
-    return Math.max(1, columnWidth) * (item.params?.height || 1216) / Math.max(1, item.params?.width || 832)
+    const ratio = imageRatios[item.id] || (item.params?.width && item.params?.height ? item.params.width / item.params.height : 832 / 1216);
+    return Math.max(1, columnWidth) / ratio
       + (frostedCaption ? 2 : item.tags?.length ? 72 : 48);
-  }, [frostedCaption]);
+  }, [frostedCaption, imageRatios]);
   const renderCollectionCard = (group: Inspiration[]) => {
     const item = group[0]; const ids = group.map(image => image.id);
     const isGroup = group.length > 1 || Boolean(item.sourceId && ['aitag', 'pixiv', 'codex', 'codex-community'].includes(item.sourceType || '') && Number(item.analysis?.collectionGroupSize) > 1);
@@ -423,7 +427,8 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
     const selectedCount = ids.filter(id => selectedIds.has(id)).length;
     const selected = selectedCount === ids.length;
     const partial = selectedCount > 0 && !selected;
-    return <MediaCardShell pressReveal pressDisabled={selectionMode} style={{ contentVisibility: 'visible' }} key={item.id} data-safe-mode-work="true" data-gallery-work-id={collectionGroupKey(item)} selected={selected || partial || workGroup === collectionGroupKey(item)} className={`gallery-image-card gallery-card-visual group relative flex flex-col transition-[filter,box-shadow,border-color] duration-150 ${workGroup && workGroup !== collectionGroupKey(item) ? 'brightness-[.7]' : ''}`}
+    const ratio = imageRatios[item.id] || (item.params?.width && item.params?.height ? item.params.width / item.params.height : 832 / 1216);
+    return <MediaCardShell pressReveal pressDisabled={selectionMode} style={{ contentVisibility: 'visible' }} key={item.id} data-safe-mode-work="true" data-gallery-work-id={collectionGroupKey(item)} selected={selected || partial || workGroup === collectionGroupKey(item)} className={`gallery-image-card gallery-card-visual group relative flex flex-col transition-[filter,box-shadow,border-color] duration-150 ${selectionFocusEnabled && workGroup && workGroup !== collectionGroupKey(item) ? 'brightness-[.7]' : ''}`}
       draggable={canEditItem(item, currentUser) && !busy}
       onDragStart={event => {
         if (busy || ['touch', 'pen'].includes(event.currentTarget.dataset.pressInput || '') || !canEditItem(item, currentUser) || (event.target as Element).closest('[data-card-action]')) { event.preventDefault(); return; }
@@ -431,8 +436,8 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
         event.dataTransfer.effectAllowed = 'move';
         event.dataTransfer.setData('application/x-nai-collection-items', JSON.stringify(draggedIdsRef.current));
       }} onDragEnd={() => { draggedIdsRef.current = []; setDropTarget(null); }}>
-      <div className="mobile-gallery-frame relative overflow-hidden md:aspect-square" style={{ '--mobile-image-ratio': `${item.params?.width || 832} / ${item.params?.height || 1216}` } as React.CSSProperties}>
-        <button type="button" title={canEditItem(item, currentUser) ? t('拖动到收藏夹') : undefined} disabled={selectionMode && (Boolean(busy) || !canEditItem(item, currentUser))} onClick={() => selectionMode ? toggleSelected(ids) : openGroup(collectionGroupKey(item))} className="absolute inset-0 block h-full w-full text-left"><SmartImage src={item.imageUrl} alt={title} thumbnailVariant="thumb-320" /></button>
+      <div className="mobile-gallery-frame relative overflow-hidden md:aspect-square" style={{ '--mobile-image-ratio': `${ratio}` } as React.CSSProperties}>
+        <button type="button" title={canEditItem(item, currentUser) ? t('拖动到收藏夹') : undefined} disabled={selectionMode && (Boolean(busy) || !canEditItem(item, currentUser))} onClick={() => selectionMode ? toggleSelected(ids) : openGroup(collectionGroupKey(item))} className="absolute inset-0 block h-full w-full text-left"><SmartImage src={item.imageUrl} alt={title} thumbnailVariant="thumb-320" className={imageDisplay.layout === 'masonry' && !imageRatios[item.id] ? 'h-full w-full object-contain' : undefined} onLoad={event => updateImageRatio(item.id, event.currentTarget.naturalWidth, event.currentTarget.naturalHeight)} /></button>
         {!frostedCaption && <span className="pointer-events-none absolute bottom-2 right-2 rounded-lg bg-black/65 px-2 py-1 text-xs font-bold text-white">{t('{0}页', [group.length])}</span>}
         {selectionMode && editableIds.has(item.id) && <button data-card-action="true" type="button" aria-pressed={partial ? 'mixed' : selected} title={partial ? t('部分选中') : undefined} disabled={Boolean(busy)} onClick={() => toggleSelected(ids)} className={`mobile-size-locked absolute left-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-full border text-sm font-bold shadow backdrop-blur transition ${selected || partial ? 'border-indigo-500 bg-indigo-600 text-white' : 'border-white/80 bg-black/35 text-transparent'}`} aria-label={t("选择收藏")}>{selected ? '✓' : partial ? '−' : ''}</button>}
         {!selectionMode && canEditItem(item, currentUser) && <button data-card-action="true" type="button" aria-label={t("删除收藏")} title={t("删除")} disabled={Boolean(busy)} onClick={event => { event.stopPropagation(); void deleteCollected(ids); }} className="hover-reveal-md mobile-size-locked absolute left-2 top-2 z-10 flex h-11 w-11 items-center justify-center rounded-full bg-red-500 text-white shadow hover:bg-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white disabled:opacity-40 md:h-8 md:w-8"><Trash2 className="h-4 w-4" /></button>}

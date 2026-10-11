@@ -536,7 +536,7 @@ const App = () => {
     const name = chain.name + (chain.id === 'playground' ? '' : ' (Fork)');
     try {
       await db.createChain(name, chain.description, chain, finalType); // Persist type on fork
-      notify('Fork 成功！已保存到您的列表');
+      notify(finalType === 'character' ? '已保存到角色库' : '已保存到风格串');
       await refreshData(true);
       // Return to appropriate list based on type
       const targetView = finalType === 'character' ? 'characters' : 'list';
@@ -640,6 +640,7 @@ const App = () => {
       case 'characters':
         return <CharacterLibrary
           chains={chains}
+          selectionFocusEnabled={appearancePreferences.gallerySelectionFocus}
           onCreate={handleCreateChain}
           onSelect={(id) => handleNavigate('edit', id)}
           onDelete={handleDelete}
@@ -676,12 +677,14 @@ const App = () => {
       case 'library':
         return <ArtistLibrary
           artistsData={artistsCache}
+          selectionFocusEnabled={appearancePreferences.gallerySelectionFocus}
           notify={notify}
           onNavigateToPlayground={() => handleNavigate('playground', undefined, { externalImport: true })}
         />;
       case 'aitag':
         return <AitagGallery
           active={view === 'aitag'}
+          selectionFocusEnabled={appearancePreferences.gallerySelectionFocus}
           currentUser={currentUser}
           notify={notify}
           onNavigateToPlayground={() => handleNavigate('playground', undefined, { externalImport: true })}
@@ -691,6 +694,7 @@ const App = () => {
       case 'danbooru':
         return <DanbooruGallery
           active={view === 'danbooru'}
+          selectionFocusEnabled={appearancePreferences.gallerySelectionFocus}
           currentUser={currentUser}
           notify={notify}
           onNavigateToPlayground={() => handleNavigate('playground', undefined, { externalImport: true })}
@@ -699,16 +703,18 @@ const App = () => {
       case 'pixiv':
         return <PixivGallery
           active={view === 'pixiv'}
+          selectionFocusEnabled={appearancePreferences.gallerySelectionFocus}
           currentUser={currentUser}
           notify={notify}
           onNavigateToPlayground={() => handleNavigate('playground', undefined, { externalImport: true })}
           onRefreshInspiration={() => loadInspirations(true)}
         />;
       case 'codex':
-        return <CodexGallery active={view === 'codex'} currentUser={currentUser} notify={notify} onNavigateToPlayground={() => handleNavigate('playground', undefined, { externalImport: true })} onCreateArtistChain={handleCreateChainFromAitag} />;
+        return <CodexGallery active={view === 'codex'} selectionFocusEnabled={appearancePreferences.gallerySelectionFocus} currentUser={currentUser} notify={notify} onNavigateToPlayground={() => handleNavigate('playground', undefined, { externalImport: true })} onCreateArtistChain={handleCreateChainFromAitag} />;
       case 'inspiration':
         return <InspirationGallery
           currentUser={currentUser}
+          selectionFocusEnabled={appearancePreferences.gallerySelectionFocus}
           inspirationsData={inspirationsCache}
           labModuleOrder={appearancePreferences.labPageLayouts['text-to-image'].order}
           onRefresh={() => loadInspirations(true)}

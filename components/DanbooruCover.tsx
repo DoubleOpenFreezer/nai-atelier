@@ -13,6 +13,7 @@ interface DanbooruCoverProps {
   kind: 'artist' | 'character';
   alt: string;
   fixedSrc?: string;
+  imageClassName?: string;
   onCandidateChange?: (candidate: DanbooruCoverCandidate | null) => void;
   /** 封面图片加载完成后上报自然宽高（瀑布流按真实比例排布用）。 */
   onImageLoad?: (width: number, height: number) => void;
@@ -31,7 +32,7 @@ const lookupErrorMessage = (error: unknown) => {
     ? 'Danbooru 请求过于频繁，请稍后重试' : '暂时无法读取 Danbooru 封面，请重试';
 };
 
-export const DanbooruCover: React.FC<DanbooruCoverProps> = ({ tag, kind, alt, fixedSrc = '', onCandidateChange, onImageLoad, notify, onFavoriteChange }) => {
+export const DanbooruCover: React.FC<DanbooruCoverProps> = ({ tag, kind, alt, fixedSrc = '', imageClassName, onCandidateChange, onImageLoad, notify, onFavoriteChange }) => {
   useLanguage();
   const rootRef = useRef<HTMLDivElement>(null);
   const viewActive = useContext(ImageActivityContext);
@@ -268,7 +269,7 @@ export const DanbooruCover: React.FC<DanbooruCoverProps> = ({ tag, kind, alt, fi
   };
   return <div ref={rootRef} className="absolute inset-0">
     {displayedSrc ? <>
-      <SmartImage key={displayedSrc} src={displayedSrc} alt={alt} pin eager={visible} onError={() => { setFailedSources(previous => new Set(previous).add(displayedSrc)); if (displayedSrc === fixedSrc) setBrowseSaved(true); }} onLoad={event => {
+      <SmartImage key={displayedSrc} src={displayedSrc} alt={alt} className={imageClassName} pin eager={visible} onError={() => { setFailedSources(previous => new Set(previous).add(displayedSrc)); if (displayedSrc === fixedSrc) setBrowseSaved(true); }} onLoad={event => {
         const image = event.currentTarget;
         if (image.naturalWidth > 0 && image.naturalHeight > 0) {
           onImageLoad?.(image.naturalWidth, image.naturalHeight);

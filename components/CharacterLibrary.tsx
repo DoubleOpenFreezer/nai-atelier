@@ -68,6 +68,7 @@ interface CharacterCard {
 }
 
 interface CharacterLibraryProps {
+  selectionFocusEnabled?: boolean;
   chains: PromptChain[];
   onCreate: (name: string, description: string, type: 'character') => void;
   onSelect: (id: string) => void;
@@ -89,6 +90,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
   onNavigateToPlayground,
   notify,
   returnTargetId,
+  selectionFocusEnabled = true,
 }) => {
   useLanguage();
   const imageDisplay = useMobileImageDisplayPreferences();
@@ -106,10 +108,10 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
               <PressRevealSurface as="article" key={card.key} data-gallery-work-id={card.key} data-safe-mode-work="true" data-return-item-id={card.kind === 'custom' ? card.chain?.id : undefined} role="button" data-agent-action="select" aria-label={t("选择角色：{0}", [card.name])} tabIndex={0} onClick={() => toggleSelect(card)} onKeyDown={event => {
                 if (event.target !== event.currentTarget || !['Enter', ' '].includes(event.key)) return;
                 event.preventDefault(); toggleSelect(card);
-              }} aria-pressed={selected} className={`mobile-gallery-item gallery-image-card gallery-card-visual group relative flex-col overflow-hidden rounded-2xl border bg-white transition-[filter,box-shadow,border-color] duration-150 cursor-pointer dark:bg-gray-900 ${selectedKeys.size > 0 && !selected ? 'brightness-[.7]' : ''} ${selected ? 'border-indigo-500 ring-2 ring-indigo-500/20' : 'border-gray-200 hover:border-indigo-400 dark:border-gray-800 dark:hover:border-indigo-600'}`}>
+              }} aria-pressed={selected} className={`mobile-gallery-item gallery-image-card gallery-card-visual group relative flex-col overflow-hidden rounded-2xl border bg-white transition-[filter,box-shadow,border-color] duration-150 cursor-pointer dark:bg-gray-900 ${selectionFocusEnabled && selectedKeys.size > 0 && !selected ? 'brightness-[.7]' : ''} ${selected ? 'border-indigo-500 ring-2 ring-indigo-500/20' : 'border-gray-200 hover:border-indigo-400 dark:border-gray-800 dark:hover:border-indigo-600'}`}>
                 <div className="mobile-gallery-frame relative md:aspect-[2/3] overflow-hidden bg-gray-200 dark:bg-gray-900" style={{ '--mobile-image-ratio': cardRatios[card.key] ? `${Math.round(cardRatios[card.key] * 1000)} / 1000` : '2 / 3' } as React.CSSProperties}>
-                  {card.kind === 'catalog' && card.tagName ? <DanbooruCover tag={card.tagName} kind="character" alt={card.name} fixedSrc={card.previewImage} notify={notify} onFavoriteChange={() => toggleFavorite(card, collectionSnapshot().some(item => item.sourceType === 'character' && item.sourceId === (card.chain?.id || card.tagName || card.key) && !item.archived))} onImageLoad={(width, height) => updateImageRatio(card.key, width, height)} /> : card.previewImage ? (
-                    <button className="h-full w-full" onClick={event => { event.stopPropagation(); setLightbox(card); }}><LazyImage src={card.previewImage} alt={card.name} onLoad={event => updateImageRatio(card.key, event.currentTarget.naturalWidth, event.currentTarget.naturalHeight)} /></button>
+                  {card.kind === 'catalog' && card.tagName ? <DanbooruCover tag={card.tagName} kind="character" alt={card.name} fixedSrc={card.previewImage} imageClassName={imageDisplay.layout === 'masonry' && !cardRatios[card.key] ? 'h-full w-full object-contain' : undefined} notify={notify} onFavoriteChange={() => toggleFavorite(card, collectionSnapshot().some(item => item.sourceType === 'character' && item.sourceId === (card.chain?.id || card.tagName || card.key) && !item.archived))} onImageLoad={(width, height) => updateImageRatio(card.key, width, height)} /> : card.previewImage ? (
+                    <button className="h-full w-full" onClick={event => { event.stopPropagation(); setLightbox(card); }}><LazyImage src={card.previewImage} alt={card.name} className={imageDisplay.layout === 'masonry' && !cardRatios[card.key] ? 'h-full w-full object-contain' : undefined} onLoad={event => updateImageRatio(card.key, event.currentTarget.naturalWidth, event.currentTarget.naturalHeight)} /></button>
                   ) : (
                     <div className="absolute inset-0 flex flex-col items-center justify-center px-2 text-center text-gray-400">
                       {card.kind === 'catalog' ? <Tag className="h-8 w-8" /> : <UserRound className="h-8 w-8" />}
@@ -442,7 +444,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
     return cards;
   }, [catalogToCard, customChains, customToCard, favoriteDetails, favorites, gachaCards, loadedCatalog, persistedCatalog, searchResults, searchTerm, showFavOnly, sort, tab]);
   useRestoreListAnchor(scrollRef, returnTargetId, `${visibleCards.length}:${isLoading ? 1 : 0}`);
-  const selectionAnchor = useGallerySelectionAnchor(scrollRef, scrollRef, focusedKey && selectedKeys.has(focusedKey) ? focusedKey : null, React.useContext(ImageActivityContext));
+  const selectionAnchor = useGallerySelectionAnchor(scrollRef, scrollRef, focusedKey && selectedKeys.has(focusedKey) ? focusedKey : null, React.useContext(ImageActivityContext), selectionFocusEnabled);
   const onScrollRestore = useKeepAliveScrollRestore(scrollRef, 'characters', { skipRestore: selectionAnchor.hasAnchor });
 
   useEffect(() => {

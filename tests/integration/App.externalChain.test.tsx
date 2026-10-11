@@ -22,13 +22,13 @@ vi.mock('../../components/Layout', () => ({ Layout: ({ children, onNavigate, cur
   {['aitag', 'inspiration', 'list'].map(view => <button key={view} onClick={() => onNavigate(view)}>{view}</button>)}
   {toast && <div role="status" data-type={toast.type}>{toast.message}</div>}{children}
 </> }));
-vi.mock('../../components/ChainList', () => ({ ChainList: ({ chains, onDelete, notify }: { chains: PromptChain[]; onDelete: (id: string) => Promise<void>; notify: (message: string, type?: string) => void }) => <div data-testid="list">{chains.map(chain => chain.id).join(',')}{chains[0] && <button onClick={async () => {
+vi.mock('../../components/ChainList', () => ({ ChainList: ({ chains, onDelete, onSelect, notify }: { chains: PromptChain[]; onDelete: (id: string) => Promise<void>; onSelect: (id: string) => void; notify: (message: string, type?: string) => void }) => <div data-testid="list">{chains.map(chain => chain.id).join(',')}{chains[0] && <><button onClick={async () => {
   try { await onDelete(chains[0].id); notify('合成删除成功'); }
   catch { notify('合成删除失败', 'error'); }
-}}>删除合成风格串</button>}</div> }));
-vi.mock('../../components/ChainEditor', () => ({ ChainEditor: ({ chain, onBack, saveRef, setIsDirty }: any) => {
+}}>删除合成风格串</button><button onClick={() => onSelect(chains[0].id)}>编辑合成风格串</button></>}</div> }));
+vi.mock('../../components/ChainEditor', () => ({ ChainEditor: ({ chain, onBack, onFork, saveRef, setIsDirty }: any) => {
   React.useImperativeHandle(saveRef, () => ({ canSave: mocks.canSave, save: mocks.save }));
-  return <div data-testid="editor">{chain.id}|{chain.basePrompt}|{chain.previewImage}<button onClick={onBack}>返回资料库</button><button onClick={() => setIsDirty(true)}>修改合成草稿</button></div>;
+  return <div data-testid="editor">{chain.id}|{chain.basePrompt}|{chain.previewImage}<button onClick={onBack}>返回资料库</button><button onClick={() => setIsDirty(true)}>修改合成草稿</button><button onClick={() => void onFork(chain, 'style')}>另存为新串</button><button onClick={() => void onFork(chain, 'character')}>另存为角色</button></div>;
 } }));
 // 这里验证 App 的共享保存回调；AITag 实际按钮的元数据与连点行为在图库组件测试中覆盖。
 const source: PromptChain = {
@@ -81,6 +81,21 @@ it.each([false, true])('共享删除回调失败=%s：结果传回调用方，�
   expect(mocks.getAllChains).toHaveBeenCalledTimes(fails ? 1 : 2);
   expect(screen.getByTestId('view').textContent).toBe('list');
   log.mockRestore();
+});
+
+it.each([
+  ['style', '另存为新串', '已保存到风格串'],
+  ['character', '另存为角色', '已保存到角色库'],
+] as const)('另存为%s时提示目标库名称', async (targetType, action, message) => {
+  const chain = { ...source, id: 'source-style' };
+  mocks.getAllChains.mockResolvedValue([chain]);
+  await setup();
+  fireEvent.click(screen.getByRole('button', { name: 'list' }));
+  fireEvent.click(await screen.findByRole('button', { name: '编辑合成风格串' }));
+  await screen.findByTestId('editor');
+  fireEvent.click(await screen.findByRole('button', { name: action }));
+  await waitFor(() => expect(screen.getByRole('status').textContent).toBe(message));
+  expect(mocks.createChain).toHaveBeenCalledWith(`${chain.name} (Fork)`, chain.description, chain, targetType);
 });
 
 it.each(['save', 'discard', 'cancel'] as const)('离开编辑页选择 %s：保存与放弃分开处理草稿，取消保持原页', async action => {

@@ -97,6 +97,7 @@ export interface AppearancePreset {
   fontScale: FontScale;
   galleryFrostedCaption: boolean;
   galleryHoverFloat: boolean;
+  gallerySelectionFocus: boolean;
 }
 
 export const BUILTIN_APPEARANCE_PRESET: AppearancePreset = {
@@ -113,6 +114,7 @@ export const BUILTIN_APPEARANCE_PRESET: AppearancePreset = {
   fontScale: 'standard',
   galleryFrostedCaption: true,
   galleryHoverFloat: true,
+  gallerySelectionFocus: true,
 };
 
 export interface AppearancePreferences {
@@ -126,6 +128,8 @@ export interface AppearancePreferences {
   fontScale: FontScale;
   galleryFrostedCaption: boolean;
   galleryHoverFloat: boolean;
+  /** 选中作品时垂直居中并淡化其他卡片。 */
+  gallerySelectionFocus: boolean;
   tagAssistEnabled: boolean;
   /** 在支持的模型上显示采样过程；这是当前设备的观看偏好，不写入风格串。 */
   generationStreamPreview: boolean;
@@ -158,6 +162,7 @@ export const DEFAULT_APPEARANCE_PREFERENCES: AppearancePreferences = {
   fontScale: 'standard',
   galleryFrostedCaption: true,
   galleryHoverFloat: true,
+  gallerySelectionFocus: true,
   tagAssistEnabled: true,
   generationStreamPreview: false,
   continuousGenerationEnabled: true,
@@ -203,6 +208,7 @@ export const validateAppearancePreset = (input: unknown): AppearancePreset | nul
     fontScale,
     galleryFrostedCaption: typeof obj.galleryFrostedCaption === 'boolean' ? obj.galleryFrostedCaption : true,
     galleryHoverFloat: typeof obj.galleryHoverFloat === 'boolean' ? obj.galleryHoverFloat : true,
+    gallerySelectionFocus: typeof obj.gallerySelectionFocus === 'boolean' ? obj.gallerySelectionFocus : true,
   };
 };
 
@@ -302,6 +308,7 @@ export const normalizeAppearancePreferences = (value: unknown): AppearancePrefer
     fontScale: isOneOf(input.fontScale, ['small', 'standard', 'large']) ? input.fontScale : DEFAULT_APPEARANCE_PREFERENCES.fontScale,
     galleryFrostedCaption: typeof input.galleryFrostedCaption === 'boolean' ? input.galleryFrostedCaption : DEFAULT_APPEARANCE_PREFERENCES.galleryFrostedCaption,
     galleryHoverFloat: typeof input.galleryHoverFloat === 'boolean' ? input.galleryHoverFloat : DEFAULT_APPEARANCE_PREFERENCES.galleryHoverFloat,
+    gallerySelectionFocus: typeof input.gallerySelectionFocus === 'boolean' ? input.gallerySelectionFocus : DEFAULT_APPEARANCE_PREFERENCES.gallerySelectionFocus,
     tagAssistEnabled: typeof input.tagAssistEnabled === 'boolean'
       ? input.tagAssistEnabled
       : DEFAULT_APPEARANCE_PREFERENCES.tagAssistEnabled,

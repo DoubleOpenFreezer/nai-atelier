@@ -16,6 +16,7 @@ import {
   getAitagMetadataText,
   getAitagModelLabel,
   getAitagType,
+  parseAitagAiJson,
 } from '../services/aitagService';
 import { IMPORT_SESSION_KEY, parseNovelAIMetadata, type BaseImageImport } from '../services/metadataService';
 import { NAIParams, PromptChain, User, type ImageEditOperation } from '../types';
@@ -39,6 +40,7 @@ import { buildMediaUrl, getMobileOriginalUrl } from '../services/mobileImageCach
 
 interface AitagGalleryProps {
   active: boolean;
+  selectionFocusEnabled?: boolean;
   currentUser: User;
   notify: (msg: string, type?: 'success' | 'error') => void;
   onNavigateToPlayground: () => void;
@@ -118,6 +120,16 @@ const getAitagCardCacheLevel = (work: AitagWorkSummary, detail?: AitagWorkDetail
   return 'none';
 };
 
+const getAitagImageRatio = (image?: AitagImage) => {
+  const metadata = parseAitagAiJson(image?.ai_json);
+  const comment = parseAitagAiJson(metadata?.Comment ?? metadata?.comment);
+  const width = Number(comment?.width ?? metadata?.width);
+  const height = Number(comment?.height ?? metadata?.height);
+  return Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0
+    ? width / height
+    : undefined;
+};
+
 const isAitagFavorite = (work: AitagWorkSummary) => {
   if (typeof work.isFavorite === 'boolean') return work.isFavorite;
   if (typeof work.is_favorite === 'boolean') return work.is_favorite;
@@ -172,7 +184,7 @@ const AitagPreviewFallback: React.FC<{ work: AitagWorkSummary; onRetry: () => vo
   </div>
 );
 
-const AitagPreviewImage: React.FC<{ work: AitagWorkSummary; detail?: AitagWorkDetail; onImageLoad?: (width: number, height: number) => void; onResolveFirstImage: () => void; notify: AitagGalleryProps['notify']; favorite: CollectionTarget; onFavoriteChange: (active: boolean) => void }> = ({ work, detail, onImageLoad, onResolveFirstImage, notify, favorite, onFavoriteChange }) => {
+const AitagPreviewImage: React.FC<{ work: AitagWorkSummary; detail?: AitagWorkDetail; imageFit: 'contain' | 'cover'; onImageLoad?: (width: number, height: number) => void; onResolveFirstImage: () => void; notify: AitagGalleryProps['notify']; favorite: CollectionTarget; onFavoriteChange: (active: boolean) => void }> = ({ work, detail, imageFit, onImageLoad, onResolveFirstImage, notify, favorite, onFavoriteChange }) => {
   useLanguage();
   const firstImage = work.firstImage;
   const legacyFirstImage = work.first_image;
@@ -212,7 +224,7 @@ const AitagPreviewImage: React.FC<{ work: AitagWorkSummary; detail?: AitagWorkDe
       key={retryKey}
       src={src}
       alt=""
-      className="w-full h-full object-cover"
+      className={`w-full h-full ${imageFit === 'contain' ? 'object-contain' : 'object-cover'}`}
       onLoad={event => {
         const image = event.currentTarget;
         if (image.naturalWidth > 0 && image.naturalHeight > 0) {
@@ -285,7 +297,7 @@ const defaultParams: NAIParams = {
   cfgRescale: 0,
 };
 
-export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser, notify, onNavigateToPlayground, onCreateArtistChain, onRefreshInspiration }) => {
+export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFocusEnabled = true, currentUser, notify, onNavigateToPlayground, onCreateArtistChain, onRefreshInspiration }) => {
   useLanguage();
   const imageDisplay = useMobileImageDisplayPreferences();
   const mainScrollRef = useRef<HTMLElement | null>(null);
@@ -297,7 +309,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
   const [items, setItems] = useState<AitagWorkSummary[]>(() => aitagPageCache.items);
   const [details, setDetails] = useState<Record<number, AitagWorkDetail>>(() => aitagPageCache.details);
   const [selectedId, setSelectedId] = useState<number | null>(() => aitagPageCache.selectedId);
-  const selectionAnchor = useGallerySelectionAnchor(mainScrollRef, galleryContentRef, selectedId, active);
+  const selectionAnchor = useGallerySelectionAnchor(mainScrollRef, galleryContentRef, selectedId, active, selectionFocusEnabled);
   const onMainScrollRestore = useKeepAliveScrollRestore(mainScrollRef, 'aitag', { skipRestore: selectionAnchor.hasAnchor });
   // 换作品从对应作品的详情位置起步；切页返回则保留同一作品的位置。
   useLayoutEffect(() => {
@@ -360,14 +372,15 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
   const hasNextPage = page < totalPages;
 
   // 瀑布流（masonry 布局时）：图片加载后按真实宽高比完整显示，最短列分配互相补齐。
-  const [aitagRatios, setAitagRatios] = useState<Record<number, number>>(() => aitagRatioCache);
+  const [aitagRatios, setAitagRatios] = useState<Record<number, number>>(() => ({ ...aitagRatioCache }));
   const masonryColumns = useMasonryColumnCount(imageDisplay, undefined, galleryContentRef);
   const frostedCaption = useGalleryFrostedCaption();
   const estimateAitagCardHeight = React.useCallback((work: AitagWorkSummary, columnWidth: number) => {
-    const ratio = aitagRatios[work.id] || aitagRatioCache[work.id] || 1;
+    const image = work.firstImage || work.first_image || details[work.id]?.images[0];
+    const ratio = aitagRatios[work.id] || aitagRatioCache[work.id] || getAitagImageRatio(image) || 1;
     const imageHeight = Math.max(1, columnWidth) / Math.max(0.1, ratio);
     return imageHeight + (frostedCaption ? 2 : 70);
-  }, [aitagRatios, frostedCaption]);
+  }, [aitagRatios, details, frostedCaption]);
   const renderAitagCard = (work: AitagWorkSummary) => {
     const type = getAitagType(work);
     const isSelected = selectedId === work.id;
@@ -394,7 +407,8 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
             image: 'bg-gray-100 dark:bg-gray-800',
             marker: 'bg-transparent',
           };
-    const measuredRatio = aitagRatios[work.id];
+    const firstImage = work.firstImage || work.first_image || detail?.images[0];
+    const measuredRatio = aitagRatios[work.id] || aitagRatioCache[work.id] || getAitagImageRatio(firstImage);
     const ratioStyle = measuredRatio ? `${Math.round(measuredRatio * 1000)} / 1000` : '1';
     return (
       <PressRevealSurface
@@ -412,7 +426,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
             loadDetail(work);
           }
         }}
-        className={`mobile-gallery-item gallery-image-card gallery-card-visual group relative text-left rounded-lg overflow-hidden border transition-[filter,box-shadow,border-color] duration-150 flex flex-col ${cardTone.card} ${selectedId !== null && !isSelected ? 'brightness-[.7]' : ''} ${
+        className={`mobile-gallery-item gallery-image-card gallery-card-visual group relative text-left rounded-lg overflow-hidden border transition-[filter,box-shadow,border-color] duration-150 flex flex-col ${cardTone.card} ${selectionFocusEnabled && selectedId !== null && !isSelected ? 'brightness-[.7]' : ''} ${
           isSelected ? 'border-indigo-500 ring-2 ring-indigo-500/30' : cardTone.border
         }`}
       >
@@ -420,6 +434,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, currentUser,
           <AitagPreviewImage
             work={work}
             detail={details[work.id]}
+            imageFit={imageDisplay.layout === 'masonry' ? 'contain' : 'cover'}
             notify={notify}
             favorite={{ imageUrl: '', sourceType: 'aitag', sourceId: String(work.id), title: work.title, groupSize: Number(work.image_count || work.imageCount || 1), getGroup: async () => aitagCollectionImages(await getDetail(work)) }}
             onFavoriteChange={active => updateWorkFavorite(work, active)}

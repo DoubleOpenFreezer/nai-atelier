@@ -87,18 +87,42 @@ afterEach(() => {
   if (originalScrollTo) Object.defineProperty(HTMLElement.prototype, 'scrollTo', originalScrollTo);
   else Reflect.deleteProperty(HTMLElement.prototype, 'scrollTo');
 });
-const setup = async (layout = 'masonry') => {
+const setup = async (layout = 'masonry', selectionFocusEnabled = true) => {
   localStorage.setItem('nai_mobile_image_display', JSON.stringify({ layout }));
   const { AitagGallery } = await import('../../components/AitagGallery');
   const { ImageActivityContext } = await import('../../components/SmartImage');
   const notify = vi.fn();
-  const draw = (active: boolean) => <ImageActivityContext.Provider value={active}><AitagGallery active={active} currentUser={{ id: 'synthetic' } as User} notify={notify} onNavigateToPlayground={mocks.navigate} onCreateArtistChain={mocks.createChain} /></ImageActivityContext.Provider>;
+  const draw = (active: boolean) => <ImageActivityContext.Provider value={active}><AitagGallery active={active} selectionFocusEnabled={selectionFocusEnabled} currentUser={{ id: 'synthetic' } as User} notify={notify} onNavigateToPlayground={mocks.navigate} onCreateArtistChain={mocks.createChain} /></ImageActivityContext.Provider>;
   const view = render(draw(true));
   await screen.findByRole('button', { name: '查看作品 合成作品 1' });
   return { ...view, draw, notify, main: view.container.querySelector('main')! };
 };
 const card = (id: number) => screen.getByRole('button', { name: `查看作品 合成作品 ${id}` });
 const selected = (id: number) => expect(card(id).getAttribute('aria-pressed')).toBe('true');
+it('瀑布流先用首图元数据比例，未知比例时完整显示图片并在加载后修正卡片高度', async () => {
+  const items = [works[0], { ...works[1], firstImage: { ...works[1].firstImage!, ai_json: undefined } }];
+  mocks.search.mockResolvedValue({ items, total: items.length, page: 1, page_size: 60 });
+  await setup();
+
+  const knownFrame = card(1).querySelector('.mobile-gallery-frame') as HTMLElement;
+  expect(knownFrame.style.getPropertyValue('--mobile-image-ratio')).toBe('684 / 1000');
+  expect(card(1).querySelector('img')?.className).toContain('object-contain');
+
+  const unknownImage = card(2).querySelector('img') as HTMLImageElement;
+  const unknownFrame = unknownImage.parentElement as HTMLElement;
+  expect(unknownFrame.style.getPropertyValue('--mobile-image-ratio')).toBe('1');
+  expect(unknownImage.className).toContain('object-contain');
+  Object.defineProperty(unknownImage, 'naturalWidth', { configurable: true, value: 832 });
+  Object.defineProperty(unknownImage, 'naturalHeight', { configurable: true, value: 1216 });
+  fireEvent.load(unknownImage);
+  await waitFor(() => expect(unknownFrame.style.getPropertyValue('--mobile-image-ratio')).toBe('684 / 1000'));
+});
+
+it.each(['portrait', 'square'])('%s 布局保留原有封面裁切', async layout => {
+  await setup(layout);
+  expect(card(1).querySelector('img')?.className).toContain('object-cover');
+});
+
 it.each(['masonry', 'portrait', 'square'].flatMap(layout => [true, false].map(frosted => [layout, frosted] as const)))('%s 布局／磨砂 %s：缓存色条替换为标题前圆点，未缓存不留空位', async (layout, frosted) => {
   document.documentElement.dataset.galleryFrostedCaption = String(frosted);
   const cachedWorks = ['full', 'first-image', 'none'].map((level, index) => ({
@@ -121,7 +145,7 @@ it.each(['masonry', 'portrait', 'square'].flatMap(layout => [true, false].map(fr
     expect(first.querySelector('.h-1')).toBeNull();
   });
   if (layout === 'masonry') {
-    expect(mocks.masonry.mock.lastCall?.[0].estimateItemHeight(cachedWorks[0], 200)).toBe(200 + (frosted ? 2 : 70));
+    expect(mocks.masonry.mock.lastCall?.[0].estimateItemHeight(cachedWorks[0], 200)).toBe(200 / (832 / 1216) + (frosted ? 2 : 70));
   }
 });
 it('首图操作跟随实际候选，点击和回车不打开详情；详情逐图导出且按文件顺序命名', async () => {
@@ -264,6 +288,16 @@ it.each(['masonry', 'portrait', 'square'])('%s 布局中选中正常亮度、其
   expect(card(1).className).toContain('brightness-[.7]');
   expect(card(2).className).not.toContain('brightness-');
   if (layout === 'masonry') expect(mocks.masonry.mock.lastCall?.[0].stableColumns).toBe(true);
+});
+
+it('关闭选中聚焦后仍可打开详情，但不压暗其他作品或自动滚动', async () => {
+  const { main } = await setup('masonry', false);
+  fireEvent.click(card(1));
+  await waitFor(() => selected(1));
+  expect(main.scrollTop).toBe(0);
+  expect(scrollTo).not.toHaveBeenCalled();
+  expect(card(1).className).toContain('ring-2');
+  expect(card(2).className).not.toContain('brightness-');
 });
 
 it.each(['masonry', 'portrait', 'square'].flatMap(layout => ['click', 'Enter', ' '].map(input => [layout, input])))('%s／%s：详情缩窄前记录点击位置，先即时补偿再居中', async (layout, input) => {

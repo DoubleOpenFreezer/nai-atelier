@@ -39,7 +39,7 @@ vi.mock('../../services/dbService', () => ({
 
 vi.mock('../../components/SmartImage', () => ({
   ImageActivityContext: React.createContext(true),
-  SmartImage: ({ thumbnailVariant: _thumbnailVariant, ...props }: any) => React.createElement('img', props),
+  SmartImage: ({ thumbnailVariant: _thumbnailVariant, className = 'h-full w-full object-cover', ...props }: any) => React.createElement('img', { ...props, className }),
   OriginalImage: (props: any) => React.createElement('img', props),
 }));
 
@@ -268,6 +268,7 @@ it.each(['masonry', 'portrait', 'square'])('收藏 %s 布局保留真实高度�
   const { container, rerender } = render(React.createElement(InspirationGallery, props));
   const cards = items.map(item => screen.getByText(item.title).closest('article')!);
   const columns = cards.map(card => card.parentElement);
+  cards.forEach(card => expect(within(card).getByRole('img').className).toContain(layout === 'masonry' ? 'object-contain' : 'object-cover'));
   expect(container.querySelectorAll('.chain-masonry-column')).toHaveLength(layout === 'masonry' ? 2 : 0);
   expect(container.querySelector('.mobile-gallery--masonry')).toBeNull();
   cards.forEach(card => expect(card.style.contentVisibility).toBe('visible'));
@@ -278,6 +279,25 @@ it.each(['masonry', 'portrait', 'square'])('收藏 %s 布局保留真实高度�
     expect(cards[index].parentElement).toBe(columns[index]);
   });
   if (layout === 'masonry') expect(cards[0].parentElement).toBe(cards[2].parentElement);
+});
+
+it('收藏瀑布流的无尺寸图片先完整显示，加载后按真实比例更新卡片', async () => {
+  localStorage.setItem('nai_mobile_image_display', JSON.stringify({ layout: 'masonry', columns: 2 }));
+  const pendingFrames: FrameRequestCallback[] = [];
+  vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { pendingFrames.push(callback); return pendingFrames.length; });
+  vi.stubGlobal('cancelAnimationFrame', vi.fn());
+  const item = { ...mockInspirations[0], id: 'unknown-ratio', title: '未知比例收藏', params: undefined };
+  const { container } = render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: [item], onRefresh: vi.fn(async () => {}), notify: vi.fn() }));
+  const card = screen.getByText(item.title).closest('article')!;
+  const image = within(card).getByRole('img') as HTMLImageElement;
+  const frame = card.querySelector<HTMLElement>('.mobile-gallery-frame')!;
+  expect(image.className).toContain('object-contain');
+  Object.defineProperties(image, { naturalWidth: { configurable: true, value: 1200 }, naturalHeight: { configurable: true, value: 800 } });
+  fireEvent.load(image);
+  act(() => pendingFrames.splice(0).forEach(callback => callback(0)));
+  expect(frame.style.getPropertyValue('--mobile-image-ratio')).toBe('1.5');
+  expect(image.className).toContain('object-cover');
+  expect(container.querySelector('.chain-masonry-column')).toBeTruthy();
 });
 
 it('列表移除重复标题栏，收窄侧栏；卡片只保留名称和标签，图片左下不遮挡', () => {
@@ -955,6 +975,18 @@ it.each(['image', 'title'])('收藏单张和多图组从 %s 打开先抵消挤�
   cards.forEach(card => expect(card.className).not.toContain('brightness-'));
   expect(db.updateInspiration).not.toHaveBeenCalled();
   expect(db.bulkUpdateInspirations).not.toHaveBeenCalled();
+});
+
+it('关闭选中作品聚焦后仍可打开收藏详情，但不压暗其他组或自动滚动', () => {
+  const { container } = render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: [...groupedImages, mockInspirations[0]], onRefresh: vi.fn(async () => {}), notify: vi.fn(), selectionFocusEnabled: false }));
+  const cards = Array.from(container.querySelectorAll('article'));
+  const { root, scrollCalls } = mockGalleryGeometry(cards, () => container.querySelector('.aitag-detail-panel--open') ? -600 : 0);
+  root.scrollTop = 1400;
+  fireEvent.click(cards[0].querySelector('button.gallery-card-caption')!);
+  expect(root.scrollTop).toBe(1400);
+  expect(scrollCalls).toEqual([]);
+  cards.forEach(card => expect(card.className).not.toContain('brightness-'));
+  expect(container.querySelector('.aitag-detail-panel--open')).toBeTruthy();
 });
 
 it('作品组可整组选中和拖入收藏夹；在未整理筛选内移动不带走其他夹的组员，展开仍能看全组', async () => {
