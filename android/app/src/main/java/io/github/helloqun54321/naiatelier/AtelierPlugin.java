@@ -175,12 +175,38 @@ public class AtelierPlugin extends Plugin {
         finally {connections.remove(id,job);if(background&&backgroundTasks.decrementAndGet()==0){if(AtelierTaskService.hasGenerationTasks())syncTaskService();else taskHandler.postDelayed(stopTask,30000);}}
     });}
     @PluginMethod public void tagger(PluginCall call) {run(call,network,()-> tagger.handle(call));}
+    @PluginMethod public void exportLocation(PluginCall call) {
+        String action=call.getString("action","status");
+        if(action.equals("pick")) {
+            Intent intent=new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_WRITE_URI_PERMISSION|Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION|Intent.FLAG_GRANT_PREFIX_URI_PERMISSION);
+            if(Build.VERSION.SDK_INT>=26&&AtelierExports.tree(getContext())!=null)intent.putExtra(android.provider.DocumentsContract.EXTRA_INITIAL_URI,AtelierExports.tree(getContext()));
+            startActivityForResult(call,intent,"exportDirectorySelected");return;
+        }
+        run(call,storage,()->{
+            if(action.equals("mode"))return AtelierExports.setMode(getContext(),call.getString("mode","system"));
+            if(action.equals("clear"))return AtelierExports.clear(getContext());
+            if(action.equals("status"))return AtelierExports.status(getContext());
+            throw new IOException("未知导出设置操作");
+        });
+    }
+    @ActivityCallback private void exportDirectorySelected(PluginCall call,ActivityResult result) {
+        if(call==null)return;
+        if(result.getResultCode()!=android.app.Activity.RESULT_OK||result.getData()==null){JSObject cancelled=new JSObject();cancelled.put("cancelled",true);call.resolve(cancelled);return;}
+        run(call,storage,()->AtelierExports.remember(getContext(),result.getData().getData(),result.getData().getFlags()));
+    }
     @PluginMethod public void saveFile(PluginCall call) {
-        try{store.file(call.getString("path"),true);Intent intent=new Intent(Intent.ACTION_CREATE_DOCUMENT);intent.addCategory(Intent.CATEGORY_OPENABLE);intent.setType(call.getString("mime","application/octet-stream"));intent.putExtra(Intent.EXTRA_TITLE,call.getString("filename","NAI-Atelier"));startActivityForResult(call,intent,"fileSaved");}catch(Exception e){call.reject(e.getMessage(),e);}
+        String mode=AtelierExports.mode(getContext());
+        if(mode.equals("directory")){run(call,storage,()->{File source=store.file(call.getString("path"),true);try{return AtelierExports.writeToTree(getContext(),source,call.getString("filename","NAI-Atelier"),call.getString("mime","application/octet-stream"));}finally{if(call.getBoolean("removeAfterSave",false))source.delete();}});return;}
+        if(mode.equals("system")&&call.getString("mime","").startsWith("image/")&&Build.VERSION.SDK_INT>=29){saveToGallery(call);return;}
+        try{store.file(call.getString("path"),true);Intent intent=new Intent(Intent.ACTION_CREATE_DOCUMENT);intent.addCategory(Intent.CATEGORY_OPENABLE);intent.setType(call.getString("mime","application/octet-stream"));intent.putExtra(Intent.EXTRA_TITLE,call.getString("filename","NAI-Atelier"));startActivityForResult(call,intent,"fileSaved");}catch(Exception e){discardExportTemporary(call);call.reject(e.getMessage(),e);}
+    }
+    private void discardExportTemporary(PluginCall call) {
+        if(call.getBoolean("removeAfterSave",false))storage.execute(()->{try{store.file(call.getString("path"),true).delete();}catch(Exception ignored){}});
     }
     @ActivityCallback private void fileSaved(PluginCall call,ActivityResult result) {
-        if(call==null)return;if(result.getResultCode()!=android.app.Activity.RESULT_OK||result.getData()==null){call.reject("已取消保存");return;}
-        Uri uri=result.getData().getData();run(call,storage,()->{File source=store.file(call.getString("path"),true);try(InputStream in=new FileInputStream(source);OutputStream out=getContext().getContentResolver().openOutputStream(uri)){if(out==null)throw new IOException("导出文件写入失败");AtelierBackup.copy(in,out);}if(call.getBoolean("removeAfterSave",false))Files.delete(source.toPath());return new JSObject();});
+        if(call==null)return;if(result.getResultCode()!=android.app.Activity.RESULT_OK||result.getData()==null){discardExportTemporary(call);call.reject("已取消保存");return;}
+        Uri uri=result.getData().getData();run(call,storage,()->{File source=store.file(call.getString("path"),true);try{try{AtelierExports.write(getContext(),source,uri);}catch(Exception error){try{android.provider.DocumentsContract.deleteDocument(getContext().getContentResolver(),uri);}catch(Exception ignored){}throw error;}JSObject saved=new JSObject();saved.put("saved",true);saved.put("cancelled",false);saved.put("path",uri.toString());return saved;}finally{if(call.getBoolean("removeAfterSave",false))source.delete();}});
     }
     @PluginMethod public void backup(PluginCall call) {
         String action=call.getString("action");
@@ -222,19 +248,26 @@ public class AtelierPlugin extends Plugin {
         });
     }
     @PluginMethod public void share(PluginCall call) {
-      if("download".equals(call.getString("action"))&&Build.VERSION.SDK_INT<29){saveFile(call);return;}
+      if("download".equals(call.getString("action"))){saveFile(call);return;}
       run(call,storage,()-> {
         File source=store.file(call.getString("path"),true);String mime=call.getString("mime","image/png"),action=call.getString("action");
         if(action.equals("copy")) {
             Uri uri=FileProvider.getUriForFile(getContext(),getContext().getPackageName()+".fileprovider",source);
             CompletableFuture<Void> copied=new CompletableFuture<>();getActivity().runOnUiThread(()->{try{((ClipboardManager)getContext().getSystemService(Context.CLIPBOARD_SERVICE)).setPrimaryClip(ClipData.newUri(getContext().getContentResolver(),"图片",uri));copied.complete(null);}catch(Exception e){copied.completeExceptionally(e);}});copied.get(30,TimeUnit.SECONDS);
-        } else {
+        } else {throw new IOException("未知图片操作");}
+        return new JSObject();
+    });}
+    private void saveToGallery(PluginCall call) {
+      run(call,storage,()-> {
+            File source=store.file(call.getString("path"),true);String mime=call.getString("mime","image/png");
+            try {
             ContentValues values=new ContentValues();values.put(MediaStore.MediaColumns.DISPLAY_NAME,call.getString("filename","NAI-Atelier.png"));values.put(MediaStore.MediaColumns.MIME_TYPE,mime);
             if(Build.VERSION.SDK_INT>=29){values.put(MediaStore.MediaColumns.RELATIVE_PATH,"Pictures/NAI Atelier");values.put(MediaStore.MediaColumns.IS_PENDING,1);}
             Uri uri=getContext().getContentResolver().insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI,values);if(uri==null)throw new IOException("无法保存到相册");
             try(InputStream input=new FileInputStream(source);OutputStream out=getContext().getContentResolver().openOutputStream(uri)){if(out==null)throw new IOException("相册写入失败");byte[] buffer=new byte[65536];int n;while((n=input.read(buffer))!=-1)out.write(buffer,0,n);}
             catch(Exception e){getContext().getContentResolver().delete(uri,null,null);throw e;}
-            if(Build.VERSION.SDK_INT>=29){values.clear();values.put(MediaStore.MediaColumns.IS_PENDING,0);getContext().getContentResolver().update(uri,values,null,null);}
-        }return new JSObject();
+            try{values.clear();values.put(MediaStore.MediaColumns.IS_PENDING,0);if(getContext().getContentResolver().update(uri,values,null,null)!=1)throw new IOException("相册保存未完成");}catch(Exception e){getContext().getContentResolver().delete(uri,null,null);throw e;}
+            JSObject saved=new JSObject();saved.put("saved",true);saved.put("cancelled",false);saved.put("path",uri.toString());return saved;
+            }finally{if(call.getBoolean("removeAfterSave",false))source.delete();}
     });}
 }

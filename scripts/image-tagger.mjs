@@ -13,7 +13,7 @@ const parseTagCsv = async path => {
 };
 
 export class ImageTaggerService {
-  constructor(remoteFetch = fetch, { directory = join(process.cwd(), 'local-cache', 'models'), models = IMAGE_TAGGER_MODELS, loadPreference = async () => ({ model: DEFAULT_IMAGE_TAGGER_MODEL }), savePreference = async () => {}, loadRuntime = () => import('onnxruntime-node') } = {}) {
+  constructor(remoteFetch = fetch, { directory = join(process.env.NAI_RESOURCE_ROOT || join(process.cwd(), 'local-cache'), 'models'), models = IMAGE_TAGGER_MODELS, loadPreference = async () => ({ model: DEFAULT_IMAGE_TAGGER_MODEL }), savePreference = async () => {}, loadRuntime = () => import('onnxruntime-node') } = {}) {
     this.remoteFetch = remoteFetch;
     this.directory = directory;
     this.models = models;

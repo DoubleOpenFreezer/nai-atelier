@@ -64,6 +64,7 @@ export const ImageShareActions: React.FC<Props> = ({ imageUrl, filename, notify,
         await downloadSharedImage(imageUrl, filename, clean);
       }
     } catch (cause) {
+      if (cause instanceof DOMException && cause.name === 'AbortError') return;
       const message = cause instanceof Error ? cause.message : '图片操作失败';
       setError(message);
       notify?.(message, 'error');

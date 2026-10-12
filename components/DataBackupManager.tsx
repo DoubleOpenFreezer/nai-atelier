@@ -1,4 +1,5 @@
 import { t, useLanguage, getLanguage } from '../services/i18n';
+import { getStorageLocationStatus, pickStorageDirectory } from '../services/storageLocations';
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import {
   BackupRecord,
@@ -41,10 +42,26 @@ export const DataBackupManager: React.FC<DataBackupManagerProps> = ({ notify }) 
   const [backupLabel, setBackupLabel] = useState('');
   const [isEditingTargetDir, setIsEditingTargetDir] = useState(false);
   const [customTargetDir, setCustomTargetDir] = useState('');
+  const [canBrowse, setCanBrowse] = useState(false);
+  const [browsing, setBrowsing] = useState(false);
   const [isHistoryExpanded, setIsHistoryExpanded] = useState(false);
   const [deletingName, setDeletingName] = useState<string | null>(null);
   const [confirmDeleteName, setConfirmDeleteName] = useState<string | null>(null);
   const lastFinishedAtRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    void getStorageLocationStatus().then(value => { if (active) setCanBrowse(value.canManage); }).catch(() => {});
+    return () => { active = false; };
+  }, []);
+  const browseTarget = async () => {
+    setBrowsing(true);
+    try {
+      const selected = await pickStorageDirectory('backup');
+      if (!selected.cancelled) setCustomTargetDir(selected.path);
+    } catch (reason) { notify(reason instanceof Error ? reason.message : '选择文件夹失败', 'error'); }
+    finally { setBrowsing(false); }
+  };
 
   const fetchStatus = useCallback(async () => {
     try {
@@ -185,9 +202,9 @@ export const DataBackupManager: React.FC<DataBackupManagerProps> = ({ notify }) 
       )}
 
       {/* 源数据与目标位置卡片 */}
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
         {/* 源数据 */}
-        <div className="rounded-xl border border-gray-200 bg-gray-50/70 p-3 dark:border-gray-700/80 dark:bg-gray-800/40">
+        <div className="min-w-0 rounded-xl border border-gray-200 bg-gray-50/70 p-3 dark:border-gray-700/80 dark:bg-gray-800/40">
           <div className="flex items-center justify-between text-xs font-medium text-gray-500 dark:text-gray-400">
             <span className="flex items-center gap-1.5">
               <HardDrive className="h-3.5 w-3.5 text-indigo-500" />
@@ -205,7 +222,7 @@ export const DataBackupManager: React.FC<DataBackupManagerProps> = ({ notify }) 
         </div>
 
         {/* 目标目录 */}
-        <div className="rounded-xl border border-gray-200 bg-gray-50/70 p-3 dark:border-gray-700/80 dark:bg-gray-800/40">
+        <div className="min-w-0 rounded-xl border border-gray-200 bg-gray-50/70 p-3 dark:border-gray-700/80 dark:bg-gray-800/40">
           <div className="flex items-center justify-between text-xs font-medium text-gray-500 dark:text-gray-400">
             <span className="flex items-center gap-1.5">
               <Archive className="h-3.5 w-3.5 text-indigo-500" />
@@ -221,27 +238,31 @@ export const DataBackupManager: React.FC<DataBackupManagerProps> = ({ notify }) 
           </div>
 
           {isEditingTargetDir ? (
-            <div className="mt-2 flex items-center gap-1.5">
+            <div className="mt-2 flex flex-wrap items-center gap-1.5">
               <input
                 type="text"
                 value={customTargetDir}
                 onChange={e => setCustomTargetDir(e.target.value)}
-                className="min-w-0 flex-1 rounded-lg border border-indigo-400 bg-white px-2 py-1 text-xs font-mono text-gray-800 outline-none dark:border-indigo-500 dark:bg-gray-900 dark:text-gray-100"
+                aria-label={t('备份目标目录')}
+                className="min-w-0 w-full rounded-lg border border-indigo-400 bg-white px-2 py-2 text-xs font-mono text-gray-800 outline-none dark:border-indigo-500 dark:bg-gray-900 dark:text-gray-100"
                 placeholder="D:\NaiPromptManager-Backups"
               />
+              {canBrowse && <button type="button" disabled={browsing} onClick={() => void browseTarget()} className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-gray-200 px-2 text-xs text-gray-600 disabled:opacity-50 dark:border-gray-700 dark:text-gray-300"><FolderOpen className="h-3.5 w-3.5" />{browsing ? t('选择中…') : t('浏览文件夹')}</button>}
               <button
                 type="button"
+                disabled={browsing}
                 onClick={handleSaveTargetDir}
-                className="rounded-lg bg-indigo-600 px-2 py-1 text-xs font-bold text-white hover:bg-indigo-500"
+                className="min-h-9 rounded-lg bg-emerald-600 px-3 text-xs font-bold text-white hover:bg-emerald-500 disabled:opacity-50"
               >
                 {t("保存")}</button>
               <button
                 type="button"
+                disabled={browsing}
                 onClick={() => {
                   setIsEditingTargetDir(false);
                   setCustomTargetDir(status?.targetDir || '');
                 }}
-                className="rounded-lg border border-gray-200 px-2 py-1 text-xs text-gray-500 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-400"
+                className="min-h-9 rounded-lg border border-gray-200 px-3 text-xs text-gray-500 hover:bg-gray-100 disabled:opacity-50 dark:border-gray-700 dark:text-gray-400"
               >
                 {t("取消")}</button>
             </div>

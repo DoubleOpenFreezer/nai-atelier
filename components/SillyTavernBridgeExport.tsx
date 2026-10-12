@@ -13,6 +13,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { openLocalBackupFolder } from '../services/localBackup';
+import { beginExportTarget } from '../services/exportLocation';
 import { refreshStChatu8Preferences, setStChatu8Enabled, useStChatu8Preferences } from '../services/stChatu8Preferences';
 
 interface SillyTavernBridgeExportProps {
@@ -158,6 +159,7 @@ export const SillyTavernBridgeExport: React.FC<SillyTavernBridgeExportProps> = (
   const handleDownloadZip = async () => {
     setExporting(true);
     try {
+      const exportTarget = beginExportTarget();
       const files = await prepareFiles();
       const zip = new JSZip();
       for (const [filename, content] of Object.entries(files)) {
@@ -165,9 +167,10 @@ export const SillyTavernBridgeExport: React.FC<SillyTavernBridgeExportProps> = (
       }
       const blob = await zip.generateAsync({ type: 'blob' });
       const { downloadFile } = await import('../services/fileDownload');
-      await downloadFile(blob, 'npm-bridge.zip');
-      notify('智慧姬同步扩展包已下载 (npm-bridge.zip)');
+      const receipt = await downloadFile(blob, 'npm-bridge.zip', exportTarget);
+      notify(receipt.browserDownload ? '已交给浏览器下载 (npm-bridge.zip)' : '智慧姬同步扩展包已下载 (npm-bridge.zip)');
     } catch (err: any) {
+      if (err instanceof DOMException && err.name === 'AbortError') return;
       notify(`下载失败：${err?.message || '未知错误'}`);
     } finally {
       setExporting(false);

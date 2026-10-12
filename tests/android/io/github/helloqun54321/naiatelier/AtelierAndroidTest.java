@@ -24,7 +24,16 @@ public class AtelierAndroidTest {
         context=new ContextWrapper(target){@Override public File getFilesDir(){File root=new File(workspace,"files");root.mkdirs();return root;}@Override public File getCacheDir(){File root=new File(workspace,"cache");root.mkdirs();return root;}@Override public android.content.SharedPreferences getSharedPreferences(String name,int mode){return super.getSharedPreferences(workspace.getName()+name,mode);}};
         store=new AtelierStore(context);
     }
-    @After public void finish() throws Exception {store.close();for(String name:new String[]{"atelier-secrets","atelier-tagger"})context.deleteSharedPreferences(workspace.getName()+name);AtelierBackup.delete(workspace);}
+    @After public void finish() throws Exception {store.close();for(String name:new String[]{"atelier-secrets","atelier-tagger","atelier-exports"})context.deleteSharedPreferences(workspace.getName()+name);AtelierBackup.delete(workspace);}
+    @Test public void exportPreferencesAndNamesKeepOriginals()throws Exception{
+        assertEquals("system",AtelierExports.status(context).getString("mode"));
+        assertEquals("work (2).png",AtelierExports.availableName("work.png",new HashSet<>(Arrays.asList("work.png","work (1).png"))));
+        assertEquals("作品",AtelierExports.availableName("作品",Collections.emptySet()));
+        for(String name:new String[]{"../private.png","folder/work.png","folder\\work.png",""}){try{AtelierExports.availableName(name,Collections.emptySet());fail("不能导出越界文件名");}catch(IOException expected){}}
+        try{AtelierExports.setMode(context,"directory");fail("未授权树目录不能设为默认位置");}catch(IOException expected){}
+        assertEquals("ask",AtelierExports.setMode(context,"ask").getString("mode"));
+        assertEquals("system",AtelierExports.clear(context).getString("mode"));
+    }
     @Test public void sqliteJsonTransactionsAndCredentials()throws Exception{
         store.query("CREATE TABLE settings(key TEXT PRIMARY KEY,value TEXT)",new JSONArray());
         store.query("INSERT INTO settings VALUES (?,?)",new JSONArray().put("nai_key_vault").put("[{\"key\":\"synthetic-only\"}]"));

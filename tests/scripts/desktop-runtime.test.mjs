@@ -3,7 +3,20 @@ import assert from 'node:assert/strict';
 import { mkdir, readFile, writeFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createWorkspace, removeWorkspace } from '../support/workspace.mjs';
-import { DESKTOP_APP_ID, prepareDesktopWorkspace, findDesktopPorts, desktopServerOptions, isDesktopNavigation, isExternalWebLink } from '../../scripts/desktop-runtime.mjs';
+import { DESKTOP_APP_ID, prepareDesktopWorkspace, findDesktopPorts, desktopServerOptions, isDesktopNavigation, isExternalWebLink, pickDesktopDirectory } from '../../scripts/desktop-runtime.mjs';
+
+test('安装版目录选择归属可见工坊窗口，等待真实选择后回执且取消为空', async () => {
+  const calls = []; let finish;
+  const window = { isDestroyed: () => false, show: () => calls.push('show'), focus: () => calls.push('focus') };
+  const dialog = { showOpenDialog: (owner, options) => { assert.equal(owner, window); assert.deepEqual(options, { properties: ['openDirectory'], defaultPath: 'C:\\合成' }); return new Promise(done => { finish = done; }); } };
+  let settled = false;
+  const pending = pickDesktopDirectory(dialog, window, 'C:\\合成').then(result => { settled = true; return result; });
+  assert.deepEqual(calls, ['show', 'focus']); await Promise.resolve(); assert.equal(settled, false);
+  finish({ cancelled: false, filePaths: ['C:\\用户选择'] });
+  assert.deepEqual(await pending, { path: 'C:\\用户选择', cancelled: false });
+  assert.deepEqual(await pickDesktopDirectory({ showOpenDialog: async () => ({ cancelled: true, filePaths: ['ignore'] }) }, window), { path: '', cancelled: true });
+  await assert.rejects(pickDesktopDirectory(dialog, { isDestroyed: () => true }), /窗口已关闭/);
+});
 
 const fixture = async () => {
   const root = createWorkspace('desktop-runtime-');
@@ -39,6 +52,8 @@ test('拒绝程序内数据目录、相对路径和已有未知工作区，不�
     await mkdir(workspace, { recursive: true });
     await writeFile(join(workspace, 'existing.txt'), '保留');
     await assert.rejects(prepareDesktopWorkspace(f.runtime, f.data), /未识别/);
+    await writeFile(join(workspace, 'atelier-storage-workspace.json'), JSON.stringify({ app: 'other' }));
+    await assert.rejects(prepareDesktopWorkspace(f.runtime, f.data), /未识别/);
     await writeFile(join(workspace, 'desktop-workspace.json'), '{invalid');
     await assert.rejects(prepareDesktopWorkspace(f.runtime, f.data), /标记损坏/);
     await writeFile(join(workspace, 'desktop-workspace.json'), JSON.stringify({ appId: 'other' }));
@@ -57,7 +72,8 @@ test('端口冲突重新选择一组端口，所有端口不可用时报告错�
 
 test('启动使用内置 Node 与绝对路径，清理继承的旧项目变量，动态端口一致', () => {
   const ports = { gateway: 3010, worker: 3011, tagUpdate: 3012, launcher: 3013 };
-  const spec = desktopServerOptions({ runtimeRoot: 'D:\\安装 中文', workspace: 'D:\\数据 空格', executable: 'D:\\安装 中文\\NAI Atelier.exe', documents: 'D:\\文档', ports, env: { PATH: 'Windows-only', NAI_KEY: 'must-not-inherit', NODE_OPTIONS: 'bad', ELECTRON_RUN_AS_NODE: '1' } });
+  const spec = desktopServerOptions({ runtimeRoot: 'D:\\安装 中文', workspace: 'D:\\数据 空格', executable: 'D:\\安装 中文\\NAI Atelier.exe', documents: 'D:\\文档', downloads: 'E:\\实际下载目录', ports, env: { PATH: 'Windows-only', NAI_KEY: 'must-not-inherit', NODE_OPTIONS: 'bad', ELECTRON_RUN_AS_NODE: '1' } });
+  assert.equal(spec.options.env.NAI_EXPORT_SYSTEM_DIR, 'E:\\实际下载目录');
   assert.equal(spec.command, join('D:\\安装 中文', 'node.exe'));
   assert.deepEqual(spec.args, ['--no-warnings', join('D:\\安装 中文', 'scripts/local-server.mjs')]);
   assert.equal(spec.options.cwd, 'D:\\数据 空格');

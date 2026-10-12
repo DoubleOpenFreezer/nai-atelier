@@ -37,7 +37,7 @@ const SESSION_DIR = 'local-data/prompt-agent-sessions';
 const TASK_DIR = 'local-data/prompt-agent-tasks';
 const AUDIT_LOG_DIR = 'local-data/prompt-agent-logs';
 const TAG_TRANSLATION_FILE = 'local-data/tag-translations.json';
-const TAG_ROOT = 'public/tag-data';
+const TAG_ROOT = process.env.NAI_TAG_DATA_DIR || 'public/tag-data';
 
 // 仅供已有 DeepSeek 连接兼容，不作为新连接的供应商预设。
 // 2026-10-04 核对官方 /models 与 vision 文档；旧 Flash 名仍映射到 V4.1 Flash。
@@ -950,8 +950,9 @@ export const assemblePromptContext = ({ systemPolicy = '', runtimeContext = '', 
 };
 
 export class PromptAgentService {
-  constructor({ lanSecret, outboundProxyUrl = '', configFile = '' }) {
+  constructor({ lanSecret, outboundProxyUrl = '', configFile = '', getDefaultExportDirectory = async () => '' }) {
     this.runtimeStartedAt = Date.now();
+    this.getDefaultExportDirectory = getDefaultExportDirectory;
     this.localImages = new AgentLocalImages({ getMode: () => this.config?.permissionMode || 'standard' });
     this.customProviders = new Map();
     this.sessionSummaries = new Map();
@@ -2248,6 +2249,11 @@ export class PromptAgentService {
       return `agent-${createHash('sha256').update(canonical).digest('hex')}`;
     };
     const localScope = { sessionId: project.agentSessionId || '', keyHash: project.keyHash || '' };
+    const exportDirectory = async directory => {
+      const value = text(directory).trim() || await this.getDefaultExportDirectory();
+      if (!value) throw new Error('请指定保存目录，或先在设置中选择默认导出目录');
+      return value;
+    };
     const writableLocalFolder = async rawDirectory => {
       const directory = await this.localImages.folder(rawDirectory, true);
       try { return await this.localImages.authorized(localScope, directory, 'write'); }
@@ -2317,20 +2323,20 @@ export class PromptAgentService {
         },
       },
       {
-        name: 'save_project_image_to_folder', label: '保存图片到电脑文件夹', description: '将已存在的项目图片原始字节保存到电脑目录，保留图片元数据；标准档自动请求首次目录写入确认，完全访问直接保存，不存在的目标目录可以创建。支持历史、收藏、Vibe、参考图、风格串封面。遇到同名文件自动加编号，成功后返回真实绝对路径。刚生成的图先取得已落盘历史 ID 再保存。',
-        parameters: Type.Object({ kind: Type.Union(['history', 'inspiration', 'vibe', 'reference', 'chain'].map(kind => Type.Literal(kind))), id: Type.String(), directory: Type.String(), filename: Type.Optional(Type.String()) }),
+        name: 'save_project_image_to_folder', label: '保存图片到电脑文件夹', description: '将已存在的项目图片原始字节保存到电脑目录，保留图片元数据；directory省略时使用设置中的默认导出目录，显式目录优先。标准档自动请求首次目录写入确认，完全访问直接保存，不存在的目标目录可以创建。支持历史、收藏、Vibe、参考图、风格串封面。遇到同名文件自动加编号，成功后返回真实绝对路径。刚生成的图先取得已落盘历史 ID 再保存。',
+        parameters: Type.Object({ kind: Type.Union(['history', 'inspiration', 'vibe', 'reference', 'chain'].map(kind => Type.Literal(kind))), id: Type.String(), directory: Type.Optional(Type.String()), filename: Type.Optional(Type.String()) }),
         execute: async (_id, args) => {
-          const directory = await writableLocalFolder(args.directory);
+          const directory = await writableLocalFolder(await exportDirectory(args.directory));
           const image = await projectImage(args);
           return { content: jsonText(await this.localImages.save(localScope, directory, args.filename, image.buffer, operationId(args))) };
         },
       },
       {
-        name: 'save_page_export_to_folder', label: '保存实际页面导出文件', description: '把助手已触发的页面导出保存到电脑指定目录。exportId 必须来自 read_current_page 的 exports 回执。支持图片、JSON、Vibe 和 ZIP，不覆盖已有文件；标准档首次目录写入需用户确认。只返回真实落盘路径，不把浏览器下载请求当成保存成功。',
-        parameters: Type.Object({ exportId: Type.String(), directory: Type.String(), filename: Type.Optional(Type.String()) }),
+        name: 'save_page_export_to_folder', label: '保存实际页面导出文件', description: '把助手已触发的页面导出保存到电脑指定目录；directory省略时使用设置中的默认导出目录，显式目录优先。exportId 必须来自 read_current_page 的 exports 回执。支持图片、JSON、Vibe 和 ZIP，不覆盖已有文件；标准档首次目录写入需用户确认。只返回真实落盘路径，不把浏览器下载请求当成保存成功。',
+        parameters: Type.Object({ exportId: Type.String(), directory: Type.Optional(Type.String()), filename: Type.Optional(Type.String()) }),
         execute: async (_id, args) => {
           if (!project?.requestUI) throw new Error('实时页面连接不可用');
-          const directory = await writableLocalFolder(args.directory);
+          const directory = await writableLocalFolder(await exportDirectory(args.directory));
           const page = await project.requestUI({ action: 'export', exportId: args.exportId, sessionId: localScope.sessionId, permissionMode: this.config.permissionMode });
           if (!page.result?.exportId) throw new Error('没有收到实际导出副本');
           return { content: jsonText(await this.localImages.saveExport(localScope, page.result.exportId, directory, args.filename, operationId(args))) };

@@ -6,15 +6,20 @@ import { createRequire } from 'node:module';
 import { randomUUID } from 'node:crypto';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { desktopServerOptions, findDesktopPorts, isDesktopNavigation, isExternalWebLink, prepareDesktopWorkspace } from '../scripts/desktop-runtime.mjs';
+import { desktopServerOptions, findDesktopPorts, isDesktopNavigation, isExternalWebLink, prepareDesktopWorkspace, pickDesktopDirectory } from '../scripts/desktop-runtime.mjs';
 import { createDesktopUpdater } from './app-updater.mjs';
 import { LANGUAGES, normalizeLanguage, translate } from '../locales/index.mjs';
+import { resolveStorageDataRoot, launchStorageSwitch, getStoragePreferences, assertStorageNotSwitching } from '../scripts/storage-locations.mjs';
+import { exportWithPreferences } from '../scripts/export-locations.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const startupFile = join(here, 'startup.html');
 const startupUrl = pathToFileURL(startupFile).href;
 const runtimeRoot = app.isPackaged ? join(process.resourcesPath, 'runtime') : resolve(here, '..', '.desktop-build', 'runtime');
-const dataRoot = process.env.NAI_DESKTOP_DATA_DIR || join(process.env.LOCALAPPDATA || app.getPath('appData'), 'NAI Atelier');
+const storageAnchor = process.env.NAI_DESKTOP_DATA_DIR || join(process.env.LOCALAPPDATA || app.getPath('appData'), 'NAI Atelier');
+const selectedDataRoot = await (async () => { await assertStorageNotSwitching(storageAnchor); return resolveStorageDataRoot(storageAnchor, storageAnchor); })().catch(error => error);
+const storageLaunchError = selectedDataRoot instanceof Error ? selectedDataRoot : null;
+const dataRoot = storageLaunchError ? storageAnchor : selectedDataRoot;
 app.setPath('userData', join(dataRoot, 'browser'));
 app.setAppUserModelId('com.naiatelier.desktop');
 // 下载由用户触发；关闭窗口仍进托盘，安装必须先结束本应用后台。
@@ -87,13 +92,40 @@ async function startBackend() {
   starting = true;
   try {
     setStatus('starting', '正在打开工坊…');
-    const prepared = await prepareDesktopWorkspace(runtimeRoot, dataRoot);
+    const installRoot = app.isPackaged ? dirname(process.execPath) : runtimeRoot;
+    const prepared = await prepareDesktopWorkspace(runtimeRoot, dataRoot, installRoot);
     workspace = prepared.workspace;
     const ports = await findDesktopPorts({ preferred: Number(process.env.NAI_DESKTOP_PORT || 3000) });
     appUrl = `http://localhost:${ports.gateway}`;
-    const spec = desktopServerOptions({ runtimeRoot, workspace, executable: process.execPath, ports, documents: app.getPath('documents') });
+    const spec = desktopServerOptions({ runtimeRoot, workspace, executable: process.execPath, ports, documents: app.getPath('documents'), downloads: app.getPath('downloads'), storageAnchor, dataRoot, installRoot });
     const child = spawn(spec.command, spec.args, spec.options);
     backend = child;
+    child.on('message', message => {
+      if (message?.type === 'atelier-directory-pick') {
+        void chooseDirectory(message.initialPath).then(result => {
+          if (child.connected) child.send({ type: 'atelier-directory-result', requestId: message.requestId, result });
+        }, error => {
+          if (child.connected) child.send({ type: 'atelier-directory-result', requestId: message.requestId, error: error.message });
+        });
+        return;
+      }
+      if (message?.type !== 'atelier-storage-switch') return;
+      void (async () => {
+        if (updates && ['downloading', 'installing'].includes(updates.status().phase)) throw new Error('应用更新进行中，请稍后切换存储位置');
+        await languageWrite;
+        const preferences = await getStoragePreferences(workspace);
+        await launchStorageSwitch({ ...message.request, anchor: storageAnchor, source: message.request.kind === 'data' ? dataRoot : preferences.cacheDir || join(workspace, 'local-cache'),
+          workspace, mode: 'desktop', runtime: runtimeRoot, installRoot, currentCacheDir: preferences.cacheDir || '', currentResourceLayout: preferences.resourceLayout, waitPids: [process.pid, child.pid],
+          restart: { command: process.execPath, args: app.isPackaged ? [] : process.argv.slice(1), cwd: dirname(process.execPath), env: { ...process.env } } }, join(runtimeRoot, 'node.exe'), join(runtimeRoot, 'scripts', 'storage-locations.mjs'));
+        await stopForUpdate();
+        await new Promise(done => log.end(done));
+        app.quit();
+      })().catch(error => {
+        quitting = false;
+        if (child.connected) child.send({ type: 'atelier-cancel-update' });
+        dialog.showErrorBox(t('NAI Atelier 无法启动'), error.message);
+      });
+    });
     child.stdout.on('data', data => log.write(data));
     child.stderr.on('data', data => log.write(data));
     let failure;
@@ -173,6 +205,20 @@ ipcMain.handle('atelier-update', async (event, action, value) => {
   return updates.action(action, value);
 });
 
+let directoryPickerOpen = false;
+async function chooseDirectory(initialPath = '') {
+  if (directoryPickerOpen) throw new Error('已有文件夹选择窗口，请先完成或取消选择');
+  directoryPickerOpen = true;
+  try { return await pickDesktopDirectory(dialog, window, initialPath); }
+  finally { directoryPickerOpen = false; }
+}
+
+ipcMain.handle('atelier-export', async (event, input) => {
+  if (event.sender !== window?.webContents || event.senderFrame !== window.webContents.mainFrame || !isDesktopNavigation(event.senderFrame.url, appUrl)) throw new Error('文件导出只允许本应用主窗口操作');
+  if (typeof input?.data !== 'string' || input.data.length > 180 * 1024 * 1024 || !/^[A-Za-z0-9+/]*={0,2}$/.test(input.data) || input.data.length % 4 !== 0) throw new Error('导出文件无效或过大');
+  return exportWithPreferences({ data: Buffer.from(input.data, 'base64'), filename: input.filename, workspace, pickDirectory: chooseDirectory, systemDirectory: app.getPath('downloads') });
+});
+
 function prepareUpdate() {
   if (!backend?.connected || starting) throw new Error('工坊服务未就绪，请稍后重试');
   const child = backend, requestId = randomUUID();
@@ -235,6 +281,7 @@ app.on('second-instance', showWindow);
 app.on('activate', showWindow);
 if (!app.requestSingleInstanceLock()) app.quit();
 else app.whenReady().then(async () => {
+  if (storageLaunchError) throw storageLaunchError;
   await mkdir(dirname(logFile), { recursive: true });
   log = createWriteStream(logFile, { flags: 'a' });
   language = normalizeLanguage(await readFile(languageFile, 'utf8').then(JSON.parse).then(value => value.language).catch(() => 'zh-CN'));

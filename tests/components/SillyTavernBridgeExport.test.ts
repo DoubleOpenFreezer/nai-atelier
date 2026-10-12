@@ -5,15 +5,32 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SillyTavernBridgeExport } from '../../components/SillyTavernBridgeExport';
 
 const { preferences, save, refresh } = vi.hoisted(() => ({ preferences: { enabled: false, ready: true, busy: false, error: '' }, save: vi.fn(), refresh: vi.fn() }));
+const download = vi.hoisted(() => vi.fn());
+vi.mock('../../services/fileDownload', () => ({ downloadFile: download }));
 vi.mock('../../services/stChatu8Preferences', () => ({ useStChatu8Preferences: () => preferences, setStChatu8Enabled: save, refreshStChatu8Preferences: refresh }));
 vi.mock('../../services/localBackup', () => ({ openLocalBackupFolder: vi.fn() }));
 beforeEach(() => {
   Object.assign(preferences, { enabled: false, ready: true, busy: false, error: '' }); save.mockReset(); refresh.mockReset();
+  download.mockReset();
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ sillyTavernRoot: 'D:\\SyntheticTavern' }))));
 });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 describe('设置里的智慧姬同步开关', () => {
+  it('浏览器接管下载与真实落盘使用不同反馈，取消不能提示完成', async () => {
+    preferences.enabled = true;
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(async () => new Response(JSON.stringify({ files: { 'index.js': '// synthetic' } }))));
+    const notify = vi.fn();
+    render(React.createElement(SillyTavernBridgeExport, { notify }));
+    const button = screen.getByRole('button', { name: '下载 ZIP 扩展包' });
+    download.mockResolvedValueOnce({ saved: false, browserDownload: true }); fireEvent.click(button);
+    await waitFor(() => expect(notify).toHaveBeenCalledWith('已交给浏览器下载 (npm-bridge.zip)'));
+    download.mockRejectedValueOnce(new DOMException('已取消保存', 'AbortError')); fireEvent.click(button);
+    await waitFor(() => expect(download).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect((button as HTMLButtonElement).disabled).toBe(false));
+    expect(notify).toHaveBeenCalledTimes(1);
+    expect(notify).not.toHaveBeenCalledWith('智慧姬同步扩展包已下载 (npm-bridge.zip)');
+  });
   it('关闭时只有开关与说明；开启后显示安装配置，勾选使用持久化接口', async () => {
     const view = render(React.createElement(SillyTavernBridgeExport, { notify: vi.fn() }));
     const toggle = screen.getByRole('checkbox', { name: '智慧姬同步' }) as HTMLInputElement;

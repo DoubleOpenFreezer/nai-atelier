@@ -30,10 +30,12 @@ import { createResponseMemoryCache, danbooruResponseTtl } from './media-memory-c
 import { createDanbooruLimiter, createDanbooruDiskCache } from './danbooru-loading.mjs';
 import { createDanbooruResponseFailure, createDanbooruNetworkFailure } from '../services/danbooruErrors.mjs';
 import { getLanUrls } from './local-server-runtime.mjs';
+import { storageLocationStatus, getStoragePreferences, getDefaultExportDirectory, pickStorageDirectory, validateStorageSwitch } from './storage-locations.mjs';
+import { handleExportLocationRequest } from './export-locations.mjs';
 
 const CACHE_VERSION = 'v1';
 const HISTORY_THUMBNAIL_CACHE_VERSION = 'v2';
-const CACHE_DIR = join(process.cwd(), 'local-cache', 'thumbnails');
+const CACHE_DIR = join(process.env.NAI_RESOURCE_ROOT || join(process.cwd(), 'local-cache'), 'thumbnails');
 const CACHE_INDEX = join(CACHE_DIR, 'index.json');
 const VIBE_RECOVERY_DIR = join(process.cwd(), 'local-data', 'vibe-recovery');
 const CLOUD_QUEUE_CONFIG_FILE = join(process.cwd(), 'local-data', 'cloud-queue.json');
@@ -2936,7 +2938,7 @@ export async function handleImageTaggerRequest(req, res, url, lanSecret, imageTa
   } catch (error) { return sendJson(res, Number(error.status) || (statusRequest ? 503 : url.pathname === '/api/image-tagger' ? 500 : 400), { error: error.message || '反推模型操作失败' }); }
 }
 
-export async function createMediaGateway({ port = 3000, workerPort = 3001, lanSecret = '', outboundProxyUrl = '', pixivFetch, pixivTokenDir, pixivWebLogin } = {}) {
+export async function createMediaGateway({ port = 3000, workerPort = 3001, lanSecret = '', outboundProxyUrl = '', pixivFetch, pixivTokenDir, pixivWebLogin, requestStorageSwitch, pickDirectory = pickStorageDirectory } = {}) {
 // 静态前端资源直接由网关从 dist/ 提供：页面与资源加载不依赖 workerd，也不占用其请求槽。
 const STATIC_CONTENT_TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -2956,13 +2958,14 @@ const STATIC_CONTENT_TYPES = {
   '.txt': 'text/plain; charset=utf-8',
   '.map': 'application/json; charset=utf-8',
 };
-const DIST_ROOT = process.env.NAI_PACKAGED === '1' ? join(process.env.NAI_APP_ROOT, 'dist') : join(process.cwd(), 'dist');
+const DIST_ROOT = join(process.env.NAI_STORAGE_RUNTIME_ROOT || (process.env.NAI_PACKAGED === '1' ? process.env.NAI_APP_ROOT : process.cwd()), 'dist');
 const serveDistFile = async (req, res, url) => {
   let pathname = url.pathname;
   try { pathname = decodeURIComponent(pathname); } catch { return false; }
   if (pathname.includes('..') || pathname.includes('\0')) return false;
   const relative = pathname.replace(/^\/+/, '') || 'index.html';
-  const root = process.env.NAI_PACKAGED === '1' && relative.startsWith('tag-data/') ? join(process.cwd(), 'public') : DIST_ROOT;
+  const root = relative.startsWith('tag-data/') && process.env.NAI_TAG_DATA_DIR ? dirname(process.env.NAI_TAG_DATA_DIR)
+    : process.env.NAI_PACKAGED === '1' && relative.startsWith('tag-data/') ? join(process.cwd(), 'public') : DIST_ROOT;
   const filePath = join(root, relative);
   if (!filePath.startsWith(root)) return false;
   let data;
@@ -2987,7 +2990,7 @@ const serveDistFile = async (req, res, url) => {
     },
   });
   const danbooruLimiter = createDanbooruLimiter();
-  const danbooruDiskCache = createDanbooruDiskCache(join(process.cwd(), 'local-cache', 'danbooru-queries'));
+  const danbooruDiskCache = createDanbooruDiskCache(join(process.env.NAI_RESOURCE_ROOT || join(process.cwd(), 'local-cache'), 'danbooru-queries'));
   let collectorReset = Promise.resolve();
   const styleCollector = new StyleCollector({
     worker: async (action, body) => {
@@ -3049,7 +3052,7 @@ const serveDistFile = async (req, res, url) => {
     cache,
     loadOriginal: source => requestRemoteBuffer(source, remoteFetch),
   });
-  const promptAgent = new PromptAgentService({ lanSecret, outboundProxyUrl });
+  const promptAgent = new PromptAgentService({ lanSecret, outboundProxyUrl, getDefaultExportDirectory: () => getDefaultExportDirectory(process.cwd()) });
   const stChatu8Bridge = new StChatu8Bridge({
     projectRoot: process.cwd(),
     requestWorkerJson: (path, options) => requestWorkerJson(path, internalWorkerRequest, workerPort, options),
@@ -3182,6 +3185,30 @@ const serveDistFile = async (req, res, url) => {
     markUserTraffic();
     let url;
     try { url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`); } catch { return sendJson(res, 400, { error: 'Invalid request URL' }); }
+    if (url.pathname === '/api/local-maintenance/export-location') {
+      return handleExportLocationRequest(req, res, { workspace: process.cwd(), canManage: collectorLocalRequest(req), pickDirectory,
+        systemDirectory: process.env.NAI_PACKAGED === '1' ? process.env.NAI_EXPORT_SYSTEM_DIR || '' : '' });
+    }
+    if (url.pathname === '/api/local-maintenance/storage') {
+      if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
+      const canManage = process.platform === 'win32' && collectorLocalRequest(req);
+      const mode = process.env.NAI_PACKAGED === '1' ? 'desktop' : 'source';
+      const workspace = process.cwd(), dataDir = process.env.NAI_STORAGE_DATA_ROOT || workspace;
+      const anchor = process.env.NAI_STORAGE_ANCHOR || workspace;
+      if (req.method === 'GET') return sendJson(res, 200, await storageLocationStatus({ anchor, dataDir, workspace, mode, canManage }));
+      if (!canManage || req.method !== 'POST' || req.headers['x-nai-local-control'] !== 'true') return sendJson(res, 403, { error: '存储管理只允许 Windows 电脑本机页面操作' });
+      const body = await readJsonBody(req, 8192);
+      if (body.action === 'pickDirectory') return sendJson(res, 200, await pickDirectory());
+      if (body.action === 'openDirectory') { await openInExplorer(body.path); return sendJson(res, 200, { success: true }); }
+      if (!requestStorageSwitch) throw new Error('请使用完整工坊启动入口管理存储位置');
+      const preferences = await getStoragePreferences(workspace);
+      const kind = body.action === 'switchData' ? 'data' : body.action === 'setCacheDir' ? 'cache' : '';
+      const followData = kind === 'cache' && body.directory === '';
+      const target = followData ? join(workspace, 'local-cache') : body.directory;
+      const request = { kind, operation: kind === 'cache' ? 'migrate' : body.operation, target, followData };
+      await validateStorageSwitch({ ...request, source: kind === 'data' ? dataDir : preferences.cacheDir || join(workspace, 'local-cache'), workspace, mode, runtime: process.env.NAI_STORAGE_RUNTIME_ROOT, installRoot: process.env.NAI_STORAGE_INSTALL_ROOT });
+      return sendJson(res, 200, await requestStorageSwitch(request));
+    }
     if (url.pathname.startsWith('/api/internal/style-collector/')) return sendJson(res, 403, { error: 'Forbidden' });
     if (url.pathname.startsWith('/api/style-collector/')) {
       if (!collectorLocalRequest(req)) return sendJson(res, 403, { error: '收集模式只允许电脑本机页面控制' });
@@ -3274,7 +3301,7 @@ const serveDistFile = async (req, res, url) => {
           return sendBridgeJson(req, res, 200, stChatu8Bridge.status());
         }
         if (url.pathname === '/api/integrations/st-chatu8/extension/files' && req.method === 'GET') {
-          const extensionDir = join(process.cwd(), 'sillytavern-extension', 'npm-bridge');
+          const extensionDir = join(process.env.NAI_STORAGE_RUNTIME_ROOT || process.cwd(), 'sillytavern-extension', 'npm-bridge');
           const [manifest, index, style, readme] = await Promise.all([
             readFile(join(extensionDir, 'manifest.json'), 'utf8'),
             readFile(join(extensionDir, 'index.js'), 'utf8'),
@@ -3296,7 +3323,7 @@ const serveDistFile = async (req, res, url) => {
           const result = await installSillyTavernBridgeExtension({
             sillyTavernRoot: stRoot,
             targetUrl: body.targetUrl,
-            projectRoot: process.cwd(),
+            projectRoot: process.env.NAI_STORAGE_RUNTIME_ROOT || process.cwd(), workspaceRoot: process.cwd(),
           });
           return sendBridgeJson(req, res, 200, result);
         }
@@ -3602,7 +3629,7 @@ const serveDistFile = async (req, res, url) => {
       if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
       if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
       try {
-        const status = getDesktopLauncherStatus();
+        const status = getDesktopLauncherStatus({ projectDir: process.env.NAI_STORAGE_RUNTIME_ROOT || process.cwd() });
         return sendJson(res, 200, status);
       } catch (error) {
         return sendJson(res, 500, { error: error.message || '无法读取桌面启动器状态' });
@@ -3613,7 +3640,7 @@ const serveDistFile = async (req, res, url) => {
       if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
       try {
         await readRequestBody(req, 4096);
-        const result = await createDesktopLauncher();
+        const result = await createDesktopLauncher({ projectDir: process.env.NAI_STORAGE_RUNTIME_ROOT || process.cwd() });
         return sendJson(res, 200, result);
       } catch (error) {
         return sendJson(res, Number(error.status) || 500, { error: error.message || '创建桌面启动器失败' });
@@ -3633,7 +3660,7 @@ const serveDistFile = async (req, res, url) => {
       if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
       if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
       if (process.env.NAI_PACKAGED === '1') return sendJson(res, 409, { error: '安装版请使用 NAI Atelier 快捷方式或安装目录中的应用程序' });
-      const content = Buffer.from(generateLauncherBatContent(), 'utf8');
+      const content = Buffer.from(generateLauncherBatContent({ projectDir: process.env.NAI_STORAGE_RUNTIME_ROOT || process.cwd() }), 'utf8');
       res.writeHead(200, {
         'Content-Type': 'application/x-bat',
         'Content-Disposition': 'attachment; filename="NaiPromptManager.bat"',
@@ -3952,6 +3979,15 @@ const serveDistFile = async (req, res, url) => {
     upstream.on('error', () => socket.destroy());
   });
 
+  server.prepareStorageSwitch = () => {
+    const otherRequest = req => !String(req.url).startsWith('/api/local-maintenance/storage');
+    const writingHandler = req => otherRequest(req) && !['GET', 'HEAD', 'OPTIONS'].includes(req.method);
+    if (tasks.size || [...activeWrites].some(otherRequest) || [...activeHandlers].some(writingHandler) || localBackupService.status.running || promptAgent.activeAgents.size || promptAgent.startingAgents.size
+      || styleCollector.run || imageTagger.busy || imageTagger.changing || imageTagger.download || stChatu8Bridge.historySyncPromise || historyIndexStatus.running || cache.activeJobs) {
+      throw new Error('请先结束生成、助手、收集、备份、模型或词库任务，再切换存储位置');
+    }
+    updating = true;
+  };
   server.prepareUpdate = () => {
     if (tasks.size || activeWrites.size || activeHandlers.size || localBackupService.status.running || promptAgent.activeAgents.size || promptAgent.startingAgents.size
       || styleCollector.run || imageTagger.busy || imageTagger.changing || imageTagger.download || stChatu8Bridge.historySyncPromise || historyIndexStatus.running) {

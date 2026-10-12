@@ -4,16 +4,35 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, wri
 import { connect as connectNet, createServer as createNetServer } from 'net';
 import { randomBytes, randomInt } from 'crypto';
 import { platform } from 'os';
-import { resolve as resolvePath } from 'node:path';
-import { startTagUpdateServer } from './tag-update-server.mjs';
-import { createMediaGateway } from './media-gateway.mjs';
+import { resolve as resolvePath, dirname, join } from 'node:path';
+import { resolveStorageDataRoot, getStoragePreferences, storageResourcePaths, launchStorageSwitch, assertStorageNotSwitching, requestDesktopStorageDirectory } from './storage-locations.mjs';
 import { getLanUrls, LOCAL_LAUNCHER_PORT, prepareLocalServerLaunch } from './local-server-runtime.mjs';
-import { ensureDesktopLauncher } from './desktop-launcher.mjs';
 
 const IS_WINDOWS = platform() === 'win32';
 const IS_TERMUX = process.env.TERMUX_VERSION || existsSync('/data/data/com.termux');
 const PACKAGED = process.env.NAI_PACKAGED === '1';
 const APP_ROOT = PACKAGED ? resolvePath(process.env.NAI_APP_ROOT) : process.cwd();
+const STORAGE_ANCHOR = PACKAGED ? process.env.NAI_STORAGE_ANCHOR || dirname(process.cwd()) : APP_ROOT;
+await assertStorageNotSwitching(STORAGE_ANCHOR);
+const DATA_ROOT = PACKAGED ? process.env.NAI_STORAGE_DATA_ROOT || dirname(process.cwd()) : await resolveStorageDataRoot(STORAGE_ANCHOR, APP_ROOT);
+if (!PACKAGED) {
+  mkdirSync(DATA_ROOT, { recursive: true });
+  if (DATA_ROOT !== APP_ROOT) {
+    for (const name of ['wrangler.toml', 'package.json']) {
+      const target = join(DATA_ROOT, name), expected = readFileSync(join(APP_ROOT, name), 'utf8');
+      if (name === 'wrangler.toml' && existsSync(target) && readFileSync(target, 'utf8') !== expected) throw new Error('工坊存储配置不匹配，未启动');
+      writeFileSync(target, expected);
+    }
+  }
+  process.chdir(DATA_ROOT);
+}
+process.env.NAI_STORAGE_ANCHOR = STORAGE_ANCHOR;
+process.env.NAI_STORAGE_DATA_ROOT = DATA_ROOT;
+process.env.NAI_STORAGE_RUNTIME_ROOT = APP_ROOT;
+const resourcePreference = await getStoragePreferences();
+const resourcePaths = storageResourcePaths(process.cwd(), resourcePreference.cacheDir || '', resourcePreference.resourceLayout === 'unified');
+process.env.NAI_RESOURCE_ROOT = resourcePreference.cacheDir || join(process.cwd(), 'local-cache');
+process.env.NAI_TAG_DATA_DIR = resourcePaths.tagData;
 const GATEWAY_PORT = Number(process.env.NAI_GATEWAY_PORT || 3000);
 const TAG_UPDATE_PORT = Number(process.env.NAI_TAG_UPDATE_PORT || 3002);
 const LAUNCHER_PORT = Number(process.env.NAI_LAUNCHER_PORT || LOCAL_LAUNCHER_PORT);
@@ -137,7 +156,7 @@ async function resolveGatewayProxyUrl(systemProxyUrl) {
 
 // 构建与安装不阻塞启动身份接口，连续点击可以快速识别“启动中”。
 const runStartupCommand = command => new Promise((done, reject) => {
-  const child = spawn(command, { stdio: 'inherit', shell: IS_WINDOWS ? process.env.ComSpec || 'cmd.exe' : '/bin/sh', windowsHide: true });
+  const child = spawn(command, { cwd: APP_ROOT, stdio: 'inherit', shell: IS_WINDOWS ? process.env.ComSpec || 'cmd.exe' : '/bin/sh', windowsHide: true });
   child.once('error', reject);
   child.once('exit', (code, signal) => code === 0 ? done() : reject(new Error(`启动步骤失败（${signal || code}）`)));
 });
@@ -160,7 +179,7 @@ async function ensureDependencies() {
     }
   }
   
-  const localWrangler = IS_WINDOWS ? 'node_modules/.bin/wrangler.cmd' : 'node_modules/.bin/wrangler';
+  const localWrangler = join(APP_ROOT, IS_WINDOWS ? 'node_modules/.bin/wrangler.cmd' : 'node_modules/.bin/wrangler');
   if (!existsSync(localWrangler)) {
     console.log('\x1b[33mwrangler 未安装，正在安装...\x1b[0m');
     await runStartupCommand('npm install wrangler --save-dev');
@@ -184,9 +203,9 @@ function getNewestMtime(path) {
 }
 
 function needsBuild() {
-  if (BUILD_OUTPUTS.some(path => !existsSync(path))) return true;
-  const oldestOutput = Math.min(...BUILD_OUTPUTS.map(path => statSync(path).mtimeMs));
-  const newestInput = Math.max(...BUILD_INPUTS.map(getNewestMtime));
+  if (BUILD_OUTPUTS.some(path => !existsSync(join(APP_ROOT, path)))) return true;
+  const oldestOutput = Math.min(...BUILD_OUTPUTS.map(path => statSync(join(APP_ROOT, path)).mtimeMs));
+  const newestInput = Math.max(...BUILD_INPUTS.map(path => getNewestMtime(join(APP_ROOT, path))));
   return newestInput > oldestOutput;
 }
 /** 清理历史 wrangler pages dev 临时产物：每次 pages dev 都会新建一个 tmp 目录，旧目录不再使用。 */
@@ -347,6 +366,8 @@ async function findAvailableWorkerPort(preferredPort = 3001) {
 }
 
 async function startServer() {
+  const { startTagUpdateServer } = await import('./tag-update-server.mjs');
+  const { createMediaGateway } = await import('./media-gateway.mjs');
   const lanAccess = loadLanAccessConfig();
   const outboundProxyUrl = getOutboundProxyUrl();
   const lanUrls = getLanUrls(GATEWAY_PORT);
@@ -364,7 +385,7 @@ async function startServer() {
   console.log('');
   
   const args = [
-    'pages', 'dev', PACKAGED ? resolvePath(APP_ROOT, 'dist') : 'dist',
+    'pages', 'dev', resolvePath(APP_ROOT, 'dist'),
     '--persist-to', './local-data',
     '--binding', 'LOCAL_HISTORY_ENABLED=true',
     '--binding', 'PERSONAL_MODE_ENABLED=true',
@@ -457,8 +478,28 @@ async function startServer() {
     // 网关初始化以本地轻量步骤为主，偶发环境卡顿不应让窗口无限静默：90 秒未就绪即报错退出。
     console.log('\x1b[36m图片网关初始化中（缩略图缓存、Agent、Pixiv、桥接）...\x1b[0m');
     const gatewayStartedAt = Date.now();
+    let storageSwitchPending = false;
+    const requestStorageSwitch = async request => {
+      if (storageSwitchPending) throw new Error('已有存储切换正在进行，请等待完成');
+      storageSwitchPending = true;
+      try {
+        tagUpdateServer.prepareUpdate();
+        mediaGateway.prepareStorageSwitch();
+        if (PACKAGED) {
+          if (!process.connected) throw new Error('桌面应用连接中断，未切换数据目录');
+          process.send({ type: 'atelier-storage-switch', request });
+        } else {
+          await launchStorageSwitch({ ...request, anchor: STORAGE_ANCHOR, source: request.kind === 'data' ? DATA_ROOT : process.env.NAI_RESOURCE_ROOT, workspace: process.cwd(), mode: 'source', runtime: APP_ROOT,
+            currentCacheDir: resourcePreference.cacheDir || '', currentResourceLayout: resourcePreference.resourceLayout, waitPids: [process.pid, child.pid],
+            restart: { command: process.execPath, args: [join(APP_ROOT, 'scripts', 'local-server.mjs')], cwd: APP_ROOT, env: { ...process.env, NAI_NO_BROWSER: '1' } } });
+          setTimeout(stopPackagedService, 500);
+        }
+        return { restartRequired: true, phase: 'waiting_stop' };
+      } catch (error) { storageSwitchPending = false; mediaGateway.cancelUpdate(); tagUpdateServer.cancelUpdate(); throw error; }
+    };
     mediaGateway = await Promise.race([
-      createMediaGateway({ port: GATEWAY_PORT, workerPort, lanSecret: lanAccess.secret, outboundProxyUrl: gatewayOutboundProxy }),
+      createMediaGateway({ port: GATEWAY_PORT, workerPort, lanSecret: lanAccess.secret, outboundProxyUrl: gatewayOutboundProxy, requestStorageSwitch,
+        ...(PACKAGED ? { pickDirectory: initialPath => requestDesktopStorageDirectory(process, initialPath) } : {}) }),
       new Promise((_, reject) => setTimeout(() => reject(new Error('图片网关初始化超过 90 秒（可能为系统繁忙或磁盘异常），请关闭窗口后重试')), 90_000)),
     ]);
     preparePackagedUpdate = () => {
@@ -466,11 +507,13 @@ async function startServer() {
       try { mediaGateway.prepareUpdate(); }
       catch (error) { tagUpdateServer.cancelUpdate(); throw error; }
     };
-    cancelPackagedUpdate = () => { mediaGateway.cancelUpdate(); tagUpdateServer.cancelUpdate(); };
+    cancelPackagedUpdate = () => { storageSwitchPending = false; mediaGateway.cancelUpdate(); tagUpdateServer.cancelUpdate(); };
     console.log(`\x1b[32m图片网关已就绪（耗时 ${((Date.now() - gatewayStartedAt) / 1000).toFixed(1)} 秒），手机列表将按需使用缩略图。\x1b[0m`);
     console.log(`\x1b[32m全部就绪，总耗时 ${bootElapsedSec()} 秒。\x1b[0m`);
     launcherGuard.markRunning();
-    await ensureDesktopLauncher();
+    // 该模块间接导入备份服务，必须在数据根和资源环境就绪后再加载。
+    const { ensureDesktopLauncher } = await import('./desktop-launcher.mjs');
+    await ensureDesktopLauncher({ projectDir: APP_ROOT });
     openWhenReady();
   } catch (error) {
     console.error(`\x1b[31m本地服务启动失败: ${error.message}\x1b[0m`);

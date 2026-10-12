@@ -961,10 +961,12 @@ test('直接保存自动完成目录确认，完全访问可一步创建目录�
   service.activeAgents.set('s', { agent: {}, emit() {} });
   const tools = service.createTools({ params: {} }, {}, event => events.push(event), project, {});
   const save = tools.find(tool => tool.name === 'save_project_image_to_folder');
-  const writing = save.execute('t', { kind: 'history', id: 'a', directory, filename: 'standard.png' });
+  service.getDefaultExportDirectory = async () => directory;
+  const writing = save.execute('t', { kind: 'history', id: 'a', filename: 'standard.png' });
   while (!events.length) await new Promise(resolve => setImmediate(resolve));
   await assert.rejects(readFile(join(directory, 'standard.png')), { code: 'ENOENT' });
   const patch = events[0].action.patch; assert.equal(patch.payload.create, true);
+  assert.equal(patch.payload.directory, directory);
   service.controlSession('s', 'confirm', '', { requestId: patch.requestId, accepted: true });
   await service.executeConfirmedProjectAction({ sessionId: 's', confirmationRequestId: patch.requestId, action: patch.action, payload: patch.payload }, project);
   assert.equal(JSON.parse((await writing).content[0].text).saved, true); assert.deepEqual(await readFile(join(directory, 'standard.png')), png);
@@ -972,6 +974,36 @@ test('直接保存自动完成目录确认，完全访问可一步创建目录�
   const second = join(service.isolatedRoot, 'automatic', 'images');
   const result = await save.execute('t2', { kind: 'history', id: 'a', directory: second, filename: 'full.png' });
   assert.equal(events.length, 1); assert.equal(JSON.parse(result.content[0].text).path, join(second, 'full.png')); assert.deepEqual(await readFile(join(second, 'full.png')), png);
+}));
+
+test('图片与页面导出共用默认目录，显式路径优先，无默认目录时不擅自保存', () => isolated(async service => {
+  await service.setPermissionMode('full');
+  const directory = join(service.isolatedRoot, 'exports');
+  const explicit = join(service.isolatedRoot, 'explicit');
+  service.getDefaultExportDirectory = async () => directory;
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aCX0AAAAASUVORK5CYII=', 'base64');
+  const json = Buffer.from('{"synthetic":true}');
+  const scope = { sessionId: 's', keyHash: 'key' };
+  const exported = service.localImages.registerExport(scope, 'synthetic.json', json);
+  const tools = service.createTools({ params: {} }, {}, () => {}, {
+    agentSessionId: 's', keyHash: 'key', requestJson: async () => ({ id: 'a' }),
+    requestBuffer: async () => ({ buffer: png }), requestUI: async () => ({ result: exported }),
+  });
+  const saveImage = tools.find(tool => tool.name === 'save_project_image_to_folder');
+  const savePage = tools.find(tool => tool.name === 'save_page_export_to_folder');
+  assert(!saveImage.parameters.required.includes('directory'));
+  assert(!savePage.parameters.required.includes('directory'));
+  const imageReceipt = JSON.parse((await saveImage.execute('image', { kind: 'history', id: 'a', filename: 'saved.png' })).content[0].text);
+  const pageReceipt = JSON.parse((await savePage.execute('page', { exportId: 'synthetic', filename: 'saved.json' })).content[0].text);
+  assert.equal(imageReceipt.path, join(directory, 'saved.png'));
+  assert.equal(pageReceipt.path, join(directory, 'saved.json'));
+  assert.deepEqual(await readFile(imageReceipt.path), png);
+  assert.deepEqual(await readFile(pageReceipt.path), json);
+  const explicitReceipt = JSON.parse((await saveImage.execute('explicit', { kind: 'history', id: 'a', directory: explicit, filename: 'saved.png' })).content[0].text);
+  assert.equal(explicitReceipt.path, join(explicit, 'saved.png'));
+  service.getDefaultExportDirectory = async () => '';
+  await assert.rejects(saveImage.execute('missing', { kind: 'history', id: 'a' }), /请指定保存目录/);
+  await assert.rejects(savePage.execute('missing', { exportId: 'synthetic' }), /请指定保存目录/);
 }));
 test('真实 Pi 工具循环的注册表保持稳定，日志只记录完整事件摘要', () => isolated(async service => {
   await service.saveCustomProvider({ ...customInput(), apiKey: 'synthetic', select: true });

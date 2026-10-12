@@ -4,7 +4,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { builtinModules } from 'node:module';
 import { createWorkspace, removeWorkspace } from '../support/workspace.mjs';
-import { RUNTIME_FILES, DESKTOP_FILES, RUNTIME_DEPENDENCIES, createRuntimePackage, sameDependencies, isPrivateDistributionPath, isDistributionMetadata, pruneRuntimeMetadata } from '../../scripts/build-desktop.mjs';
+import { RUNTIME_FILES, DESKTOP_FILES, DESKTOP_SCRIPT_FILES, copyDesktopScripts, RUNTIME_DEPENDENCIES, createRuntimePackage, sameDependencies, isPrivateDistributionPath, isDistributionMetadata, pruneRuntimeMetadata } from '../../scripts/build-desktop.mjs';
 import builder from '../../desktop/builder.config.mjs';
 
 test('分发边界识别数据、缓存、词库、环境变量与测试资料，公开运行文件均不落保护区', async () => {
@@ -47,6 +47,16 @@ test('桌面运行依赖锁文件单独维护，不带开发工具，版本跟�
       assert.ok(RUNTIME_DEPENDENCIES.includes(dependency), `${file} 缺少运行依赖 ${dependency}`);
     }
   }
+});
+test('Electron 主进程的脚本依赖同时放入 app 包，迁移后台使用公开 runtime 脚本', async () => {
+  const root = createWorkspace('desktop-storage-package-');
+  try {
+    await copyDesktopScripts(root);
+    assert.deepEqual(DESKTOP_SCRIPT_FILES, ['desktop-runtime.mjs', 'storage-locations.mjs', 'export-locations.mjs']);
+    for (const name of DESKTOP_SCRIPT_FILES) assert.ok((await readFile(join(root, 'scripts', name), 'utf8')).length > 0);
+    const source = await readFile(new URL('../../desktop/main.mjs', import.meta.url), 'utf8');
+    assert.match(source, /join\(runtimeRoot, 'scripts', 'storage-locations\.mjs'\)/);
+  } finally { removeWorkspace(root); }
 });
 
 test('精简只删除映射和类型声明，保留可执行文件、资源与许可证', async () => {

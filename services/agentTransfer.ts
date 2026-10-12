@@ -1,9 +1,18 @@
 /** 仅保存当前标签页主动操作产生的图片与导出，不监听系统剪贴板。 */
 const exports = new Map<string, { blob: Blob; name: string }>();
+let exportCaptureDepth = 0;
+let capturedBlobs = new WeakSet<Blob>();
 let copied: { blob: Blob; name: string; label: string } | null = null;
 export const getAgentExports = () => [...exports].map(([id, item]) => ({ id, name: item.name, bytes: item.blob.size, mimeType: item.blob.type }));
 export const getAgentExport = (id: string) => { const item = exports.get(id); if (!item) throw new Error('导出副本已过期，请重新执行导出'); return item; };
 export const getAgentCopiedImage = () => { if (!copied) throw new Error('还没有暂存图片，请先读取并暂存实际图片'); return copied; };
+export const captureAgentExport = (blob: Blob, name: string) => {
+  if (!exportCaptureDepth || blob.size > 30 * 1024 * 1024 || capturedBlobs.has(blob)) return;
+  capturedBlobs.add(blob);
+  exports.set(crypto.randomUUID(), { blob, name });
+  while (exports.size > 4) exports.delete(exports.keys().next().value!);
+  window.dispatchEvent(new Event('nai-agent-capabilities-changed'));
+};
 export const copyAgentImage = async (image: HTMLImageElement, signal?: AbortSignal) => {
   const src = new URL(image.dataset.agentOriginalSrc || image.currentSrc || image.src, location.href).href;
   if (!image.complete || !image.naturalWidth || !/^(https?:|blob:|data:image\/)/.test(src)) throw new Error('当前图片尚未准备好');
@@ -17,16 +26,15 @@ export const copyAgentImage = async (image: HTMLImageElement, signal?: AbortSign
 };
 /** 临时捕获 Agent 触发的实际下载产物，不改变用户的正常浏览器下载。 */
 export const captureAgentExports = () => {
+  if (!exportCaptureDepth++) capturedBlobs = new WeakSet<Blob>();
   const blobs = new Map<string, Blob>(), create = URL.createObjectURL, click = HTMLAnchorElement.prototype.click;
   URL.createObjectURL = blob => { const url = create.call(URL, blob); if (blob instanceof Blob) blobs.set(url, blob); return url; };
   HTMLAnchorElement.prototype.click = function () {
     const blob = blobs.get(this.href);
     if (this.download && blob && blob.size <= 30 * 1024 * 1024) {
-      exports.set(crypto.randomUUID(), { blob, name: this.download });
-      while (exports.size > 4) exports.delete(exports.keys().next().value!);
-      window.dispatchEvent(new Event('nai-agent-capabilities-changed'));
+      captureAgentExport(blob, this.download);
     }
     click.call(this);
   };
-  return () => { URL.createObjectURL = create; HTMLAnchorElement.prototype.click = click; blobs.clear(); };
+  return () => { URL.createObjectURL = create; HTMLAnchorElement.prototype.click = click; blobs.clear(); exportCaptureDepth--; };
 };

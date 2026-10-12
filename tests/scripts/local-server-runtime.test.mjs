@@ -5,7 +5,8 @@ import { mkdtemp, writeFile, readdir, rm, readFile, mkdir } from 'node:fs/promis
 import { tmpdir, platform } from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createServer } from 'node:http';
-import { spawn, execFileSync } from 'node:child_process';
+import { spawn, execFile, execFileSync } from 'node:child_process';
+import { promisify } from 'node:util';
 import { getLanUrls, inspectExistingLocalServer, restartOwnedLocalServer, reserveLocalLauncher, prepareLocalServerLaunch, isLocalPortBusy } from '../../scripts/local-server-runtime.mjs';
 
 test('手机地址排除虚拟网卡与无效地址、去重并使用实际端口', () => {
@@ -131,6 +132,18 @@ test('启动占位覆盖启动期与运行期，原子拒绝重复监听，退�
   } finally { await guard.close(); }
   assert.equal(await isLocalPortBusy(guard.port), false);
   const next = await reserveLocalLauncher(projectDir, guard.port); await next.close();
+});
+
+test('Windows PowerShell 按 UTF-8 读取启动器中文工坊目录身份', { skip: platform() !== 'win32' }, async () => {
+  const syntheticDir = resolve('合成工坊', '中文路径');
+  const guard = await reserveLocalLauncher(syntheticDir, 0);
+  try {
+    const url = `http://127.0.0.1:${guard.port}/__atelier/launcher`;
+    assert.match((await fetch(url)).headers.get('content-type'), /charset=utf-8/i);
+    const script = '[Console]::OutputEncoding=New-Object System.Text.UTF8Encoding; (Invoke-RestMethod -Uri $env:NAI_TEST_LAUNCHER_URL).projectDir';
+    const { stdout } = await promisify(execFile)('powershell.exe', ['-NoProfile', '-Command', script], { windowsHide: true, env: { ...process.env, NAI_TEST_LAUNCHER_URL: url }, encoding: 'utf8' });
+    assert.equal(stdout.trim(), syntheticDir);
+  } finally { await guard.close(); }
 });
 
 const ownedIdentity = { app: 'nai-atelier-local-launcher', projectDir, pid: 1234, phase: 'running' };

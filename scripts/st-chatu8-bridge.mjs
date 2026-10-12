@@ -96,6 +96,7 @@ export const installSillyTavernBridgeExtension = async ({
   sillyTavernRoot,
   targetUrl = '',
   projectRoot = process.cwd(),
+  workspaceRoot = projectRoot,
 } = {}) => {
   let stRoot = String(sillyTavernRoot || '').trim();
   if (!stRoot) throw Object.assign(new Error('未指定 SillyTavern 安装路径，且未能自动检测到酒馆目录'), { status: 400 });
@@ -105,12 +106,14 @@ export const installSillyTavernBridgeExtension = async ({
 
   const targetDir = computeSillyTavernExtensionTargetDir(stRoot);
 
-  const localDataDir = resolve(projectRoot, 'local-data');
+  const localDataDir = resolve(workspaceRoot, 'local-data');
   const resolvedProject = resolve(projectRoot);
+  const resolvedWorkspace = resolve(workspaceRoot);
   if (
     targetDir === resolvedProject ||
     targetDir.startsWith(resolvedProject + '\\') ||
     targetDir.startsWith(resolvedProject + '/') ||
+    targetDir === resolvedWorkspace || targetDir.startsWith(resolvedWorkspace + '\\') || targetDir.startsWith(resolvedWorkspace + '/') ||
     targetDir === localDataDir ||
     targetDir.startsWith(localDataDir + '\\') ||
     targetDir.startsWith(localDataDir + '/')

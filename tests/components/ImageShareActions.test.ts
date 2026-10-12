@@ -16,6 +16,14 @@ beforeEach(() => { localStorage.clear(); vi.mocked(copySharedImage).mockReset().
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 describe('共用图片分享操作', () => {
+  it('用户取消保存保持安静并恢复操作按钮', async () => {
+    vi.mocked(downloadSharedImage).mockRejectedValue(new DOMException('已取消保存', 'AbortError'));
+    const notify = vi.fn();
+    render(React.createElement(ImageShareActions, { imageUrl: '/original.png', filename: 'NAI.png', notify }));
+    const button = screen.getByRole('button', { name: '下载图片' }); fireEvent.click(button);
+    await waitFor(() => expect((button as HTMLButtonElement).disabled).toBe(false));
+    expect(notify).not.toHaveBeenCalled(); expect(screen.queryByRole('alert')).toBeNull();
+  });
   it('整组爱心在等待时禁用，复制仍可用；失败保留状态并允许重试', async () => {
     let fail!: (error: Error) => void;
     vi.mocked(toggleCollectionTarget).mockImplementationOnce(() => new Promise((_, reject) => { fail = reject; }));

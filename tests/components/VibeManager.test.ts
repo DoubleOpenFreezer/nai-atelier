@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { VibeManager } from '../../components/VibeManager';
 import type { NAIParams } from '../../types';
-const fixtures = vi.hoisted(() => ({ encodingCost: 2, needsEncoding: false, encode: vi.fn(), confirm: vi.fn(async () => true), refresh: vi.fn(async () => ({ active: false, tier: 0 })) }));
+const fixtures = vi.hoisted(() => ({ encodingCost: 2, needsEncoding: false, encode: vi.fn(), download: vi.fn(), confirm: vi.fn(async () => true), refresh: vi.fn(async () => ({ active: false, tier: 0 })) }));
 
 vi.mock('../../services/naiRuntime', () => ({ useNaiRuntime: () => ({ billing: { vibeEncodingCost: fixtures.encodingCost } }) }));
 vi.mock('../../services/naiModels', () => ({ getRuntimeNaiModelInfo: () => ({ supportsVibes: true }) }));
@@ -15,12 +15,23 @@ vi.mock('../../services/vibeService', () => ({ vibeService: {
   list: async () => [{ id: 'new', name: '新 Vibe', hasOriginal: true, encodings: fixtures.needsEncoding ? [] : [{ id: 'new-encoded', model: 'nai-diffusion-4-5-full', informationExtracted: 1 }] }],
   listGroups: async () => [{ id: 'group-five', name: '五图组合', slots: Array.from({ length: 5 }, (_, i) => ({ vibeId: `v-${i}`, encodingId: `e-${i}`, informationExtracted: 1, strength: 0.2 })), normalizeStrengths: true }],
   encode: fixtures.encode,
+  download: fixtures.download,
 } }));
-afterEach(() => { cleanup(); fixtures.encodingCost = 2; fixtures.needsEncoding = false; fixtures.encode.mockReset(); fixtures.confirm.mockReset().mockResolvedValue(true); fixtures.refresh.mockClear(); });
+afterEach(() => { cleanup(); fixtures.encodingCost = 2; fixtures.needsEncoding = false; fixtures.encode.mockReset(); fixtures.download.mockReset(); fixtures.confirm.mockReset().mockResolvedValue(true); fixtures.refresh.mockClear(); });
 const slots = Array.from({ length: 4 }, (_, i) => ({ vibeId: `v-${i}`, encodingId: `e-${i}`, informationExtracted: 1, strength: 0.2 }));
 const params: NAIParams = { model: 'nai-diffusion-4-5-full', steps: 28, width: 832, height: 1216, scale: 5, sampler: 'k_euler_ancestral',
   vibes: { enabled: true, normalizeStrengths: true, slots } };
 describe('Vibe 复用与编码入口', () => {
+  it('Vibe导出目录权限失败沿用现有错误反馈，不留下未处理Promise', async () => {
+    fixtures.download.mockRejectedValue(new Error('导出目录权限已失效，请重新选择目录'));
+    const notify = vi.fn();
+    render(React.createElement(VibeManager, { params, setParams: vi.fn(), notify, markChange: vi.fn(), apiKey: 'synthetic' }));
+    fireEvent.click(screen.getByRole('button', { name: '管理' }));
+    fireEvent.click(await screen.findByRole('button', { name: '详情' }));
+    fireEvent.click(screen.getByRole('button', { name: '导出 .naiv4vibe' }));
+    await waitFor(() => expect(notify).toHaveBeenCalledWith('导出目录权限已失效，请重新选择目录', 'error'));
+    expect(notify).toHaveBeenCalledTimes(1);
+  });
   it('新编码确认与预算预测跟随官方动态单价', async () => {
     fixtures.encodingCost = 6; fixtures.needsEncoding = true; fixtures.confirm.mockResolvedValueOnce(false);
     render(React.createElement(VibeManager, { params: { ...params, vibes: { ...params.vibes!, slots: [] } }, setParams: vi.fn(), notify: vi.fn(), markChange: vi.fn(), apiKey: 'synthetic' }));

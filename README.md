@@ -7,7 +7,7 @@
 
   **[简体中文](./README.md) · [繁體中文](./README.zh-TW.md) · [English](./README.en.md) · [日本語](./README.ja.md) · [한국어](./README.ko.md)**
 
-  [![Version](https://img.shields.io/badge/version-1.71.1-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.72.0-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4%20%7C%20V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据主权与备份)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网创作体验)
@@ -373,6 +373,10 @@ flowchart TD
 | **EXE 安装版** | `%LOCALAPPDATA%\NAI Atelier\workspace\local-data` |
 | **源码本地部署** | `<项目根目录>/local-data/` |
 | **独立 Android** | 手机应用私有 SQLite 与文件；通过应用内加密备份导出，不使用电脑的 `local-data` |
+
+- **存储位置设置**：在「全局设置 → 数据与维护 → 存储位置」查看或更改工坊数据、缓存与下载资源目录。仅运行中的 Windows 安装版或源码工坊可更改；局域网手机只显示电脑数据位置，Android 私有数据位置由系统管理。迁移会复制并核验资料后重启到新位置，旧目录保留且不会改变 D1／R2 存储标识；打开另一工坊不会合并资料。缓存目录可独立设置，也可跟随工坊数据目录；切换时复制已有缩略图、反推模型和词库。
+- **导出保存位置**：同页可选「系统默认」（保持浏览器原有下载行为）、「自定义文件夹」（记住已选位置）或「每次询问」；直接点击「当前导出目录」旁的「更改」即可选文件夹，确认后切换为自定义模式，取消保留原设置。图片与文件导出共用位置；电脑助手没有明确指定目录时沿用此设置。Android 可选择系统提供的公共导出目录；浏览器能力取决于当前浏览器下载设置与目录授权。
+- **备份目录**：重要数据备份仍可手动填写目标路径；在本机允许管理存储位置时，也可通过「浏览文件夹」选择目录。
 
 - **电脑应用内备份**：打开「全局设置 → 数据与维护 → 重要数据备份」，设定备份目录后点击「立即完整备份」；
 - **电脑停服手动备份**：安装版通过托盘「退出工坊」，源码版关闭服务，再完整复制对应工坊的 `local-data/`；仅关闭安装版窗口不会停止后台；

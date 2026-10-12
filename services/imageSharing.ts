@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { beginImageClipboardCopy, rememberCopiedImage, type ImageGenerationData } from './imageClipboardContext';
 import { extractNovelAiMetadataFromPng, extractNovelAiStealthMetadataFromRgba } from './pngMetadata.mjs';
+import { beginExportTarget, saveExportBlob } from './exportLocation';
 
 export const IMAGE_SHARING_STORAGE_KEY = 'nai_clean_shared_images';
 export const IMAGE_SHARING_TEXT_STORAGE_KEY = 'nai_shared_image_custom_text';
@@ -300,25 +301,9 @@ export const imageSharingFilename = (filename: string, blob: Blob, clean: boolea
 };
 
 export const downloadSharedImage = async (source: string, filename: string, clean = getCleanSharedImages()) => {
+  const target = beginExportTarget();
   const blob = await prepareImage(source, clean, false, getSharedImageCustomText(), getSharedImageCleanContent());
-  const { isAndroidApp } = await import('./platform');
-  if (isAndroidApp()) {
-    const { native, writeBlob } = await import('../mobile/native');
-    const path = await writeBlob(blob, `share/${crypto.randomUUID()}.${blob.type === 'image/jpeg' ? 'jpg' : blob.type === 'image/webp' ? 'webp' : 'png'}`);
-    await native.share({ action: 'download', path, mime: blob.type, filename: imageSharingFilename(filename, blob, clean) });
-    return;
-  }
-  const url = URL.createObjectURL(blob);
-  try {
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = imageSharingFilename(filename, blob, clean);
-    document.body.appendChild(anchor);
-    try { anchor.click(); } finally { anchor.remove(); }
-  } finally {
-    // 移动浏览器需要时间接管下载，不能在 click 后立即撤销。
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-  }
+  await saveExportBlob(blob, imageSharingFilename(filename, blob, clean), target);
 };
 
 export const copySharedImage = async (source: string, clean = getCleanSharedImages(), data?: ImageGenerationData) => {

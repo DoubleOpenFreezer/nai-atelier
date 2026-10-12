@@ -4,6 +4,7 @@ import { Download, Upload, Database, ExternalLink } from 'lucide-react';
 import { native } from '../mobile/native';
 import { useConfirmDialog } from './ConfirmDialog';
 import { TagDictionaryUpdater } from './TagDictionaryUpdater';
+import { StorageLocationManager } from './StorageLocationManager';
 import {clearMobileThumbnailCache,getMobileCacheStats,setMobileCacheLimitMb,refreshMobileCacheMetadata} from '../services/mobileImageCache';
 
 export function AndroidStorageManager({ notify }: { notify: (message: string, type?: 'success' | 'error') => void }) {
@@ -16,10 +17,11 @@ export function AndroidStorageManager({ notify }: { notify: (message: string, ty
   useEffect(()=>{const refresh=()=>setCache(getMobileCacheStats());void refreshMobileCacheMetadata().then(setCache);window.addEventListener('nai-mobile-cache-changed',refresh);return()=>window.removeEventListener('nai-mobile-cache-changed',refresh);},[]);
   const perform = async (label: string, work: () => Promise<void>) => {
     setBusy(label);
-    try { await work(); } catch (error) { notify(error instanceof Error ? error.message : '手机存储操作失败', 'error'); }
+    try { await work(); } catch (error) { if (error instanceof Error && (error.name === 'AbortError' || error.message === '已取消保存')) return; notify(error instanceof Error ? error.message : '手机存储操作失败', 'error'); }
     finally { setBusy(''); }
   };
   return <div className="space-y-5">
+    <div className="border-b border-gray-200 pb-5 dark:border-gray-700"><StorageLocationManager notify={notify} /></div>
     <div className="border-b border-gray-200 pb-5 dark:border-gray-700">
       <h4 className="flex items-center gap-2 font-semibold"><Database className="h-4 w-4 text-indigo-500" />{t("手机数据")}</h4>
       <p className="mt-2 text-xs leading-5 text-gray-500 dark:text-gray-400">{t("资料、历史和原图保存在本机。卸载应用会删除这些资料，卸载或换机前请导出备份。")}</p>

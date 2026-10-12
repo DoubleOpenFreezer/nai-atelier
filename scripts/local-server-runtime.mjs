@@ -104,7 +104,7 @@ export const reserveLocalLauncher = async (projectDir, port = LOCAL_LAUNCHER_POR
     res.setHeader('Connection', 'close');
     res.setHeader('Cache-Control', 'no-store');
     if (req.method !== 'GET' || req.url !== launcherPath) { res.writeHead(404).end(); return; }
-    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
     res.end(JSON.stringify({ app: launcherMarker, projectDir: resolve(projectDir), pid: process.pid, phase }));
   });
   await new Promise((ready, reject) => {

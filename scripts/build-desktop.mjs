@@ -9,7 +9,7 @@ export const NODE_RUNTIME_VERSION = '24.19.0';
 export const PUBLIC_ICONS = ['nai-atelier.ico', 'app-icon.ico', 'app-icon.png', 'artist-palette-3d.ico', 'artist-palette-3d.png'];
 // 明确列出公开运行文件，禁止将开发目录中的新增文件自动带入分发包。
 export const RUNTIME_FILES = [
-  ...['agent-web', 'agent-ui-bridge', 'agent-runtime', 'agent-page-tools', 'agent-local-images', 'collector-download', 'danbooru-loading', 'desktop-launcher', 'generation-gateway', 'generation-output', 'image-tagger', 'local-backup', 'local-server', 'local-server-runtime', 'media-gateway', 'media-memory-cache', 'novelai-agent-knowledge', 'pixiv-local', 'pixiv-scheme-handler', 'pixiv-web-login', 'prompt-agent', 'st-chatu8-bridge', 'style-collector', 'tag-update-server', 'tagger-model-download', 'update-tag-dictionary'].map(name => `scripts/${name}.mjs`),
+  ...['agent-web', 'agent-ui-bridge', 'agent-runtime', 'agent-page-tools', 'agent-local-images', 'collector-download', 'danbooru-loading', 'desktop-launcher', 'export-locations', 'storage-locations', 'generation-gateway', 'generation-output', 'image-tagger', 'local-backup', 'local-server', 'local-server-runtime', 'media-gateway', 'media-memory-cache', 'novelai-agent-knowledge', 'pixiv-local', 'pixiv-scheme-handler', 'pixiv-web-login', 'prompt-agent', 'st-chatu8-bridge', 'style-collector', 'tag-update-server', 'tagger-model-download', 'update-tag-dictionary'].map(name => `scripts/${name}.mjs`),
   'scripts/style-collector-window.ps1', 'scripts/style-collector-window.cs', 'scripts/pixiv-edge-callback-watcher.ps1', 'scripts/pixiv-login-complete.html',
   ...['agentOperation', 'agentLabSync', 'agentConnection', 'danbooruErrors', 'agentThinking', 'imageTaggerModels', 'transparentBackground', 'pngMetadata'].map(name => `services/${name}.mjs`),
   ...['stChatu8Policy', 'sharedWhitelist', 'imageDimensions', 'cloudQueueNumbers', 'cloudQueueTarget', 'naiBilling', 'generationTasks', 'generationJobs', 'codexRemote'].map(name => `worker/${name}.mjs`),
@@ -19,6 +19,11 @@ export const RUNTIME_FILES = [
   ...PUBLIC_ICONS.map(name => `public/${name}`),
 ];
 export const DESKTOP_FILES = ['main.mjs', 'preload.cjs', 'startup.html', 'startup.js', 'app-updater.mjs'];
+export const DESKTOP_SCRIPT_FILES = ['desktop-runtime.mjs', 'storage-locations.mjs', 'export-locations.mjs'];
+export async function copyDesktopScripts(appRoot) {
+  await mkdir(join(appRoot, 'scripts'), { recursive: true });
+  for (const file of DESKTOP_SCRIPT_FILES) await copyFile(new URL(file, import.meta.url), join(appRoot, 'scripts', file));
+}
 // 前端依赖已经编译到 dist；只为实际运行的 Node 脚本安装这些直接依赖。
 export const RUNTIME_DEPENDENCIES = ['@earendil-works/pi-agent-core', '@earendil-works/pi-ai', 'fast-png', 'jszip', 'onnxruntime-node', 'sharp', 'undici'];
 export const sameDependencies = (left, right) => Object.keys(left).length === Object.keys(right).length && Object.entries(left).every(([name, version]) => right[name] === version);
@@ -196,8 +201,7 @@ export async function buildDesktop({ unpacked = false, skipInstall = false } = {
   await run(join(runtime, 'node.exe'), ['--no-warnings', '--input-type=module', '-e', "const sharp=(await import('sharp')).default; const ort=await import('onnxruntime-node'); await import('@earendil-works/pi-agent-core'); for(const api of ['openai-completions','openai-responses','anthropic-messages']) await import('@earendil-works/pi-ai/api/'+api); await sharp({create:{width:2,height:2,channels:4,background:'#fff'}}).png().toBuffer(); console.log('运行依赖验证通过：Node '+process.version+', sharp, ONNX, Agent 与模型提供方');"], { cwd: runtime });
   await mkdir(join(appRoot, 'desktop'), { recursive: true });
   for (const file of DESKTOP_FILES) await copyFile(join(root, 'desktop', file), join(appRoot, 'desktop', file));
-  await mkdir(join(appRoot, 'scripts'), { recursive: true });
-  await copyFile(join(root, 'scripts', 'desktop-runtime.mjs'), join(appRoot, 'scripts', 'desktop-runtime.mjs'));
+  await copyDesktopScripts(appRoot);
   await mkdir(join(appRoot, 'services'), { recursive: true });
   await copyFile(join(root, 'services/appReleases.mjs'), join(appRoot, 'services/appReleases.mjs'));
   await mkdir(join(appRoot, 'locales'), { recursive: true });

@@ -6,6 +6,8 @@ import { ImageTaggerModelManager } from './ImageTaggerModelManager';
 import { setCleanSharedImages, useCleanSharedImages, setSharedImageCustomText, useSharedImageCustomText, setSharedImageCleanContent, useSharedImageCleanContent } from '../services/imageSharing';
 import { copyTagText } from '../services/externalImageTags';
 import { DataBackupManager } from './DataBackupManager';
+import { StorageLocationManager } from './StorageLocationManager';
+import { beginExportTarget } from '../services/exportLocation';
 import { DesktopLauncherManager } from './DesktopLauncherManager';
 import { AndroidStorageManager } from './AndroidStorageManager';
 import { isAndroidApp } from '../services/platform';
@@ -494,9 +496,10 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
   const activePresetId = appearancePreferences.activePresetId || 'builtin-default';
 
   const downloadJson = async (filename: string, data: unknown) => {
+    const target = beginExportTarget();
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const { downloadFile } = await import('../services/fileDownload');
-    await downloadFile(blob, filename);
+    return downloadFile(blob, filename, target);
   };
 
   const applyPreset = (preset: AppearancePreset) => {
@@ -578,8 +581,8 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
 
   const handleExportSinglePreset = async (preset: AppearancePreset) => {
     const filename = `nai-preset-${preset.name.toLowerCase().replace(/[^a-z0-9_\u4e00-\u9fa5]/gi, '_')}.json`;
-    try { await downloadJson(filename, [preset]); notify?.('已导出预设「' + preset.name + '」', 'success'); }
-    catch (error) { notify?.(error instanceof Error ? error.message : '预设导出失败', 'error'); }
+    try { const receipt = await downloadJson(filename, [preset]); notify?.(receipt.browserDownload ? '已交给浏览器下载' : '已导出预设「' + preset.name + '」', 'success'); }
+    catch (error) { if (error instanceof DOMException && error.name === 'AbortError') return; notify?.(error instanceof Error ? error.message : '预设导出失败', 'error'); }
   };
 
   const handleExportAllPresets = async () => {
@@ -587,13 +590,13 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
       notify?.('暂无自定义预设可导出');
       return;
     }
-    try { await downloadJson(`nai-appearance-presets-${new Date().toISOString().slice(0, 10)}.json`, {
+    try { const receipt = await downloadJson(`nai-appearance-presets-${new Date().toISOString().slice(0, 10)}.json`, {
       version: 1,
       exportedAt: Date.now(),
       presets: customPresets,
     });
-    notify?.(`已导出 ${customPresets.length} 个自定义预设`, 'success'); }
-    catch (error) { notify?.(error instanceof Error ? error.message : '预设导出失败', 'error'); }
+    notify?.(receipt.browserDownload ? '已交给浏览器下载' : `已导出 ${customPresets.length} 个自定义预设`, 'success'); }
+    catch (error) { if (error instanceof DOMException && error.name === 'AbortError') return; notify?.(error instanceof Error ? error.message : '预设导出失败', 'error'); }
   };
 
   const handleImportPresets = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -1337,6 +1340,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
 
           <section id="settings-maintenance" className={`rounded-xl border border-gray-200 p-4 dark:border-gray-700 ${activeSection !== 'maintenance' ? 'hidden' : ''}`}>
             {activeSection === 'maintenance' && (isAndroidApp() ? <AndroidStorageManager notify={notify} /> : <div className="space-y-5">
+              <div className="border-b border-gray-200 pb-5 dark:border-gray-700"><StorageLocationManager notify={notify} /></div>
               {/* 本地数据备份与还原 */}
               <div className="border-b border-gray-200 pb-5 dark:border-gray-700">
                 <DataBackupManager notify={notify} />

@@ -16,6 +16,7 @@ export const native = registerPlugin<{
   openUrl(options: Reply): Promise<void>;
   backgroundJob(options: { action: 'retain' | 'release' | 'reset'; id?: string }): Promise<{ active: number }>;
   saveFile(options: Reply): Promise<void>;
+  exportLocation(options: Reply): Promise<Reply>;
   backup(options: Reply): Promise<Reply>;
   respond(options: Reply): Promise<void>;
   addListener(event: string, callback: (event: Reply) => void): Promise<PluginListenerHandle>;

@@ -14,6 +14,7 @@ import { useAgentRuntimeRecheck } from './useAgentRuntimeRecheck';
 import type { AgentDisplayPreferences } from '../services/agentDisplayPreferences';
 import type { PromptAgentEvent, PromptAgentTask } from '../services/promptAgent';
 import { appearanceScrollBehavior } from '../services/appearancePreferences';
+import { beginExportTarget } from '../services/exportLocation';
 import { isTopmostModal } from './useModalA11y';
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -572,12 +573,14 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     setExportingLog(true);
     setLogExportError('');
     try {
+      const exportTarget = beginExportTarget();
       const log = await promptAgentService.getAuditLog(activeSessionId);
       const blob = new Blob([`${JSON.stringify(log, null, 2)}\n`], { type: 'application/json;charset=utf-8' });
       const title = (activeSession?.title || 'agent').replace(/[\\/:*?"<>|]/g, '_').slice(0, 36);
       const { downloadFile } = await import('../services/fileDownload');
-      await downloadFile(blob, `nai-agent-log-${title || 'session'}-${new Date().toISOString().replace(/[:.]/g, '-')}.json`);
+      await downloadFile(blob, `nai-agent-log-${title || 'session'}-${new Date().toISOString().replace(/[:.]/g, '-')}.json`, exportTarget);
     } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return;
       setLogExportError(error instanceof Error ? error.message : '导出日志失败');
     } finally {
       setExportingLog(false);

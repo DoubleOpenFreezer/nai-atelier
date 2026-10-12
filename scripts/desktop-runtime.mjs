@@ -1,16 +1,26 @@
 import { access, copyFile, cp, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
-import { isAbsolute, join, relative, resolve } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 
 export const DESKTOP_APP_ID = 'com.naiatelier.desktop';
 
+export async function pickDesktopDirectory(dialog, window, initialPath = '') {
+  if (!window || window.isDestroyed()) throw new Error('工坊窗口已关闭，请重新打开后选择文件夹');
+  window.show(); window.focus();
+  const result = await dialog.showOpenDialog(window, { properties: ['openDirectory'], ...(initialPath ? { defaultPath: initialPath } : {}) });
+  const path = result.cancelled ? '' : result.filePaths[0] || '';
+  return { path, cancelled: !path };
+}
+
 /** 安装目录只读，工作区独立持久化；不自动接管源码部署的数据。 */
-export async function prepareDesktopWorkspace(runtimeRoot, dataRoot) {
+export async function prepareDesktopWorkspace(runtimeRoot, dataRoot, installRoot = runtimeRoot) {
   const runtime = resolve(runtimeRoot);
   if (!isAbsolute(dataRoot)) throw new Error('应用数据目录必须为绝对路径');
   const data = resolve(dataRoot);
   const distance = relative(runtime, data);
   if (!distance || (!distance.startsWith('..') && !isAbsolute(distance))) throw new Error('应用数据目录不能位于程序运行目录内');
+  const installDistance = relative(resolve(installRoot), data);
+  if (!installDistance || (!installDistance.startsWith('..') && !isAbsolute(installDistance))) throw new Error('应用数据目录不能位于程序安装目录内');
   const workspace = join(data, 'workspace');
   const marker = join(workspace, 'desktop-workspace.json');
   let previous;
@@ -19,7 +29,9 @@ export async function prepareDesktopWorkspace(runtimeRoot, dataRoot) {
   if (previous && previous.appId !== DESKTOP_APP_ID) throw new Error('该工作区属于其他应用，已保留原文件');
   if (!previous) {
     const entries = await readdir(workspace).catch(error => { if (error.code === 'ENOENT') return []; throw error; });
-    if (entries.length) throw new Error('数据目录已有未识别的工作区，已保留原文件');
+    const storageMarker = entries.includes('atelier-storage-workspace.json')
+      ? await readFile(join(workspace, 'atelier-storage-workspace.json'), 'utf8').then(JSON.parse).catch(() => null) : null;
+    if (entries.length && storageMarker?.app !== 'nai-atelier') throw new Error('数据目录已有未识别的工作区，已保留原文件');
   }
   await access(join(runtime, 'node.exe'));
   await access(join(runtime, 'dist', '_worker.js'));
@@ -51,7 +63,7 @@ export async function findDesktopPorts({ preferred = 3000, available = isPortFre
   throw new Error('无法找到可用的本机服务端口，请关闭冲突程序后重试');
 }
 
-export function desktopServerOptions({ runtimeRoot, workspace, executable, ports, documents, env = process.env }) {
+export function desktopServerOptions({ runtimeRoot, workspace, executable, ports, documents, downloads, storageAnchor, dataRoot, installRoot, env = process.env }) {
   const inherited = Object.fromEntries(Object.entries(env).filter(([key]) => !/^NAI_|^NODE_OPTIONS$|^ELECTRON_RUN_AS_NODE$/i.test(key)));
   return {
     command: join(runtimeRoot, 'node.exe'),
@@ -60,9 +72,12 @@ export function desktopServerOptions({ runtimeRoot, workspace, executable, ports
       cwd: workspace, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
       env: {
         ...inherited, NAI_PACKAGED: '1', NAI_APP_ROOT: runtimeRoot,
+        NAI_STORAGE_ANCHOR: storageAnchor || dirname(workspace), NAI_STORAGE_DATA_ROOT: dataRoot || dirname(workspace),
+        NAI_STORAGE_INSTALL_ROOT: installRoot || runtimeRoot,
         NAI_NO_BROWSER: '1', NAI_NO_DESKTOP_SHORTCUT: '1',
         NAI_DESKTOP_EXECUTABLE: executable,
         NAI_BACKUP_DEFAULT_DIR: join(documents, 'NAI Atelier Backups'),
+        NAI_EXPORT_SYSTEM_DIR: downloads || '',
         NAI_GATEWAY_PORT: String(ports.gateway), NAI_WORKER_PORT: String(ports.worker),
         NAI_TAG_UPDATE_PORT: String(ports.tagUpdate), NAI_LAUNCHER_PORT: String(ports.launcher),
         NAI_GATEWAY_URL: `http://127.0.0.1:${ports.gateway}`,

@@ -4,6 +4,7 @@ import { encode } from 'fast-png';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { copySharedImage, downloadSharedImage, getSharedImageCustomText, setCleanSharedImages, setSharedImageCustomText, getSharedImageCleanContent, setSharedImageCleanContent, IMAGE_SHARING_CONTENT_STORAGE_KEY } from '../../services/imageSharing';
 import { extractNovelAiMetadataFromPng } from '../../services/metadataService';
+import * as exportLocation from '../../services/exportLocation';
 
 class TestClipboardItem {
   constructor(public data: Record<string, Promise<Blob>>) {}
@@ -15,6 +16,7 @@ let created: Blob[];
 let filenames: string[];
 
 beforeEach(() => {
+  vi.stubGlobal('location', { hostname: 'access-device.invalid' });
   localStorage.clear();
   created = []; filenames = [];
   vi.stubGlobal('Blob', NativeBlob);
@@ -29,6 +31,15 @@ beforeEach(() => {
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers(); });
 
 describe('分享输出与剪贴板', () => {
+  it('指定导出目的地收到清洗副本，原图不变，真实写入失败向上传递', async () => {
+    let received!: Blob;
+    const save = vi.spyOn(exportLocation, 'saveExportBlob').mockImplementation(async blob => { received = blob; throw new Error('synthetic disk full'); });
+    await expect(downloadSharedImage('/image', 'NAI.png', true)).rejects.toThrow('synthetic disk full');
+    expect(save).toHaveBeenCalledWith(received, 'NAI-分享版.png', undefined);
+    expect(await extractNovelAiMetadataFromPng(await received.arrayBuffer())).toBeNull();
+    expect(await extractNovelAiMetadataFromPng(await original.arrayBuffer())).toContain('private style');
+    expect(created).toHaveLength(0);
+  });
   it('清洗内容缺省、非法值和读取失败均为全部，关闭清洗保留偏好', () => {
     expect(getSharedImageCleanContent()).toBe('all');
     localStorage.setItem(IMAGE_SHARING_CONTENT_STORAGE_KEY, 'invalid');

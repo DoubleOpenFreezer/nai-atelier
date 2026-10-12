@@ -8,7 +8,7 @@ import { createInterface } from 'node:readline';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PACKAGED = process.env.NAI_PACKAGED === '1';
 const WORKSPACE = PACKAGED ? process.cwd() : ROOT;
-const MANIFEST_FILE = path.join(WORKSPACE, 'public', 'tag-data', 'manifest.json');
+const MANIFEST_FILE = path.join(process.env.NAI_TAG_DATA_DIR || path.join(WORKSPACE, 'public', 'tag-data'), 'manifest.json');
 const UPDATE_SCRIPT = path.join(ROOT, 'scripts', 'update-tag-dictionary.mjs');
 const HOST = '127.0.0.1';
 const PORT = Number(process.env.NAI_TAG_UPDATE_PORT || 3002);

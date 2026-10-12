@@ -2,6 +2,7 @@ import { VibeAsset, VibeGroup, VibeSelection } from '../types';
 import { api, parseErrorResponse, reportNaiAccountingError } from './api';
 import { ANLAS_BUDGET_CHANGED_EVENT, hashNaiApiKey } from './anlasBudget';
 import { NOVELAI_USAGE_REFRESH_EVENT } from './naiUsage';
+import { beginExportTarget } from './exportLocation';
 
 const fileToText = (file: File) => new Promise<string>((resolve, reject) => {
   const reader = new FileReader();
@@ -76,10 +77,11 @@ export const vibeService = {
     api.put(`/vibes/${encodeURIComponent(id)}`, { name, defaultStrength }),
 
   download: async (asset: VibeAsset) => {
+    const exportTarget = beginExportTarget();
     const response = await fetch(`/api/vibes/${encodeURIComponent(asset.id)}/file`);
     if (!response.ok) return await responseError(response);
     const { downloadFile } = await import('./fileDownload');
-    await downloadFile(await response.blob(), `${asset.name}.naiv4vibe`);
+    await downloadFile(await response.blob(), `${asset.name}.naiv4vibe`, exportTarget);
   },
 
   listGroups: async (): Promise<VibeGroup[]> => (await api.get('/vibe-groups')).items || [],

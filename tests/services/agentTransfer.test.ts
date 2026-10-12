@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from 'vitest';
-import { captureAgentExports, copyAgentImage, getAgentCopiedImage, getAgentExport, getAgentExports } from '../../services/agentTransfer';
+import { captureAgentExport, captureAgentExports, copyAgentImage, getAgentCopiedImage, getAgentExport, getAgentExports } from '../../services/agentTransfer';
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 it('暂存原图使用相对原图路径，保留字节并拒绝伪图片', async () => {
   const image = document.createElement('img'); image.src = '/thumbnail.webp'; image.dataset.agentOriginalSrc = '/original.png';
@@ -22,4 +22,13 @@ it('仅记录实际下载产物，恢复原生函数且内存副本有界', () =
   const items = getAgentExports(); expect(items).toHaveLength(4); expect(items.at(-1)?.name).toBe('preset-5.json');
   expect(getAgentExport(items[0].id).blob.size).toBe(2); expect(click).toHaveBeenCalledTimes(6);
   stop(); expect(URL.createObjectURL).toBe(original); expect(HTMLAnchorElement.prototype.click).toBe(click);
+});
+it('原生导出可提供实际副本，普通操作不捕获，同一产物不重复记录', () => {
+  vi.stubGlobal('URL', class extends URL { static createObjectURL = vi.fn(() => 'blob:synthetic'); });
+  const before = getAgentExports().length, blob = new Blob(['native-copy']);
+  captureAgentExport(blob, 'normal.png');expect(getAgentExports()).toHaveLength(before);
+  const stop = captureAgentExports();
+  try {captureAgentExport(blob, 'native.png');captureAgentExport(blob, 'native.png');expect(getAgentExports().filter(item=>item.name==='native.png')).toHaveLength(1);}
+  finally {stop();}
+  expect(getAgentExport(getAgentExports().at(-1)!.id).blob).toBe(blob);
 });
