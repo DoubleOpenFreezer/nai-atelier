@@ -666,6 +666,8 @@ const App = () => {
           tagAssistEnabled={appearancePreferences.tagAssistEnabled}
           onTagAssistEnabledChange={enabled => setAppearancePreferences(current => ({ ...current, tagAssistEnabled: enabled }))}
           generationStreamPreview={appearancePreferences.generationStreamPreview}
+          rememberGenerationSettings={appearancePreferences.rememberGenerationSettings}
+          generationMemory={appearancePreferences.generationMemory}
           forceEmptySeed={appearancePreferences.forceEmptySeed}
           onForceEmptySeedChange={enabled => setAppearancePreferences(current => ({ ...current, forceEmptySeed: enabled }))}
           enforceFreeStepLimit={appearancePreferences.enforceFreeStepLimit}
@@ -744,6 +746,8 @@ const App = () => {
           tagAssistEnabled={appearancePreferences.tagAssistEnabled}
           onTagAssistEnabledChange={enabled => setAppearancePreferences(current => ({ ...current, tagAssistEnabled: enabled }))}
           generationStreamPreview={appearancePreferences.generationStreamPreview}
+          rememberGenerationSettings={appearancePreferences.rememberGenerationSettings}
+          generationMemory={appearancePreferences.generationMemory}
           forceEmptySeed={appearancePreferences.forceEmptySeed}
           onForceEmptySeedChange={enabled => setAppearancePreferences(current => ({ ...current, forceEmptySeed: enabled }))}
           enforceFreeStepLimit={appearancePreferences.enforceFreeStepLimit}

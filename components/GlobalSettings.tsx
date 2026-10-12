@@ -485,6 +485,8 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
       themeMode,
       tagAssistEnabled: appearancePreferences.tagAssistEnabled,
       continuousGenerationEnabled: appearancePreferences.continuousGenerationEnabled,
+      rememberGenerationSettings: appearancePreferences.rememberGenerationSettings,
+      generationMemory: appearancePreferences.generationMemory,
       labModuleOrder: appearancePreferences.labModuleOrder,
       labModuleCollapsed: appearancePreferences.labModuleCollapsed,
       labPageLayouts: appearancePreferences.labPageLayouts,
@@ -988,6 +990,29 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
           </section>
           <section id={`settings-generation`} className={`rounded-xl border border-gray-200 p-4 dark:border-gray-700 ${activeSection !== 'generation' ? 'hidden' : ''}`}>
             {activeSection === 'generation' && <div className="space-y-3">
+              <div className="rounded-xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900">
+                <button type="button" role="switch" aria-checked={appearancePreferences.rememberGenerationSettings} aria-label={t("记住上次生图设置")} onClick={() => updateAppearance({ rememberGenerationSettings: !appearancePreferences.rememberGenerationSettings })} className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left transition hover:text-indigo-700 dark:hover:text-indigo-300">
+                  <span className="min-w-0">
+                    <b className="block text-xs text-gray-800 dark:text-gray-100">{t("记住上次生图设置")}</b>
+                  </span>
+                  <span aria-hidden="true" className={`relative h-6 w-11 flex-none rounded-full transition-colors ${appearancePreferences.rememberGenerationSettings ? 'bg-indigo-500' : 'bg-gray-300 dark:bg-gray-700'}`}><span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${appearancePreferences.rememberGenerationSettings ? 'translate-x-5' : 'translate-x-0'}`} /></span>
+                </button>
+                {appearancePreferences.rememberGenerationSettings && <div className="border-t border-gray-100 px-3 py-3 dark:border-gray-800">
+                  <div className="flex flex-wrap gap-2 text-xs text-gray-700 dark:text-gray-300">
+                  {([
+                    ['parameters', '参数设置'],
+                    ['globalPrompt', '全局正向提示词'],
+                    ['negativePrompt', '全局负面提示词'],
+                    ['characterPrompt', '角色正向提示词'],
+                    ['characterNegativePrompt', '角色负面提示词'],
+                  ] as const).map(([field, label]) => <label key={field} className={`inline-flex w-fit cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 py-2 transition-colors ${appearancePreferences.generationMemory[field] ? 'border-indigo-300 bg-indigo-50 text-indigo-700 dark:border-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-200' : 'border-gray-200 bg-gray-50/70 text-gray-600 hover:border-gray-300 dark:border-gray-700 dark:bg-gray-800/50 dark:text-gray-300 dark:hover:border-gray-600'}`}>
+                    <input type="checkbox" checked={appearancePreferences.generationMemory[field]} onChange={event => updateAppearance({ generationMemory: { ...appearancePreferences.generationMemory, [field]: event.currentTarget.checked } })} className="h-3.5 w-3.5 flex-none rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-800" />
+                    <span className="whitespace-nowrap">{t(label)}</span>
+                  </label>)}
+                  </div>
+                  <p className="mt-2 text-micro leading-4 text-gray-500 dark:text-gray-400">{t("重启后仅恢复勾选的内容。不影响当前输入或已保存的预设。")}</p>
+                </div>}
+              </div>
               <button type="button" onClick={() => updateAppearance({ generationStreamPreview: !appearancePreferences.generationStreamPreview })} aria-pressed={appearancePreferences.generationStreamPreview} className="flex w-full items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-left transition hover:border-indigo-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-indigo-700">
                 <span className="min-w-0"><b className="block text-xs text-gray-800 dark:text-gray-100">{t("生成过程预览")}</b></span>
                 <span className={`relative h-6 w-11 flex-none rounded-full transition-colors ${appearancePreferences.generationStreamPreview ? 'bg-indigo-500' : 'bg-gray-300 dark:bg-gray-700'}`}><span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${appearancePreferences.generationStreamPreview ? 'translate-x-5' : 'translate-x-0'}`} /></span>

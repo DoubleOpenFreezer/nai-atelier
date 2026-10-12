@@ -17,6 +17,22 @@ export interface LabPageLayout {
 }
 export type LabPageLayouts = Record<LabPageId, LabPageLayout>;
 
+export interface GenerationMemoryPreferences {
+  parameters: boolean;
+  globalPrompt: boolean;
+  negativePrompt: boolean;
+  characterPrompt: boolean;
+  characterNegativePrompt: boolean;
+}
+
+export const DEFAULT_GENERATION_MEMORY_PREFERENCES: GenerationMemoryPreferences = {
+  parameters: true,
+  globalPrompt: true,
+  negativePrompt: true,
+  characterPrompt: true,
+  characterNegativePrompt: true,
+};
+
 export const LAB_PAGE_IDS: LabPageId[] = ['text-to-image', 'image-to-image', 'inpaint', 'outpaint'];
 
 export const DEFAULT_LAB_MODULE_ORDER: LabModuleId[] = [
@@ -133,6 +149,10 @@ export interface AppearancePreferences {
   tagAssistEnabled: boolean;
   /** 在支持的模型上显示采样过程；这是当前设备的观看偏好，不写入风格串。 */
   generationStreamPreview: boolean;
+  /** 跨重启记住各工作台的文字与参数，不属于外观预设。 */
+  rememberGenerationSettings: boolean;
+  /** 跨重启记忆范围，与当前会话草稿和外观预设独立。 */
+  generationMemory: GenerationMemoryPreferences;
   /** 本端连续生成与排队偏好，不随 Key 且不属于外观预设。 */
   continuousGenerationEnabled: boolean;
   /** 强制清空随机种子；开启后在工坊与实验室中暂时忽略并留空随机种子（不修改预设保存的原值），关闭后恢复。 */
@@ -165,6 +185,8 @@ export const DEFAULT_APPEARANCE_PREFERENCES: AppearancePreferences = {
   gallerySelectionFocus: true,
   tagAssistEnabled: true,
   generationStreamPreview: false,
+  rememberGenerationSettings: true,
+  generationMemory: { ...DEFAULT_GENERATION_MEMORY_PREFERENCES },
   continuousGenerationEnabled: true,
   forceEmptySeed: false,
   enforceFreeStepLimit: true,
@@ -315,6 +337,15 @@ export const normalizeAppearancePreferences = (value: unknown): AppearancePrefer
     generationStreamPreview: typeof input.generationStreamPreview === 'boolean'
       ? input.generationStreamPreview
       : DEFAULT_APPEARANCE_PREFERENCES.generationStreamPreview,
+    rememberGenerationSettings: typeof input.rememberGenerationSettings === 'boolean'
+      ? input.rememberGenerationSettings
+      : DEFAULT_APPEARANCE_PREFERENCES.rememberGenerationSettings,
+    generationMemory: Object.fromEntries(Object.entries(DEFAULT_GENERATION_MEMORY_PREFERENCES).map(([key, defaultValue]) => [
+      key,
+      typeof input.generationMemory?.[key as keyof GenerationMemoryPreferences] === 'boolean'
+        ? input.generationMemory[key as keyof GenerationMemoryPreferences]
+        : defaultValue,
+    ])) as GenerationMemoryPreferences,
     continuousGenerationEnabled: typeof input.continuousGenerationEnabled === 'boolean'
       ? input.continuousGenerationEnabled
       : DEFAULT_APPEARANCE_PREFERENCES.continuousGenerationEnabled,

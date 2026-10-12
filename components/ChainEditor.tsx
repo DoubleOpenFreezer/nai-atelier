@@ -30,7 +30,7 @@ import { VibeManager } from './VibeManager';
 import { CharacterReferenceManager } from './CharacterReferenceManager';
 import { buildImageEditMetadataPatch, buildPromptFragmentPatch, canSaveLabModeToLibrary } from '../services/labModeTools';
 import { normalizeVibeSelections } from '../services/vibeUtils';
-import { LabPageLayouts } from '../services/appearancePreferences';
+import { DEFAULT_GENERATION_MEMORY_PREFERENCES, type GenerationMemoryPreferences, type LabPageLayouts } from '../services/appearancePreferences';
 import { isActiveOpusSubscription, useNovelaiUsage } from '../services/naiUsage';
 import { applyNaiModelSettings, getRuntimeNaiModelInfo, isNaiMediumModel } from '../services/naiModels';
 import { estimateImageEditCost, estimateV45GenerationCost, applyEstimatorRuntime, formatGenerationCostLabel, useAnlasBudget } from '../services/anlasBudget';
@@ -71,12 +71,14 @@ interface ChainEditorProps {
     onForceEmptySeedChange?: (enabled: boolean) => void;
     enforceFreeStepLimit?: boolean;
     continuousGenerationEnabled?: boolean;
+    rememberGenerationSettings?: boolean;
+    generationMemory?: GenerationMemoryPreferences;
     labPageLayouts: LabPageLayouts;
     safeMode: boolean;
     onBack: () => void | Promise<void>;
 }
 
-export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUpdateChain, onFork, onCreateCharacter, setIsDirty, saveRef, notify, externalImportToken, agentOpenToken, tagAssistEnabled, onTagAssistEnabledChange, generationStreamPreview, forceEmptySeed = false, onForceEmptySeedChange, enforceFreeStepLimit = true, continuousGenerationEnabled = true, labPageLayouts, safeMode, onBack }) => {
+export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUpdateChain, onFork, onCreateCharacter, setIsDirty, saveRef, notify, externalImportToken, agentOpenToken, tagAssistEnabled, onTagAssistEnabledChange, generationStreamPreview, forceEmptySeed = false, onForceEmptySeedChange, enforceFreeStepLimit = true, continuousGenerationEnabled = true, rememberGenerationSettings = true, generationMemory = DEFAULT_GENERATION_MEMORY_PREFERENCES, labPageLayouts, safeMode, onBack }) => {
   useLanguage();
     const [keyboardOffset, setKeyboardOffset] = useState(0);
     const confirmAction = useConfirmDialog();
@@ -236,7 +238,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     for (const draft of Object.values(workspaceFallback.edits)) {
         draft.prompt = compilePrompt(chain, String(chain.variableValues?.subject || ''));
     }
-    const [workspaceSession, setWorkspaceSession] = useState<LabWorkspaceSession>(() => openLabWorkspaceSession(workspaceKey, workspaceFallback));
+    const [workspaceSession, setWorkspaceSession] = useState<LabWorkspaceSession>(() => openLabWorkspaceSession(workspaceKey, workspaceFallback, rememberGenerationSettings, generationMemory));
     const [imageEditMaskData, setImageEditMaskData] = useState<string | undefined>();
   const imageEditGenerateFnRef = useRef<(() => void) | null>(null);
   const imageEditQueueFnRef = useRef<((placement: GenerationPlacement) => void) | null>(null);
@@ -471,7 +473,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         setGeneratedImage(null);
         clearPresetSources();
 
-        const storedWorkspace = openLabWorkspaceSession(workspaceKey, workspaceFallback);
+        const storedWorkspace = openLabWorkspaceSession(workspaceKey, workspaceFallback, rememberGenerationSettings, generationMemory);
         workspaceInitializedKeyRef.current = workspaceKey;
         workspaceSyncBlockedRef.current = true;
         setWorkspaceSession(storedWorkspace);
@@ -642,10 +644,13 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         setFinalPrompt(compiled);
     }, [basePrompt, modules, activeModules, subjectPrompt]);
 
+    const workspaceMemoryFailedRef = useRef(false);
     useEffect(() => {
         if (workspaceInitializedKeyRef.current !== workspaceKey) return;
-        saveLabWorkspaceSession(workspaceKey, workspaceSession);
-    }, [workspaceKey, workspaceSession]);
+        const saved = saveLabWorkspaceSession(workspaceKey, workspaceSession, rememberGenerationSettings, generationMemory);
+        if (!saved && !workspaceMemoryFailedRef.current) notify('无法记住生图设置，本次草稿仍保留，请检查浏览器存储空间。', 'error');
+        workspaceMemoryFailedRef.current = !saved;
+    }, [workspaceKey, workspaceSession, rememberGenerationSettings, generationMemory, notify]);
 
     useEffect(() => {
         const references = Object.values(workspaceSession.edits).flatMap(edit => [edit.baseImageRef, edit.maskRef].filter((value): value is string => Boolean(value)));

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   DEFAULT_APPEARANCE_PREFERENCES,
+  DEFAULT_GENERATION_MEMORY_PREFERENCES,
   DEFAULT_LAB_MODULE_COLLAPSED,
   DEFAULT_LAB_PAGE_LAYOUTS,
   loadAppearancePreferences,
@@ -41,6 +42,28 @@ describe('appearance preferences', () => {
     expect(normalizeAppearancePreferences({}).continuousGenerationEnabled).toBe(true);
   });
 
+  it('旧偏好默认记住生图设置，关闭后重载仍保持关闭且不进入外观预设', () => {
+    expect(loadAppearancePreferences().rememberGenerationSettings).toBe(true);
+    expect(normalizeAppearancePreferences({ rememberGenerationSettings: 'false' }).rememberGenerationSettings).toBe(true);
+    saveAppearancePreferences({ ...DEFAULT_APPEARANCE_PREFERENCES, rememberGenerationSettings: false });
+    expect(loadAppearancePreferences().rememberGenerationSettings).toBe(false);
+    expect(validateAppearancePreset({ name: '主题', rememberGenerationSettings: true })).not.toHaveProperty('rememberGenerationSettings');
+  });
+
+  it('旧记忆默认保留全部内容，缺失或无效的范围分别补默认', () => {
+    expect(loadAppearancePreferences().generationMemory).toEqual(DEFAULT_GENERATION_MEMORY_PREFERENCES);
+    expect(normalizeAppearancePreferences({ generationMemory: { globalPrompt: false, parameters: null } }).generationMemory)
+      .toEqual({ ...DEFAULT_GENERATION_MEMORY_PREFERENCES, globalPrompt: false });
+    expect(normalizeAppearancePreferences({ generationMemory: null }).generationMemory).toEqual(DEFAULT_GENERATION_MEMORY_PREFERENCES);
+  });
+
+  it('记忆范围独立保存，关闭主开关后重载不丢选择，也不写入外观预设', () => {
+    const generationMemory = { parameters: true, globalPrompt: false, negativePrompt: false, characterPrompt: false, characterNegativePrompt: false };
+    saveAppearancePreferences({ ...DEFAULT_APPEARANCE_PREFERENCES, rememberGenerationSettings: false, generationMemory });
+    expect(loadAppearancePreferences()).toMatchObject({ rememberGenerationSettings: false, generationMemory });
+    expect(validateAppearancePreset({ name: '主题', generationMemory })).not.toHaveProperty('generationMemory');
+  });
+
   it('关闭连续生成后保存并重载仍保持关闭', () => {
     saveAppearancePreferences({
       ...DEFAULT_APPEARANCE_PREFERENCES,
@@ -64,6 +87,7 @@ describe('appearance preferences', () => {
       gallerySelectionFocus: true,
       tagAssistEnabled: false,
       generationStreamPreview: true,
+      rememberGenerationSettings: false,
       continuousGenerationEnabled: false,
       forceEmptySeed: true,
       enforceFreeStepLimit: false,
@@ -91,6 +115,8 @@ describe('appearance preferences', () => {
       gallerySelectionFocus: true,
       tagAssistEnabled: false,
       generationStreamPreview: true,
+      rememberGenerationSettings: false,
+      generationMemory: DEFAULT_GENERATION_MEMORY_PREFERENCES,
       continuousGenerationEnabled: false,
       forceEmptySeed: true,
       enforceFreeStepLimit: false,

@@ -3,6 +3,7 @@ import { normalizeMinimumContextArea } from './imageEdit';
 import { getDefaultStepsForModel } from './naiModels';
 import { clampCharacterCoordinate } from './characterPrompts';
 import { normalizeTransparentWeight } from './transparentBackground.mjs';
+import { DEFAULT_GENERATION_MEMORY_PREFERENCES, type GenerationMemoryPreferences } from './appearancePreferences';
 
 const SESSION_PREFIX = 'nai-lab-workspace-v1:';
 const ASSET_DB_NAME = 'NAI_Lab_Workspace_DB';
@@ -139,53 +140,156 @@ const normalizeSession = (value: unknown, fallback: LabWorkspaceSession): LabWor
   };
 };
 
-export const loadLabWorkspaceSession = (key: string, fallback: LabWorkspaceSession): LabWorkspaceSession => {
+export const loadLabWorkspaceSession = (key: string, fallback: LabWorkspaceSession, rememberGenerationSettings = true, generationMemory = DEFAULT_GENERATION_MEMORY_PREFERENCES): LabWorkspaceSession => {
   if (typeof window === 'undefined') return fallback;
-  try {
-    const raw = window.sessionStorage.getItem(`${SESSION_PREFIX}${key}`);
-    return raw ? normalizeSession(JSON.parse(raw), fallback) : fallback;
-  } catch {
-    return fallback;
+  for (const storage of rememberGenerationSettings ? ['sessionStorage', 'localStorage'] as const : ['sessionStorage'] as const) {
+    try {
+      const raw = window[storage].getItem(`${SESSION_PREFIX}${key}`);
+      if (raw) {
+        const value = JSON.parse(raw);
+        if (!value || typeof value !== 'object' || (!value.textToImage && !value.edits)) continue;
+        return storage === 'localStorage' ? restoreLabWorkspaceMemory(value, fallback, generationMemory) : normalizeSession(value, fallback);
+      }
+    } catch {
+      // 损坏或不可用的会话存储仍可回退到文字／参数记忆。
+    }
   }
+  return fallback;
 };
 
-/** 自由实验室复开只恢复文字与参数；图片及其坐标状态属于本次打开，预设工作台仍完整恢复。 */
-export const openLabWorkspaceSession = (key: string, fallback: LabWorkspaceSession): LabWorkspaceSession => {
-  const session = loadLabWorkspaceSession(key, fallback);
-  if (key !== 'playground') return session;
-  return {
-    ...session,
-    edits: Object.fromEntries(Object.entries(session.edits).map(([operation, draft]) => [operation, {
-      ...draft,
-      baseImageRef: undefined,
-      baseImageSource: undefined,
-      parentHistoryId: undefined,
-      maskRef: undefined,
-      resultImageRef: undefined,
-      focusedRect: undefined,
-      appliedExpansion: undefined,
-      expansion: { ...emptyExpansion },
-      promptSource: draft.promptSource === 'history' ? 'current' : draft.promptSource,
-    }])) as LabWorkspaceSession['edits'],
+/** 重启只记住创作配置，不恢复旧图片及其关联几何；更新临时草稿沿用同一边界。 */
+export const getLabWorkspaceSettings = (session: LabWorkspaceSession): LabWorkspaceSession => ({
+  ...session,
+  edits: Object.fromEntries(Object.entries(session.edits).map(([operation, draft]) => [operation, {
+    ...draft,
+    baseImageRef: undefined,
+    baseImageSource: undefined,
+    parentHistoryId: undefined,
+    maskRef: undefined,
+    resultImageRef: undefined,
+    focusedRect: undefined,
+    appliedExpansion: undefined,
+    expansion: { ...emptyExpansion },
+    promptSource: draft.promptSource === 'history' ? 'current' : draft.promptSource,
+  }])) as LabWorkspaceSession['edits'],
+});
+
+/** 只写勾选的字段；角色 id／顺序用于词与参数配对，未选择的文本不进入持久副本。 */
+export const serializeLabWorkspaceMemory = (session: LabWorkspaceSession, memory: GenerationMemoryPreferences = DEFAULT_GENERATION_MEMORY_PREFERENCES): string => {
+  const selectParams = (params: Partial<NAIParams> = {}) => {
+    const { characters, ...settings } = params;
+    return {
+      ...(memory.parameters ? settings : {}),
+      ...((memory.parameters || memory.characterPrompt || memory.characterNegativePrompt) && Array.isArray(characters) ? {
+        characters: characters.map(({ id, prompt, negativePrompt, ...position }) => ({
+          id,
+          ...(memory.parameters ? position : {}),
+          ...(memory.characterPrompt ? { prompt } : {}),
+          ...(memory.characterNegativePrompt ? { negativePrompt } : {}),
+        })),
+      } : {}),
+    };
   };
+  const clean = getLabWorkspaceSettings(session);
+  return JSON.stringify({
+    version: clean.version,
+    updatedAt: clean.updatedAt,
+    ...(memory.parameters ? { activeMode: clean.activeMode } : {}),
+    textToImage: {
+      ...(memory.globalPrompt ? { basePrompt: clean.textToImage.basePrompt, subjectPrompt: clean.textToImage.subjectPrompt, activeModules: clean.textToImage.activeModules } : {}),
+      ...(memory.negativePrompt ? { negativePrompt: clean.textToImage.negativePrompt } : {}),
+      params: selectParams(clean.textToImage.params),
+    },
+    edits: Object.fromEntries(Object.entries(clean.edits).map(([operation, draft]) => {
+      const { prompt, negativePrompt, params, promptSource, ...settings } = draft;
+      return [operation, {
+        ...(memory.parameters ? settings : {}),
+        ...(memory.globalPrompt ? { prompt, promptSource } : {}),
+        ...(memory.negativePrompt ? { negativePrompt } : {}),
+        params: selectParams(params),
+      }];
+    })),
+  });
 };
 
-export const saveLabWorkspaceSession = (key: string, session: LabWorkspaceSession) => {
-  if (typeof window === 'undefined') return;
+const restoreLabWorkspaceMemory = (value: unknown, fallback: LabWorkspaceSession, memory: GenerationMemoryPreferences): LabWorkspaceSession => {
+  const source = value as Partial<LabWorkspaceSession>;
+  const restoreParams = (stored: NAIParams | undefined, defaults: NAIParams): NAIParams => {
+    const restored = normalizeParams(memory.parameters ? { ...defaults, ...stored } : defaults);
+    if (Array.isArray(stored?.characters) && (memory.parameters || memory.characterPrompt || memory.characterNegativePrompt)) {
+      restored.characters = stored.characters.map(character => {
+        const original = defaults.characters?.find(item => item.id === character.id);
+        return {
+          id: character.id,
+          x: memory.parameters ? character.x ?? original?.x ?? 0.5 : original?.x ?? 0.5,
+          y: memory.parameters ? character.y ?? original?.y ?? 0.5 : original?.y ?? 0.5,
+          enabled: memory.parameters && (character.x !== undefined || character.y !== undefined) ? character.enabled : original?.enabled,
+          prompt: memory.characterPrompt ? character.prompt ?? original?.prompt ?? '' : original?.prompt ?? '',
+          negativePrompt: memory.characterNegativePrompt ? character.negativePrompt ?? original?.negativePrompt : original?.negativePrompt,
+        };
+      });
+    }
+    return normalizeParams(restored);
+  };
+  return getLabWorkspaceSettings(normalizeSession({
+    version: 1,
+    updatedAt: source.updatedAt,
+    activeMode: memory.parameters ? source.activeMode ?? fallback.activeMode : fallback.activeMode,
+    textToImage: {
+      ...fallback.textToImage,
+      ...(memory.globalPrompt ? { basePrompt: source.textToImage?.basePrompt ?? fallback.textToImage.basePrompt,
+        subjectPrompt: source.textToImage?.subjectPrompt ?? fallback.textToImage.subjectPrompt,
+        activeModules: source.textToImage?.activeModules ?? fallback.textToImage.activeModules } : {}),
+      negativePrompt: memory.negativePrompt ? source.textToImage?.negativePrompt ?? fallback.textToImage.negativePrompt : fallback.textToImage.negativePrompt,
+      params: restoreParams(source.textToImage?.params, fallback.textToImage.params),
+    },
+    edits: Object.fromEntries(Object.entries(fallback.edits).map(([operation, original]) => {
+      const draft = source.edits?.[operation as ImageEditOperation];
+      return [operation, {
+        ...original,
+        ...(memory.parameters ? draft : {}),
+        prompt: memory.globalPrompt ? draft?.prompt ?? original.prompt : original.prompt,
+        promptSource: memory.globalPrompt ? draft?.promptSource ?? original.promptSource : original.promptSource,
+        negativePrompt: memory.negativePrompt ? draft?.negativePrompt ?? original.negativePrompt : original.negativePrompt,
+        params: restoreParams(draft?.params, original.params),
+      }];
+    })),
+  }, fallback));
+};
+
+/** 自由实验室复开只恢复文字与参数；预设工作台的本次会话仍完整恢复。 */
+export const openLabWorkspaceSession = (key: string, fallback: LabWorkspaceSession, rememberGenerationSettings = true, generationMemory = DEFAULT_GENERATION_MEMORY_PREFERENCES): LabWorkspaceSession => {
+  const session = loadLabWorkspaceSession(key, fallback, rememberGenerationSettings, generationMemory);
+  return key === 'playground' ? getLabWorkspaceSettings(session) : session;
+};
+
+export const saveLabWorkspaceSession = (key: string, session: LabWorkspaceSession, rememberGenerationSettings = true, generationMemory = DEFAULT_GENERATION_MEMORY_PREFERENCES): boolean => {
+  if (typeof window === 'undefined') return true;
+  const saved = { ...session, updatedAt: Date.now() };
   try {
-    window.sessionStorage.setItem(`${SESSION_PREFIX}${key}`, JSON.stringify({ ...session, updatedAt: Date.now() }));
+    window.sessionStorage.setItem(`${SESSION_PREFIX}${key}`, JSON.stringify(saved));
   } catch {
     // 会话存储空间不足时不阻断当前生成流程。
+  }
+  if (!rememberGenerationSettings) return true;
+  try {
+    window.localStorage.setItem(`${SESSION_PREFIX}${key}`, serializeLabWorkspaceMemory(saved, generationMemory));
+    return true;
+  } catch {
+    // 跨重启记忆不可用时保留本次会话与当前生成。
+    return false;
   }
 };
 
 /** 删除指定工作区的会话草稿（「放弃未保存更改」路径使用，重进时从数据库原值重新开始）。 */
 export const deleteLabWorkspaceSession = (key: string) => {
   if (typeof window === 'undefined') return;
-  try {
-    window.sessionStorage.removeItem(`${SESSION_PREFIX}${key}`);
-  } catch {
-    // 忽略存储异常。
+  for (const storage of ['sessionStorage', 'localStorage'] as const) {
+    try {
+      window[storage].removeItem(`${SESSION_PREFIX}${key}`);
+    } catch {
+      // 一处存储不可用不阻止另一份草稿清除。
+    }
   }
 };
 

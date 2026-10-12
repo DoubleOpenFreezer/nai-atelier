@@ -134,10 +134,39 @@ describe('GlobalSettings', () => {
     expect(toggle.getAttribute('aria-pressed')).toBe('false');
   });
 
+  it('记住上次生图设置默认开启；可独立选择记忆内容，关闭主开关后保留选择', async () => {
+    const changed = vi.fn<(preferences: AppearancePreferences) => void>();
+    render(React.createElement(SettingsHarness, { onAppearancePreferencesChange: changed }));
+    expect(screen.queryByRole('switch', { name: '记住上次生图设置' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /生图偏好与实验室/ }));
+    const toggle = await screen.findByRole('switch', { name: '记住上次生图设置' });
+    expect(toggle.getAttribute('aria-checked')).toBe('true');
+    const fields = ['参数设置', '全局正向提示词', '全局负面提示词', '角色正向提示词', '角色负面提示词'];
+    for (const field of fields) expect((screen.getByRole('checkbox', { name: field }) as HTMLInputElement).checked).toBe(true);
+    expect(screen.getByText('重启后仅恢复勾选的内容。不影响当前输入或已保存的预设。')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('checkbox', { name: '全局正向提示词' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: '全局负面提示词' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: '角色正向提示词' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: '角色负面提示词' }));
+    expect(changed.mock.lastCall?.[0].generationMemory).toEqual({ parameters: true, globalPrompt: false, negativePrompt: false, characterPrompt: false, characterNegativePrompt: false });
+    fireEvent.click(screen.getByRole('checkbox', { name: '参数设置' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: '角色负面提示词' }));
+    expect(changed.mock.lastCall?.[0].generationMemory).toEqual({ parameters: false, globalPrompt: false, negativePrompt: false, characterPrompt: false, characterNegativePrompt: true });
+
+    fireEvent.click(toggle);
+    await waitFor(() => expect(changed.mock.lastCall?.[0].rememberGenerationSettings).toBe(false));
+    expect(toggle.getAttribute('aria-checked')).toBe('false');
+    for (const field of fields) expect(screen.queryByRole('checkbox', { name: field })).toBeNull();
+    expect(changed.mock.lastCall?.[0].generationMemory).toEqual({ parameters: false, globalPrompt: false, negativePrompt: false, characterPrompt: false, characterNegativePrompt: true });
+    fireEvent.click(toggle);
+    for (const field of fields) expect((await screen.findByRole('checkbox', { name: field }) as HTMLInputElement).checked).toBe(field === '角色负面提示词');
+  });
+
   it('应用外观预设和恢复默认外观不会重置连续生成偏好', async () => {
     const onAppearancePreferencesChange = vi.fn<(preferences: AppearancePreferences) => void>();
     render(React.createElement(SettingsHarness, {
-      initialAppearancePreferences: { continuousGenerationEnabled: false },
+      initialAppearancePreferences: { continuousGenerationEnabled: false, rememberGenerationSettings: false, generationMemory: { parameters: false, globalPrompt: true, negativePrompt: false, characterPrompt: true, characterNegativePrompt: false } },
       onAppearancePreferencesChange,
     }));
     fireEvent.click(screen.getByRole('button', { name: '另存当前主题' }));
@@ -148,12 +177,21 @@ describe('GlobalSettings', () => {
     ).toBe(true));
     const savedPreset = onAppearancePreferencesChange.mock.lastCall?.[0].customPresets.find(preset => preset.name === '生图偏好不变');
     expect(savedPreset).not.toHaveProperty('continuousGenerationEnabled');
+    expect(savedPreset).not.toHaveProperty('rememberGenerationSettings');
+    expect(savedPreset).not.toHaveProperty('generationMemory');
     expect(onAppearancePreferencesChange.mock.lastCall?.[0].continuousGenerationEnabled).toBe(false);
+    expect(onAppearancePreferencesChange.mock.lastCall?.[0].rememberGenerationSettings).toBe(false);
+    const expectedGenerationMemory = { parameters: false, globalPrompt: true, negativePrompt: false, characterPrompt: true, characterNegativePrompt: false };
+    expect(onAppearancePreferencesChange.mock.lastCall?.[0].generationMemory).toEqual(expectedGenerationMemory);
 
     fireEvent.click(screen.getByRole('button', { name: '应用外观预设：生图偏好不变' }));
     await waitFor(() => expect(onAppearancePreferencesChange.mock.lastCall?.[0].continuousGenerationEnabled).toBe(false));
+    expect(onAppearancePreferencesChange.mock.lastCall?.[0].rememberGenerationSettings).toBe(false);
+    expect(onAppearancePreferencesChange.mock.lastCall?.[0].generationMemory).toEqual(expectedGenerationMemory);
     fireEvent.click(screen.getByRole('button', { name: '恢复 NAI Atelier 默认外观' }));
     await waitFor(() => expect(onAppearancePreferencesChange.mock.lastCall?.[0].continuousGenerationEnabled).toBe(false));
+    expect(onAppearancePreferencesChange.mock.lastCall?.[0].rememberGenerationSettings).toBe(false);
+    expect(onAppearancePreferencesChange.mock.lastCall?.[0].generationMemory).toEqual(expectedGenerationMemory);
   });
   it('设置首页省去分类说明，仍可进入分类并保留隐私后果', async () => {
     const { container } = render(React.createElement(SettingsHarness, { initialSection: 'home' }));
