@@ -141,8 +141,8 @@ export class StyleCollector extends EventEmitter {
     if (this.run !== run || !run.state.enabled || run.abort.signal.aborted || run.state.paused) return;
     const url = imageLink(text); if (!url) return;
     if (run.seen.has(url)) { run.state.skipped++; run.state.detail = '跳过：本次已经接收过这个链接'; this.publish(run); return; }
-    run.seen.add(url);
     if (run.queue.length >= 200) { run.state.failed++; run.state.error = '待处理链接过多，请暂停后等待队列完成'; this.publish(run); return; }
+    run.seen.add(url);
     let name = ''; try { name = decodeURIComponent(new URL(url).pathname.split('/').pop() || ''); } catch { /* 无文件名。 */ }
     run.queue.push({ url, name }); this.publish(run);
     if (!run.busy) run.processing = this.process(run);
@@ -168,6 +168,7 @@ export class StyleCollector extends EventEmitter {
         }
       } catch (error) {
         if (!run.abort.signal.aborted) {
+          run.seen.delete(item.url);
           const reason = collectorErrorReason(error);
           run.state.failed++; run.state.detail = `失败：${reason}`;
         }

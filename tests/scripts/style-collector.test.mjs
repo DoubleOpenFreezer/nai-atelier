@@ -101,9 +101,44 @@ test('actual proxy tunnel pins validated IP and preserves HTTP host and signed q
   const result = await downloadCollectorImage('http://example.com/a.png?signature=keep', { proxyUrl: `http://127.0.0.1:${proxy.address().port}`, lookupHost: async () => [{ address: '198.18.1.73', family: 4 }], publicLookup: async () => [{ address: '8.8.8.8', family: 4 }] });
   assert.equal(target, '8.8.8.8:80'); assert.match(requestText, /GET \/a.png\?signature=keep /); assert.match(requestText, /host: example.com/i); assert.equal(result.bytes.toString(), 'abc');
 });
+
+test('interrupted proxy body waits for a new copy; pending and saved links still deduplicate', async t => {
+  const bytes = hidden(); let tunnels = 0, causeCode;
+  const proxy = createServer();
+  proxy.on('connect', (req, socket) => {
+    assert.equal(req.url, '8.8.8.8:80');
+    const attempt = ++tunnels;
+    socket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
+    socket.once('data', () => {
+      if (attempt === 1) {
+        socket.write('HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n3\r\nabc\r\n');
+        setTimeout(() => socket.destroy(), 10);
+      } else socket.end(Buffer.concat([Buffer.from(`HTTP/1.1 200 OK\r\nContent-Length: ${bytes.length}\r\nConnection: close\r\n\r\n`), bytes]));
+    });
+  });
+  await new Promise(resolve => proxy.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise(resolve => proxy.close(resolve)));
+  const h = harness({ download: async (url, options) => {
+    try { return await downloadCollectorImage(url, { ...options, proxyUrl: `http://127.0.0.1:${proxy.address().port}`, lookupHost: async () => [{ address: '8.8.8.8', family: 4 }] }); }
+    catch (error) { causeCode = error.cause?.code; throw error; }
+  } });
+  t.after(() => h.manager.command('stop'));
+  await h.manager.command('start');
+  const url = 'http://example.com/synthetic.png';
+  h.copy(url); h.copy(url); await h.manager.run.processing;
+  assert.equal(causeCode, 'UND_ERR_SOCKET'); assert.equal(tunnels, 1);
+  assert.equal(h.manager.state().failed, 1); assert.equal(h.manager.state().skipped, 1);
+  assert.equal(h.manager.state().detail, '失败：连接中断，请检查网络或代理后重新复制图片链接');
+  assert.equal(h.imports.length, 0); assert.equal(h.manager.run.seen.has(url), false);
+  h.copy(url); await h.manager.run.processing;
+  assert.equal(tunnels, 2); assert.equal(h.manager.state().saved, 1); assert.equal(h.imports.length, 1);
+  h.copy(url);
+  assert.equal(tunnels, 2); assert.equal(h.manager.state().skipped, 2);
+});
 test('short errors distinguish timeout, DNS, proxy connection and expired links', async () => {
   assert.match(collectorErrorReason(new TypeError('fetch failed', { cause: { code: 'ENOTFOUND' } })), /域名解析/);
   assert.match(collectorErrorReason(new TypeError('fetch failed', { cause: { code: 'ECONNREFUSED' } })), /连接被拒绝/);
+  assert.equal(collectorErrorReason(new TypeError('terminated', { cause: { code: 'UND_ERR_RES_CONTENT_LENGTH_MISMATCH' } })), '连接中断，请检查网络或代理后重新复制图片链接');
   assert.match(collectorErrorReason(new DOMException('timeout', 'TimeoutError')), /下载超时/);
   assert.equal(collectorErrorReason(new Error('synthetic\nerror https://example.com/a.png?secret=1')), 'synthetic error 图片地址');
   await assert.rejects(downloadCollectorImage('https://example.com/a.png', { lookupHost: async () => [{ address: '8.8.8.8', family: 4 }], request: async () => new Response(null, { status: 403 }) }), /过期/);
@@ -166,8 +201,45 @@ test('no metadata skips; failures keep a reason without automatic or manual retr
   assert.equal('failures' in h.manager.state(), false);
   await assert.rejects(h.manager.command('retry', 'removed-task'), /未知收集操作/);
   assert.equal(calls, 1); assert.equal(h.imports.length, 0);
-  h.copy('https://example.com/plain.png'); await until(() => h.manager.state().skipped === 1); await h.manager.command('stop');
+  h.copy('https://example.com/failed.png'); await until(() => h.manager.state().saved === 1);
+  assert.equal(calls, 2); assert.equal(h.imports.length, 1);
+  h.copy('https://example.com/plain.png'); await until(() => h.manager.state().skipped === 1);
   assert.equal(h.manager.state().detail, '跳过：未找到有效 NovelAI 生成信息');
+  h.copy('https://example.com/plain.png'); assert.equal(calls, 3); assert.equal(h.manager.state().skipped, 2);
+  await h.manager.command('stop');
+});
+
+test('new copy after a lost save response lets the worker report the existing image', async () => {
+  let imports = 0, stored = 0;
+  const h = harness({ worker: async action => {
+    if (action !== 'import') return {};
+    imports++;
+    if (!stored) { stored++; throw new Error('synthetic lost save response'); }
+    return { outcome: 'skipped' };
+  } });
+  await h.manager.command('start'); const url = 'https://example.com/synthetic.png';
+  h.copy(url); await h.manager.run.processing;
+  assert.equal(h.manager.state().failed, 1); assert.equal(imports, 1); assert.equal(stored, 1);
+  h.copy(url); await h.manager.run.processing;
+  assert.equal(imports, 2); assert.equal(stored, 1); assert.equal(h.manager.state().saved, 0);
+  assert.equal(h.manager.state().skipped, 1); assert.equal(h.manager.state().detail, '跳过：这张原图已经收集');
+  h.copy(url); assert.equal(imports, 2); assert.equal(h.manager.state().skipped, 2);
+  await h.manager.command('stop');
+});
+
+test('queue capacity rejection does not mark an unqueued link as received', async () => {
+  const gate = deferred(); let calls = 0;
+  const h = harness({ download: async url => { calls++; await gate.promise; return { bytes: Buffer.from('synthetic non-image'), finalUrl: url }; } });
+  await h.manager.command('start');
+  for (let index = 0; index <= 200; index++) h.copy(`https://example.com/synthetic-${index}.png`);
+  const url = 'https://example.com/overflow.png'; h.copy(url);
+  assert.equal(h.manager.state().pending, 200); assert.equal(h.manager.state().failed, 1);
+  assert.equal(h.manager.run.seen.has(url), false);
+  gate.resolve(); await h.manager.run.processing;
+  assert.equal(calls, 201);
+  h.copy(url); await h.manager.run.processing;
+  assert.equal(calls, 202); assert.equal(h.manager.state().skipped, 202);
+  await h.manager.command('stop');
 });
 test('failure detail survives idle, native state matches, fresh session clears it', async () => {
   const updates = [];

@@ -217,10 +217,15 @@ public sealed class AtelierCollectorWindow : Form {
         metrics.Invalidate(); Invalidate(true);
     }
     void Drag(object sender, MouseEventArgs e) { if (e.Button != MouseButtons.Left) return; ReleaseCapture(); SendMessage(Handle, 0xA1, new IntPtr(2), IntPtr.Zero); SavePosition(); }
+    bool DetailIsEllipsized() {
+        return detail.AutoEllipsis && detail.Text.Length > 0
+            && TextRenderer.MeasureText(detail.Text, detail.Font, new Size(Int32.MaxValue, detail.ClientSize.Height), TextFormatFlags.SingleLine | TextFormatFlags.NoPadding).Width > detail.ClientSize.Width;
+    }
     void LayoutWindow() {
         ClientSize = new Size(metrics.Width + 32, collapsed ? 43 : 122); phase.Visible = metrics.Visible = detail.Visible = !collapsed;
         title.Text = (paused ? T("已暂停") : T("收集中")) + (collapsed ? T(" · 已保存 ") + saved.ToString() : "");
         detailTip.SetToolTip(title, title.Text); failureHint.Visible = collapsed && latestFailed; detailTip.SetToolTip(failureHint, latestFailure);
+        detailTip.SetToolTip(detail, !collapsed && DetailIsEllipsized() ? detail.Text : "");
         statusDot.ForeColor = paused ? pausedColor : accent;
         statusDot.SetProcessing(!paused && (rawStage == "正在下载图片" || rawStage == "正在解析图片" || rawStage == "正在保存风格串"));
         collapse.Text = collapsed ? "+" : "−"; detailTip.SetToolTip(collapse, collapsed ? T("展开状态窗") : T("折叠状态窗")); UpdateCorners(); ClampPosition(); Invalidate();
@@ -303,7 +308,6 @@ public sealed class AtelierCollectorWindow : Form {
                         detail.Text = Str(state, "error") != "" ? Str(state, "error") : Str(state, "detail");
                         latestFailed = detail.Text.StartsWith(T("失败：")) || Str(state, "error") != ""; latestFailure = latestFailed ? detail.Text : "";
                         detail.ForeColor = latestFailed ? metrics.Failure : detail.Text.StartsWith(T("已保存：")) ? metrics.Success : metrics.Muted;
-                        detailTip.SetToolTip(detail, detail.Text);
                         if (state.ContainsKey("appearance")) ApplyAppearance(state["appearance"] as Dictionary<string, object>);
                         LayoutWindow();
                         if (test) ReportWindow();
@@ -324,7 +328,7 @@ public sealed class AtelierCollectorWindow : Form {
         Emit(new { type = "window", session = session, noActivate = (GetWindowLong(Handle, -20) & 0x08000000) != 0,
             topMost = (GetWindowLong(Handle, -20) & 8) != 0, foreground = GetForegroundWindow() == Handle,
             visiblePosition = area.Contains(Bounds), collapsed = collapsed, height = Height, detail = detail.Text, detailVisible = detail.Visible, detailEllipsis = detail.AutoEllipsis,
-            title = title.Text, breathing = statusDot.Breathing, processing = statusDot.Processing, tooltipWhileInactive = detailTip.ShowAlways, failureHint = failureHint.Visible, failureTooltip = detailTip.GetToolTip(failureHint), rounded = nativeCorners || Region != null,
+            title = title.Text, breathing = statusDot.Breathing, processing = statusDot.Processing, tooltipWhileInactive = detailTip.ShowAlways, detailTooltip = detailTip.GetToolTip(detail), failureHint = failureHint.Visible, failureTooltip = detailTip.GetToolTip(failureHint), rounded = nativeCorners || Region != null,
             counters = new { pending = metrics.Pending, saved = metrics.Saved, skipped = metrics.Skipped, failed = metrics.Failed },
             pauseTextFits = TextRenderer.MeasureText(pause.Text, pause.Font).Width <= pause.Width - 8, metricLabelsFit = metrics.LabelsFit,
             appearance = new { themeMode = themeMode, dark = dark, accent = Hex(accent), background = Hex(BackColor), foreground = Hex(ForeColor), muted = Hex(metrics.Muted), failure = Hex(metrics.Failure), motion = motion } });

@@ -36,12 +36,12 @@ export async function resolveCollectorPublicDns(host, { signal, proxyUrl = '', r
 export function collectorErrorReason(error) {
   const causes = [error, error?.cause, ...(error?.cause?.errors || [])];
   const codes = causes.flatMap(cause => [cause?.code, cause?.name]);
-  if (codes.some(code => ['TimeoutError', 'UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_HEADERS_TIMEOUT', 'UND_ERR_BODY_TIMEOUT', 'ETIMEDOUT'].includes(code))) return '下载超时，请检查代理或网络后手动重试';
-  if (codes.some(code => ['ENOTFOUND', 'EAI_AGAIN'].includes(code))) return '域名解析失败，请检查网络或代理';
-  if (codes.includes('ECONNREFUSED')) return '连接被拒绝，请检查本机服务或代理';
-  if (codes.some(code => ['ECONNRESET', 'UND_ERR_SOCKET'].includes(code))) return '连接中断，请检查代理后手动重试';
+  if (codes.some(code => ['TimeoutError', 'UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_HEADERS_TIMEOUT', 'UND_ERR_BODY_TIMEOUT', 'ETIMEDOUT'].includes(code))) return '下载超时，请检查网络或代理后重新复制图片链接';
+  if (codes.some(code => ['ENOTFOUND', 'EAI_AGAIN'].includes(code))) return '域名解析失败，请检查网络或代理后重新复制图片链接';
+  if (codes.includes('ECONNREFUSED')) return '连接被拒绝，请检查本机服务或代理后重新复制图片链接';
+  if (codes.some(code => ['ECONNRESET', 'UND_ERR_SOCKET', 'UND_ERR_RES_CONTENT_LENGTH_MISMATCH'].includes(code))) return '连接中断，请检查网络或代理后重新复制图片链接';
   if (codes.some(code => /CERT|TLS/.test(code || ''))) return '图片连接证书校验失败';
-  const message = error?.message === 'fetch failed' ? '网络请求失败，请检查代理后手动重试' : (error?.message || '处理失败');
+  const message = error?.message === 'fetch failed' ? '网络请求失败，请检查网络或代理后重新复制图片链接' : (error?.message || '处理失败');
   return message.replace(/https?:\/\/\S+/g, '图片地址').replace(/[\r\n\t]+/g, ' ').slice(0, 160);
 }
 

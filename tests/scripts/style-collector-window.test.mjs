@@ -23,15 +23,20 @@ test('Windows native window protocol, pause baselines, screen clamp, topmost and
   send('start', { position: { x: 999999, y: -999999, collapsed: false } });
   await until(() => events.some(e => e.type === 'window'));
   assert.deepEqual(events.find(e => e.type === 'window'), { type: 'window', session: 'synthetic-session', noActivate: true, topMost: true, foreground: false, visiblePosition: true, collapsed: false, height: 122, detail: '', detailVisible: true, detailEllipsis: true,
-    title: '收集中', breathing: false, processing: false, tooltipWhileInactive: true, failureHint: false, failureTooltip: '', rounded: true, counters: { pending: 0, saved: 0, skipped: 0, failed: 0 },
+    title: '收集中', breathing: false, processing: false, tooltipWhileInactive: true, detailTooltip: '', failureHint: false, failureTooltip: '', rounded: true, counters: { pending: 0, saved: 0, skipped: 0, failed: 0 },
     pauseTextFits: true, metricLabelsFit: true,
     appearance: { themeMode: 'dark', dark: true, accent: '#0EA5E9', background: '#171B24', foreground: '#F0F2F8', muted: '#939DB5', failure: '#DE999D', motion: 'full' } });
-  const detail = '失败：图片访问被拒绝 (403)，链接可能过期，请重新复制';
+  const detail = '失败：连接中断';
   send('state', { state: { saved: 0, paused: false, stage: '等待复制图片链接', pending: 0, skipped: 0, failed: 1, detail }, id: 'detail' });
   await until(() => events.some(e => e.id === 'detail'));
   assert.equal(events.filter(e => e.type === 'window').at(-1).detail, detail);
+  assert.equal(events.filter(e => e.type === 'window').at(-1).detailTooltip, '');
   assert.equal(events.filter(e => e.type === 'window').at(-1).foreground, false);
   assert.equal(events.filter(e => e.type === 'window').at(-1).breathing, false);
+  const longDetail = detail + '，' + '网络连接暂时中断，请检查代理或网络后重新复制图片链接。'.repeat(4);
+  send('state', { state: { saved: 0, paused: false, stage: '等待复制图片链接', pending: 0, skipped: 0, failed: 1, detail: longDetail }, id: 'long-detail' });
+  await until(() => events.some(e => e.id === 'long-detail'));
+  assert.equal(events.filter(e => e.type === 'window').at(-1).detailTooltip, longDetail);
   send('inject', { text: 'ordinary copied text' });
   send('inject', { text: 'https://example.com/first.png?signature=keep' });
   send('pause', { id: 'paused' }); await until(() => events.some(e => e.id === 'paused'));
@@ -44,14 +49,18 @@ test('Windows native window protocol, pause baselines, screen clamp, topmost and
   assert.equal(events.filter(e => e.type === 'window').at(-1).detailVisible, false);
   assert.equal(events.filter(e => e.type === 'window').at(-1).foreground, false);
   assert.equal(events.filter(e => e.type === 'window').at(-1).failureHint, true);
-  assert.equal(events.filter(e => e.type === 'window').at(-1).failureTooltip, detail);
+  assert.equal(events.filter(e => e.type === 'window').at(-1).failureTooltip, longDetail);
+  assert.equal(events.filter(e => e.type === 'window').at(-1).detailTooltip, '');
   assert.equal(events.filter(e => e.type === 'window').at(-1).title, '收集中 · 已保存 0');
   const appearance = { themeMode: 'light', isDark: false, accentColor: '#8b5cf6', motion: 'off' };
-  send('state', { state: { saved: 0, paused: false, stage: '等待复制图片链接', pending: 0, skipped: 0, failed: 1, detail, appearance }, id: 'light-theme' });
+  send('state', { state: { saved: 0, paused: false, stage: '等待复制图片链接', pending: 0, skipped: 0, failed: 1, detail: longDetail, appearance }, id: 'light-theme' });
   await until(() => events.some(e => e.id === 'light-theme'));
   const lightWindow = events.filter(e => e.type === 'window').at(-1);
   assert.deepEqual(lightWindow.appearance, { themeMode: 'light', dark: false, accent: '#8B5CF6', background: '#FFFFFF', foreground: '#171E2D', muted: '#6F7A90', failure: '#AF414D', motion: 'off' });
-  assert.equal(lightWindow.failureHint, true); assert.equal(lightWindow.failureTooltip, detail); assert.equal(lightWindow.foreground, false);
+  assert.equal(lightWindow.failureHint, true); assert.equal(lightWindow.failureTooltip, longDetail); assert.equal(lightWindow.detailTooltip, ''); assert.equal(lightWindow.foreground, false);
+  send('collapse', { id: 'expand-light' }); await until(() => events.some(e => e.id === 'expand-light'));
+  assert.equal(events.filter(e => e.type === 'window').at(-1).detailTooltip, longDetail);
+  send('collapse', { id: 'collapse-light' }); await until(() => events.some(e => e.id === 'collapse-light'));
   const base = { saved: 4, paused: false, stage: '正在下载图片', pending: 2, skipped: 1, failed: 1, detail: '处理：synthetic.png' };
   send('state', { state: base, id: 'busy' }); await until(() => events.some(e => e.id === 'busy'));
   assert.equal(events.filter(e => e.type === 'window').at(-1).processing, true);
@@ -91,6 +100,7 @@ test('Windows native window protocol, pause baselines, screen clamp, topmost and
     assert.equal(current.processing, true);
     assert.deepEqual(current.counters, { pending: 2, saved: 4, skipped: 1, failed: 1 });
     assert.equal(current.foreground, false);
+    assert.equal(current.detailTooltip, '');
     assert.equal(current.pauseTextFits, true, language.code+' pause');
     assert.equal(current.metricLabelsFit, true, language.code+' metrics');
   }

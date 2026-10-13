@@ -15,6 +15,14 @@ beforeEach(() => { localStorage.clear(); delete window.atelierLanguage; restoreL
 afterEach(() => { cleanup(); delete window.atelierLanguage; setLanguage('zh-CN'); vi.restoreAllMocks(); });
 
 describe('界面语言', () => {
+  it('收集网络失败显示完整译文及重新复制链接的实际恢复方式', () => {
+    const errors = ['下载超时，请检查网络或代理后重新复制图片链接', '域名解析失败，请检查网络或代理后重新复制图片链接', '连接被拒绝，请检查本机服务或代理后重新复制图片链接', '连接中断，请检查网络或代理后重新复制图片链接', '图片连接证书校验失败', '网络请求失败，请检查网络或代理后重新复制图片链接'];
+    for (const language of LANGUAGES.filter(item => item.code !== 'zh-CN')) {
+      for (const error of errors) expect(translate(language.code, `失败：${error}`)).not.toContain(error);
+    }
+    expect(translate('en', `失败：${errors[3]}`)).toBe('Failed: connection interrupted. Check the network or proxy, then copy the image link again.');
+  });
+
   it.each([
     ['zh-CN', '创作助手', '打开创作助手', '助手权限'],
     ['zh-TW', '創作助手', '開啟創作助手', '助手權限'],
