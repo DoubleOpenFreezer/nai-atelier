@@ -81,6 +81,7 @@ const renderControls = (operation: 'image-to-image' | 'inpaint' | 'outpaint', ma
     { focused, ...(operation === 'outpaint' ? { expansion: { top: 0, bottom: 0, left: 640, right: 704 } } : {}) });
   const onManualMaskEditingChange = vi.fn();
   const onPromptChange = vi.fn();
+  const onNegativePromptChange = vi.fn();
   const onSelectImageSource = vi.fn();
   const onPasteImage = vi.fn();
   const onDraftChange = vi.fn();
@@ -122,7 +123,7 @@ const renderControls = (operation: 'image-to-image' | 'inpaint' | 'outpaint', ma
     notify,
     mobileTab,
     onPromptChange,
-    onNegativePromptChange: vi.fn(),
+    onNegativePromptChange,
     onPromptSource: vi.fn(),
     onDraftChange,
     onFileChange: vi.fn(),
@@ -141,7 +142,7 @@ const renderControls = (operation: 'image-to-image' | 'inpaint' | 'outpaint', ma
     onRedo: vi.fn(),
     onExpansionChange: vi.fn(),
     onApplyOutpaint: vi.fn(),
-  })), onManualMaskEditingChange, onPromptChange, onSelectImageSource, onPasteImage, onDraftChange, onBrushSizeChange, notify };
+  })), onManualMaskEditingChange, onPromptChange, onNegativePromptChange, onSelectImageSource, onPasteImage, onDraftChange, onBrushSizeChange, notify };
 };
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
@@ -165,6 +166,20 @@ it.each(['image-to-image', 'inpaint', 'outpaint'] as const)('%s 编辑面板将�
 });
 
 describe('ImageEditControls', () => {
+  it.each(['image-to-image', 'inpaint', 'outpaint'] as const)('%s 正负词清空分别在既有标题行，不覆盖框中文字或混清另一字段', operation => {
+    const { onPromptChange, onNegativePromptChange } = renderControls(operation, false, false, false, {}, 'prompt');
+    const positive = screen.getByPlaceholderText(operation === 'inpaint' ? '重绘提示词' : operation === 'outpaint' ? '扩图提示词' : '图生图提示词') as HTMLTextAreaElement;
+    const negative = screen.getByPlaceholderText('输入本次负面提示词') as HTMLTextAreaElement;
+    const [clearPositive, clearNegative] = screen.getAllByRole('button', { name: '清空当前提示词' });
+    expect(positive.parentElement!.contains(clearPositive)).toBe(false);
+    expect(negative.parentElement!.contains(clearNegative)).toBe(false);
+    expect(clearPositive.parentElement!.parentElement!.parentElement!.textContent).toContain(operation === 'inpaint' ? '重绘提示词' : operation === 'outpaint' ? '扩图提示词' : '图生图提示词');
+    expect(clearNegative.parentElement!.parentElement!.textContent).toContain('全局负面提示词');
+    fireEvent.click(clearPositive); expect(onPromptChange).toHaveBeenLastCalledWith(''); expect(onNegativePromptChange).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(positive);
+    fireEvent.click(clearNegative); expect(onNegativePromptChange).toHaveBeenLastCalledWith(''); expect(document.activeElement).toBe(negative);
+    expect(positive.className).not.toMatch(/pr-14|md:pr-9/); expect(negative.className).not.toMatch(/pr-14|md:pr-9/);
+  });
   it.each(['canvas', 'params'] as const)('图生图输出尺寸随 %s Tab 正确显隐，选择不影响其他编辑模式', mobileTab => {
     const { onDraftChange } = renderControls('image-to-image', false, false, false, {}, mobileTab);
     const select = screen.getByRole('combobox', { name: '图生图输出尺寸' });

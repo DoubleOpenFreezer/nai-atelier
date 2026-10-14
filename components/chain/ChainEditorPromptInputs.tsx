@@ -1,5 +1,5 @@
 import { t } from '../../services/i18n';
-import React from 'react';
+import React, { useRef } from 'react';
 import { LabPageLayout } from '../../services/appearancePreferences';
 import { LabModuleSection } from '../LabModuleSection';
 import { TagAutocompleteTextarea } from '../TagAutocompleteTextarea';
@@ -28,7 +28,9 @@ export const ChainEditorPromptInputs: React.FC<ChainEditorPromptInputsProps> = (
     markChange,
     activeLabLayout,
     mobileEditorTab,
-}) => (
+}) => {
+    const clearActionSlotRef = useRef<HTMLSpanElement>(null);
+    return (
     <LabModuleSection
         moduleId="prompt"
         label={t("全局提示词")}
@@ -43,9 +45,10 @@ export const ChainEditorPromptInputs: React.FC<ChainEditorPromptInputsProps> = (
                     <PresetSourceBadges sources={Object.fromEntries(Object.entries({ base: presetSources.base, subject: presetSources.subject }).filter((entry): entry is [string, PresetSource] => Boolean(entry[1])))} />
                 </div>
 
-                <PromptCopyButton onClick={() => copyPromptToClipboard(prompt, '全局提示词')} title={t("复制全局提示词")} />
+                <div className="flex items-center gap-1"><span ref={clearActionSlotRef} /><PromptCopyButton onClick={() => copyPromptToClipboard(prompt, '全局提示词')} title={t("复制全局提示词")} /></div>
             </div>
             <TagAutocompleteTextarea
+                clearActionSlotRef={clearActionSlotRef}
                 tagAssistEnabled={tagAssistEnabled}
                 disabled={!canEdit}
                 className={`w-full border rounded-lg p-3 outline-none font-mono text-sm font-normal leading-relaxed min-h-[100px] ${!canEdit ? 'bg-gray-100 dark:bg-gray-800 text-gray-500 cursor-not-allowed' : 'bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-800 text-gray-900 dark:text-gray-200 focus:ring-1 focus:ring-indigo-500'}`}
@@ -59,4 +62,5 @@ export const ChainEditorPromptInputs: React.FC<ChainEditorPromptInputsProps> = (
             />
         </section>
     </LabModuleSection>
-);
+    );
+};

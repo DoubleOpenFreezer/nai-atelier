@@ -1,5 +1,5 @@
 import { t, useLanguage, getLanguage } from '../services/i18n';
-import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Eraser, Languages, LoaderCircle, RotateCcw, Trash2 } from 'lucide-react';
 import { InfoPopover } from './InfoPopover';
@@ -29,6 +29,7 @@ interface TagAutocompleteTextareaProps extends Omit<React.TextareaHTMLAttributes
   value: string;
   onValueChange: (value: string) => void;
   containerClassName?: string;
+  clearActionSlotRef?: React.RefObject<HTMLElement | null>;
   tagAssistEnabled?: boolean;
   showTranslations?: boolean;
   allowAiTranslation?: boolean;
@@ -80,6 +81,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
   onValueChange,
   className,
   containerClassName = '',
+  clearActionSlotRef,
   tagAssistEnabled = true,
   showTranslations = true,
   allowAiTranslation = true,
@@ -96,6 +98,8 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
 }) => {
   useLanguage();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [clearActionTarget, setClearActionTarget] = useState<HTMLElement | null>(null);
+  useLayoutEffect(() => { setClearActionTarget(clearActionSlotRef?.current || null); }, [clearActionSlotRef]);
   const tagInputRef = useRef<HTMLInputElement>(null);
   const requestIdRef = useRef(0);
   const composingRef = useRef(false);
@@ -508,7 +512,15 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
     };
   }, [isOpen, completionSource]);
 
-  const showClearAction = editable && (value.length > 0 || clearActionState === 'cleared');
+  const clearAction = <button type="button"
+    disabled={!editable || (!value.length && clearActionState !== 'cleared')}
+    aria-label={t(clearActionState === 'cleared' ? '撤销清空' : '清空当前提示词')}
+    title={t(clearActionState === 'cleared' ? '撤销清空' : '清空当前提示词')}
+    onMouseDown={event => event.preventDefault()}
+    onClick={() => { if (clearActionState === 'cleared') moveHistory(); else clearPrompt(); textareaRef.current?.focus(); }}
+    className="mobile-touch flex h-7 w-7 items-center justify-center rounded p-1 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-40 dark:hover:bg-gray-700 dark:hover:text-gray-200">
+    {clearActionState === 'cleared' ? <RotateCcw aria-hidden="true" className="h-4 w-4" /> : <Eraser aria-hidden="true" className="h-4 w-4" />}
+  </button>;
 
   return (
     <div className={`group relative ${containerClassName}`} onKeyDownCapture={event => {
@@ -532,21 +544,14 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
       }
       if (event.key === 'Escape' && deleteMode) { event.preventDefault(); event.stopPropagation(); setDeleteMode(false); clearSelection(); }
     }}>
-      {showClearAction && <button type="button"
-        aria-label={t(clearActionState === 'cleared' ? '撤销清空' : '清空当前提示词')}
-        title={t(clearActionState === 'cleared' ? '撤销清空' : '清空当前提示词')}
-        onMouseDown={event => event.preventDefault()}
-        onClick={() => { if (clearActionState === 'cleared') moveHistory(); else clearPrompt(); textareaRef.current?.focus(); }}
-        className="mobile-touch absolute right-1 top-1 z-10 flex h-7 w-7 items-center justify-center rounded-md bg-white/95 text-gray-500 shadow-sm transition-colors hover:bg-gray-100 hover:text-gray-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:bg-gray-900/95 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-100 md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100 md:focus-visible:opacity-100">
-        {clearActionState === 'cleared' ? <RotateCcw aria-hidden="true" className="h-4 w-4" /> : <Eraser aria-hidden="true" className="h-4 w-4" />}
-      </button>}
+      {clearActionSlotRef && clearActionTarget ? createPortal(clearAction, clearActionTarget) : <div className="mb-1 flex justify-end">{clearAction}</div>}
       <textarea
         {...textareaProps}
         ref={textareaRef}
         disabled={disabled}
         readOnly={readOnly}
         value={value}
-        className={`${className || ''} ${showClearAction ? 'pr-14 md:pr-9' : ''}`}
+        className={className}
         role={tagAssistEnabled ? 'combobox' : undefined}
         aria-autocomplete={tagAssistEnabled ? 'list' : undefined}
         aria-expanded={tagAssistEnabled ? isOpen && completionSource === 'prompt' : undefined}

@@ -1,5 +1,5 @@
 import { t, useLanguage } from '../../services/i18n';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ArrowDown, ArrowUp, MapPin, Save, Trash2, UserRound } from 'lucide-react';
 import { CharacterParams, NAIParams, PromptChain } from '../../types';
 import { LabPageLayout } from '../../services/appearancePreferences';
@@ -84,6 +84,11 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
     notify,
 }) => {
   useLanguage();
+    const clearActionSlots = useRef(new Map<string, React.RefObject<HTMLSpanElement | null>>());
+    const clearActionSlot = (key: string) => {
+        if (!clearActionSlots.current.has(key)) clearActionSlots.current.set(key, React.createRef<HTMLSpanElement>());
+        return clearActionSlots.current.get(key)!;
+    };
     const [positionOpen, setPositionOpen] = useState(false);
     const [activeAction, setActiveAction] = useState<{ kind: 'save'; character: CharacterParams } | { kind: 'reference'; index: number } | null>(null);
     const [characterName, setCharacterName] = useState('');
@@ -168,7 +173,10 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
                 {(characters || []).length === 0 && (
                     <div className="text-xs text-gray-400 text-center py-2">{t("暂无角色，点击上方添加")}</div>
                 )}
-                {(characters || []).map((char, idx) => (
+                {(characters || []).map((char, idx) => {
+                    const positiveSlotRef = clearActionSlot(`${scopeKey}:${char.id}:positive`);
+                    const negativeSlotRef = clearActionSlot(`${scopeKey}:${char.id}:negative`);
+                    return (
                     <div key={`${scopeKey}:${char.id}`} className="bg-white dark:bg-gray-800 rounded p-3 border border-gray-200 dark:border-gray-700 shadow-sm relative">
                         <div className="mb-2 flex items-center justify-between gap-2">
                             <label className="flex cursor-pointer items-center gap-1.5 text-xs text-gray-600 dark:text-gray-300">
@@ -177,6 +185,7 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
                                 {t("角色 ")}{idx + 1}{char.enabled === false && <span className="text-gray-400">{t("· 已停用")}</span>}
                             </label>
                             <div className="flex items-center gap-1">
+                                <span ref={positiveSlotRef} />
                                 {canSaveCharacter && onSaveCharacter && <button type="button" aria-label={t("保存到角色库")} title={t("保存到角色库")} disabled={!char.prompt.trim() || savingCharacter} onClick={() => { setCharacterName(''); setActiveAction({ kind: 'save', character: char }); }} className="mobile-touch rounded p-1 text-gray-400 hover:bg-emerald-50 hover:text-emerald-600 disabled:opacity-25 dark:hover:bg-emerald-950/30 dark:hover:text-emerald-300"><Save className="h-4 w-4" /></button>}
                                 {showCharacterReference && <button type="button" aria-label={t("从角色库引用")} title={t("从角色库引用")} onClick={() => setActiveAction({ kind: 'reference', index: idx })} className="mobile-touch rounded p-1 text-gray-400 hover:bg-indigo-50 hover:text-indigo-600 dark:hover:bg-indigo-950/30 dark:hover:text-indigo-300"><UserRound className="h-4 w-4" /></button>}
                                 <button type="button" title={t("上移")} aria-label={t("上移角色 {0}", [idx + 1])} disabled={!canEdit || idx === 0} onClick={() => reorder(idx, -1)} className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700 disabled:opacity-25 dark:hover:bg-gray-700 dark:hover:text-gray-200"><ArrowUp className="h-4 w-4" /></button>
@@ -189,6 +198,7 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
                                 <div>
                                     <label className="text-micro text-gray-500 font-bold mb-1 block">{t("角色提示词")}</label>
                                     <TagAutocompleteTextarea
+                                        clearActionSlotRef={positiveSlotRef}
                                         tagAssistEnabled={tagAssistEnabled}
                                         disabled={!canEdit}
                                         value={char.prompt}
@@ -198,8 +208,9 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
                                     />
                                 </div>
                                 <div className={negativeLocked ? 'nai-model-locked' : undefined} title={negativeLocked ? t('Medium 不支持负面提示词') : undefined}>
-                                    <label className="text-micro text-gray-500 font-bold mb-1 block">{t("角色负面提示词")}</label>
+                                    <div className="mb-1 flex items-center justify-between gap-2"><label className="text-micro text-gray-500 font-bold">{t("角色负面提示词")}</label><span ref={negativeSlotRef} /></div>
                                     <TagAutocompleteTextarea
+                                        clearActionSlotRef={negativeSlotRef}
                                         tagAssistEnabled={tagAssistEnabled && !negativeLocked}
                                         disabled={!canEdit || negativeLocked}
                                         value={char.negativePrompt || ''}
@@ -226,7 +237,8 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
                             </div>
                         </div>
                     </div>
-                ))}
+                    );
+                })}
             </div>
         </section>
     </LabModuleSection>

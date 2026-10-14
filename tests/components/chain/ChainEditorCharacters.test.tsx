@@ -1,13 +1,11 @@
 // @vitest-environment jsdom
 import React, { useState } from 'react';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ChainEditorCharacters } from '../../../components/chain/ChainEditorCharacters';
 import { DEFAULT_LAB_PAGE_LAYOUTS } from '../../../services/appearancePreferences';
 import type { NAIParams } from '../../../types';
 
-vi.mock('../../../components/TagAutocompleteTextarea', () => ({ TagAutocompleteTextarea: ({ value, onValueChange, tagAssistEnabled: _assist, ...props }: { value: string; onValueChange: (value: string) => void; tagAssistEnabled: boolean }) =>
-  <textarea {...props} value={value} onChange={event => onValueChange(event.target.value)} /> }));
 vi.mock('../../../components/chain/CharacterTaggerReference', () => ({ CharacterTaggerReference: () => null }));
 
 const initial: NAIParams = { width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler_ancestral', characters: [
@@ -28,6 +26,24 @@ const draft = (): NAIParams => JSON.parse(screen.getByTestId('draft').textConten
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); mark.mockClear(); });
 
 describe('共用角色编辑器', () => {
+  it('角色正词清空在卡片顶栏，负词清空在负面标题行，两者分别撤销且保留其他角色', () => {
+    render(<Harness />);
+    const positive = screen.getAllByPlaceholderText('角色提示词')[0] as HTMLTextAreaElement;
+    const negative = screen.getAllByPlaceholderText('选填')[0] as HTMLTextAreaElement;
+    const header = screen.getByRole('checkbox', { name: '启用角色 1' }).closest('label')!.parentElement!;
+    const clearPositive = within(header).getByRole('button', { name: '清空当前提示词' });
+    expect(header.contains(screen.getByRole('button', { name: '下移角色 1' }))).toBe(true);
+    expect(positive.parentElement!.contains(clearPositive)).toBe(false);
+    fireEvent.click(clearPositive);
+    expect(draft().characters?.[0]).toMatchObject({ id: 'a', prompt: '', negativePrompt: 'red hair', x: 0.223, y: 0.887 });
+    expect(draft().characters?.[1]).toEqual(initial.characters![1]); expect(document.activeElement).toBe(positive);
+    fireEvent.click(within(header).getByRole('button', { name: '撤销清空' }));
+    const negativeHeader = screen.getAllByText('角色负面提示词')[0].parentElement!;
+    fireEvent.click(within(negativeHeader).getByRole('button', { name: '清空当前提示词' }));
+    expect(draft().characters?.[0]).toMatchObject({ prompt: 'blue hair', negativePrompt: '' }); expect(document.activeElement).toBe(negative);
+    fireEvent.click(within(negativeHeader).getByRole('button', { name: '撤销清空' }));
+    expect(draft().characters).toEqual(initial.characters);
+  });
   it('Medium 角色负面词灰白禁用，正向词可编辑，切回 High 恢复原负面词', () => {
     const { rerender } = render(<Harness model="nai-diffusion-5-full-medium" />);
     for (const node of screen.getAllByPlaceholderText('选填')) {
@@ -35,6 +51,7 @@ describe('共用角色编辑器', () => {
       expect(node.closest('.nai-model-locked')).not.toBeNull();
     }
     const positive = screen.getAllByPlaceholderText('角色提示词')[0] as HTMLTextAreaElement;
+    expect(screen.getAllByRole('button', { name: '清空当前提示词' })).toHaveLength(2);
     expect(positive.disabled).toBe(false);
     fireEvent.change(positive, { target: { value: 'green hair' } });
     expect(draft().characters?.[0]).toMatchObject({ prompt: 'green hair', negativePrompt: 'red hair' });
@@ -76,6 +93,17 @@ describe('共用角色编辑器', () => {
     expect(mark).toHaveBeenCalledTimes(4);
   });
 
+  it('角色排序后清空撤销仍跟随稳定角色槽位，不落入其他角色顶栏', () => {
+    render(<Harness />);
+    const firstHeader = screen.getByRole('checkbox', { name: '启用角色 1' }).closest('label')!.parentElement!;
+    fireEvent.click(within(firstHeader).getByRole('button', { name: '清空当前提示词' }));
+    fireEvent.click(screen.getByRole('button', { name: '下移角色 1' }));
+    const movedHeader = screen.getByRole('checkbox', { name: '启用角色 2' }).closest('label')!.parentElement!;
+    fireEvent.click(within(movedHeader).getByRole('button', { name: '撤销清空' }));
+    expect(draft().characters).toEqual([initial.characters![1], initial.characters![0]]);
+    expect(document.activeElement).toBe(screen.getAllByPlaceholderText('角色提示词')[1]);
+  });
+
   it('定位区默认收起，方向键定位自动开启手动坐标，停用角色退出画布', () => {
     render(<Harness />);
     expect(screen.queryByRole('group', { name: '角色定位画布' })).toBeNull();
@@ -91,6 +119,7 @@ describe('共用角色编辑器', () => {
 
   it('只读时不能改开关、顺序、位置或删除', () => {
     render(<Harness canEdit={false} />);
+    expect(screen.getAllByRole('button', { name: '清空当前提示词' }).every(button => (button as HTMLButtonElement).disabled)).toBe(true);
     for (const name of ['启用角色 1', 'AI 自动构图']) expect((screen.getByRole('checkbox', { name }) as HTMLInputElement).disabled).toBe(true);
     expect((screen.getByRole('button', { name: '下移角色 1' }) as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getAllByRole('button', { name: '移除角色提示词' })[0] as HTMLButtonElement).disabled).toBe(true);

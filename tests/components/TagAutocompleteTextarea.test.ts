@@ -74,11 +74,16 @@ describe('TagAutocompleteTextarea 输入优先交互', () => {
     expect(textarea.value).toBe('masterpiece, ');
   });
 
-  it('清空后右上角原位提供撤销，恢复输入焦点并保留重做历史', () => {
+  it('默认清空操作放在框外，原位撤销恢复输入焦点并保留重做历史', () => {
     render(React.createElement(Harness, { initial: 'alpha, beta', showTranslations: true }));
     const textarea = screen.getByRole('combobox', { name: 'Prompt' }) as HTMLTextAreaElement;
 
-    fireEvent.click(screen.getByRole('button', { name: '清空当前提示词' }));
+    const clear = screen.getByRole('button', { name: '清空当前提示词' });
+    expect(clear.parentElement!.nextElementSibling).toBe(textarea);
+    expect(clear.classList.contains('absolute')).toBe(false);
+    expect(clear.classList.contains('mobile-touch')).toBe(true);
+    expect(textarea.className).not.toMatch(/pr-14|md:pr-9/);
+    fireEvent.click(clear);
     expect(textarea.value).toBe('');
     expect(document.activeElement).toBe(textarea);
     expect(screen.getByRole('button', { name: '撤销清空' })).toBeTruthy();
@@ -90,6 +95,31 @@ describe('TagAutocompleteTextarea 输入优先交互', () => {
     expect(textarea.value).toBe('');
     fireEvent.keyDown(textarea, { key: 'z', metaKey: true });
     expect(textarea.value).toBe('alpha, beta');
+  });
+
+  it('外部操作槽首次挂载和切换均获得清空按钮，撤销与快捷键归还对应输入焦点', () => {
+    const WithSlot = () => {
+      const first = React.useRef<HTMLSpanElement>(null), second = React.useRef<HTMLSpanElement>(null);
+      const [value, setValue] = useState('slot prompt');
+      const [alternate, setAlternate] = useState(false);
+      return React.createElement(React.Fragment, null,
+        React.createElement('div', { role: 'group', 'aria-label': '操作甲' }, React.createElement('span', { ref: first })),
+        React.createElement('div', { role: 'group', 'aria-label': '操作乙' }, React.createElement('span', { ref: second })),
+        React.createElement('button', { onClick: () => setAlternate(current => !current) }, '切换操作槽'),
+        React.createElement(TagAutocompleteTextarea, { value, onValueChange: setValue, clearActionSlotRef: alternate ? second : first, tagAssistEnabled: false, 'aria-label': '槽位输入' }));
+    };
+    render(React.createElement(WithSlot));
+    const textarea = screen.getByRole('textbox', { name: '槽位输入' }) as HTMLTextAreaElement;
+    const first = screen.getByRole('group', { name: '操作甲' }), second = screen.getByRole('group', { name: '操作乙' });
+    const clear = within(first).getByRole('button', { name: '清空当前提示词' });
+    expect(textarea.parentElement!.contains(clear)).toBe(false);
+    fireEvent.click(clear); expect(textarea.value).toBe(''); expect(document.activeElement).toBe(textarea);
+    fireEvent.click(screen.getByRole('button', { name: '切换操作槽' }));
+    expect(within(first).queryByRole('button')).toBeNull();
+    fireEvent.click(within(second).getByRole('button', { name: '撤销清空' }));
+    expect(textarea.value).toBe('slot prompt'); expect(document.activeElement).toBe(textarea);
+    fireEvent.keyDown(textarea, { key: 'y', ctrlKey: true }); expect(textarea.value).toBe('');
+    fireEvent.keyDown(textarea, { key: 'z', metaKey: true }); expect(textarea.value).toBe('slot prompt');
   });
 
   it('关闭 Tag 辅助后仍可用 Ctrl/Cmd+Z 撤销清空并用重做快捷键恢复清空', () => {
@@ -130,9 +160,9 @@ describe('TagAutocompleteTextarea 输入优先交互', () => {
     { value: '', props: {} },
     { value: 'alpha', props: { disabled: true } },
     { value: 'alpha', props: { readOnly: true } },
-  ])('空值、disabled 或 readOnly 时不提供清空按钮：%j', ({ value, props }) => {
+  ])('空值、disabled 或 readOnly 时清空按钮常驻但禁用：%j', ({ value, props }) => {
     render(React.createElement(TagAutocompleteTextarea, { value, onValueChange: vi.fn(), ...props }));
-    expect(screen.queryByRole('button', { name: '清空当前提示词' })).toBeNull();
+    expect((screen.getByRole('button', { name: '清空当前提示词' }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it('外部替换内容会丢弃旧清空历史，新清空只能撤销回替换后的值', () => {

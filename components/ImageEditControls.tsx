@@ -1,5 +1,5 @@
 import { t, useLanguage } from '../services/i18n';
-import React from 'react';
+import React, { useRef } from 'react';
 import { ClipboardPaste, Contrast, Eraser, ImagePlus, Images, RotateCcw, RotateCw, Trash2 } from 'lucide-react';
 import { CharacterParams, ImageEditCanvasExpansion, ImageEditOperation, ImageToImageSizeMode, LabImageEditDraft, LocalGenItem, NAIParams, PromptChain } from '../types';
 import { DEFAULT_LAB_PAGE_LAYOUTS, LabPageLayout } from '../services/appearancePreferences';
@@ -84,6 +84,8 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
   mobileTab = 'canvas',
 }) => {
   useLanguage();
+  const promptClearActionSlotRef = useRef<HTMLSpanElement>(null);
+  const negativeClearActionSlotRef = useRef<HTMLSpanElement>(null);
   const selectedRatioId = draft.outpaintRatioId || (Object.values(draft.expansion).some(Boolean) ? 'custom' : '16:9');
   const sourceSize = outpaintSourceSize || { width: canvasProps.width, height: canvasProps.height };
   const appliedExpansion = draft.appliedExpansion || { top: 0, right: 0, bottom: 0, left: 0 };
@@ -155,6 +157,7 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
                 {operation === 'outpaint' ? t("扩图提示词") : operation === 'inpaint' ? t("重绘提示词") : t("图生图提示词")}
               </span>
               <div className="flex items-center gap-2">
+                <span ref={promptClearActionSlotRef} />
                 <span className="rounded bg-indigo-50 px-1.5 py-0.5 text-meta font-medium text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300">
                   {draft.promptSource === 'history' ? t("底图原提示词") : draft.promptSource === 'current' ? t("文生图提示词") : t("自定义编辑提示词")}
                 </span>
@@ -162,6 +165,7 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
               </div>
             </div>
             <TagAutocompleteTextarea
+              clearActionSlotRef={promptClearActionSlotRef}
               tagAssistEnabled={tagAssistEnabled}
               disabled={isBusy}
               value={draft.prompt}
@@ -176,7 +180,7 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
               }
             />
           </div>
-          <label className={`block text-sm font-semibold text-gray-800 dark:text-gray-100 ${isNaiMediumModel(selectableParams.model) ? 'nai-model-locked' : ''}`} title={isNaiMediumModel(selectableParams.model) ? t('Medium 不支持负面提示词') : undefined}>{t("全局负面提示词")}<TagAutocompleteTextarea tagAssistEnabled={tagAssistEnabled && !isNaiMediumModel(selectableParams.model)} disabled={isBusy || isNaiMediumModel(selectableParams.model)} value={draft.negativePrompt} onValueChange={onNegativePromptChange} className="mt-2 min-h-20 w-full resize-y rounded-lg border border-gray-300 bg-gray-50 p-3 font-mono text-sm font-normal leading-relaxed text-gray-900 outline-none focus:ring-1 focus:ring-indigo-500/50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100" placeholder={t("输入本次负面提示词")} /></label>
+          <div className={isNaiMediumModel(selectableParams.model) ? 'nai-model-locked' : undefined} title={isNaiMediumModel(selectableParams.model) ? t('Medium 不支持负面提示词') : undefined}><div className="mb-2 flex items-center justify-between gap-3"><label className="text-sm font-semibold text-gray-800 dark:text-gray-100">{t("全局负面提示词")}</label><span ref={negativeClearActionSlotRef} /></div><TagAutocompleteTextarea clearActionSlotRef={negativeClearActionSlotRef} aria-label={t('全局负面提示词')} tagAssistEnabled={tagAssistEnabled && !isNaiMediumModel(selectableParams.model)} disabled={isBusy || isNaiMediumModel(selectableParams.model)} value={draft.negativePrompt} onValueChange={onNegativePromptChange} className="min-h-20 w-full resize-y rounded-lg border border-gray-300 bg-gray-50 p-3 font-mono text-sm font-normal leading-relaxed text-gray-900 outline-none focus:ring-1 focus:ring-indigo-500/50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100" placeholder={t("输入本次负面提示词")} /></div>
         </section>
       </LabModuleSection>
 

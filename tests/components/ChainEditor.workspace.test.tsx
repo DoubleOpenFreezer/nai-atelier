@@ -88,7 +88,6 @@ vi.mock('../../services/naiService', () => ({ buildGenerationJobDescriptor: stat
 vi.mock('../../components/ConfirmDialog', () => ({ useConfirmDialog: () => state.confirm }));
 vi.mock('../../components/CloudQueueStatus', () => ({ useCloudQueueStatus: () => null, useCloudQueueEnabled: () => false, CloudQueueButton: () => null }));
 vi.mock('../../components/LabModuleSection', () => ({ LabModuleSection: ({ children }: React.PropsWithChildren) => <div>{children}</div> }));
-vi.mock('../../components/TagAutocompleteTextarea', () => ({ TagAutocompleteTextarea: (props: { value: string; placeholder?: string; disabled?: boolean; onValueChange: (value: string) => void }) => <textarea disabled={props.disabled} value={props.value} placeholder={props.placeholder} onChange={event => props.onValueChange(event.target.value)} /> }));
 vi.mock('../../components/ChainEditorParams', () => ({ ChainEditorParams: (props: React.ComponentProps<typeof import('../../components/ChainEditorParams').ChainEditorParams>) => props.onForceEmptySeedChange
   ? <button onClick={() => props.onForceEmptySeedChange?.(!props.forceEmptySeed)}>{props.forceEmptySeed ? '强制置空 ON' : '强制置空 OFF'}</button> : null }));
 vi.mock('../../components/ChainEditorPreview', () => ({ ChainEditorPreview: (props: React.ComponentProps<typeof import('../../components/ChainEditorPreview').ChainEditorPreview>) => <section aria-label="文生图预览">
@@ -202,6 +201,24 @@ const setup = (entry: PromptChain = chain, rememberGenerationSettings = true, ge
   return { ...render(<ChainEditor {...props} />), props };
 };
 const textPrompt = () => screen.getByPlaceholderText('输入全局提示词，英文逗号分隔') as HTMLTextAreaElement;
+
+it('文生图全局负词清空位于复制旁，撤销只恢复负词，切模式回来重新接入对应操作槽', async () => {
+  setup();
+  const initialPositive = textPrompt().value;
+  const actions = screen.getByTitle('复制全局负面提示词').parentElement!;
+  const negative = screen.getAllByRole('textbox').find(field => field.tagName === 'TEXTAREA' && (field as HTMLTextAreaElement).value === chain.negativePrompt) as HTMLTextAreaElement;
+  const clear = within(actions).getByRole('button', { name: '清空当前提示词' });
+  expect(negative.parentElement!.contains(clear)).toBe(false);
+  fireEvent.click(clear);
+  expect(negative.value).toBe(''); expect(textPrompt().value).toBe(initialPositive); expect(document.activeElement).toBe(negative);
+  fireEvent.click(within(actions).getByRole('button', { name: '撤销清空' })); expect(negative.value).toBe(chain.negativePrompt);
+  fireEvent.click(screen.getByRole('button', { name: '图生图' }));
+  await waitFor(() => expect((screen.getByRole('button', { name: '文生图' }) as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(screen.getByRole('button', { name: '文生图' }));
+  const reconnected = (await screen.findByTitle('复制全局负面提示词')).parentElement!;
+  expect(within(reconnected).getByRole('button', { name: '清空当前提示词' })).toBeTruthy();
+  expect(within(reconnected).queryByRole('button', { name: '撤销清空' })).toBeNull();
+});
 
 it.each(['text-to-image', 'image-to-image', 'inpaint', 'outpaint'] as const)('%s 工作台传递强制置空状态与回调，原种子继续留在当前模式草稿', mode => {
   const session = fallback(); session.activeMode = mode;

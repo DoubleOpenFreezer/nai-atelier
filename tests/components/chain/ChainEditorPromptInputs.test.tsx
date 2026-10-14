@@ -1,11 +1,10 @@
 // @vitest-environment jsdom
-import React from 'react';
+import React, { useState } from 'react';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ChainEditorPromptInputs, ChainEditorPromptInputsProps } from '../../../components/chain/ChainEditorPromptInputs';
 
 vi.mock('../../../components/LabModuleSection', () => ({ LabModuleSection: ({ children }: React.PropsWithChildren) => <div>{children}</div> }));
-vi.mock('../../../components/TagAutocompleteTextarea', () => ({ TagAutocompleteTextarea: ({ value, onValueChange, disabled }: { value: string; onValueChange: (value: string) => void; disabled: boolean }) => <textarea aria-label="全局提示词" value={value} disabled={disabled} onChange={event => onValueChange(event.target.value)} /> }));
 afterEach(cleanup);
 
 const setup = (overrides: Partial<ChainEditorPromptInputsProps> = {}) => {
@@ -19,6 +18,23 @@ const setup = (overrides: Partial<ChainEditorPromptInputsProps> = {}) => {
 };
 
 describe('提示词上下文工具隔离', () => {
+  it('清空和撤销位于既有复制旁，仅更新当前全局文本并恢复焦点', () => {
+    const mark = vi.fn(), preset = vi.fn();
+    const Harness = () => {
+      const [prompt, setPrompt] = useState('global prompt');
+      return <ChainEditorPromptInputs prompt={prompt} setPrompt={setPrompt} presetSources={{}} tagAssistEnabled={false} canEdit
+        copyPromptToClipboard={vi.fn()} markPresetSectionModified={preset} markChange={mark}
+        activeLabLayout={{ order: ['prompt'], collapsed: {} }} mobileEditorTab="global" />;
+    };
+    render(<Harness />);
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
+    const clear = screen.getByRole('button', { name: '清空当前提示词' });
+    expect(clear.parentElement!.parentElement!.contains(screen.getByTitle('复制全局提示词'))).toBe(true);
+    expect(textarea.parentElement!.contains(clear)).toBe(false);
+    fireEvent.click(clear); expect(textarea.value).toBe(''); expect(document.activeElement).toBe(textarea);
+    expect(preset).toHaveBeenLastCalledWith('base'); expect(mark).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole('button', { name: '撤销清空' })); expect(textarea.value).toBe('global prompt');
+  });
   it('实验室未传入资料工具时维持复制按钮，输入及复制行为不变', () => {
     const props = setup();
     expect(screen.queryByRole('button', { name: /识别|辅助/ })).toBeNull();
@@ -34,6 +50,7 @@ describe('提示词上下文工具隔离', () => {
     const props = setup({ canEdit: false });
     expect(screen.queryByRole('button', { name: /识别|辅助/ })).toBeNull();
     expect((screen.getByRole('textbox') as HTMLTextAreaElement).disabled).toBe(true);
+    expect((screen.getByRole('button', { name: '清空当前提示词' }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(screen.getByTitle('复制全局提示词'));
     expect(props.copyPromptToClipboard).toHaveBeenCalledWith('original prompt', '全局提示词');
   });

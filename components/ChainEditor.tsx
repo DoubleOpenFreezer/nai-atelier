@@ -80,6 +80,7 @@ interface ChainEditorProps {
 
 export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUpdateChain, onFork, onCreateCharacter, setIsDirty, saveRef, notify, externalImportToken, agentOpenToken, tagAssistEnabled, onTagAssistEnabledChange, generationStreamPreview, forceEmptySeed = false, onForceEmptySeedChange, enforceFreeStepLimit = true, continuousGenerationEnabled = true, rememberGenerationSettings = true, generationMemory = DEFAULT_GENERATION_MEMORY_PREFERENCES, labPageLayouts, safeMode, onBack }) => {
   useLanguage();
+    const negativeClearActionSlotRef = useRef<HTMLSpanElement>(null);
     const [keyboardOffset, setKeyboardOffset] = useState(0);
     const confirmAction = useConfirmDialog();
 
@@ -2128,9 +2129,10 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                                 <div className="flex min-w-0 flex-wrap items-center gap-2">
                                     <PresetSourceBadge source={presetSources.negative} />
                                 </div>
-                                <PromptCopyButton onClick={() => copyPromptToClipboard(negativePrompt, '全局负面提示词')} title={t("复制全局负面提示词")} />
+                                <div className="flex items-center gap-1"><span ref={negativeClearActionSlotRef} /><PromptCopyButton onClick={() => copyPromptToClipboard(negativePrompt, '全局负面提示词')} title={t("复制全局负面提示词")} /></div>
                             </div>
                             <TagAutocompleteTextarea
+                                clearActionSlotRef={negativeClearActionSlotRef}
                                 tagAssistEnabled={tagAssistEnabled && !isNaiMediumModel(params.model)}
                                 disabled={isNaiMediumModel(params.model)}
                                 className="w-full border rounded-lg p-3 outline-none font-mono text-sm font-normal leading-relaxed min-h-[80px] bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-800 text-gray-900 dark:text-gray-100 focus:ring-1 focus:ring-indigo-500/50"
