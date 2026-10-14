@@ -188,6 +188,7 @@ const App = () => {
       setChains([...additions, ...data]);
       setLastChainFetch(Date.now());
       setDbConfigError(false);
+      return [...additions, ...data];
     } catch (e: any) {
       if (refreshSeq !== refreshDataSeqRef.current) return;
       if (e.message && e.message.includes('Database not configured')) {
@@ -592,6 +593,19 @@ const App = () => {
     }
   };
 
+  const handleBulkDelete = async (ids: string[], onProgress: (completed: number) => void) => {
+    let errorCount = 0;
+    for (const [index, id] of ids.entries()) {
+      try { await db.deleteChain(id); } catch { errorCount++; }
+      onProgress(index + 1);
+    }
+    // 删除回执丢失或图片清理失败时，条目可能已删除；只按实际回读保留选择。
+    const snapshot = await refreshData(true);
+    if (!snapshot) throw new Error(t('删除已提交，但列表刷新失败，请刷新后核对结果'));
+    const existing = new Set(snapshot.map(chain => chain.id));
+    return { remainingIds: ids.filter(id => existing.has(id)), errorCount };
+  };
+
   const getSelectedChain = () => chains.find(c => c.id === selectedId);
   const handleReturnFromEditor = () => {
     const selectedChain = getSelectedChain();
@@ -630,8 +644,12 @@ const App = () => {
           onCreate={handleCreateChain}
           onSelect={(id) => handleNavigate('edit', id)}
           onDelete={handleDelete}
+          onBulkDelete={handleBulkDelete}
           onUpdateChain={handleUpdateChain}
           onRefresh={() => refreshData(true)}
+          onReloadTags={async () => {
+            if (!await refreshData(true)) throw new Error(t('风格串列表加载失败，请稍后重试'));
+          }}
           isLoading={loading}
           notify={notify}
           isGuest={false}
@@ -720,6 +738,10 @@ const App = () => {
           inspirationsData={inspirationsCache}
           labModuleOrder={appearancePreferences.labPageLayouts['text-to-image'].order}
           onRefresh={() => loadInspirations(true)}
+          onImportRefresh={async () => {
+            const items = await db.getAllInspirations(currentUser);
+            setInspirationsCache(items); setLastInspirationFetch(Date.now());
+          }}
           notify={notify}
           onNavigateToPlayground={() => handleNavigate('playground', undefined, { externalImport: true })}
           chains={chains}

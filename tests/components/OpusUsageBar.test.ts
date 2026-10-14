@@ -2,7 +2,7 @@
 import React from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { DEFAULT_NAI_RUNTIME, refreshNaiRuntimeConfig } from '../../services/naiRuntime';
+import { DEFAULT_NAI_RUNTIME, NAI_RUNTIME_REFRESH_EVENT, refreshNaiRuntimeConfig } from '../../services/naiRuntime';
 import { OpusUsageBar } from '../../components/OpusUsageBar';
 import { LANGUAGES, setLanguage, t } from '../../services/i18n';
 
@@ -98,6 +98,66 @@ describe('OpusUsageBar', () => {
     await waitFor(() => expect(card.getAttribute('aria-busy')).toBe('false'));
     expect(screen.getByText('99%')).toBeTruthy();
     expect(card.querySelectorAll('span')).toHaveLength(beforeRows);
+  });
+
+  it.each([
+    { label: '侧栏展开', props: { collapsed: false }, percent: 59, negative: false, visible: '59%', color: 'text-emerald-500' },
+    { label: '侧栏折叠', props: { collapsed: true }, percent: 59, negative: false, visible: '59%', color: 'text-emerald-500' },
+    { label: '设置与手机详情', props: { collapsed: false, showDetails: true }, percent: 59, negative: false, visible: '59%', color: 'text-emerald-500' },
+    { label: '低额度', props: { collapsed: false }, percent: 10, negative: false, visible: '10%', color: 'text-amber-500' },
+    { label: '额度耗尽', props: { collapsed: false }, percent: 0, negative: true, visible: '0%', name: '已用尽', color: 'text-red-500' },
+  ])('$label 的已知额度不被规则同步失败替换', async ({ props, percent, negative, visible, name, color }) => {
+    sessionStorage.setItem('nai_api_key', `opus-runtime-warning-${percent}-${negative}-${Boolean(props.showDetails)}`);
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => String(input).startsWith('/api/novelai-runtime')
+      ? responseFor({ ...DEFAULT_NAI_RUNTIME, syncedAt: Date.now(), health: { ok: false, reason: 'page', error: 'official page exposes no chunks' } })
+      : responseFor({ tier: 3, active: true, usage: { percent, isNegative: negative, timeUntilNextPercent: 0 } })));
+    await refreshNaiRuntimeConfig();
+    render(React.createElement(OpusUsageBar, props));
+
+    const card = await screen.findByRole('status', { name: new RegExp(name || visible) });
+    expect(screen.getByText(visible)).toBeTruthy();
+    expect(screen.queryByText('×')).toBeNull();
+    expect(screen.getByRole('img', { name: '计费规则同步异常' })).toBeTruthy();
+    expect(screen.getByRole('img', { name: '计费规则同步异常' }).className).toContain('bg-amber-500');
+    expect(screen.getByText(visible).parentElement?.className).toContain(color);
+    expect(card.getAttribute('aria-label')).toContain('计费规则同步异常');
+    expect(card.title).toContain('official page exposes no chunks');
+  });
+
+  it('额度仍在加载时规则同步失败只显示加载状态和琥珀警示，不显示红叉', async () => {
+    sessionStorage.setItem('nai_api_key', 'opus-runtime-warning-loading');
+    let finishQuota!: (response: Response) => void;
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => String(input).startsWith('/api/novelai-runtime')
+      ? Promise.resolve(responseFor({ ...DEFAULT_NAI_RUNTIME, syncedAt: Date.now(), health: { ok: false, reason: 'page', error: 'official page exposes no chunks' } }))
+      : new Promise<Response>(resolve => { finishQuota = resolve; })));
+    await refreshNaiRuntimeConfig();
+    render(React.createElement(OpusUsageBar, { collapsed: false }));
+
+    expect(await screen.findByLabelText('正在同步')).toBeTruthy();
+    expect(screen.getByRole('img', { name: '计费规则同步异常' })).toBeTruthy();
+    expect(screen.queryByText('×')).toBeNull();
+    await act(async () => finishQuota(responseFor({ tier: 3, active: true, usage: { percent: 59, isNegative: false, timeUntilNextPercent: 0 } })));
+    expect(await screen.findByText('59%')).toBeTruthy();
+  });
+
+  it('规则同步恢复后移除琥珀警示并恢复正常状态', async () => {
+    sessionStorage.setItem('nai_api_key', 'opus-runtime-warning-recovery');
+    let runtimeHealthy = false;
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => String(input).startsWith('/api/novelai-runtime')
+      ? responseFor({ ...DEFAULT_NAI_RUNTIME, syncedAt: Date.now(), health: runtimeHealthy
+        ? { ok: true, extracted: ['all'], missed: [] }
+        : { ok: false, reason: 'page', error: 'official page exposes no chunks' } })
+      : responseFor({ tier: 3, active: true, usage: { percent: 59, isNegative: false, timeUntilNextPercent: 0 } })));
+    await refreshNaiRuntimeConfig();
+    render(React.createElement(OpusUsageBar, { collapsed: false }));
+
+    const card = await screen.findByRole('status', { name: /59%/ });
+    expect(screen.getByRole('img', { name: '计费规则同步异常' })).toBeTruthy();
+    runtimeHealthy = true;
+    await act(async () => { window.dispatchEvent(new CustomEvent(NAI_RUNTIME_REFRESH_EVENT)); });
+    await waitFor(() => expect(screen.queryByRole('img', { name: '计费规则同步异常' })).toBeNull());
+    expect(card.getAttribute('aria-label')).not.toContain('计费规则同步异常');
+    expect(screen.getByText('59%')).toBeTruthy();
   });
 
   it('切 Key 后同步失败保留红色错误行，点击后可重试恢复', async () => {
@@ -219,7 +279,7 @@ describe('OpusUsageBar', () => {
     render(React.createElement(OpusUsageBar, { collapsed: false }));
     expect((await screen.findByRole('status', { name: /Paid Anlas：420 点/ })).title).toContain('Paid Anlas：420 点');
     expect(await screen.findByText('计费规则同步异常')).toBeTruthy();
-    expect(screen.getByRole('status').className).toContain('text-red-500');
+    expect(screen.getByRole('status').className).toContain('text-amber-600');
     expect(screen.getByRole('status').title).toContain('官方计费规则同步异常');
   });
 });

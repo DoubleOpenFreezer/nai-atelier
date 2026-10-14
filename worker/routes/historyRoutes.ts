@@ -772,7 +772,7 @@ export async function handleHistoryRoute(ctx: RouteContext): Promise<Response | 
         .bind(item.image_key, item.image_key, item.id).first<{count: number}>();
       if (Number(references?.count || 0) === 0 && env.BUCKET) await env.BUCKET.delete(item.image_key);
     } else if (item.image_url) {
-      await deleteR2File(env, item.image_url);
+      await deleteR2File(env, item.image_url, db);
     }
   };
 

@@ -18,3 +18,12 @@ export const NAI_MEDIUM_BILLING_BUNDLE = NAI_BILLING_BUNDLE.replace(
   'let w=Math.ceil(2951823174884865e-21*i+5753298233447344e-22*i*a)*(r?1.4:n?1.2:1);',
   'let w=function(e,t,a,n,r){let i=arguments.length>5&&void 0!==arguments[5]?arguments[5]:1,l=e*t;return Math.ceil(2951823174884865e-21*l+5753298233447344e-22*l*a*i)*(r?1.4:n?1.2:1)}(f,d,M,t,t&&n,function(e){switch(e){case r.oM.naiDiffusionV5FullMedium:case r.oM.naiDiffusionV5FullMediumInpainting:return 1/1.06521739;default:return 1}}(a));',
 );
+
+/** 合成 Turbopack 具名导出及费用汇总，旧构建夹具继续独立验证。 */
+export const NAI_TURBOPACK_BILLING_BUNDLE = NAI_MEDIUM_BILLING_BUNDLE
+  .replace('let d=function', '"checkStableDiffusionPrice",0,function')
+  .replaceAll('r.oM.', 'r.ImageGenerationModels.')
+  .replace('let i=arguments.length>5&&void 0!==arguments[5]?arguments[5]:1,l=e*t;', 'let i=arguments.length>5&&void 0!==arguments[5]?arguments[5]:1;let l=e*t;')
+  .replace('p=2;function M(e){return Math.max(0,e-4)*p}', '"vtAdditionalPrice",0,function(e){return 2*Math.max(0,e-4)}')
+  .replace('let g=0;g+=await priceForEncoding(s);g+=(0,q.H_0)(s.length);', 'let g=0;g=0+(await Promise.all(s.map(e=>{let{id:t,information_extracted:i,mask:r,enabled:n}=e;return!1===n?{exists:!0,price:0}:cn.VTSHelper.getPrice(t,p,o,{information_extracted:i,mask:r})}))).map(EI).reduce(EA,0)+(0,Ex.vtAdditionalPrice)(s.filter(ET).length);')
+  + ';function EI(e){let{price:t}=e;return t}function EA(e,t){return e+t}function ET(e){return e.enabled}';

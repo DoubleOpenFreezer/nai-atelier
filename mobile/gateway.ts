@@ -9,7 +9,7 @@ import { fetchCodexData } from '../worker/codexRemote.mjs';
 import { createMobileGenerationJobs, rememberNaiSubscription } from './generationJobs';
 import { AITAG_BROWSER_HEADERS } from 'mobile:remote';
 import {
-  getNaiRuntime, applyNaiRuntimeOverride, computeNaiRuntimeSync, fetchNaiRuntimeText,
+  getNaiRuntime, applyNaiRuntimeOverride, computeNaiRuntimeSync, extractNaiRuntimeChunkPaths, fetchNaiRuntimeText,
   sanitizeNovelAiSubscription, CloudQueueCoordinator,
   normalizeCloudQueuePreferences, keyHashFromAuthorization,
   handleGenerateRequest, handleGenerateStreamRequest, handleGenerationTaskRequest, handleVibeEncodeRequest,
@@ -39,7 +39,7 @@ async function refreshRuntime() {
   if (previous.health?.ok && Date.now() - previous.syncedAt < 86400000) return;
   try {
     const html = await fetchNaiRuntimeText('https://novelai.net/image');
-    const paths = [...new Set<string>(Array.from(html.matchAll(/"(\/_next\/static\/chunks\/[^" ]+\.js)"/g), (item: RegExpMatchArray) => item[1]))];
+    const paths = extractNaiRuntimeChunkPaths(html);
     const texts = await Promise.all(paths.map(path => fetchNaiRuntimeText('https://novelai.net' + path)));
     const next = computeNaiRuntimeSync(texts.join('\n'));
     if (next.health.missed.length) throw new Error('官方规则未能完整提取：' + next.health.missed.join(', '));

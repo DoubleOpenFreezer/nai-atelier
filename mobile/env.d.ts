@@ -24,6 +24,7 @@ declare module 'mobile:gateway' {
     normalizeCloudQueuePreferences: any, keyHashFromAuthorization: any, handleGenerateRequest: any,
     handleGenerateStreamRequest: any, handleGenerationTaskRequest: any, handleVibeEncodeRequest: any, selectPreciseReferenceCanvas: any, recoverPendingVibeEncodings: any,
     sendJson: any, hasValidLanCookie: any;
+  export const extractNaiRuntimeChunkPaths: (html: string) => string[];
   /** 订阅原始响应只在后台任务核实额度时使用；结果仍需 sanitize 后缓存。 */
   export const fetchNovelAiSubscription: (authorization: string, signal?: AbortSignal) => Promise<Response>;
   /** 与电脑网关同一份计费函数：payload、额度是否透支、是否活跃 Opus。 */

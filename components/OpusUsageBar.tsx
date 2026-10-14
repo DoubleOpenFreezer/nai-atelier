@@ -38,7 +38,7 @@ export const OpusUsageBar: React.FC<OpusUsageBarProps> = ({ collapsed, showDetai
     const runtimeWarning = isNaiRuntimeSyncUnhealthy(runtime) ? describeNaiRuntimeSyncProblem(runtime) : '';
     return <button type="button" role="status" aria-label={gateway ? t(expiredLabel) : t("订阅已过期 · {0}", [balanceLabel])} aria-busy={loading}
       onClick={refreshAll} title={gateway ? `${t(expiredLabel)} · ${balanceLabel} · ${t('成员分配额度与实际扣费以网关为准；点击刷新')}` : t("订阅已过期，Opus 免费权益不可用。{0}。可确认付费生成，权限与扣费以官方响应为准；余额不会覆盖本地预算。{1}{2}", [balanceLabel, error ? t('状态刷新失败：{0}', [t(error)]) : '', runtimeWarning ? t('官方计费规则同步异常：{0}', [t(runtimeWarning)]) : ''])}
-      className={`min-h-14 w-full cursor-pointer select-none text-left outline-none transition hover:bg-gray-100 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-500 dark:hover:bg-gray-800 ${error || runtimeWarning ? 'text-red-500 dark:text-red-400' : 'text-amber-600 dark:text-amber-400'} ${showDetails && !collapsed ? 'rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-800/70' : `flex items-center border-b border-gray-200 dark:border-gray-800 ${collapsed ? 'justify-center px-0' : 'gap-2.5 px-3'}`}`}>
+      className={`min-h-14 w-full cursor-pointer select-none text-left outline-none transition hover:bg-gray-100 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-500 dark:hover:bg-gray-800 ${error ? 'text-red-500 dark:text-red-400' : 'text-amber-600 dark:text-amber-400'} ${showDetails && !collapsed ? 'rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-800/70' : `flex items-center border-b border-gray-200 dark:border-gray-800 ${collapsed ? 'justify-center px-0' : 'gap-2.5 px-3'}`}`}>
       {showDetails && !collapsed ? <>
         <span className="flex items-center justify-between gap-2 text-xs font-medium"><span>{t(expiredLabel)}</span><RefreshCw aria-hidden="true" className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} /></span>
         <span className="mt-3 grid grid-cols-2 gap-3 text-xs"><span className="min-w-0">{t("免费权益不可用")}</span><span className="min-w-0 break-words border-l border-gray-200 pl-3 tabular-nums dark:border-gray-700">{t(balanceLabel)}</span></span>
@@ -64,7 +64,8 @@ export const OpusUsageBar: React.FC<OpusUsageBarProps> = ({ collapsed, showDetai
   const health = runtime.health;
   const syncPending = health?.reason === 'pending';
   const runtimeSyncBroken = isNaiRuntimeSyncUnhealthy(runtime);
-  const syncBroken = Boolean(error) || runtimeSyncBroken;
+  // 额度查询错误用红叉；规则同步失败只代表估算可能过期，不能覆盖已知额度。
+  const syncBroken = Boolean(error);
   const ringClass = syncBroken
     ? 'text-red-500 dark:text-red-400'
     : negative
@@ -119,6 +120,7 @@ export const OpusUsageBar: React.FC<OpusUsageBarProps> = ({ collapsed, showDetai
         <span className={`relative font-bold tabular-nums ${syncBroken ? 'text-lg leading-none' : showDetails && !collapsed ? 'text-meta' : percent > 99 ? 'text-mini' : 'text-micro'}`}>
           {syncBroken ? '×' : usage ? `${percent}%` : ''}
         </span>
+        {runtimeSyncBroken && <span role="img" aria-label={t('计费规则同步异常')} className="absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full bg-amber-500 ring-2 ring-white dark:ring-gray-900" />}
       </span>;
   return (
     <button
@@ -127,7 +129,7 @@ export const OpusUsageBar: React.FC<OpusUsageBarProps> = ({ collapsed, showDetai
       onClick={refreshAll}
       title={collapsed ? title : t("{0}（点击立即刷新）", [title])}
       aria-busy={loading}
-      aria-label={t(!info ? '生成额度 {0}' : gateway ? '成员生成额度 {0}' : "Opus 生成限额 {0}", [syncBroken ? t('同步失败') : !usage ? t('正在同步') : negative ? t('已用尽') : `${percent}%`])}
+      aria-label={t(!info ? '生成额度 {0}' : gateway ? '成员生成额度 {0}' : "Opus 生成限额 {0}", [syncBroken ? t('同步失败') : !usage ? t('正在同步') : negative ? t('已用尽') : `${percent}%`]) + (runtimeSyncBroken ? ` · ${t('计费规则同步异常')}` : '')}
       className={`group relative min-h-14 w-full cursor-pointer select-none text-left outline-none transition hover:bg-gray-100 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-500 dark:hover:bg-gray-800 ${showDetails && !collapsed ? 'rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-800/70' : `flex items-center border-b border-gray-200 dark:border-gray-800 ${collapsed ? 'justify-center px-0' : 'gap-2.5 px-3'}`}`}
     >
       {showDetails && !collapsed ? <>

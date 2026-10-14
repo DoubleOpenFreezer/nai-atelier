@@ -209,13 +209,26 @@ function isMissingColumnError(e: any): boolean {
 }
 
 // Helper: Delete File from R2
-export async function deleteR2File(env: Env, url: string) {
+export async function deleteR2File(env: Env, url: string, db: D1Database) {
     if (!env.BUCKET || !url) return;
     // Check if it is a local API asset URL
     if (url.startsWith('/api/assets/')) {
-        const key = url.replace('/api/assets/', '');
+        const key = decodeURIComponent(url.slice('/api/assets/'.length));
+        // 先提交条目变更，再核对全库引用；收藏与其他风格串可共用同一张封面。
+        const assetUrls = [...new Set([url, `/api/assets/${key}`, `/api/assets/${encodeURIComponent(key)}`,
+          `/api/assets/${key.split('/').map(encodeURIComponent).join('/')}`])];
+        const reference = await db.prepare(`WITH asset_urls AS (SELECT value FROM json_each(?)) SELECT
+          EXISTS(SELECT 1 FROM chains WHERE preview_image IN (SELECT value FROM asset_urls)) OR
+          EXISTS(SELECT 1 FROM inspirations WHERE image_url IN (SELECT value FROM asset_urls) OR image_key = ?) OR
+          EXISTS(SELECT 1 FROM local_generation_history WHERE image_key = ?) OR
+          EXISTS(SELECT 1 FROM artists WHERE image_url IN (SELECT value FROM asset_urls) OR preview_url IN (SELECT value FROM asset_urls)) OR
+          EXISTS(SELECT 1 FROM artists, json_each(CASE WHEN json_valid(benchmarks) THEN benchmarks ELSE '[]' END)
+            WHERE json_each.value IN (SELECT value FROM asset_urls)) AS referenced`)
+          .bind(JSON.stringify(assetUrls), key, key)
+          .first<{ referenced: number }>();
+        if (!reference || reference.referenced) return;
         try {
-            await env.BUCKET.delete(decodeURIComponent(key));
+            await env.BUCKET.delete(key);
             console.log(`Deleted old file: ${key}`);
         } catch (e) {
             console.error(`Failed to delete file ${key}`, e);
@@ -775,7 +788,7 @@ export async function handleSettingsRoute(ctx: RouteContext): Promise<Response |
     // Delete only after the new reference has committed.  This covers
     // replacement, clearing a cover, and future non-base64 cover sources.
     if (updates.previewImage !== undefined && chain.preview_image && chain.preview_image !== updates.previewImage) {
-      await deleteR2File(env, chain.preview_image);
+      await deleteR2File(env, chain.preview_image, db);
     }
     return json({ success: true });
   }
@@ -786,7 +799,7 @@ export async function handleSettingsRoute(ctx: RouteContext): Promise<Response |
     if (chain) {
         if (chain.user_id && chain.user_id !== currentUser.id && currentUser.role !== 'admin') return error('Permission Denied', 403);
         await db.prepare('DELETE FROM chains WHERE id = ?').bind(id).run();
-        if (chain.preview_image) await deleteR2File(env, chain.preview_image);
+        if (chain.preview_image) await deleteR2File(env, chain.preview_image, db);
     }
     return json({ success: true });
   }
@@ -846,7 +859,7 @@ export async function handleSettingsRoute(ctx: RouteContext): Promise<Response |
     const previousAssets = [existing?.image_url, existing?.preview_url, ...oldBenchmarks]
       .filter((url): url is string => typeof url === 'string' && url.length > 0);
     for (const oldUrl of new Set(previousAssets)) {
-      if (!retainedAssets.has(oldUrl)) await deleteR2File(env, oldUrl);
+      if (!retainedAssets.has(oldUrl)) await deleteR2File(env, oldUrl, db);
     }
     return json({ success: true, benchmarks });
   }
@@ -856,13 +869,13 @@ export async function handleSettingsRoute(ctx: RouteContext): Promise<Response |
     await db.prepare('DELETE FROM artists WHERE id = ?').bind(id).run();
     if (artist) {
         // Delete all associated files
-        await deleteR2File(env, artist.image_url);
-        if (artist.preview_url) await deleteR2File(env, artist.preview_url);
+        await deleteR2File(env, artist.image_url, db);
+        if (artist.preview_url) await deleteR2File(env, artist.preview_url, db);
         if (artist.benchmarks) {
             // benchmarks 列损坏时回退为空数组，保证画师条目本身仍能删除
             const bms = parseStoredJson(artist.benchmarks, []);
             for (const url of Array.isArray(bms) ? bms : []) {
-                if (url) await deleteR2File(env, url);
+                if (url) await deleteR2File(env, url, db);
             }
         }
     }

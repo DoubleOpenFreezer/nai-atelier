@@ -10,11 +10,11 @@ import { copySharedImage } from '../../services/imageSharing';
 import { LANGUAGES, setLanguage, t } from '../../services/i18n';
 vi.mock('../../services/imageSharing', async original => ({ ...await original<typeof import('../../services/imageSharing')>(), copySharedImage: vi.fn(async () => {}) }));
 
-const { get, post, preferences } = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), preferences: { enabled: true } }));
+const { get, post, put, preferences } = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), put: vi.fn(), preferences: { enabled: true } }));
 const confirmAction = vi.hoisted(() => vi.fn(async () => false));
 vi.mock('../../components/ConfirmDialog', () => ({ useConfirmDialog: () => confirmAction }));
 vi.mock('../../services/stChatu8Preferences', () => ({ useStChatu8Preferences: () => preferences }));
-vi.mock('../../services/api', () => ({ api: { get, post } }));
+vi.mock('../../services/api', () => ({ api: { get, post, put } }));
 vi.mock('../../components/StyleCollectorControl', () => ({ StyleCollectorControl: () => React.createElement('button', { role: 'switch', 'aria-label': '收集模式' }) }));
 vi.mock('../../components/ImageTaggerPanel', () => ({ ImageTaggerAction: () => React.createElement('button', { 'aria-label': '图片反推' }) }));
 vi.mock('../../components/chain/FolderBatchImportModal', () => ({ FolderBatchImportModal: ({ isOpen, onSuccess }: { isOpen: boolean; onSuccess: () => void }) => isOpen ? React.createElement('button', { onClick: onSuccess }, '完成测试导入') : null }));
@@ -32,6 +32,11 @@ const chain = (id: string, name: string, model = 'nai-diffusion-4-5-full'): Prom
 });
 const chains = [chain('a', '风格 A'), chain('b', '风格 B'), chain('v5', '风格 V5', 'nai-diffusion-5-full'), chain('v4', '风格 V4', 'nai-diffusion-4-full')];
 const props = () => ({ chains, type: 'style' as const, onCreate: vi.fn(), onSelect: vi.fn(), onDelete: vi.fn(), onRefresh: vi.fn(), onUpdateChain: vi.fn(), isLoading: false, notify: vi.fn() });
+const bulkProps = () => ({ ...props(), onBulkDelete: vi.fn(async (_ids: string[], _onProgress: (completed: number) => void) => ({ remainingIds: [] as string[], errorCount: 0 })) });
+const beginBulkSelection = async () => {
+  await waitFor(() => expect((screen.getByRole('button', { name: '批量选择风格串' }) as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(screen.getByRole('button', { name: '批量选择风格串' }));
+};
 it.each(['style', 'character'] as const)('%s 封面右上保留透明图片操作，左上恢复红色删除，子操作不打开工作台', async type => {
   const p = props();
   const label = type === 'character' ? '自定义角色' : '风格串';
@@ -73,11 +78,219 @@ beforeEach(() => {
   localStorage.clear(); preferences.enabled = true;
   confirmAction.mockReset(); confirmAction.mockResolvedValue(false);
   get.mockReset(); post.mockReset(); get.mockResolvedValue({ entries: [], lastSnapshotAt: 0 });
+  put.mockReset(); put.mockResolvedValue(undefined);
   post.mockImplementation(async (_path, body) => ({ entries: body.chainIds.map((chainId: string) => ({ chainId, requestId: chainId, status: 'pending', requestedAt: 1, confirmedAt: 0, lastVerifiedAt: 0 })), lastSnapshotAt: 0 }));
   vi.stubGlobal('matchMedia', () => ({ matches: true, addEventListener() {}, removeEventListener() {} }));
   window.history.replaceState(null, '');
 });
 afterEach(() => { cleanup(); setLanguage('zh-CN'); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+
+it.each([390, 1280])('宽度 %s：标签管理紧邻筛选标签，先关闭筛选再打开，手机返回不误关管理', async width => {
+  vi.stubGlobal('innerWidth', width);
+  vi.stubGlobal('matchMedia', () => ({ matches: width < 1280, addEventListener() {}, removeEventListener() {} }));
+  render(React.createElement(ChainList, { ...props(), chains: [{ ...chains[0], tags: ['我的分类', '待实测', '__角色目录__'] }] }));
+  const trigger = screen.getByRole('button', { name: width < 768 ? '筛选与排序' : '筛选' });
+  trigger.focus(); fireEvent.click(trigger);
+  const filter = screen.getByRole('dialog', { name: '筛选与排序' });
+  const heading = within(filter).getByText('自定义标签');
+  const manage = within(filter).getByRole('button', { name: '管理标签' });
+  expect(manage.parentElement?.parentElement).toBe(heading.parentElement);
+  await waitFor(() => expect((manage as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(manage);
+  const manager = await screen.findByRole('dialog', { name: '管理标签' });
+  expect(screen.queryByRole('dialog', { name: '筛选与排序' })).toBeNull();
+  expect(manager.contains(document.activeElement)).toBe(true);
+  expect(within(manager).getByText('#我的分类')).toBeTruthy();
+  expect(within(manager).queryByText('#待实测')).toBeNull();
+  expect(within(manager).queryByText('#__角色目录__')).toBeNull();
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 30)); });
+  expect(screen.getByRole('dialog', { name: '管理标签' })).toBe(manager);
+  fireEvent.click(within(manager).getByRole('button', { name: '关闭' }));
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: '管理标签' })).toBeNull());
+  expect(document.activeElement).toBe(trigger);
+  expect(put).not.toHaveBeenCalled();
+});
+
+it('分类标签重命名覆盖未命中搜索的同类资料，保留筛选及其他资料类型', async () => {
+  preferences.enabled = false;
+  const p = props();
+  let stored = [
+    { ...chains[0], tags: ['分类甲', '待实测'] },
+    { ...chains[1], tags: ['分类甲', '另一分类'] },
+    { ...chain('role', '角色 A'), type: 'character' as const, tags: ['分类甲'] },
+  ];
+  put.mockImplementation(async (path: string, updates: Partial<PromptChain>) => {
+    stored = stored.map(item => path === `/chains/${item.id}` ? { ...item, ...updates } : item);
+  });
+  const Harness = () => {
+    const [items, setItems] = React.useState(stored);
+    return React.createElement(ChainList, { ...p, chains: items, onReloadTags: async () => { setItems([...stored]); } });
+  };
+  render(React.createElement(Harness));
+  fireEvent.change(screen.getByPlaceholderText('搜索我的风格串'), { target: { value: '风格 A' } });
+  fireEvent.click(screen.getByRole('button', { name: '筛选' }));
+  let filter = within(screen.getByRole('dialog', { name: '筛选与排序' }));
+  fireEvent.click(filter.getByRole('button', { name: '分类甲' }));
+  fireEvent.click(filter.getByRole('button', { name: '只看待实测' }));
+  fireEvent.click(filter.getByRole('button', { name: '管理标签' }));
+  const manager = await screen.findByRole('dialog', { name: '管理标签' });
+  fireEvent.click(within(manager).getByRole('button', { name: '重命名标签：分类甲' }));
+  fireEvent.change(within(manager).getByRole('textbox', { name: '标签名称' }), { target: { value: '分类乙' } });
+  confirmAction.mockResolvedValueOnce(true);
+  fireEvent.click(within(manager).getByRole('button', { name: '保存' }));
+  await waitFor(() => expect(p.notify).toHaveBeenCalledWith('标签已更新'));
+  expect(put.mock.calls).toEqual([
+    ['/chains/a', { tags: ['分类乙', '待实测'] }],
+    ['/chains/b', { tags: ['分类乙', '另一分类'] }],
+  ]);
+  expect(stored[2].tags).toEqual(['分类甲']);
+  expect(p.onRefresh).not.toHaveBeenCalled();
+  fireEvent.click(within(manager).getByRole('button', { name: '关闭' }));
+  fireEvent.click(screen.getByRole('button', { name: '筛选 2' }));
+  filter = within(screen.getByRole('dialog', { name: '筛选与排序' }));
+  expect(filter.getByRole('button', { name: '分类乙' }).getAttribute('aria-pressed')).toBe('true');
+  expect(filter.getByRole('button', { name: '只看待实测' }).getAttribute('aria-pressed')).toBe('true');
+  expect((screen.getByPlaceholderText('搜索我的风格串') as HTMLInputElement).value).toBe('风格 A');
+  expect(screen.queryByRole('button', { name: '打开风格串：风格 B' })).toBeNull();
+});
+
+it('自定义角色共用分类管理但访客无入口，不管理词库角色标签', async () => {
+  const p = props();
+  const view = render(React.createElement(ChainList, { ...p, type: 'character', chains: [{ ...chains[0], tags: ['风格分类'] }, { ...chain('role', '角色 A'), type: 'character', tags: ['角色分类'] }] }));
+  fireEvent.click(screen.getByRole('button', { name: '筛选' }));
+  fireEvent.click(screen.getByRole('button', { name: '管理标签' }));
+  const manager = await screen.findByRole('dialog', { name: '管理标签' });
+  expect(within(manager).getByText('#角色分类')).toBeTruthy();
+  expect(within(manager).queryByText('#风格分类')).toBeNull();
+  view.rerender(React.createElement(ChainList, { ...p, type: 'character', isGuest: true, chains: [] }));
+  fireEvent.click(screen.getByRole('button', { name: '筛选' }));
+  expect(screen.queryByRole('button', { name: '管理标签' })).toBeNull();
+});
+
+it.each([390, 1280])('宽度 %s：直达多选进入原位批量选择，四个型号不限，图片节点不重建，零选择仍保留模式', async width => {
+  vi.stubGlobal('innerWidth', width);
+  const p = bulkProps();
+  const view = render(React.createElement('div', { className: 'safe-mode dark' }, React.createElement(ChainList, { ...p, chains: chains.map(item => ({ ...item, previewImage: '/synthetic.png' })) })));
+  const header = view.container.querySelector('header')!;
+  const frames = [...view.container.querySelectorAll('.mobile-gallery-frame')];
+  const selectButton = screen.getByRole('button', { name: '批量选择风格串' });
+  expect(selectButton.getAttribute('title')).toBe('批量选择风格串');
+  expect(selectButton.querySelector('svg')).toBeTruthy();
+  expect(within(selectButton).getByText('多选').className).toContain('hidden xl:inline');
+  await beginBulkSelection();
+  expect(view.container.querySelector('header')).toBe(header);
+  expect([...view.container.querySelectorAll('.mobile-gallery-frame')]).toEqual(frames);
+  expect(within(header).getByRole('group', { name: '风格串批量操作' }).classList.contains('overflow-x-auto')).toBe(true);
+  expect(screen.queryByPlaceholderText('搜索我的风格串')).toBeNull();
+  for (const item of chains) {
+    const card = screen.getByRole('checkbox', { name: `选择风格串：${item.name}` });
+    expect(card.getAttribute('data-safe-mode-work')).toBe('true');
+    expect(card.getAttribute('aria-disabled')).toBe('false');
+    expect(card.querySelector('.rounded-full.absolute.left-2.top-2')).toBeTruthy();
+    expect(within(card).queryByRole('button')).toBeNull();
+  }
+  const first = screen.getByRole('checkbox', { name: '选择风格串：风格 A' });
+  fireEvent.click(within(first).getByText('风格 A'));
+  expect(first.getAttribute('aria-checked')).toBe('true');
+  fireEvent.keyDown(first, { key: 'Enter' });
+  expect(first.getAttribute('aria-checked')).toBe('false');
+  longPress(first);
+  expect(first.getAttribute('aria-checked')).toBe('true');
+  expect(first.getAttribute('data-press-revealed')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '全选筛选结果' }));
+  expect(screen.getByText('已选 4 条')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: '反选筛选结果' }));
+  expect(screen.getByText('已选 0 条')).toBeTruthy();
+  expect(screen.getByRole('button', { name: '退出多选' })).toBeTruthy();
+  expect(p.onSelect).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: '退出多选' }));
+  expect(screen.getByPlaceholderText('搜索我的风格串')).toBeTruthy();
+  expect(screen.queryByRole('group', { name: '风格串批量操作' })).toBeNull();
+});
+
+it('批删只针对当前搜索/标签/模型筛选，刷新剔除隐藏选择，类型切换退出且角色/访客没有入口', async () => {
+  const p = bulkProps();
+  const items = [{ ...chains[0], tags: ['星空'] }, chains[1], { ...chains[2], tags: ['星空'] }];
+  const view = render(React.createElement(ChainList, { ...p, chains: items }));
+  fireEvent.click(screen.getByRole('button', { name: '筛选' }));
+  const filter = within(screen.getByRole('dialog', { name: '筛选与排序' }));
+  fireEvent.click(filter.getByRole('button', { name: '星空' }));
+  fireEvent.change(filter.getByRole('combobox', { name: '模型筛选' }), { target: { value: 'nai-diffusion-5-full' } });
+  fireEvent.keyDown(document, { key: 'Escape' });
+  fireEvent.change(screen.getByPlaceholderText('搜索我的风格串'), { target: { value: '风格' } });
+  await beginBulkSelection(); fireEvent.click(screen.getByRole('button', { name: '全选筛选结果' }));
+  expect(screen.getByText('已选 1 条')).toBeTruthy();
+  confirmAction.mockResolvedValueOnce(true);
+  p.onBulkDelete.mockResolvedValueOnce({ remainingIds: ['v5'], errorCount: 1 });
+  fireEvent.click(screen.getByRole('button', { name: /^删除$/ }));
+  await waitFor(() => expect(p.onBulkDelete).toHaveBeenCalledWith(['v5'], expect.any(Function)));
+  expect(p.onDelete).not.toHaveBeenCalled(); expect(p.onRefresh).not.toHaveBeenCalled();
+  view.rerender(React.createElement(ChainList, { ...p, chains: items.map(item => ({ ...item, tags: [] })) }));
+  await waitFor(() => expect(screen.getByText('已选 0 条')).toBeTruthy());
+  expect(p.notify).toHaveBeenCalledWith('已删除 0 条，1 条未删除', 'error');
+  view.rerender(React.createElement(ChainList, { ...p, type: 'character', chains: items.map(item => ({ ...item, type: 'character' as const })) }));
+  expect(screen.queryByRole('group', { name: '风格串批量操作' })).toBeNull(); expect(screen.queryByRole('button', { name: '批量选择风格串' })).toBeNull();
+  view.rerender(React.createElement(ChainList, { ...p, isGuest: true }));
+  expect(screen.queryByRole('button', { name: '批量选择风格串' })).toBeNull();
+});
+
+it('批删取消只保留选择；处理中锁定选择/退出/重复删除，回读仅保留未删除条目', async () => {
+  const p = bulkProps();
+  let complete!: (value: { remainingIds: string[]; errorCount: number }) => void;
+  p.onBulkDelete.mockImplementationOnce(async (_ids, progress) => { progress(1); return new Promise(resolve => { complete = resolve; }); });
+  render(React.createElement(ChainList, p));
+  await beginBulkSelection(); fireEvent.click(screen.getByRole('button', { name: '全选筛选结果' }));
+  const remove = screen.getByRole('button', { name: /^删除$/ });
+  fireEvent.click(remove);
+  await waitFor(() => expect(confirmAction).toHaveBeenCalledOnce());
+  expect(p.onBulkDelete).not.toHaveBeenCalled(); expect(screen.getByText('已选 4 条')).toBeTruthy();
+  expect(confirmAction).toHaveBeenCalledWith(expect.objectContaining({ title: '删除 4 条风格串？', tone: 'danger' }));
+  confirmAction.mockResolvedValueOnce(true); fireEvent.click(remove);
+  await waitFor(() => expect(screen.getByText('正在删除 1/4')).toBeTruthy());
+  const card = screen.getByRole('checkbox', { name: '选择风格串：风格 A' });
+  expect(card.getAttribute('aria-disabled')).toBe('true');
+  fireEvent.click(card); fireEvent.keyDown(card, { key: ' ' });
+  expect(card.getAttribute('aria-checked')).toBe('true');
+  for (const name of ['退出多选', '全选筛选结果', '反选筛选结果', '清空选择', '删除']) expect((screen.getByRole('button', { name: new RegExp(`^${name}$`) }) as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(remove); expect(p.onBulkDelete).toHaveBeenCalledOnce();
+  await act(async () => complete({ remainingIds: ['b'], errorCount: 2 }));
+  expect(screen.getByText('已选 1 条')).toBeTruthy();
+  expect(card.getAttribute('aria-checked')).toBe('false');
+  expect(screen.getByRole('checkbox', { name: '选择风格串：风格 B' }).getAttribute('aria-checked')).toBe('true');
+  expect(p.notify).toHaveBeenCalledWith('已删除 3 条，1 条未删除', 'error');
+  fireEvent.click(screen.getByRole('button', { name: '清空选择' })); expect(screen.getByText('已选 0 条')).toBeTruthy();
+});
+
+it('智慧姬正在读取时直达多选按钮锁定，进入多选退出智慧姬筛选且能选择 V4，退出恢复原搜索', async () => {
+  const p = bulkProps(); render(React.createElement(ChainList, p));
+  await waitFor(() => expect((screen.getByRole('button', { name: '批量选择风格串' }) as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(screen.getByRole('button', { name: '智慧姬同步' }));
+  await screen.findByRole('checkbox', { name: '智慧姬同步：风格 A' });
+  expect(screen.getByRole('checkbox', { name: '智慧姬同步：风格 V4' }).getAttribute('aria-disabled')).toBe('true');
+  await beginBulkSelection();
+  expect(screen.queryByRole('checkbox', { name: '智慧姬同步：风格 A' })).toBeNull();
+  const v4 = screen.getByRole('checkbox', { name: '选择风格串：风格 V4' });
+  fireEvent.click(v4); expect(v4.getAttribute('aria-checked')).toBe('true');
+  expect(screen.queryByRole('button', { name: '加入待同步' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '退出多选' }));
+  expect(screen.getByPlaceholderText('搜索我的风格串')).toBeTruthy();
+});
+
+it('确认期间切换资料类型后迟到确认不能删除原筛选条目，切回风格串不恢复旧选择', async () => {
+  const p = bulkProps();
+  let confirm!: (approved: boolean) => void;
+  confirmAction.mockImplementationOnce(() => new Promise(resolve => { confirm = resolve; }));
+  const view = render(React.createElement(ChainList, p));
+  await beginBulkSelection(); fireEvent.click(screen.getByRole('button', { name: '全选筛选结果' }));
+  fireEvent.click(screen.getByRole('button', { name: /^删除$/ }));
+  await waitFor(() => expect(confirmAction).toHaveBeenCalledOnce());
+  view.rerender(React.createElement(ChainList, { ...p, type: 'character', chains: chains.map(item => ({ ...item, type: 'character' as const })) }));
+  await act(async () => confirm(true));
+  expect(p.onBulkDelete).not.toHaveBeenCalled();
+  view.rerender(React.createElement(ChainList, p));
+  expect(screen.queryByRole('checkbox')).toBeNull();
+  await beginBulkSelection(); expect(screen.getByText('已选 0 条')).toBeTruthy();
+});
 
 it.each(['style', 'character'] as const)('%s 搜索标题跟随五种语言，资料名称即使命中界面词典也保留原文', type => {
   const label = type === 'character' ? '自定义角色' : '风格串';

@@ -12,7 +12,7 @@ import type { ConfirmDialogOptions } from '../../components/ConfirmDialog';
 const mocks = vi.hoisted(() => ({
   getMe: vi.fn(), getAllChains: vi.fn(), getAllArtists: vi.fn(), getAllInspirations: vi.fn(),
   createChain: vi.fn(), createChainWithData: vi.fn(), deleteChain: vi.fn(),
-  confirm: vi.fn(), save: vi.fn(), canSave: true,
+  confirm: vi.fn(), save: vi.fn(), canSave: true, bulkProgress: vi.fn(), bulkResult: vi.fn(),
 }));
 vi.mock('../../services/dbService', () => ({ db: mocks }));
 vi.mock('../../services/collectorAppearance', () => ({ useCollectorAppearance: () => {} }));
@@ -22,7 +22,13 @@ vi.mock('../../components/Layout', () => ({ Layout: ({ children, onNavigate, cur
   {['aitag', 'inspiration', 'list'].map(view => <button key={view} onClick={() => onNavigate(view)}>{view}</button>)}
   {toast && <div role="status" data-type={toast.type}>{toast.message}</div>}{children}
 </> }));
-vi.mock('../../components/ChainList', () => ({ ChainList: ({ chains, onDelete, onSelect, notify }: { chains: PromptChain[]; onDelete: (id: string) => Promise<void>; onSelect: (id: string) => void; notify: (message: string, type?: string) => void }) => <div data-testid="list">{chains.map(chain => chain.id).join(',')}{chains[0] && <><button onClick={async () => {
+vi.mock('../../components/ChainList', () => ({ ChainList: ({ chains, onDelete, onBulkDelete, onReloadTags, onSelect, notify }: { chains: PromptChain[]; onDelete: (id: string) => Promise<void>; onBulkDelete?: (ids: string[], onProgress: (completed: number) => void) => Promise<unknown>; onReloadTags?: () => Promise<void>; onSelect: (id: string) => void; notify: (message: string, type?: string) => void }) => <div data-testid="list">{chains.map(chain => chain.id).join(',')}{onReloadTags && <button onClick={async () => {
+  try { await onReloadTags(); notify('合成标签已回读'); }
+  catch (error: any) { notify(error.message, 'error'); }
+}}>回读合成分类标签</button>}{onBulkDelete && <button onClick={async () => {
+  try { mocks.bulkResult(await onBulkDelete(chains.map(chain => chain.id), mocks.bulkProgress)); }
+  catch (error: any) { notify(error.message, 'error'); }
+}}>批量删除合成风格串</button>}{chains[0] && <><button onClick={async () => {
   try { await onDelete(chains[0].id); notify('合成删除成功'); }
   catch { notify('合成删除失败', 'error'); }
 }}>删除合成风格串</button><button onClick={() => onSelect(chains[0].id)}>编辑合成风格串</button></>}</div> }));
@@ -38,10 +44,13 @@ const source: PromptChain = {
   previewImage: '/api/assets/aitag/source.png', createdAt: 1, updatedAt: 1,
 };
 const saved = { ...source, id: 'server-saved', previewImage: '/api/assets/covers/server-saved.png' };
-const ExternalGallery = ({ onCreateArtistChain, notify }: any) => <button onClick={async () => {
+const ExternalGallery = ({ onCreateArtistChain, onImportRefresh, notify }: any) => <><button onClick={async () => {
   try { await onCreateArtistChain(source); notify('已保存到风格串'); }
   catch (error: any) { notify(error.message, 'error'); }
-}}>保存合成作品</button>;
+}}>保存合成作品</button>{onImportRefresh && <button onClick={async () => {
+  try { await onImportRefresh(); notify('合成导入已刷新'); }
+  catch (error: any) { notify(error.message, 'error'); }
+}}>回读合成导入图片</button>}</>;
 vi.mock('../../components/AitagGallery', () => ({ AitagGallery: (props: any) => <ExternalGallery {...props} /> }));
 vi.mock('../../components/InspirationGallery', () => ({ InspirationGallery: (props: any) => <><div data-testid="collection-items" data-module-order={JSON.stringify(props.labModuleOrder)}>{(props.inspirationsData || []).filter((item: any) => !item.archived).map((item: any) => item.title).join(',')}</div><ExternalGallery {...props} /></> }));
 
@@ -81,6 +90,64 @@ it.each([false, true])('共享删除回调失败=%s：结果传回调用方，�
   expect(mocks.getAllChains).toHaveBeenCalledTimes(fails ? 1 : 2);
   expect(screen.getByTestId('view').textContent).toBe('list');
   log.mockRestore();
+});
+
+it.each([false, true])('分类标签回读失败=%s：真实刷新结果传回管理组件，读取失败不伪报成功', async fails => {
+  mocks.getAllChains.mockResolvedValue([saved]);
+  await setup(); fireEvent.click(screen.getByRole('button', { name: 'list' }));
+  if (fails) mocks.getAllChains.mockRejectedValueOnce(new Error('合成标签列表读取失败'));
+  else mocks.getAllChains.mockResolvedValueOnce([{ ...saved, id: 'tag-reloaded' }]);
+  vi.spyOn(console, 'error').mockImplementation(() => {});
+  fireEvent.click(screen.getByRole('button', { name: '回读合成分类标签' }));
+  await waitFor(() => expect(screen.getByRole('status').textContent).toBe(fails ? '风格串列表加载失败，请稍后重试' : '合成标签已回读'));
+  expect(screen.getByRole('status').getAttribute('data-type')).toBe(fails ? 'error' : 'success');
+  expect(mocks.getAllChains).toHaveBeenCalledTimes(2);
+  expect(screen.getByTestId('list').textContent).toContain(fails ? saved.id : 'tag-reloaded');
+});
+
+it.each([false, true])('收藏导入回读失败=%s：读取异常传回窗口，成功直接更新列表', async fails => {
+  await setup('inspiration');
+  mocks.getAllInspirations.mockClear();
+  if (fails) mocks.getAllInspirations.mockRejectedValueOnce(new Error('合成导入刷新失败'));
+  else mocks.getAllInspirations.mockResolvedValueOnce([{ id: 'new-local-image', title: '新导入的本地图片', tags: [] }]);
+  fireEvent.click(screen.getByRole('button', { name: '回读合成导入图片' }));
+  await waitFor(() => expect(screen.getByRole('status').textContent).toBe(fails ? '合成导入刷新失败' : '合成导入已刷新'));
+  expect(mocks.getAllInspirations).toHaveBeenCalledOnce();
+  expect(screen.getByRole('status').getAttribute('data-type')).toBe(fails ? 'error' : 'success');
+  if (!fails) expect(screen.getByTestId('collection-items').textContent).toBe('新导入的本地图片');
+});
+
+it('批量删除串行提交并在末尾统一回读，丢失回执的已删除条目不保留为失败', async () => {
+  const items = [saved, { ...saved, id: 'remaining' }, { ...saved, id: 'lost-receipt' }];
+  mocks.getAllChains.mockResolvedValue(items);
+  await setup(); fireEvent.click(screen.getByRole('button', { name: 'list' }));
+  let resolve!: () => void;
+  mocks.deleteChain.mockImplementationOnce(() => new Promise<void>(done => { resolve = done; }));
+  mocks.deleteChain.mockRejectedValueOnce(new Error('合成未删除'));
+  mocks.deleteChain.mockRejectedValueOnce(new Error('合成删除回执丢失'));
+  mocks.getAllChains.mockResolvedValueOnce([items[1]]);
+  fireEvent.click(screen.getByRole('button', { name: '批量删除合成风格串' }));
+  await waitFor(() => expect(mocks.deleteChain).toHaveBeenCalledTimes(1));
+  expect(mocks.getAllChains).toHaveBeenCalledTimes(1);
+  expect(mocks.bulkProgress).not.toHaveBeenCalled();
+  await act(async () => resolve());
+  await waitFor(() => expect(mocks.bulkResult).toHaveBeenCalledWith({ remainingIds: ['remaining'], errorCount: 2 }));
+  expect(mocks.deleteChain.mock.calls.map(call => call[0])).toEqual(items.map(item => item.id));
+  expect(mocks.bulkProgress.mock.calls.map(call => call[0])).toEqual([1, 2, 3]);
+  expect(mocks.getAllChains).toHaveBeenCalledTimes(2);
+  expect(screen.getByTestId('list').textContent).toContain('remaining');
+  expect(screen.getByTestId('list').textContent).not.toContain('lost-receipt');
+});
+
+it('批量删除后的列表回读失败不能伪报成功或把旧列表当作真实剩余项', async () => {
+  mocks.getAllChains.mockResolvedValue([saved]);
+  await setup(); fireEvent.click(screen.getByRole('button', { name: 'list' }));
+  mocks.getAllChains.mockRejectedValueOnce(new Error('合成列表读取失败'));
+  vi.spyOn(console, 'error').mockImplementation(() => {});
+  fireEvent.click(screen.getByRole('button', { name: '批量删除合成风格串' }));
+  await waitFor(() => expect(screen.getByRole('status').textContent).toBe('删除已提交，但列表刷新失败，请刷新后核对结果'));
+  expect(mocks.bulkResult).not.toHaveBeenCalled(); expect(mocks.deleteChain).toHaveBeenCalledExactlyOnceWith(saved.id);
+  expect(mocks.getAllChains).toHaveBeenCalledTimes(2);
 });
 
 it.each([

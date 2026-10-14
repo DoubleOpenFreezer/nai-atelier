@@ -15,6 +15,36 @@ beforeEach(() => { localStorage.clear(); delete window.atelierLanguage; restoreL
 afterEach(() => { cleanup(); delete window.atelierLanguage; setLanguage('zh-CN'); vi.restoreAllMocks(); });
 
 describe('界面语言', () => {
+  it('收藏批量导入的操作与结果具备完整译文，用户文件名和数量保持原样', () => {
+    for (const language of LANGUAGES.filter(item => item.code !== 'zh-CN')) {
+      for (const key of ['公共标签', '追加图片', '选择或拖入图片', '待导入', '读取失败', '图片已保存，但收藏库刷新失败', '拖入本地图片，加入收藏库', '生成信息（可选）']) expect(translate(language.code, key)).not.toBe(key);
+      expect(translate(language.code, '选择候选：{0}', ['我的图片.png'])).toContain('我的图片.png');
+      const result = translate(language.code, '已导入 {0} 张，失败 {1} 张', [12, 3]);
+      expect(result).toContain('12'); expect(result).toContain('3'); expect(result).not.toContain('{0}');
+    }
+  });
+  it('分类标签管理的影响数量和回读错误具备五语译文', () => {
+    for (const language of LANGUAGES.filter(item => item.code !== 'zh-CN')) {
+      const message = translate(language.code, '将更新 {0} 条资料的标签，提示词、图片和参数保持原样。', [12]);
+      expect(message).toContain('12'); expect(message).not.toContain('将更新'); expect(message).not.toContain('{0}');
+      expect(translate(language.code, '{0}条', [3])).toContain('3');
+      expect(translate(language.code, '标签回读失败，请重新加载后再操作')).not.toBe('标签回读失败，请重新加载后再操作');
+    }
+  });
+  it('提示词清空与批量删除使用完整译文，结果数量和用户名称保持准确', () => {
+    for (const language of LANGUAGES.filter(item => item.code !== 'zh-CN')) {
+      expect(translate(language.code, '清空当前提示词')).not.toBe('清空当前提示词');
+      expect(translate(language.code, '撤销清空')).not.toBe('撤销清空');
+      expect(translate(language.code, '选择风格串：{0}', ['取消, 1girl'])).toContain('取消, 1girl');
+      const result = translate(language.code, '已删除 12 条，3 条未删除');
+      expect(result).not.toBe('已删除 12 条，3 条未删除');
+      expect(result).toContain('12'); expect(result).toContain('3');
+      expect(result).not.toMatch(/\{\d+\}/);
+    }
+    expect(translate('en', '删除 12 条风格串？')).toBe('Delete 12 style chains?');
+    expect(translate('en', '正在删除 {0}/{1}', [3, 12])).toBe('Deleting 3/12');
+  });
+
   it('收集网络失败显示完整译文及重新复制链接的实际恢复方式', () => {
     const errors = ['下载超时，请检查网络或代理后重新复制图片链接', '域名解析失败，请检查网络或代理后重新复制图片链接', '连接被拒绝，请检查本机服务或代理后重新复制图片链接', '连接中断，请检查网络或代理后重新复制图片链接', '图片连接证书校验失败', '网络请求失败，请检查网络或代理后重新复制图片链接'];
     for (const language of LANGUAGES.filter(item => item.code !== 'zh-CN')) {

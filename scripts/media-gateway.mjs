@@ -1164,6 +1164,12 @@ export const applyNaiRuntimeOverride = partial => {
 };
 
 export const extractNaiImagesPerPercent = text => {
+  // Turbopack 保留导出名，恢复速率与张数函数的排列不再固定。
+  const exported = text.match(/"usageImagesForPercent",0,function\((\w+)\)\{return Math\.round\((\d+(?:\.\d+)?)\*\1\)\}/);
+  if (exported) {
+    const value = Number(exported[2]);
+    return Number.isFinite(value) && value > 0 && value < 1000 ? value : null;
+  }
   // 系数函数紧跟在 timeUntilNextPercent 的恢复速率函数之后，只在锚点后的小窗口
   // 内查找，避免误匹配其他模块里同样形如 Math.round(N*var) 的代码。
   const pattern = /Math\.round\((\d+(?:\.\d+)?)\*\w+\)\}/;
@@ -1195,9 +1201,13 @@ export const extractNaiPriceCalculator = text => text.match(/async\([^)]*\)=>\{l
 export const extractNaiCostCalculator = text => {
   const formula = text.match(/Math\.ceil\(\d+(?:\.\d+)?e-?\d+\*\w+\+\d+(?:\.\d+)?e-?\d+\*\w+\*\w+(?:\*\w+)?\)/);
   if (!formula) return null;
-  const start = [...text.slice(0, formula.index).matchAll(/let \w+=function\(\w+,\w+,\w+\)\{/g)].at(-1)?.index;
-  return start === undefined ? null : text.slice(start).match(/^let \w+=(function\(\w+,\w+,\w+\)\{[\s\S]*?return \w+(?:>\w+\.\w+\?-3:\w+)?\*\w+\})/)?.[1] || null;
+  const start = [...text.slice(0, formula.index).matchAll(/(?:let \w+=|"checkStableDiffusionPrice",0,)function\(\w+,\w+,\w+\)\{/g)].at(-1)?.index;
+  return start === undefined ? null : text.slice(start).match(/^(?:let \w+=|"checkStableDiffusionPrice",0,)(function\(\w+,\w+,\w+\)\{[\s\S]*?return \w+(?:>\w+\.\w+\?-3:\w+)?\*\w+\})/)?.[1] || null;
 };
+
+export const extractNaiVibeCostCalculator = text => text.match(/"vtAdditionalPrice",0,(function\((\w+)\)\{return (\d+)\*Math\.max\(0,\2-(\d+)\)\})/);
+
+export const extractNaiPriceCallback = (text, name) => text.match(new RegExp(`function ${name}\\((\\w+)\\)\\{return \\1\\.enabled\\}|function ${name}\\((\\w+),(\\w+)\\)\\{return \\2\\+\\3\\}|function ${name}\\((\\w+)\\)\\{let\\{price:(\\w+)\\}=\\4;return \\5\\}`))?.[0] || null;
 
 /** 只解析已识别的官方算式，不执行远端代码；结构变化必须进入健康告警。 */
 export const extractNaiBillingRules = text => {
@@ -1213,14 +1223,21 @@ export const extractNaiBillingRules = text => {
   const minimum = calculator.match(/Math\.max\(Math\.ceil\(\w+\*\w+\),(\d+)\)/);
   const freeSamples = calculator.match(/subscription\.tier>=3[^;]{0,150}&&\(\w+-=(\d+)\)/);
   const vibe = text.match(/(?:let |var |,)(\w+)=(\d+);function \w+\((\w+)\)\{return Math\.max\(0,\3-(\d+)\)\*\1\}/);
+  const exportedVibe = extractNaiVibeCostCalculator(text);
   const priceCalculator = extractNaiPriceCalculator(text);
   // 出现新的 characterRef 映射时要求重新核对调用语义，不能沿用“参考取消免费”的推测。
   if (!priceCalculator || /\bcharacterRef\b/.test(priceCalculator)) return null;
   const additional = priceCalculator.match(/additionalPrice:(\w+)/)?.[1];
-  if (!additional || [...priceCalculator.matchAll(new RegExp(`\\b${additional}\\+=`, 'g'))].length !== 3) return null;
+  if (!additional) return null;
+  const additions = [...priceCalculator.matchAll(new RegExp(`\\b${additional}\\+=`, 'g'))].length;
+  const exportedVibeAssignment = priceCalculator.match(new RegExp(`\\b${additional}=0\\+\\(await Promise\\.all\\(\\w+\\.map\\(\\w+=>\\{let\\{id:\\w+,information_extracted:\\w+,mask:\\w+,enabled:\\w+\\}=\\w+;return!1===\\w+\\?\\{exists:!0,price:0\\}:\\w+\\.\\w+\\.getPrice\\(\\w+,\\w+,\\w+,\\{information_extracted:\\w+,mask:\\w+\\}\\)\\}\\)\\)\\)\\.map\\(\\w+\\)\\.reduce\\(\\w+,0\\)\\+\\(0,\\w+\\.vtAdditionalPrice\\)\\(\\w+\\.filter\\(\\w+\\)\\.length\\)`));
+  if (exportedVibe ? additions !== 1 || !exportedVibeAssignment
+    || [...priceCalculator.matchAll(new RegExp(`\\b${additional}=(?!=)`, 'g'))].length !== 2 : additions !== 3) return null;
+  if (exportedVibe && [...priceCalculator.matchAll(/\.(?:filter|map|reduce)\((\w+)(?:,0)?\)/g)]
+    .some(match => !extractNaiPriceCallback(text, match[1]))) return null;
   const reference = priceCalculator.match(/characterReferences&&([\w]+)\.length>0[^;]{0,160}\(\w+\+=([\d.]+)\*\1\.length\*\w+\.n_samples\)/);
   const encoding = text.match(/async getPrice\([^)]*\)\{[^{}]{0,200}[\s\S]{0,500}?getEncoding\([^)]*\)\?\{exists:!0,price:0\}:\{exists:!1,price:(\d+)\}/);
-  if (!minimum || !freeSamples || !vibe || !reference || !encoding) return null;
+  if (!minimum || !freeSamples || (!vibe && !exportedVibe) || !reference || !encoding) return null;
   const modelMultipliers = {};
   const multipliers = [...calculator.matchAll(/\(0,\w+\.\w+\)\(\w+\)===\w+\.\w+\.(v\d+)&&\(\w+\*=([\d.]+)\)/g)];
   // 倍率不再是已识别的常数算式时，不把缺项误读为倍率 1。
@@ -1232,7 +1249,7 @@ export const extractNaiBillingRules = text => {
   const modelStepMultipliers = {};
   if (formula[3]) {
     // 新模型的系数只作用于步数项，必须在第一次 ceil 前应用，不能并入整体系数。
-    const declaration = calculator.match(/let (\w+)=arguments\.length>5&&void 0!==arguments\[5\]\?arguments\[5\]:1,\w+=\w+\*\w+;return /);
+    const declaration = calculator.match(/let (\w+)=arguments\.length>5&&void 0!==arguments\[5\]\?arguments\[5\]:1[,;](?:let )?\w+=\w+\*\w+;return /);
     const adjustment = calculator.match(/\}\(\w+,\w+,\w+,\w+,\w+&&\w+,function\((\w+)\)\{switch\(\1\)\{([^{}]+)default:return 1\}\}\((\w+)\)\)/);
     if (declaration?.[1] !== formula[3] || !adjustment
       || adjustment[3] !== calculator.match(/^function\(\w+,\w+,(\w+)\)/)?.[1]
@@ -1255,7 +1272,7 @@ export const extractNaiBillingRules = text => {
     modelMultipliers,
     modelStepMultipliers,
     smeaMultiplier: Number(formula[5]), smeaDynamicMultiplier: Number(formula[4]),
-    freeVibeCount: Number(vibe[4]), extraVibeCost: Number(vibe[2]),
+    freeVibeCount: Number(exportedVibe ? exportedVibe[4] : vibe[4]), extraVibeCost: Number(exportedVibe ? exportedVibe[3] : vibe[2]),
     characterReferenceCost: Number(reference[2]), vibeEncodingCost: Number(encoding[1]),
   };
   return isNaiBillingRules(rules) ? rules : null;
@@ -1392,12 +1409,9 @@ export const extractNaiPromptPresets = text => {
  */
 export const extractNaiMetadataModelMappings = text => {
   const mappings = {};
-  const groups = text.matchAll(/((?:case\s*"NovelAI Diffusion [^"]+"\s*:)+)\s*return\s+[\w$]+\.oM\.([\w$]+)/g);
+  const groups = text.matchAll(/((?:case\s*"NovelAI Diffusion [^"]+"\s*:)+)\s*return\s+[\w$]+\.(?:(?:oM|ImageGenerationModels)\.)?([\w$]+)/g);
   for (const group of groups) {
-    const enumModel = group[2].match(/^naiDiffusionV?(\d+)(?:_(\d+))?(Full|Curated)(Preview)?$/i);
-    const model = enumModel
-      ? `nai-diffusion-${enumModel[1]}${enumModel[2] ? `-${enumModel[2]}` : ''}-${enumModel[3].toLowerCase()}${enumModel[4] ? '-preview' : ''}`
-      : null;
+    const model = officialModelEnumToId(group[2]);
     if (!model) continue;
     for (const source of group[1].matchAll(/case\s*"([^"]+)"\s*:/g)) {
       mappings[source[1]] = model;
@@ -1405,6 +1419,11 @@ export const extractNaiMetadataModelMappings = text => {
   }
   return mappings;
 };
+
+/** 官方部署查询参数属于 bundle 地址，不能在发现路径时丢弃。 */
+export const extractNaiRuntimeChunkPaths = html => [...new Set([...html.matchAll(/"(\/_next\/static\/chunks\/[\w./-]+\.js(?:\?[^"<>]*)?)"/g)]
+  .map(match => match[1].replaceAll('&amp;', '&'))
+  .filter(path => !path.split('?')[0].split('/').some(segment => segment === '.' || segment === '..')))];
 
 /** 带短暂退避的官方 bundle 文本请求；单个 chunk 抖动时不应直接污染整次同步。 */
 export const fetchNaiRuntimeText = async (url, requestRemote = fetch, retryDelays = NAI_RUNTIME_REQUEST_RETRY_DELAYS_MS) => {
@@ -1484,8 +1503,8 @@ export const computeNaiRuntimeSync = text => {
     next.metadataModelMappings = metadataModelMappings;
     health.extracted.push('metadataModels');
   } else health.missed.push('metadataModels');
-  // 页面抓到了却一项都没提取到，几乎可以确定官方改版或提取器失效。
-  health.ok = health.extracted.length > 0;
+  // 任何缺项都不能把部分规则标记为健康或替换最近完整快照。
+  health.ok = health.missed.length === 0;
   return { runtime: next, health };
 };
 
@@ -1528,7 +1547,7 @@ const runNaiRuntimeSync = async (requestRemote = fetch) => {
     console.warn('[nai-runtime] 官方页面抓取失败，沿用最近可用常量：', error.message || error);
     return false;
   }
-  const paths = [...new Set([...html.matchAll(/"(\/_next\/static\/chunks\/[^"]+\.js)"/g)].map(m => m[1]))];
+  const paths = extractNaiRuntimeChunkPaths(html);
   if (!paths.length) {
     naiRuntimeState = {
       ...naiRuntimeState,

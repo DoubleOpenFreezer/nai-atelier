@@ -4,16 +4,47 @@ import { join } from 'node:path';
 import { extractAndroidShared } from '../../scripts/android-shared.mjs';
 import { androidDictionaryGenerator } from '../../scripts/android-dictionary.mjs';
 import { projectRoot } from '../support/workspace.mjs';
-import { DEFAULT_NAI_RUNTIME, computeNaiRuntimeSync } from '../../scripts/media-gateway.mjs';
-import { NAI_MEDIUM_BILLING_BUNDLE } from '../fixtures/nai-runtime.mjs';
+import { DEFAULT_NAI_RUNTIME, computeNaiRuntimeSync, extractNaiRuntimeChunkPaths } from '../../scripts/media-gateway.mjs';
+import { NAI_MEDIUM_BILLING_BUNDLE, NAI_TURBOPACK_BILLING_BUNDLE } from '../fixtures/nai-runtime.mjs';
 
 test('Android 默认规则和官方提取复用电脑声明，不能带入 Node 文件系统',async()=>{
   const billing=join(projectRoot,'worker/naiBilling.mjs').replace(/\\/g,'/');
-  const source=extractAndroidShared(join(projectRoot,'scripts/media-gateway.mjs'),['DEFAULT_NAI_RUNTIME','computeNaiRuntimeSync'],`import {DEFAULT_NAI_BILLING,isNaiBillingRules} from 'file:///${billing}';`);
+  const source=extractAndroidShared(join(projectRoot,'scripts/media-gateway.mjs'),['DEFAULT_NAI_RUNTIME','computeNaiRuntimeSync','extractNaiRuntimeChunkPaths'],`import {DEFAULT_NAI_BILLING,isNaiBillingRules} from 'file:///${billing}';`);
   const mobile=await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'));
   assert.deepEqual(mobile.DEFAULT_NAI_RUNTIME,DEFAULT_NAI_RUNTIME);assert.deepEqual(mobile.computeNaiRuntimeSync('synthetic missing official rules'),computeNaiRuntimeSync('synthetic missing official rules'));
   assert.deepEqual(mobile.computeNaiRuntimeSync(NAI_MEDIUM_BILLING_BUNDLE), computeNaiRuntimeSync(NAI_MEDIUM_BILLING_BUNDLE));
+  assert.deepEqual(mobile.computeNaiRuntimeSync(NAI_TURBOPACK_BILLING_BUNDLE), computeNaiRuntimeSync(NAI_TURBOPACK_BILLING_BUNDLE));
+  const html = '<script src="/_next/static/chunks/synthetic.js?dpl=synthetic"></script>';
+  assert.deepEqual(mobile.extractNaiRuntimeChunkPaths(html), extractNaiRuntimeChunkPaths(html));
   assert.doesNotMatch(source,/node:|readFile|process\.cwd/);
+});
+
+test('手机官方同步复用部署查询参数路径，完整规则写入合成设置', async () => {
+  const { transform } = await import('esbuild');
+  const gatewayUrl = new URL('../../scripts/media-gateway.mjs', import.meta.url).href;
+  const source = extractAndroidShared(join(projectRoot, 'mobile/gateway.ts'), ['refreshRuntime'], `
+    import { extractNaiRuntimeChunkPaths } from '${gatewayUrl}';
+    const requests = [], writes = [];
+    let runtime = { health: { ok: false }, syncedAt: 0 };
+    const getNaiRuntime = () => runtime;
+    const applyNaiRuntimeOverride = next => { runtime = { ...runtime, ...next }; };
+    const fetchNaiRuntimeText = async url => {
+      requests.push(url);
+      return url.endsWith('/image') ? '<script src="/_next/static/chunks/synthetic.js?dpl=synthetic"></script>' : 'synthetic chunk';
+    };
+    const computeNaiRuntimeSync = text => {
+      if (text !== 'synthetic chunk') throw new Error('missing chunk');
+      return { runtime: { synthetic: true }, health: { ok: true, missed: [] } };
+    };
+  `, { writeSetting: 'const writeSetting = async (key, value) => { writes.push({ key, value }); };' });
+  const transformed = await transform(source + '\nexport { requests, writes };', { loader: 'ts', format: 'esm' });
+  const mobile = await import('data:text/javascript;base64,' + Buffer.from(transformed.code).toString('base64'));
+  await mobile.refreshRuntime();
+  assert.deepEqual(mobile.requests, ['https://novelai.net/image', 'https://novelai.net/_next/static/chunks/synthetic.js?dpl=synthetic']);
+  assert.equal(mobile.writes.length, 1);
+  assert.equal(mobile.writes[0].key, 'mobile_nai_runtime');
+  assert.equal(mobile.writes[0].value.synthetic, true);
+  assert.equal(mobile.writes[0].value.health.ok, true);
 });
 
 test('手机接入路由按所选 Key 连接生成、余额与 Vibe，切回官方不残留网关', async t => {

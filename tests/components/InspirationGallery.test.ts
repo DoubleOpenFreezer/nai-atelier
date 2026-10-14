@@ -152,8 +152,7 @@ it('新建的 0 页标签立即进入详情、批量添加及手动收录选择�
   const notify = vi.fn();
   const props = { currentUser: mockUser, inspirationsData: mockInspirations, onRefresh: vi.fn(async () => {}), notify };
   const view = render(React.createElement(InspirationGallery, props));
-  fireEvent.click(screen.getByRole('button', { name: '管理' }));
-  fireEvent.click(within(screen.getByRole('dialog', { name: '收藏管理' })).getByRole('button', { name: '管理标签' }));
+  openCollectionTagManager();
   const manager = screen.getByRole('dialog', { name: '管理标签' });
   await waitFor(() => expect((within(manager).getByRole('textbox', { name: '新标签名称' }) as HTMLInputElement).disabled).toBe(false));
   fireEvent.change(within(manager).getByRole('textbox', { name: '新标签名称' }), { target: { value: '构图分类' } });
@@ -180,24 +179,25 @@ it('新建的 0 页标签立即进入详情、批量添加及手动收录选择�
   fireEvent.click(within(screen.getByRole('dialog', { name: '选择已有标签' })).getByRole('button', { name: '#构图分类' }));
   expect((within(upload).getByPlaceholderText('构图, 光影') as HTMLInputElement).value).toBe('构图分类');
   view.unmount(); render(React.createElement(InspirationGallery, props));
-  fireEvent.click(screen.getByRole('button', { name: '管理' }));
-  fireEvent.click(within(screen.getByRole('dialog', { name: '收藏管理' })).getByRole('button', { name: '管理标签' }));
+  openCollectionTagManager();
   await screen.findByText('#构图分类');
   cleanup(); vi.mocked(db.getCollectionTagNames).mockRejectedValueOnce(new Error('合成加载失败'));
   render(React.createElement(InspirationGallery, props));
   await waitFor(() => expect(notify).toHaveBeenCalledWith('合成加载失败', 'error'));
-  fireEvent.click(screen.getByRole('button', { name: '管理' }));
-  fireEvent.click(within(screen.getByRole('dialog', { name: '收藏管理' })).getByRole('button', { name: '管理标签' }));
+  openCollectionTagManager();
   expect((screen.getByRole('button', { name: '添加标签' }) as HTMLButtonElement).disabled).toBe(true);
   fireEvent.click(screen.getByRole('button', { name: '重新加载标签' }));
   await screen.findByText('#构图分类'); expect(db.saveCollectionTagNames).toHaveBeenCalledOnce();
 });
 const enterCollectionSelection = () => {
-  fireEvent.click(screen.getByRole('button', { name: '管理' }));
-  fireEvent.click(within(screen.getByRole('dialog', { name: '收藏管理' })).getByRole('button', { name: '批量选择图片' }));
+  fireEvent.click(screen.getByRole('button', { name: '批量选择图片' }));
+};
+const openCollectionTagManager = () => {
+  fireEvent.click(screen.getByRole('button', { name: /^筛选(?: \d+)?$/ }));
+  fireEvent.click(within(screen.getByRole('dialog', { name: '筛选收藏' })).getByRole('button', { name: '管理标签' }));
 };
 const selectCollectionCard = (card: HTMLElement) => {
-  if (screen.queryByRole('button', { name: '管理' })) enterCollectionSelection();
+  if (screen.queryByRole('button', { name: '批量选择图片' })) enterCollectionSelection();
   fireEvent.click(within(card).getByRole('button', { name: '选择收藏' }));
 };
 
@@ -455,7 +455,7 @@ describe('InspirationGallery 来源筛选与未整理心智', () => {
     expect(within(screen.getByRole('banner')).getByRole('button', { name: '退出多选' }).textContent).toContain('退出多选');
     fireEvent.click(screen.getByRole('button', { name: '退出多选' }));
     expect(screen.queryByText('已选 3 个作品，共 3 页')).toBeNull();
-    expect(screen.getByRole('button', { name: '管理' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '批量选择图片' })).toBeTruthy();
   });
 
   it('手动收录保留独立滚动正文与固定操作区，Esc 关闭且不写入资料', () => {
@@ -512,7 +512,7 @@ it.each([390, 1280])('宽度 %s 的收藏夹删除可发现且必须确认，取
   if (width < 768) expect(within(root).getByRole('button', { name: /全部\s+3/ }).getAttribute('aria-pressed')).toBe('true');
 });
 
-it('手机长按只显露删除，松手不打开详情；批量选择必须从管理进入', () => {
+it('手机长按只显露删除，松手不打开详情；批量选择由多选按钮进入', () => {
   vi.stubGlobal('innerWidth', 390);
   const view = render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: mockInspirations, onRefresh: vi.fn(), notify: vi.fn() }));
   const card = view.container.querySelector('.media-card') as HTMLElement;
@@ -541,6 +541,7 @@ it.each(['moonlight', ''])('手动上传保留全局词「%s」的完整参数�
   fireEvent.change(within(dialog).getByLabelText('上传收藏图片'), { target: { files: [file] } });
   await waitFor(() => expect((within(dialog).getByRole('button', { name: '加入收藏库' }) as HTMLButtonElement).disabled).toBe(false));
   expect((within(dialog).getByLabelText('提示词') as HTMLTextAreaElement).value).toBe(initialPrompt);
+  fireEvent.click(within(dialog).getByText('生成信息（可选）'));
   const savedPrompt = initialPrompt ? 'moonlight, rain' : '';
   if (initialPrompt) fireEvent.change(within(dialog).getByLabelText('提示词'), { target: { value: savedPrompt } });
   await waitFor(() => expect(within(dialog).getByRole('option', { name: '角色设计' })).toBeTruthy());
@@ -556,7 +557,7 @@ it.each(['moonlight', ''])('手动上传保留全局词「%s」的完整参数�
   }));
 });
 
-it('换成无元数据图片清除旧配置，旧图片的迟到解析不覆盖当前图，也不伪造默认参数', async () => {
+it('追加无元数据候选后移除旧候选，迟到解析不覆盖当前图，也不伪造默认参数', async () => {
   let resolve!: (value: string | null) => void;
   vi.mocked(extractMetadata).mockReturnValueOnce(new Promise(done => { resolve = done; }));
   render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: [], onRefresh: vi.fn(async () => {}), notify: vi.fn() }));
@@ -565,10 +566,12 @@ it('换成无元数据图片清除旧配置，旧图片的迟到解析不覆盖�
   const input = within(dialog).getByLabelText('上传收藏图片');
   fireEvent.change(input, { target: { files: [new File(['first'], 'first.png', { type: 'image/png' })] } });
   expect((within(dialog).getByRole('button', { name: '正在读取图片…' }) as HTMLButtonElement).disabled).toBe(true);
-  expect((within(dialog).getByLabelText('提示词') as HTMLTextAreaElement).matches(':disabled')).toBe(true);
+  expect((within(dialog).getByLabelText('提示词') as HTMLTextAreaElement).matches(':disabled')).toBe(false);
   const current = new File(['current'], 'current.jpg', { type: 'image/jpeg' });
   fireEvent.change(input, { target: { files: [current] } });
+  fireEvent.click(within(dialog).getByRole('button', { name: '移除候选：first.png' }));
   await waitFor(() => expect((within(dialog).getByRole('button', { name: '加入收藏库' }) as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(within(dialog).getByText('生成信息（可选）'));
   fireEvent.change(within(dialog).getByLabelText('提示词'), { target: { value: 'manual prompt' } });
   await act(async () => resolve(JSON.stringify({ prompt: 'old prompt', width: 1024, height: 1024, seed: 1 })));
   expect((within(dialog).getByLabelText('提示词') as HTMLTextAreaElement).value).toBe('manual prompt');
@@ -577,7 +580,7 @@ it('换成无元数据图片清除旧配置，旧图片的迟到解析不覆盖�
   expect(api.uploadFile).toHaveBeenCalledWith(current, 'inspirations');
 });
 
-it('换图清除已解析参数，保存失败保留当前图片和解析结果供重试', async () => {
+it('保存失败保留当前候选和解析结果，移除后追加无元数据图不带入旧配置', async () => {
   vi.mocked(extractMetadata).mockResolvedValueOnce(JSON.stringify({ prompt: 'first', width: 1024, height: 1024, seed: 10 }));
   vi.mocked(db.saveInspiration).mockRejectedValueOnce(new Error('合成保存失败'));
   const notify = vi.fn();
@@ -591,6 +594,7 @@ it('换图清除已解析参数，保存失败保留当前图片和解析结果�
   await waitFor(() => expect(notify).toHaveBeenCalledWith('合成保存失败', 'error'));
   expect(db.saveInspiration).toHaveBeenLastCalledWith(expect.objectContaining({ params: expect.objectContaining({ seed: 10 }) }));
   expect(screen.getByRole('dialog', { name: '加入收藏库' })).toBe(dialog);
+  fireEvent.click(within(dialog).getByRole('button', { name: '移除候选：first.png' }));
   fireEvent.change(input, { target: { files: [new File(['next'], 'next.jpg', { type: 'image/jpeg' })] } });
   await waitFor(() => expect((within(dialog).getByRole('button', { name: '加入收藏库' }) as HTMLButtonElement).disabled).toBe(false));
   expect((within(dialog).getByLabelText('提示词') as HTMLTextAreaElement).value).toBe('');
@@ -868,6 +872,73 @@ it('收藏夹顺序保存期间禁止重复提交，访客的排序把手不可�
 });
 
 const dragData = () => ({ setData: vi.fn(), effectAllowed: 'all', dropEffect: 'none' }) as unknown as DataTransfer;
+
+it('本地多文件拖入收藏页面进入同一导入窗口，逐图保留配置，公共标签和收藏夹整批生效', async () => {
+  vi.mocked(extractMetadata).mockResolvedValueOnce(JSON.stringify({ prompt: '第一张独立提示词', width: 1024, height: 1024, seed: 123 })).mockResolvedValueOnce(null);
+  const refresh = vi.fn(async () => {});
+  const view = render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: mockInspirations, onRefresh: vi.fn(async () => {}), onImportRefresh: refresh, notify: vi.fn() }));
+  const zone = view.container.querySelector('[data-collection-file-dropzone]')!;
+  const files = [new File(['A'], '第一张.png', { type: 'image/png' }), new File(['B'], '第二张.jpg', { type: 'image/jpeg' })];
+  const dataTransfer = { ...dragData(), types: ['Files'], files };
+  expect(fireEvent.dragEnter(zone, { dataTransfer })).toBe(false);
+  expect(screen.getByText('拖入本地图片，加入收藏库')).toBeTruthy();
+  expect(fireEvent.dragOver(zone, { dataTransfer })).toBe(false); expect(dataTransfer.dropEffect).toBe('copy');
+  expect(fireEvent.drop(zone, { dataTransfer })).toBe(false);
+  const dialog = await screen.findByRole('dialog', { name: '加入收藏库' });
+  expect(screen.queryByText('拖入本地图片，加入收藏库')).toBeNull();
+  const chooser = within(dialog).getByLabelText('上传收藏图片') as HTMLInputElement;
+  expect(chooser.multiple).toBe(true);
+  await waitFor(() => expect((within(dialog).getByRole('button', { name: '加入收藏库' }) as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.change(within(dialog).getByRole('combobox', { name: '收藏夹' }), { target: { value: 'board-1' } });
+  fireEvent.change(within(dialog).getByRole('textbox', { name: '公共标签' }), { target: { value: '夜景, 构图' } });
+  expect(api.uploadFile).not.toHaveBeenCalled();
+  fireEvent.click(within(dialog).getByRole('button', { name: '加入收藏库' }));
+  await waitFor(() => expect(db.saveInspiration).toHaveBeenCalledTimes(2));
+  expect(db.saveInspiration).toHaveBeenNthCalledWith(1, expect.objectContaining({ title: '第一张', prompt: '第一张独立提示词', params: expect.objectContaining({ seed: 123 }), boardId: 'board-1', tags: ['夜景', '构图'] }));
+  expect(db.saveInspiration).toHaveBeenNthCalledWith(2, expect.objectContaining({ title: '第二张', prompt: '', negativePrompt: '', params: undefined, boardId: 'board-1', tags: ['夜景', '构图'] }));
+  await waitFor(() => expect(refresh).toHaveBeenCalledOnce());
+  expect(db.bulkUpdateInspirations).not.toHaveBeenCalled();
+  expect(screen.getByRole('dialog', { name: '加入收藏库' })).toBe(dialog);
+});
+
+it('文件拖入收藏夹预选目标，已收藏卡片继续走移动，网页链接不进入导入', async () => {
+  render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: mockInspirations, onRefresh: vi.fn(async () => {}), notify: vi.fn() }));
+  const folder = (await screen.findByRole('button', { name: '选择收藏夹：角色设计' })).closest('.press-reveal-surface')!;
+  fireEvent.drop(folder, { dataTransfer: { ...dragData(), types: ['text/uri-list'], files: [], getData: () => 'https://example.com/image.png' } });
+  expect(screen.queryByRole('dialog', { name: '加入收藏库' })).toBeNull();
+  const file = new File(['synthetic'], 'local.png', { type: 'image/png' });
+  fireEvent.dragOver(folder, { dataTransfer: { ...dragData(), types: ['Files'], files: [file] } });
+  fireEvent.drop(folder, { dataTransfer: { ...dragData(), types: ['Files'], files: [file] } });
+  const dialog = await screen.findByRole('dialog', { name: '加入收藏库' });
+  expect((within(dialog).getByRole('combobox', { name: '收藏夹' }) as HTMLSelectElement).value).toBe('board-1');
+  await waitFor(() => expect((within(dialog).getByRole('button', { name: '加入收藏库' }) as HTMLButtonElement).disabled).toBe(false));
+  expect(extractMetadata).toHaveBeenCalledOnce();
+  expect(db.bulkUpdateInspirations).not.toHaveBeenCalled(); expect(db.saveInspiration).not.toHaveBeenCalled();
+});
+
+it('访客的文件导入入口禁用，拖入本地文件不写入且阻止浏览器打开文件', () => {
+  const view = render(React.createElement(InspirationGallery, { currentUser: { ...mockUser, role: 'guest' }, inspirationsData: [], onRefresh: vi.fn(async () => {}), notify: vi.fn() }));
+  expect((screen.getByRole('button', { name: '加入收藏库' }) as HTMLButtonElement).disabled).toBe(true);
+  const zone = view.container.querySelector('[data-collection-file-dropzone]')!;
+  expect(fireEvent.drop(zone, { dataTransfer: { ...dragData(), types: ['Files'], files: [new File(['A'], 'local.png', { type: 'image/png' })] } })).toBe(false);
+  expect(screen.queryByRole('dialog', { name: '加入收藏库' })).toBeNull();
+  expect(extractMetadata).not.toHaveBeenCalled(); expect(api.uploadFile).not.toHaveBeenCalled();
+});
+
+it('筛选窗口内拖入文件不叠加导入窗口，保留原筛选且阻止文件导航', async () => {
+  vi.stubGlobal('innerWidth', 390);
+  render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: mockInspirations, onRefresh: vi.fn(async () => {}), notify: vi.fn() }));
+  await screen.findByRole('button', { name: '选择收藏夹：角色设计' });
+  fireEvent.click(screen.getByRole('button', { name: '筛选' }));
+  const filter = screen.getByRole('dialog', { name: '筛选收藏' });
+  const folder = within(filter).getByRole('button', { name: '选择收藏夹：角色设计' }).closest('.press-reveal-surface')!;
+  const dataTransfer = { ...dragData(), types: ['Files'], files: [new File(['A'], 'local.png', { type: 'image/png' })] };
+  expect(fireEvent.dragOver(folder, { dataTransfer })).toBe(false); expect(dataTransfer.dropEffect).toBe('none');
+  expect(fireEvent.drop(folder, { dataTransfer })).toBe(false);
+  expect(screen.getByRole('dialog', { name: '筛选收藏' })).toBe(filter);
+  expect(screen.queryByRole('dialog', { name: '加入收藏库' })).toBeNull();
+  expect(api.uploadFile).not.toHaveBeenCalled();
+});
 it('拖拽选中的多张作品到收藏夹，一次移动；可拖回未整理，同夹不发请求，外部拖入被忽略', async () => {
   const onRefresh = vi.fn(async () => {});
   render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: mockInspirations, onRefresh, notify: vi.fn() }));
@@ -1030,7 +1101,7 @@ it.each([390, 1280])('宽度 %s：各来源单张收藏也使用作品组侧栏�
   }
 });
 
-it.each([390, 1280])('宽度 %s：管理面板显式进入多选，空选择保持模式，切换不重建图片', width => {
+it.each([390, 1280])('宽度 %s：多选按钮直接进入选择，空选择保持模式，切换不重建图片', width => {
   vi.stubGlobal('innerWidth', width);
   const { container } = render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: mockInspirations, onRefresh: vi.fn(), notify: vi.fn() }));
   const card = screen.getByText(mockInspirations[0].title).closest('article')!;
@@ -1039,11 +1110,13 @@ it.each([390, 1280])('宽度 %s：管理面板显式进入多选，空选择保�
   expect(within(card).getByRole('button', { name: '删除收藏' }).className).toContain('bg-red-500');
   expect(within(card).queryByRole('button', { name: '选择收藏' })).toBeNull();
   expect(screen.queryByRole('button', { name: '全选筛选结果' })).toBeNull();
-  fireEvent.click(screen.getByRole('button', { name: '管理' }));
-  const panel = screen.getByRole('dialog', { name: '收藏管理' });
-  expect(panel.classList.contains('mobile-sheet')).toBe(width < 768);
-  expect(panel.classList.contains('fixed')).toBe(width >= 768);
-  fireEvent.click(within(panel).getByRole('button', { name: '批量选择图片' }));
+  const header = screen.getByRole('banner');
+  const select = within(header).getByRole('button', { name: '批量选择图片' });
+  expect(select.textContent).toBe('多选');
+  expect(select.getAttribute('aria-haspopup')).toBeNull();
+  expect(screen.queryByRole('button', { name: '管理' })).toBeNull();
+  fireEvent.click(select);
+  expect(screen.getByRole('banner')).toBe(header);
   expect(screen.queryByRole('dialog', { name: '收藏管理' })).toBeNull();
   expect(screen.getByText('已选 0 个作品，共 0 页')).toBeTruthy();
   expect((screen.getByRole('button', { name: '取消收藏' }) as HTMLButtonElement).disabled).toBe(true);
@@ -1073,7 +1146,7 @@ it.each([390, 1280])('宽度 %s：管理面板显式进入多选，空选择保�
   expect(screen.getByText('已选 0 个作品，共 0 页')).toBeTruthy();
   expect(screen.queryByRole('button', { name: '管理' })).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: '退出多选' }));
-  expect(screen.getByRole('button', { name: '管理' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: '批量选择图片' })).toBeTruthy();
   expect(screen.getByText(mockInspirations[0].title).closest('article')).toBe(card);
   expect(within(card).getByRole('img')).toBe(image);
   expect(within(card).getByRole('button', { name: '删除收藏' })).toBeTruthy();
@@ -1101,7 +1174,7 @@ it('普通卡片删除需确认，取消与重复点击不写入，确认后只�
   await waitFor(() => expect(onRefresh).toHaveBeenCalledOnce());
   expect(db.bulkDeleteInspirations).toHaveBeenCalledExactlyOnceWith(['insp-1']);
   expect(confirmAction).toHaveBeenLastCalledWith(expect.objectContaining({ message: '原图与已有分类信息会保留。', tone: 'danger' }));
-  expect(screen.getByRole('button', { name: '管理' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: '批量选择图片' })).toBeTruthy();
   expect(mockInspirations[0].boardId).toBe('board-1');
   expect(db.updateInspiration).not.toHaveBeenCalled();
   expect(db.bulkUpdateInspirations).not.toHaveBeenCalled();
@@ -1119,7 +1192,7 @@ it('普通卡片删除失败保持浏览与原图可重试，只读卡片不提�
   await waitFor(() => expect(notify).toHaveBeenCalledWith('合成删除失败', 'error'));
   expect(onRefresh).not.toHaveBeenCalled();
   expect(within(card).getByRole('img')).toBeTruthy();
-  expect(screen.getByRole('button', { name: '管理' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: '批量选择图片' })).toBeTruthy();
   fireEvent.click(within(card).getByRole('button', { name: '删除收藏' }));
   await waitFor(() => expect(onRefresh).toHaveBeenCalledOnce());
   expect(db.bulkDeleteInspirations).toHaveBeenLastCalledWith(['insp-1']);
@@ -1147,18 +1220,26 @@ it('作品组卡片删除仅取消当前筛选命中的页，不带走其他收�
 });
 
 
-it.each([390, 1280])('宽度 %s：管理标签排第一项，没有失效检查或重复收藏夹管理', width => {
+it.each([390, 1280])('宽度 %s：管理标签在筛选标签标题旁，关闭筛选后打开管理并归还焦点', width => {
   vi.stubGlobal('innerWidth', width);
   render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: mockInspirations, onRefresh: vi.fn(), notify: vi.fn() }));
-  fireEvent.click(screen.getByRole('button', { name: '管理' }));
-  const menu = screen.getByRole('dialog', { name: '收藏管理' });
-  expect(within(menu).getAllByRole('button').filter(button => button.textContent !== '').map(button => button.textContent)).toEqual(['管理标签', '批量选择图片']);
-  fireEvent.click(within(menu).getByRole('button', { name: '管理标签' }));
-  expect(screen.queryByRole('dialog', { name: '收藏管理' })).toBeNull();
+  const trigger = screen.getByRole('button', { name: '筛选' });
+  trigger.focus(); fireEvent.click(trigger);
+  const filter = screen.getByRole('dialog', { name: '筛选收藏' });
+  expect(filter.classList.contains('mobile-sheet')).toBe(width < 768);
+  expect(filter.classList.contains('fixed')).toBe(width >= 768);
+  const heading = within(filter).getByRole('heading', { name: '标签（同时满足）' });
+  const manageTags = within(filter).getByRole('button', { name: '管理标签' });
+  expect(manageTags.parentElement).toBe(heading.parentElement);
+  expect(screen.queryByRole('button', { name: '管理' })).toBeNull();
+  fireEvent.click(manageTags);
+  expect(screen.queryByRole('dialog', { name: '筛选收藏' })).toBeNull();
   const manager = screen.getByRole('dialog', { name: '管理标签' });
+  expect(manager.contains(document.activeElement)).toBe(true);
   expect(within(manager).getByText('#原创')).toBeTruthy();
   expect(within(manager).queryByText('#生成历史')).toBeNull();
   fireEvent.click(within(manager).getByRole('button', { name: '关闭' }));
+  expect(document.activeElement).toBe(trigger);
   expect(screen.getByRole('searchbox').getAttribute('placeholder')).toBe('搜索标题、提示词或标签…');
   expect(db.bulkUpdateInspirations).not.toHaveBeenCalled();
 });
@@ -1180,7 +1261,7 @@ it('全选与反选当前结果保留其他分类选择，清空选择不退出�
   expect(screen.queryByRole('button', { name: '管理' })).toBeNull();
   expect((screen.getByRole('button', { name: '清空选择' }) as HTMLButtonElement).disabled).toBe(true);
   fireEvent.click(screen.getByRole('button', { name: '退出多选' }));
-  expect(screen.getByRole('button', { name: '管理' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: '批量选择图片' })).toBeTruthy();
 });
 
 it('作品组部分选中显示短横与边框，反选以当前作品组为单位，刷新移除失效选择', async () => {
@@ -1216,8 +1297,7 @@ it('全库标签重命名同步已选标签筛选，管理期间保留原关键�
   fireEvent.click(within(filter).getByRole('button', { name: '#原创' }));
   expect(within(filter).getByRole('button', { name: '#原创' }).getAttribute('aria-pressed')).toBe('true');
   fireEvent.click(within(filter).getByRole('button', { name: '确认' }));
-  fireEvent.click(screen.getByRole('button', { name: '管理' }));
-  fireEvent.click(within(screen.getByRole('dialog', { name: '收藏管理' })).getByRole('button', { name: '管理标签' }));
+  openCollectionTagManager();
   const manager = screen.getByRole('dialog', { name: '管理标签' });
   fireEvent.click(within(manager).getByRole('button', { name: '重命名标签：原创' }));
   fireEvent.change(within(manager).getByRole('textbox', { name: '标签名称' }), { target: { value: '我的标签' } });

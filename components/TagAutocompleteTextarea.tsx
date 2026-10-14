@@ -1,7 +1,7 @@
 import { t, useLanguage, getLanguage } from '../services/i18n';
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Languages, LoaderCircle, RotateCcw, Trash2 } from 'lucide-react';
+import { Eraser, Languages, LoaderCircle, RotateCcw, Trash2 } from 'lucide-react';
 import { InfoPopover } from './InfoPopover';
 import { normalizeTagQuery, preloadTagDictionary, searchTagDictionary, TagSuggestion } from '../services/tagDictionary';
 import {
@@ -117,6 +117,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
   const [selectedTagIds, setSelectedTagIds] = useState<Set<string>>(new Set());
   const [deleteMode, setDeleteMode] = useState(false);
   const [tagInput, setTagInput] = useState('');
+  const [clearActionState, setClearActionState] = useState<'cleared' | 'undone' | null>(null);
   const historyRef = useRef({ value, past: [] as string[], future: [] as string[], typedAt: 0 });
   const neutralGroupsRef = useRef({ value, groups: [] as Array<{ start: number; end: number }> });
   const [, refreshHistory] = useState(0);
@@ -158,6 +159,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
   useEffect(() => {
     if (historyRef.current.value === value) return;
     historyRef.current = { value, past: [], future: [], typedAt: 0 };
+    setClearActionState(null);
     neutralGroupsRef.current = { value, groups: [] };
     setSelectedTagIds(new Set());
     setDeleteMode(false);
@@ -168,6 +170,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
 
   const commitValue = (next: string, typing = false) => {
     if (!editable || next === value) return;
+    setClearActionState(null);
     if (neutralGroupsRef.current.value !== next) neutralGroupsRef.current = { value: next, groups: [] };
     const history = historyRef.current;
     const now = Date.now();
@@ -190,6 +193,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
     (redo ? history.past : history.future).push(value);
     history.value = next;
     history.typedAt = 0;
+    setClearActionState(current => current === 'cleared' && !redo ? 'undone' : current === 'undone' && redo ? 'cleared' : null);
     neutralGroupsRef.current = { value: next, groups: [] };
     setSelectedTagIds(new Set());
     setDeleteMode(false);
@@ -237,6 +241,16 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
   const clearSelection = () => {
     neutralGroupsRef.current.groups = [];
     setSelectedTagIds(new Set());
+  };
+  const clearPrompt = () => {
+    if (!editable || !value) return;
+    clearSelection();
+    setDeleteMode(false);
+    setTagInput('');
+    closeSuggestions();
+    commitValue('');
+    setClearActionState('cleared');
+    textareaRef.current?.focus();
   };
   const deleteSelected = () => {
     if (!editable || !selectedTokens.length) return;
@@ -494,24 +508,45 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
     };
   }, [isOpen, completionSource]);
 
+  const showClearAction = editable && (value.length > 0 || clearActionState === 'cleared');
+
   return (
-    <div className={`relative ${containerClassName}`} onKeyDownCapture={event => {
-      if (!tagAssistEnabled || !showTranslations || event.nativeEvent.isComposing) return;
+    <div className={`group relative ${containerClassName}`} onKeyDownCapture={event => {
+      if (event.nativeEvent.isComposing) return;
       const field = (event.target as HTMLElement).closest('input, textarea, [contenteditable="true"]');
       const key = event.key.toLowerCase();
+      if ((!tagAssistEnabled || !showTranslations) && clearActionState && (event.ctrlKey || event.metaKey) && field === textareaRef.current) {
+        const redo = key === 'y' || (key === 'z' && event.shiftKey);
+        if ((clearActionState === 'cleared' && key === 'z' && !event.shiftKey && moveHistory())
+          || (clearActionState === 'undone' && redo && moveHistory(true))) {
+          event.preventDefault();
+          event.stopPropagation();
+          textareaRef.current?.focus();
+        }
+        return;
+      }
+      if (!tagAssistEnabled || !showTranslations) return;
       if ((event.ctrlKey || event.metaKey) && (!field || field === textareaRef.current)) {
         if ((key === 'z' || key === 'y') && moveHistory(key === 'y' || event.shiftKey)) { event.preventDefault(); event.stopPropagation(); }
         if (key === 'a' && !field) { event.preventDefault(); setSelectedTagIds(new Set(promptTokens.map(token => token.id))); }
       }
       if (event.key === 'Escape' && deleteMode) { event.preventDefault(); event.stopPropagation(); setDeleteMode(false); clearSelection(); }
     }}>
+      {showClearAction && <button type="button"
+        aria-label={t(clearActionState === 'cleared' ? '撤销清空' : '清空当前提示词')}
+        title={t(clearActionState === 'cleared' ? '撤销清空' : '清空当前提示词')}
+        onMouseDown={event => event.preventDefault()}
+        onClick={() => { if (clearActionState === 'cleared') moveHistory(); else clearPrompt(); textareaRef.current?.focus(); }}
+        className="mobile-touch absolute right-1 top-1 z-10 flex h-7 w-7 items-center justify-center rounded-md bg-white/95 text-gray-500 shadow-sm transition-colors hover:bg-gray-100 hover:text-gray-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:bg-gray-900/95 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-100 md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100 md:focus-visible:opacity-100">
+        {clearActionState === 'cleared' ? <RotateCcw aria-hidden="true" className="h-4 w-4" /> : <Eraser aria-hidden="true" className="h-4 w-4" />}
+      </button>}
       <textarea
         {...textareaProps}
         ref={textareaRef}
         disabled={disabled}
         readOnly={readOnly}
         value={value}
-        className={className}
+        className={`${className || ''} ${showClearAction ? 'pr-14 md:pr-9' : ''}`}
         role={tagAssistEnabled ? 'combobox' : undefined}
         aria-autocomplete={tagAssistEnabled ? 'list' : undefined}
         aria-expanded={tagAssistEnabled ? isOpen && completionSource === 'prompt' : undefined}

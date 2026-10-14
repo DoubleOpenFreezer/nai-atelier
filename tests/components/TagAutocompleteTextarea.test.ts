@@ -74,6 +74,85 @@ describe('TagAutocompleteTextarea 输入优先交互', () => {
     expect(textarea.value).toBe('masterpiece, ');
   });
 
+  it('清空后右上角原位提供撤销，恢复输入焦点并保留重做历史', () => {
+    render(React.createElement(Harness, { initial: 'alpha, beta', showTranslations: true }));
+    const textarea = screen.getByRole('combobox', { name: 'Prompt' }) as HTMLTextAreaElement;
+
+    fireEvent.click(screen.getByRole('button', { name: '清空当前提示词' }));
+    expect(textarea.value).toBe('');
+    expect(document.activeElement).toBe(textarea);
+    expect(screen.getByRole('button', { name: '撤销清空' })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: '撤销清空' }));
+    expect(textarea.value).toBe('alpha, beta');
+    expect(document.activeElement).toBe(textarea);
+    fireEvent.keyDown(textarea, { key: 'y', ctrlKey: true });
+    expect(textarea.value).toBe('');
+    fireEvent.keyDown(textarea, { key: 'z', metaKey: true });
+    expect(textarea.value).toBe('alpha, beta');
+  });
+
+  it('关闭 Tag 辅助后仍可用 Ctrl/Cmd+Z 撤销清空并用重做快捷键恢复清空', () => {
+    render(React.createElement(Harness, { initial: 'alpha', tagAssistEnabled: false, showTranslations: true }));
+    const textarea = screen.getByRole('textbox', { name: 'Prompt' }) as HTMLTextAreaElement;
+
+    fireEvent.click(screen.getByRole('button', { name: '清空当前提示词' }));
+    expect(textarea.value).toBe('');
+    fireEvent.keyDown(textarea, { key: 'z', ctrlKey: true });
+    expect(textarea.value).toBe('alpha');
+    fireEvent.keyDown(textarea, { key: 'z', metaKey: true, shiftKey: true });
+    expect(textarea.value).toBe('');
+    fireEvent.keyDown(textarea, { key: 'z', metaKey: true });
+    expect(textarea.value).toBe('alpha');
+  });
+
+  it('清空退出 Tag 删除模式、清除选择与候选，之后撤销恢复未选中的原文', async () => {
+    render(React.createElement(Harness, { initial: 'alpha, beta', showTranslations: true }));
+    const textarea = screen.getByRole('combobox', { name: 'Prompt' }) as HTMLTextAreaElement;
+    fireEvent.click(screen.getByRole('button', { name: /^alpha\s/ }));
+    fireEvent.click(screen.getByRole('button', { name: '删除模式' }));
+
+    fireEvent.click(screen.getByRole('button', { name: '清空当前提示词' }));
+    expect(textarea.value).toBe('');
+    expect(screen.queryByRole('button', { name: /删除 \d+ 个 Tag/ })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '撤销清空' }));
+    expect(textarea.value).toBe('alpha, beta');
+    expect(screen.getByRole('button', { name: /^alpha\s/ }).getAttribute('aria-pressed')).toBe('false');
+
+    await openSuggestions(textarea, 'mas');
+    expect(screen.getByRole('listbox')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '清空当前提示词' }));
+    expect(textarea.value).toBe('');
+    expect(screen.queryByRole('listbox')).toBeNull();
+  });
+
+  it.each([
+    { value: '', props: {} },
+    { value: 'alpha', props: { disabled: true } },
+    { value: 'alpha', props: { readOnly: true } },
+  ])('空值、disabled 或 readOnly 时不提供清空按钮：%j', ({ value, props }) => {
+    render(React.createElement(TagAutocompleteTextarea, { value, onValueChange: vi.fn(), ...props }));
+    expect(screen.queryByRole('button', { name: '清空当前提示词' })).toBeNull();
+  });
+
+  it('外部替换内容会丢弃旧清空历史，新清空只能撤销回替换后的值', () => {
+    const ExternalHarness = () => {
+      const [value, setValue] = useState('alpha');
+      return React.createElement(React.Fragment, null,
+        React.createElement(TagAutocompleteTextarea, { value, onValueChange: setValue, tagAssistEnabled: false, showTranslations: false, 'aria-label': 'Prompt' }),
+        React.createElement('button', { type: 'button', onClick: () => setValue('external') }, '外部替换'));
+    };
+    render(React.createElement(ExternalHarness));
+    const textarea = screen.getByRole('textbox', { name: 'Prompt' }) as HTMLTextAreaElement;
+    fireEvent.click(screen.getByRole('button', { name: '清空当前提示词' }));
+    fireEvent.click(screen.getByRole('button', { name: '外部替换' }));
+    expect(textarea.value).toBe('external');
+    expect(screen.queryByRole('button', { name: '撤销清空' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '清空当前提示词' }));
+    fireEvent.click(screen.getByRole('button', { name: '撤销清空' }));
+    expect(textarea.value).toBe('external');
+  });
+
   it('关闭 Tag 辅助后保留普通文本输入且不查询词典', async () => {
     render(React.createElement(Harness, { tagAssistEnabled: false, showTranslations: true }));
     const textarea = screen.getByRole('textbox', { name: 'Prompt' }) as HTMLTextAreaElement;

@@ -6,7 +6,7 @@
  * 任何一项未命中（官方改版或提取器被改坏）即以非零码退出。
  * 用法：npm run test:live-sync
  */
-import { computeNaiRuntimeSync, DEFAULT_NAI_RUNTIME, extractNaiCostCalculator, extractNaiPriceCalculator, fetchNaiRuntimeText } from '../../scripts/media-gateway.mjs';
+import { computeNaiRuntimeSync, DEFAULT_NAI_RUNTIME, extractNaiCostCalculator, extractNaiPriceCalculator, extractNaiVibeCostCalculator, extractNaiPriceCallback, extractNaiRuntimeChunkPaths, fetchNaiRuntimeText } from '../../scripts/media-gateway.mjs';
 import { estimateNaiBilling } from '../../worker/naiBilling.mjs';
 import { createContext, Script } from 'node:vm';
 import assert from 'node:assert/strict';
@@ -17,16 +17,20 @@ const SOURCE = 'https://novelai.net/image';
 
 export const officialVibeCalculators = bundle => {
   const vibe = bundle.match(/(?:let |var |,)(\w+)=(\d+);(function (\w+)\((\w+)\)\{return Math\.max\(0,\5-\d+\)\*\1\})/);
+  const exportedVibe = extractNaiVibeCostCalculator(bundle);
   const encoding = bundle.match(/async getPrice\([^)]*\)\{[\s\S]{0,800}?price:-?\d+\}\}/)?.[0];
-  assert.ok(vibe && encoding, '未识别官方 Vibe 附加费或编码计价函数');
+  assert.ok((vibe || exportedVibe) && encoding, '未识别官方 Vibe 附加费或编码计价函数');
   const bindings = {};
   const normalize = encoding.match(/\(0,(\w+)\.(\w+)\)\(/);
-  const registry = encoding.match(/await (\w+)\.get\(/);
+  const registry = encoding.match(/await (\w+)(\(\))?\.get\(/);
   if (normalize) bindings[normalize[1]] = { [normalize[2]]: value => value };
-  if (registry) (bindings[registry[1]] ||= {}).get = async () => ({ type: 'image' });
+  if (registry) {
+    const storage = { get: async () => ({ type: 'image' }) };
+    bindings[registry[1]] = registry[2] ? () => storage : storage;
+  }
   const context = createContext(bindings, { codeGeneration: { strings: false, wasm: false } });
   return {
-    extraCost: new Script(`(()=>{let ${vibe[1]}=${vibe[2]};${vibe[3]};return ${vibe[4]}})()`).runInContext(context, { timeout: 1000 }),
+    extraCost: new Script(exportedVibe ? `(${exportedVibe[1]})` : `(()=>{let ${vibe[1]}=${vibe[2]};${vibe[3]};return ${vibe[4]}})()`).runInContext(context, { timeout: 1000 }),
     encoding: new Script(`({${encoding},cached:true,async getEncoding(){return this.cached;}})`).runInContext(context, { timeout: 1000 }),
   };
 };
@@ -79,7 +83,7 @@ const compareOfficialBilling = async (bundle, runtime) => {
   const price = priceSource.match(/price:\(0,(\w+)\.(\w+)\)\(/);
   const account = priceSource.match(/let \w+=\(0,(\w+)\.(\w+)\)\(\w+\((\w+)\.(\w+)\),\w+\(\1\.(\w+)\)\)/);
   const capability = priceSource.match(/\(0,(\w+)\.(\w+)\)\(\w+\)\.encodedVibes/);
-  const vibePrice = priceSource.match(/\(0,(\w+)\.(\w+)\)\(\w+\.filter\(\w+=>\w+\.enabled\)\.length\)/);
+  const vibePrice = priceSource.match(/\(0,(\w+)\.(\w+)\)\(\w+\.filter\((?:\w+=>\w+\.enabled|\w+)\)\.length\)/);
   const validate = priceSource.match(/!\(0,(\w+)\.(\w+)\)\(\w+\)/);
   const inpainting = priceSource.match(/\w+\.mask\?\(0,(\w+)\.(\w+)\)\(\w+\):\w+/);
   const encoding = priceSource.match(/(\w+)\.(\w+)\.getPrice\(/);
@@ -99,8 +103,16 @@ const compareOfficialBilling = async (bundle, runtime) => {
   bind(inpainting[1], inpainting[2], model => `${model}-inpainting`);
   bind(encoding[1], encoding[2], officialVibes.encoding);
   for (const [key, value] of Object.entries(bindings)) context[key] = value;
+  // 新构建将 enabled、price 与求和回调提升为具名纯函数，执行真实函数体。
+  for (const match of priceSource.matchAll(/\.(?:filter|map|reduce)\((\w+)(?:,0)?\)/g)) {
+    const helper = extractNaiPriceCallback(bundle, match[1]);
+    assert.ok(helper, `未识别官方费用纯回调：${match[1]}`);
+    new Script(helper).runInContext(context, { timeout: 1000 });
+  }
   // 外部 e 是聚焦裁剪状态；测试已经传入实际裁剪尺寸，不再次执行 Canvas 几何函数。
   context.e = null;
+  const cropState = priceSource.match(/,(\w+)&&\w+\.mask\)\{/);
+  if (cropState) context[cropState[1]] = null;
   context.priceCalculator = new Script(`(${priceSource})`).runInContext(context, { timeout: 1000 });
   const cases = [];
   for (const model of new Set(['nai-diffusion-4-full', 'nai-diffusion-4-5-full', 'nai-diffusion-5-full', 'nai-diffusion-5-curated',
@@ -142,7 +154,7 @@ const compareOfficialBilling = async (bundle, runtime) => {
 
 const main = async () => {
   const html = await fetchNaiRuntimeText(SOURCE);
-  const paths = [...new Set([...html.matchAll(/"(\/_next\/static\/chunks\/[^"]+\.js)"/g)].map(m => m[1]))];
+  const paths = extractNaiRuntimeChunkPaths(html);
   if (!paths.length) {
     console.error('✖ 官方页面未暴露 JS 包（页面结构可能已改版）');
     process.exit(1);
@@ -170,7 +182,7 @@ const main = async () => {
     const healthField = field.startsWith('costCoefficient') ? 'costCoefficients' : field;
     console.log(`  ${health.missed.some(missed => healthField.startsWith(missed)) || (field === 'usageLimitedModels' && health.missed.includes('models')) ? '✖' : '✔'} ${field}: ${def} → ${live}`);
   }
-  if (!health.ok) {
+  if (!health.extracted.length) {
     console.error(`\n✖ 全部提取失效：官方大概率已改版，需要人工/AI 重新对接（未命中：${health.missed.join('、')}）`);
     process.exit(1);
   }

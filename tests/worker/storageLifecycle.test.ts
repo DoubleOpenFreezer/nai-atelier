@@ -25,10 +25,10 @@ const fixture = () => {
   } } as unknown as D1Database;
   const bucket = { delete: vi.fn(async (_key: string) => {}), get: vi.fn(), put: vi.fn() };
   const env = { DB: db, BUCKET: bucket, PERSONAL_MODE_ENABLED: 'true', LOCAL_HISTORY_ENABLED: 'true' } as unknown as Env;
-  const invoke = async (path: string, method = 'DELETE') => {
-    const request = new Request(`http://localhost${path}`, { method });
+  const invoke = async (path: string, method = 'DELETE', body?: unknown) => {
+    const request = new Request(`http://localhost${path}`, { method, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
     const context = { request, url: new URL(request.url), path, method, db, env, currentUser: { id: 'owner', role: 'admin' } } as RouteContext;
-    return path.startsWith('/api/local-history') ? handleHistoryRoute(context) : handleSettingsRoute(context);
+    return path.startsWith('/api/local-history') || path.startsWith('/api/inspirations') ? handleHistoryRoute(context) : handleSettingsRoute(context);
   };
   return { sqlite, db, env, bucket, queries, invoke, fail: (pattern: RegExp) => { fail = pattern; } };
 };
@@ -51,6 +51,77 @@ it('删除历史保留灵感引用的原图，只清理已删除历史的蒙版'
   expect(f.sqlite.prepare('SELECT id FROM inspirations').get()?.id).toBe('i');
 });
 
+it.each([
+  ['其他风格串', "INSERT INTO chains (id,user_id,name,preview_image) VALUES ('shared','owner','retained','/api/assets/cover.png')"],
+  ['收藏原图地址', "INSERT INTO inspirations (id,user_id,title,image_url,archived) VALUES ('shared','owner','retained','/api/assets/cover.png',1)"],
+  ['收藏原图键', "INSERT INTO inspirations (id,user_id,title,image_key) VALUES ('shared','owner','retained','cover.png')"],
+  ['历史原图', "INSERT INTO local_generation_history (id,user_id,image_key,created_at) VALUES ('shared','owner','cover.png',1)"],
+  ['画师原图', "INSERT INTO artists (id,name,image_url) VALUES ('shared','retained','/api/assets/cover.png')"],
+  ['画师预览', "INSERT INTO artists (id,name,preview_url) VALUES ('shared','retained','/api/assets/cover.png')"],
+  ['画师样张', "INSERT INTO artists (id,name,benchmarks) VALUES ('shared','retained','[\"/api/assets/cover.png\"]')"],
+])('删除风格串保留%s仍引用的封面', async (_kind, retainedSql) => {
+  const f = fixture();
+  f.sqlite.exec("INSERT INTO chains (id,user_id,name,preview_image,base_prompt,params) VALUES ('c','owner','deleted','/api/assets/cover.png','original prompt','{\"seed\":123}')");
+  f.sqlite.exec(retainedSql);
+  const retained = ['chains', 'inspirations', 'local_generation_history', 'artists'].map(table => f.sqlite.prepare(`SELECT * FROM ${table} WHERE id = 'shared'`).get());
+  expect((await f.invoke('/api/chains/c'))?.status).toBe(200);
+  expect(f.sqlite.prepare("SELECT id FROM chains WHERE id = 'c'").get()).toBeUndefined();
+  expect(f.bucket.delete).not.toHaveBeenCalled();
+  expect(['chains', 'inspirations', 'local_generation_history', 'artists'].map(table => f.sqlite.prepare(`SELECT * FROM ${table} WHERE id = 'shared'`).get())).toEqual(retained);
+});
+
+it.each(['', '/api/assets/new-cover.png'])('清空或更换风格串封面为 %s 时保留收藏中的旧原图及信息', async previewImage => {
+  const f = fixture();
+  f.sqlite.exec("INSERT INTO chains (id,user_id,name,preview_image) VALUES ('c','owner','synthetic','/api/assets/old-cover.png'); INSERT INTO inspirations (id,user_id,title,image_url,prompt,params) VALUES ('i','owner','retained','/api/assets/old-cover.png','original prompt','{\"seed\":123}')");
+  const original = f.sqlite.prepare("SELECT * FROM inspirations WHERE id = 'i'").get();
+  expect((await f.invoke('/api/chains/c', 'PUT', { previewImage }))?.status).toBe(200);
+  expect(f.sqlite.prepare("SELECT preview_image FROM chains WHERE id = 'c'").get()?.preview_image).toBe(previewImage);
+  expect(f.sqlite.prepare("SELECT * FROM inspirations WHERE id = 'i'").get()).toEqual(original);
+  expect(f.bucket.delete).not.toHaveBeenCalled();
+});
+
+it('逐条删除共用封面的风格串，只在最后一个引用消失后清理一次', async () => {
+  const f = fixture();
+  f.sqlite.exec("INSERT INTO chains (id,user_id,name,preview_image) VALUES ('c','owner','first','/api/assets/cover.png'), ('d','owner','second','/api/assets/cover.png'); INSERT INTO artists (id,name,benchmarks) VALUES ('broken','synthetic','damaged json')");
+  await f.invoke('/api/chains/c');
+  expect(f.bucket.delete).not.toHaveBeenCalled();
+  await f.invoke('/api/chains/d');
+  expect(f.bucket.delete.mock.calls).toEqual([['cover.png']]);
+});
+
+it('移除收藏引用不会清理仍用于风格串封面的原图', async () => {
+  const f = fixture();
+  f.sqlite.exec("INSERT INTO chains (id,user_id,name,preview_image) VALUES ('c','owner','retained','/api/assets/cover.png'); INSERT INTO inspirations (id,user_id,title,image_url) VALUES ('i','owner','removed','/api/assets/cover.png')");
+  expect((await f.invoke('/api/inspirations/i'))?.status).toBe(200);
+  expect(f.sqlite.prepare("SELECT id FROM inspirations WHERE id = 'i'").get()).toBeUndefined();
+  expect(f.sqlite.prepare("SELECT preview_image FROM chains WHERE id = 'c'").get()?.preview_image).toBe('/api/assets/cover.png');
+  expect(f.bucket.delete).not.toHaveBeenCalled();
+});
+
+it.each([
+  ['/api/assets/covers/shared%20image.png', '/api/assets/covers/shared image.png'],
+  ['/api/assets/covers/shared image.png', '/api/assets/covers/shared%20image.png'],
+  ['/api/assets/covers/shared image.png', '/api/assets/covers%2Fshared%20image.png'],
+])('封面 URL %s 与收藏 URL %s 的编码不同仍匹配同一张原图', async (coverUrl, favoriteUrl) => {
+  const f = fixture();
+  f.sqlite.prepare("INSERT INTO chains (id,user_id,name,preview_image) VALUES ('c','owner','removed',?)").run(coverUrl);
+  f.sqlite.prepare("INSERT INTO inspirations (id,user_id,title,image_url) VALUES ('i','owner','retained',?)").run(favoriteUrl);
+  await f.invoke('/api/chains/c');
+  expect(f.bucket.delete).not.toHaveBeenCalled();
+});
+
+it('无法核对图片引用时不清理原图，并向调用方报告失败', async () => {
+  const f = fixture();
+  f.sqlite.exec("INSERT INTO chains (id,user_id,name,preview_image) VALUES ('c','owner','removed','/api/assets/cover.png')");
+  const prepare = f.db.prepare.bind(f.db);
+  vi.spyOn(f.db, 'prepare').mockImplementation(query => {
+    if (query.includes('AS referenced')) throw new Error('synthetic reference lookup failure');
+    return prepare(query);
+  });
+  await expect(f.invoke('/api/chains/c')).rejects.toThrow('synthetic reference lookup failure');
+  expect(f.bucket.delete).not.toHaveBeenCalled();
+});
+
 it('旧画师图片与 benchmarks 仍正常清理，R2 失败不会伪报成功', async () => {
   const f = fixture();
   f.sqlite.exec("INSERT INTO artists (id,name,image_url,preview_url,benchmarks) VALUES ('a','synthetic','/api/assets/original.png','/api/assets/preview.png','[\"/api/assets/old-benchmark.png\"]')");
@@ -58,7 +129,7 @@ it('旧画师图片与 benchmarks 仍正常清理，R2 失败不会伪报成功'
   expect(f.bucket.delete.mock.calls.flat()).toEqual(['original.png', 'preview.png', 'old-benchmark.png']);
   vi.spyOn(console, 'error').mockImplementation(() => {});
   f.bucket.delete.mockRejectedValueOnce(new Error('synthetic R2 failure'));
-  await expect(deleteR2File(f.env, '/api/assets/blocked.png')).rejects.toThrow('synthetic R2 failure');
+  await expect(deleteR2File(f.env, '/api/assets/blocked.png', f.db)).rejects.toThrow('synthetic R2 failure');
 });
 
 it.each([/CREATE TABLE IF NOT EXISTS users/, /ALTER TABLE chains/, /CREATE TABLE IF NOT EXISTS aitag_works/])('初始化中的真实错误 %s 返回失败', async pattern => {

@@ -1296,9 +1296,9 @@ test('同步健康记录：全部命中 / 全部失效 / 部分失效', () => {
   assert.equal(broken.runtime.imagesPerPercent, DEFAULT_NAI_RUNTIME.imagesPerPercent);
   assert.deepEqual(broken.runtime.models, DEFAULT_NAI_RUNTIME.models);
 
-  // 部分命中（例如只剩模型表）：正常可用但记录缺项，供前端示警。
+  // 部分命中（例如只剩模型表）：缺项必须标为不健康，供前端示警。
   const partial = computeNaiRuntimeSync('case"nai-diffusion-5-full":{opusUsageLimit:!0}');
-  assert.equal(partial.health.ok, true);
+  assert.equal(partial.health.ok, false);
   assert.deepEqual(partial.health.missed, ['imagesPerPercent', 'costCoefficients', 'freeTier', 'billing', 'streamedModels', 'promptPresets', 'metadataModels']);
   assert.equal(partial.runtime.models.length, 1);
 });
