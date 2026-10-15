@@ -49,7 +49,7 @@ const isLocalFileDrag = (data: DataTransfer) => Array.from(data.types || []).inc
 export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentUser, inspirationsData, onRefresh, onImportRefresh, notify, onNavigateToPlayground, labModuleOrder = DEFAULT_LAB_MODULE_ORDER, selectionFocusEnabled = true }) => {
   useLanguage();
   const confirmAction = useConfirmDialog();
-  const imageDisplay = useMobileImageDisplayPreferences();
+  const imageDisplay = useMobileImageDisplayPreferences('favorites');
   const fileDragDepth = useRef(0);
   const [fileDragOver, setFileDragOver] = useState(false);
   const mainScrollRef = useRef<HTMLDivElement>(null);

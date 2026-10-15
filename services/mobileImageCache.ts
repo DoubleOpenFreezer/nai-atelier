@@ -15,6 +15,7 @@ const ACCESS_FLUSH_DELAY_MS = 5_000;
 const PRUNE_DELAY_MS = 2_000;
 
 export type MediaVariant = 'thumb-160' | 'thumb-240' | 'thumb-320' | 'thumb-480' | 'thumb-640' | 'thumb-960' | 'original';
+export type MediaPreviewTransform = 'artist-sample-padding-v1';
 
 interface CacheStats {
   count: number;
@@ -426,7 +427,11 @@ export const thumbnailVariantWidth = (width: number): number =>
 export const ratchetVariantWidth = (floor: number, width: number): number =>
   Math.max(floor, thumbnailVariantWidth(width));
 
-export const buildMediaUrl = (source: string, variant: MediaVariant) => `/api/media?source=${encodeURIComponent(source)}&variant=${variant}`;
+export const buildMediaUrl = (source: string, variant: MediaVariant, previewTransform?: MediaPreviewTransform) => {
+  const preview = variant !== 'original' && source.startsWith('/api/artist-samples/image?') && previewTransform
+    ? `&preview=${previewTransform}` : '';
+  return `/api/media?source=${encodeURIComponent(source)}&variant=${variant}${preview}`;
+};
 
 export const getMobileOriginalUrl = (source: string) => {
   if (!canUseMediaGateway(source)) return source;

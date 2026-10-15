@@ -94,7 +94,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
   selectionFocusEnabled = true,
 }) => {
   useLanguage();
-  const imageDisplay = useMobileImageDisplayPreferences();
+  const imageDisplay = useMobileImageDisplayPreferences('characters');
     // 瀑布流（masonry 布局时）：封面按真实宽高比完整显示，最短列分配互相补齐。
     const [cardRatios, updateImageRatio] = useImageRatios();
     const frostedCaption = useGalleryFrostedCaption();
@@ -207,8 +207,6 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
   });
   const [gachaCards, setGachaCards] = useState<CharacterCard[] | null>(null);
   const [isGachaLoading, setIsGachaLoading] = useState(false);
-  const gridColumns = useMasonryColumnCount(imageDisplay, 6);
-  const [isMobileViewport, setIsMobileViewport] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches);
   const [lightbox, setLightbox] = useState<CharacterCard | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [newName, setNewName] = useState('');
@@ -217,6 +215,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
   // 移动详情层的焦点管理已内置在 MobileDetailView 内。
   const createDialogRef = useModalA11y<HTMLDivElement>(showCreate);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const gridColumns = useMasonryColumnCount(imageDisplay, undefined, scrollRef);
   const sentinelRef = useRef<HTMLDivElement>(null);
   const catalogGenerationRef = useRef(0);
   const searchGenerationRef = useRef(0);
@@ -244,14 +243,6 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [showCreate, lightbox]);
-
-  useEffect(() => {
-    const media = window.matchMedia('(max-width: 767px)');
-    const sync = () => setIsMobileViewport(media.matches);
-    sync();
-    media.addEventListener('change', sync);
-    return () => media.removeEventListener('change', sync);
-  }, []);
 
   const characterChains = useMemo(() => chains.filter(chain => chain.type === 'character'), [chains]);
   const catalogChains = useMemo(() => characterChains.filter(chain => chain.tags?.includes(CATALOG_MARKER)), [characterChains]);
@@ -678,7 +669,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
             renderItem={(card: CharacterCard) => renderCharacterCard(card)}
           />
         ) : (
-        <div className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid workspace-character-grid`} style={{ ...mobileGalleryStyle(imageDisplay), ...(isMobileViewport ? {} : { '--mobile-gallery-columns': gridColumns }) }}>
+        <div className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid workspace-character-grid`} style={mobileGalleryStyle(imageDisplay, gridColumns)}>
           {visibleCards.map(renderCharacterCard)}
         </div>
         )}

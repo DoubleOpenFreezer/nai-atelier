@@ -3,7 +3,6 @@ import { ChevronLeft, ChevronRight, ImageIcon, Settings2 } from 'lucide-react';
 import { t, useLanguage } from '../services/i18n';
 import { buildArtistSampleImageUrl, getArtistSampleLookup, type ArtistOwnSample, type ArtistSampleLookup, type ArtistSamplePack } from '../services/artistSamples';
 import { ImageActivityContext, SmartImage } from './SmartImage';
-import { ImageLightbox } from './ImageLightbox';
 import { ImageShareOverlay } from './ImageShareActions';
 
 export const ArtistSampleCover: React.FC<{
@@ -29,11 +28,10 @@ export const ArtistSampleCover: React.FC<{
   const [imageError, setImageError] = useState(false);
   const [index, setIndex] = useState(0);
   const [retry, setRetry] = useState(0);
-  const [zoom, setZoom] = useState(false);
   const identity = JSON.stringify([pack, tag, revision, ownSamples.map(sample => sample.id)]);
   const lookup = lookupResult?.identity === identity ? lookupResult.data : undefined;
   useEffect(() => {
-    setLookupResult(undefined); setError(''); setImageError(false); setIndex(0); setZoom(false);
+    setLookupResult(undefined); setError(''); setImageError(false); setIndex(0);
   }, [identity]);
   useEffect(() => {
     if (!active) { setVisible(false); return; }
@@ -68,16 +66,13 @@ export const ArtistSampleCover: React.FC<{
   const move = (direction: number) => { setIndex(current => Math.max(0, Math.min(total - 1, current + direction))); setImageError(false); };
   return <div ref={rootRef} className="absolute inset-0">
     {imageUrl && !imageError ? <>
-      <div role="button" tabIndex={0} aria-label={t('放大查看：{0}', [alt || tag])} className="absolute inset-0 outline-none focus-visible:ring-2 focus-visible:ring-indigo-500" onClick={event => { event.stopPropagation(); setZoom(true); }} onKeyDown={event => { if (['Enter', ' '].includes(event.key)) { event.preventDefault(); event.stopPropagation(); setZoom(true); } }}>
-        <SmartImage key={`${imageUrl}:${retry}`} src={imageUrl} alt={alt} eager={visible} className={imageClassName} onError={() => setImageError(true)} onLoad={event => { if (event.currentTarget.naturalWidth && event.currentTarget.naturalHeight) onImageLoad?.(event.currentTarget.naturalWidth, event.currentTarget.naturalHeight); }} />
-      </div>
+      <SmartImage key={`${imageUrl}:${retry}`} src={imageUrl} alt={alt} eager={visible} className={imageClassName} previewTransform={!own && imageUrl.startsWith('/api/artist-samples/image?') ? 'artist-sample-padding-v1' : undefined} onError={() => setImageError(true)} onLoad={event => { if (event.currentTarget.naturalWidth && event.currentTarget.naturalHeight) onImageLoad?.(event.currentTarget.naturalWidth, event.currentTarget.naturalHeight); }} />
       <ImageShareOverlay imageUrl={imageUrl} filename={filename} favorite={favorite} notify={notify} onFavoriteChange={onFavoriteChange} />
       {own && <span className="pointer-events-none absolute bottom-14 left-2 rounded-full bg-black/60 px-2 py-1 text-mini font-bold text-white backdrop-blur">{t('自建样张')}</span>}
       {total > 1 && <>
         <button data-card-action="true" type="button" aria-label={t('上一张')} disabled={index === 0} onClick={event => { event.stopPropagation(); move(-1); }} className="gallery-cover-navigation hover-reveal-touch mobile-touch absolute bottom-2 left-2 rounded-full bg-black/65 p-2 text-white backdrop-blur disabled:opacity-35"><ChevronLeft className="h-4 w-4" /></button>
         <button data-card-action="true" type="button" aria-label={t('下一张')} disabled={index >= total - 1} onClick={event => { event.stopPropagation(); move(1); }} className="gallery-cover-navigation hover-reveal-touch mobile-touch absolute bottom-2 right-2 rounded-full bg-black/65 p-2 text-white backdrop-blur disabled:opacity-35"><ChevronRight className="h-4 w-4" /></button>
       </>}
-      {zoom && <ImageLightbox src={imageUrl} alt={alt} filename={filename} favorite={favorite} notify={notify} onClose={() => setZoom(false)} />}
     </> : <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-3 text-center text-gray-400">
       <ImageIcon className="h-6 w-6" />
       <span className="text-micro">{imageError ? t('样张图片加载失败') : error || (hasPackSample && !lookup ? t('正在读取样张…') : t('暂无样张'))}</span>

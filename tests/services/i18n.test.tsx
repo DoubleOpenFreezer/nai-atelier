@@ -15,6 +15,12 @@ beforeEach(() => { localStorage.clear(); delete window.atelierLanguage; restoreL
 afterEach(() => { cleanup(); delete window.atelierLanguage; setLanguage('zh-CN'); vi.restoreAllMocks(); });
 
 describe('界面语言', () => {
+  it('图片列表页面设置具备四种译文，来源名称保持原样', () => {
+    for (const language of LANGUAGES.filter(item => item.code !== 'zh-CN')) {
+      for (const key of ['设置范围', '全局默认', '跟随全局', '当前值继承自全局设置；关闭后可单独调整此页面']) expect(translate(language.code, key)).not.toBe(key);
+      for (const name of ['AITag', 'Pixiv', 'Danbooru']) expect(translate(language.code, name)).toBe(name);
+    }
+  });
   it('画师图包管理与补图生成入口具备完整译文，数量与画师占位保持准确', () => {
     for (const language of LANGUAGES.filter(item => item.code !== 'zh-CN')) {
       for (const key of ['画师预览图库', '补图生成设置', '保存并进入实验室', '图包管理', '解除关联（不删文件）', '正在读取配置…']) expect(translate(language.code, key)).not.toBe(key);

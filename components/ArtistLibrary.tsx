@@ -71,7 +71,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, notif
     const packArtistNames = useMemo(() => new Set(packArtists.map(entry => entry.name)), [packArtists]);
     const ownArtistNames = useMemo(() => new Set(ownArtists.map(entry => entry.name)), [ownArtists]);
     const sampledArtists = useMemo(() => [...new Map([...packArtists, ...ownArtists].map(entry => [entry.name, entry])).values()], [packArtists, ownArtists]);
-    const imageDisplay = useMobileImageDisplayPreferences();
+    const imageDisplay = useMobileImageDisplayPreferences('artists');
     // 瀑布流（masonry 布局时）：封面按真实宽高比完整显示，最短列分配互相补齐。
     const [artistRatios, updateImageRatio] = useImageRatios();
     const frostedCaption = useGalleryFrostedCaption();
@@ -112,7 +112,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, notif
                                             alt={artist.chineseName || artist.name}
                                             onSupplement={() => supplementSample(artist.name)}
                                             onSettings={() => setSampleSettings({ tag: artist.name, pack: samplePack, enterAfterSave: false })}
-                                            imageClassName={imageDisplay.layout === 'masonry' && !artistRatios[artist.id] ? 'h-full w-full object-contain' : undefined}
+                                            imageClassName={imageDisplay.layout === 'masonry' ? 'h-full w-full object-contain' : undefined}
                                             notify={notify}
                                             onFavoriteChange={() => toggleFav(artist, undefined, collectionSnapshot().some(item => item.sourceType === 'artist' && item.sourceId === artist.name && !item.archived))}
                                             onImageLoad={(width, height) => updateImageRatio(artist.id, width, height)}
@@ -218,17 +218,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, notif
     useEffect(() => () => { gachaGenerationRef.current++; }, []);
 
     // View Settings
-    const gridCols = useMasonryColumnCount(imageDisplay, 6);
-    const [isMobileViewport, setIsMobileViewport] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches);
-
-    useEffect(() => {
-        const media = window.matchMedia('(max-width: 767px)');
-        const sync = () => setIsMobileViewport(media.matches);
-        sync();
-        media.addEventListener('change', sync);
-        return () => media.removeEventListener('change', sync);
-    }, []);
-
+    const gridCols = useMasonryColumnCount(imageDisplay, undefined, scrollContainerRef);
     useEffect(() => {
         const syncAgentFavorites = () => {
             try {
@@ -659,7 +649,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, notif
                 ) : (
                     <div
                         className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid workspace-artist-grid`}
-                        style={{ ...mobileGalleryStyle(imageDisplay), ...(isMobileViewport ? {} : { '--mobile-gallery-columns': gridCols }) }}
+                        style={mobileGalleryStyle(imageDisplay, gridCols)}
                     >
                         {filteredArtists.map(renderArtistCard)}
                     </div>

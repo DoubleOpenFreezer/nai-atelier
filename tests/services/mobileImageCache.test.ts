@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   abortMobileThumbnailRequests,
   acquireMobileThumbnailUrl,
+  buildMediaUrl,
   canUseMediaGateway,
   getMobileOriginalUrl,
   ratchetVariantWidth,
@@ -55,6 +56,17 @@ describe('ratchetVariantWidth 档位棘轮', () => {
 });
 
 describe('getMobileOriginalUrl', () => {
+  it.each(['v45', 'v5'])('仅显式的 %s 图包预览使用独立缓存地址，原图和其他来源不附加裁边', pack => {
+    const source = `/api/artist-samples/image?pack=${pack}&tag=synthetic&index=0&revision=${'a'.repeat(24)}`;
+    const plain = buildMediaUrl(source, 'thumb-960');
+    expect(buildMediaUrl(source, 'thumb-960', 'artist-sample-padding-v1')).toBe(`${plain}&preview=artist-sample-padding-v1`);
+    expect(buildMediaUrl(source, 'original', 'artist-sample-padding-v1')).toBe(buildMediaUrl(source, 'original'));
+    expect(getMobileOriginalUrl(source)).toBe(source);
+    for (const other of ['/api/assets/self-made.jpg', '/api/local-history/synthetic/image', 'https://ai-img.10118899.xyz/NAI/123/456.webp']) {
+      expect(buildMediaUrl(other, 'thumb-960', 'artist-sample-padding-v1')).toBe(buildMediaUrl(other, 'thumb-960'));
+    }
+  });
+
   it('对白名单内的远程图片走 /api/media 代理', () => {
     const remote = 'https://ai-img.10118899.xyz/NAI/123/456.webp';
     expect(getMobileOriginalUrl(remote)).toBe(`/api/media?source=${encodeURIComponent(remote)}&variant=original`);

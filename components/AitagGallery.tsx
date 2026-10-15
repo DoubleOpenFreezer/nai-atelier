@@ -300,7 +300,7 @@ const defaultParams: NAIParams = {
 
 export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFocusEnabled = true, currentUser, notify, onNavigateToPlayground, onCreateArtistChain, onRefreshInspiration }) => {
   useLanguage();
-  const imageDisplay = useMobileImageDisplayPreferences();
+  const imageDisplay = useMobileImageDisplayPreferences('aitag');
   const mainScrollRef = useRef<HTMLElement | null>(null);
   const galleryContentRef = useRef<HTMLDivElement>(null);
   const detailScrollRef = useRef<HTMLDivElement>(null);

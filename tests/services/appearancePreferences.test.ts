@@ -22,6 +22,15 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('appearance preferences', () => {
+  it('外观预设只保存主题效果，保存恢复不改图库全局与页面覆盖', () => {
+    const display = JSON.stringify({ layout: 'masonry', columns: 2, desktopColumns: 5, pages: { artists: { layout: 'square', columns: 1, desktopColumns: 3 } } });
+    localStorageValues.set('nai_mobile_image_display', display);
+    saveAppearancePreferences({ ...DEFAULT_APPEARANCE_PREFERENCES, themeMode: 'dark' });
+    expect(loadAppearancePreferences().themeMode).toBe('dark');
+    expect(localStorageValues.get('nai_mobile_image_display')).toBe(display);
+    expect(validateAppearancePreset({ name: '主题', imageDisplay: JSON.parse(display) })).not.toHaveProperty('imageDisplay');
+  });
+
   it('旧偏好及旧主题默认开启卡片效果和选中聚焦，开关分别保存并恢复', () => {
     expect(normalizeAppearancePreferences({ galleryFrostedCaption: 'false', galleryHoverFloat: null })).toMatchObject({ galleryFrostedCaption: true, galleryHoverFloat: true, gallerySelectionFocus: true });
     expect(validateAppearancePreset({ name: '旧主题' })).toMatchObject({ galleryFrostedCaption: true, galleryHoverFloat: true, gallerySelectionFocus: true });

@@ -108,7 +108,7 @@ const formatCount = (value: number) => new Intl.NumberFormat(getLanguage(), {
 
 export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, selectionFocusEnabled = true, notify, onNavigateToPlayground, onRefreshInspiration }) => {
   useLanguage();
-  const imageDisplay = useMobileImageDisplayPreferences();
+  const imageDisplay = useMobileImageDisplayPreferences('pixiv');
   const scrollRef = useRef<HTMLDivElement>(null);
   const galleryContentRef = useRef<HTMLDivElement>(null);
   const [status, setStatus] = useState<PixivConnectionStatus | null>(null);

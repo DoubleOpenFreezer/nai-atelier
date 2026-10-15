@@ -10,6 +10,7 @@ import { readAgentPage } from '../../services/agentWorkspace';
 import { getCleanSharedImages, getSharedImageCustomText, getSharedImageCleanContent, IMAGE_SHARING_STORAGE_KEY, IMAGE_SHARING_TEXT_STORAGE_KEY, IMAGE_SHARING_CONTENT_STORAGE_KEY } from '../../services/imageSharing';
 import { readActiveNaiKey, REMEMBER_NAI_KEY_STORAGE_KEY, setActiveNaiKey } from '../../services/naiKeyStorage';
 import { naiKeyVault } from '../../services/naiKeyVault';
+import { getImageDisplayPageOverride, getMobileImageDisplayPreferences } from '../../services/imageDisplayPreferences';
 const subscriptionFixture = vi.hoisted(() => ({ entries: [] as import('../../services/naiKeyVault').NaiKeyEntry[], expired: false, balance: undefined as { fixedTrainingStepsLeft: number; purchasedTrainingSteps: number } | undefined, usage: undefined as import('../../services/naiUsage').NovelaiUsageState | undefined, refresh: vi.fn(async () => null) }));
 vi.mock('../../services/naiUsage', async importOriginal => ({
   ...await importOriginal<typeof import('../../services/naiUsage')>(),
@@ -537,6 +538,34 @@ describe('GlobalSettings', () => {
     // 点击「瀑布流」
     fireEvent.click(masonryBtn);
     expect(masonryBtn.className).toContain('border-indigo-500');
+  });
+
+  it('页面排列默认继承全局，取消继承后独立保存并可恢复继承', async () => {
+    render(React.createElement(SettingsHarness));
+    const scope = await screen.findByRole('combobox', { name: '设置范围' }) as HTMLSelectElement;
+    fireEvent.click(screen.getByRole('button', { name: '方形' }));
+    expect(getMobileImageDisplayPreferences().layout).toBe('square');
+
+    fireEvent.change(scope, { target: { value: 'artists' } });
+    const follow = screen.getByRole('switch', { name: '跟随全局' });
+    expect(follow.getAttribute('aria-checked')).toBe('true');
+    expect(screen.getByRole('button', { name: '方形' }).matches(':disabled')).toBe(true);
+    expect(screen.getByText('当前值继承自全局设置；关闭后可单独调整此页面')).toBeTruthy();
+    expect(getMobileImageDisplayPreferences('artists').layout).toBe('square');
+
+    fireEvent.click(follow);
+    expect(getImageDisplayPageOverride('artists')).toEqual(getMobileImageDisplayPreferences());
+    fireEvent.click(screen.getByRole('button', { name: '竖向卡片' }));
+    expect(getMobileImageDisplayPreferences('artists').layout).toBe('portrait');
+    expect(getMobileImageDisplayPreferences().layout).toBe('square');
+
+    fireEvent.change(scope, { target: { value: 'global' } });
+    fireEvent.click(screen.getByRole('button', { name: '瀑布流' }));
+    fireEvent.change(scope, { target: { value: 'artists' } });
+    expect((screen.getByRole('switch', { name: '跟随全局' }) as HTMLButtonElement).getAttribute('aria-checked')).toBe('false');
+    fireEvent.click(screen.getByRole('switch', { name: '跟随全局' }));
+    expect(getImageDisplayPageOverride('artists')).toBeNull();
+    expect(getMobileImageDisplayPreferences('artists').layout).toBe('masonry');
   });
 
   it('个性化强调色按钮具有 mobile-size-locked 防止移动端被拉伸为椭圆/蛋形', async () => {

@@ -75,7 +75,7 @@ export const CodexGallery: React.FC<{ active: boolean; selectionFocusEnabled?: b
   const originalRevision = useRef(0);
   const scrollRef = useRef<HTMLDivElement>(null);
   const galleryRef = useRef<HTMLDivElement>(null);
-  const display = useMobileImageDisplayPreferences();
+  const display = useMobileImageDisplayPreferences('codex');
   const columns = useMasonryColumnCount(display, undefined, galleryRef);
   const filter = filters[mode];
   const result = data[mode];

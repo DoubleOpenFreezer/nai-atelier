@@ -21,7 +21,7 @@ interface Props {
   notify: (message: string, type?: 'success' | 'error') => void;
 }
 export const StyleRollGallery: React.FC<Props> = ({ experiment, candidates, images, selectedId, selectionFocusEnabled, historyReady, historyLoading, selecting, selectedIds, sort, onSelect, onToggle, onSave, onArchive, busy, scrollRef, onScroll, notify }) => {
-  const display = useMobileImageDisplayPreferences();
+  const display = useMobileImageDisplayPreferences('roll');
   const requestedColumns = useMasonryColumnCount(display, undefined, scrollRef, 220);
   const columns = display.desktopColumns === 'auto' ? Math.min(4, requestedColumns) : requestedColumns;
   const frosted = useGalleryFrostedCaption();

@@ -6,6 +6,7 @@ import {
   canUseMediaGateway,
   getMobileOriginalUrl,
   isMobileViewport,
+  type MediaPreviewTransform,
   type MediaVariant,
   ratchetVariantWidth,
   selectThumbnailVariant,
@@ -22,6 +23,7 @@ interface SmartImageProps {
   alt: string;
   eager?: boolean;
   thumbnailVariant?: Exclude<MediaVariant, 'original'>;
+  previewTransform?: MediaPreviewTransform;
   /** 渐进升级：低清 src 先显示，卡片接近/进入视口（或 eager 详情）后叠加更清晰源，加载完成淡入、失败静默保留低清。 */
   upgradeSrc?: string;
   upgradeVariant?: MediaVariant;
@@ -48,6 +50,7 @@ export const SmartImage: React.FC<SmartImageProps> = ({
   alt,
   eager = false,
   thumbnailVariant,
+  previewTransform,
   upgradeSrc,
   upgradeVariant,
   className = 'h-full w-full object-cover',
@@ -105,7 +108,7 @@ export const SmartImage: React.FC<SmartImageProps> = ({
     setDisplaySrc('');
     displaySrcRef.current = '';
     setActivatedSrc('');
-  }, [src, retryToken]);
+  }, [src, previewTransform, retryToken]);
 
   // 懒加载激活：仅在页面可见时挂载观察器；隐藏期间不激活任何新图片。
   useEffect(() => {
@@ -182,7 +185,7 @@ export const SmartImage: React.FC<SmartImageProps> = ({
       return;
     }
 
-    const thumbnailUrl = buildMediaUrl(src, variant);
+    const thumbnailUrl = buildMediaUrl(src, variant, previewTransform);
     const displayUrl = pin && thumbnailUrl.startsWith('/api/media') ? `${thumbnailUrl}&pin=1` : thumbnailUrl;
     if (!isMobileViewport()) {
       showImage(displayUrl);
@@ -199,7 +202,7 @@ export const SmartImage: React.FC<SmartImageProps> = ({
       active = false;
       resource.release();
     };
-  }, [activated, pin, src, useOriginal, variant, retryToken]);
+  }, [activated, pin, src, useOriginal, variant, previewTransform, retryToken]);
 
   useEffect(() => {
     if (!upgradeActivated || !upgradeTarget) {
@@ -212,7 +215,7 @@ export const SmartImage: React.FC<SmartImageProps> = ({
       setUpgradeDisplaySrc(upgradeTarget);
       return;
     }
-    const upgradeUrl = buildMediaUrl(upgradeTarget, upgradeVariant ?? 'thumb-960');
+    const upgradeUrl = buildMediaUrl(upgradeTarget, upgradeVariant ?? 'thumb-960', previewTransform);
     if (!isMobileViewport()) {
       setUpgradeDisplaySrc(upgradeUrl);
       return;
@@ -229,7 +232,7 @@ export const SmartImage: React.FC<SmartImageProps> = ({
       active = false;
       resource.release();
     };
-  }, [upgradeActivated, upgradeTarget, upgradeVariant, retryToken]);
+  }, [upgradeActivated, upgradeTarget, upgradeVariant, previewTransform, retryToken]);
 
   const handleImageError = () => {
     if (!useOriginal && canUseMediaGateway(src)) {

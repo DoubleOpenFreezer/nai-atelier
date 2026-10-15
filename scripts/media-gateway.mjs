@@ -2719,6 +2719,28 @@ export const handlePixivGalleryRequest = async (req, res, url, pixivGallery, pix
   return sendJson(res, 404, { error: 'Pixiv 接口不存在', code: 'PIXIV_NOT_FOUND' });
 };
 
+const getArtistSamplePreviewCrop = async image => {
+  const metadata = await image.metadata();
+  if (metadata.format !== 'jpeg' || metadata.width !== 768 || metadata.height !== 768 || metadata.hasAlpha
+    || (metadata.orientation && metadata.orientation !== 1)) return null;
+  const { data, info } = await image.clone().toColourspace('srgb').raw().toBuffer({ resolveWithObject: true });
+  if (info.width !== 768 || info.height !== 768 || info.channels !== 3) return null;
+  // shortcut: 仅支持已核实的 768 方形 JPEG 及两侧各 79px 纯黑列，图包换规格时重新抽样再扩展，不追裁画面深色背景。
+  for (let y = 0; y < 768; y++) {
+    for (let x = 0; x < 79; x++) {
+      const left = (y * 768 + x) * 3, right = (y * 768 + 767 - x) * 3;
+      if (data[left] || data[left + 1] || data[left + 2] || data[right] || data[right + 1] || data[right + 2]) return null;
+    }
+  }
+  for (let y = 0; y < 768; y++) {
+    for (let x = 79; x < 689; x++) {
+      const pixel = (y * 768 + x) * 3;
+      if (data[pixel] || data[pixel + 1] || data[pixel + 2]) return { left: 79, top: 0, width: 610, height: 768 };
+    }
+  }
+  return null;
+};
+
 class ThumbnailCache {
   constructor(concurrency = THUMBNAIL_JOB_CONCURRENCY) {
     this.entries = {};
@@ -2810,16 +2832,16 @@ class ThumbnailCache {
     this.scheduleIndexWrite();
   }
 
-  keyFor(source, variant) {
+  keyFor(source, variant, previewTransform = '') {
     const version = variant === 'thumb-960' && (
       /^\/api\/local-history\/[^/]+\/image$/i.test(source)
       || /^\/api\/integrations\/st-chatu8\/history\/[a-f0-9]{64}\/image$/i.test(source)
     ) ? HISTORY_THUMBNAIL_CACHE_VERSION : CACHE_VERSION;
-    return createHash('sha256').update(`${version}|${variant}|${source}`).digest('hex');
+    return createHash('sha256').update(`${version}|${variant}|${source}${previewTransform ? `|${previewTransform}` : ''}`).digest('hex');
   }
 
-  has(source, variant) {
-    return Boolean(this.entries[this.keyFor(source, variant)]);
+  has(source, variant, { previewTransform = '' } = {}) {
+    return Boolean(this.entries[this.keyFor(source, variant, previewTransform)]);
   }
 
   stats() {
@@ -2843,12 +2865,12 @@ class ThumbnailCache {
   }
 
   /** 该缩略图是否已标记为固定保留（封面图）。 */
-  isPinned(source, variant) {
-    return this.entries[this.keyFor(source, variant)]?.pinned === true;
+  isPinned(source, variant, { previewTransform = '' } = {}) {
+    return this.entries[this.keyFor(source, variant, previewTransform)]?.pinned === true;
   }
 
-  async put(source, variant, buffer, { pinned = false } = {}) {
-    const key = this.keyFor(source, variant);
+  async put(source, variant, buffer, { pinned = false, previewTransform = '' } = {}) {
+    const key = this.keyFor(source, variant, previewTransform);
     const file = `${key}.webp`;
     const temp = join(CACHE_DIR, `${key}.${process.pid}.${Date.now()}.tmp`);
     await writeFile(temp, buffer);
@@ -2859,8 +2881,8 @@ class ThumbnailCache {
     return { etag: `"nai-${key}"` };
   }
 
-  async get(source, variant, loadOriginal, { pinned = false, priority = 0 } = {}) {
-    const key = this.keyFor(source, variant);
+  async get(source, variant, loadOriginal, { pinned = false, priority = 0, previewTransform = '' } = {}) {
+    const key = this.keyFor(source, variant, previewTransform);
     const existing = this.entries[key];
     if (existing) {
       try {
@@ -2883,8 +2905,10 @@ class ThumbnailCache {
         throw error;
       }
       const { default: sharp } = await import('sharp');
-      const output = await sharp(original.buffer, { failOn: 'warning', limitInputPixels: 100_000_000 })
-        .rotate()
+      const image = sharp(original.buffer, { failOn: 'warning', limitInputPixels: 100_000_000 }).rotate();
+      const crop = previewTransform === 'artist-sample-padding-v1' ? await getArtistSamplePreviewCrop(image) : null;
+      if (crop) image.extract(crop);
+      const output = await image
         .resize({ width: THUMB_WIDTHS.get(variant), height: THUMB_WIDTHS.get(variant), fit: 'inside', withoutEnlargement: true })
         .webp({ quality: variant === 'thumb-960' ? 78 : 72, effort: variant === 'thumb-960' ? 3 : 4 })
         .toBuffer();
@@ -3924,6 +3948,10 @@ const serveDistFile = async (req, res, url) => {
       const variant = url.searchParams.get('variant') || '';
       if (variant !== 'original' && !THUMB_WIDTHS.has(variant)) return sendJson(res, 400, { error: 'Invalid image variant' });
       const validated = getValidatedSource(url.searchParams.get('source'));
+      const previewTransform = url.searchParams.get('preview') || '';
+      if (previewTransform && (previewTransform !== 'artist-sample-padding-v1' || validated.type !== 'artist-sample')) {
+        return sendJson(res, 400, { error: 'Invalid image preview transform' });
+      }
       const loadOriginal = () => validated.type === 'local'
         ? requestWorkerBuffer(validated.source, req, workerPort)
         : validated.type === 'artist-sample' ? artistSamples.readImage(validated.source)
@@ -3971,7 +3999,7 @@ const serveDistFile = async (req, res, url) => {
 
       // pin=1 表示固定保留（画师/角色封面缩略图），不参与 LRU 淘汰。
       const pinned = url.searchParams.get('pin') === '1';
-      const thumbnail = await cache.get(validated.source, variant, loadOriginal, { pinned });
+      const thumbnail = await cache.get(validated.source, variant, loadOriginal, { pinned, previewTransform });
       if (req.headers['if-none-match'] === thumbnail.etag) {
         res.writeHead(304, {
           ETag: thumbnail.etag,

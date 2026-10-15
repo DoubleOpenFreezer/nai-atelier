@@ -176,8 +176,7 @@ const HistoryCard = React.memo(function HistoryCard({
 export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNavigateToPlayground, onRefreshInspiration }) => {
   const language = useLanguage();
     const confirmAction = useConfirmDialog();
-    const imageDisplay = useMobileImageDisplayPreferences();
-    const masonryColumns = useMasonryColumnCount(imageDisplay);
+    const imageDisplay = useMobileImageDisplayPreferences('history');
     // 与 CSS 768px 断点一致：手机端卡片底部有额外的时间文字行，计入预计高度
     const [isMobileViewport, setIsMobileViewport] = useState(() => (typeof window === 'undefined' ? false : window.innerWidth < 768));
     useEffect(() => {
@@ -509,6 +508,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
     // 追加完成后若哨兵仍在视口（用户停在底部/快速滚动）会立即再触发，
     // 实现不间断连续加载；内容增长使哨兵移出视口后自然停止。
     const historyScrollRef = useRef<HTMLDivElement>(null);
+    const masonryColumns = useMasonryColumnCount(imageDisplay, undefined, historyScrollRef);
     const onScrollRestore = useKeepAliveScrollRestore(historyScrollRef, 'history');
     const historyPageSentinelRef = useRef<HTMLDivElement>(null);
 
@@ -1118,7 +1118,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
                                 renderItem={renderHistoryCard}
                               />
                             ) : (
-                              <div className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid workspace-history-grid`} style={mobileGalleryStyle(imageDisplay)}>
+                              <div className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid workspace-history-grid`} style={mobileGalleryStyle(imageDisplay, masonryColumns)}>
                                 {group.items.map(renderHistoryCard)}
                               </div>
                             )}

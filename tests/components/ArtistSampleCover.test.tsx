@@ -7,9 +7,8 @@ import { ImageActivityContext } from '../../components/SmartImage';
 import type { ArtistOwnSample } from '../../services/artistSamples';
 const mocks = vi.hoisted(() => ({ lookup: vi.fn(), share: vi.fn(), observers: [] as IntersectionObserverCallback[] }));
 vi.mock('../../services/artistSamples', async original => ({ ...await original<typeof import('../../services/artistSamples')>(), getArtistSampleLookup: mocks.lookup }));
-vi.mock('../../components/SmartImage', () => ({ ImageActivityContext: React.createContext(true), SmartImage: ({ eager, ...props }: any) => <img {...props} data-eager={String(eager)} /> }));
-vi.mock('../../components/ImageShareActions', () => ({ ImageShareOverlay: (props: any) => { mocks.share(props); return <div data-testid="share" data-url={props.imageUrl}><button aria-label="收藏" onClick={() => props.onFavoriteChange?.(true)}>收藏</button></div>; } }));
-vi.mock('../../components/ImageLightbox', () => ({ ImageLightbox: ({ src, onClose }: any) => <div role="dialog" aria-label="图片预览" data-url={src}><button onClick={onClose}>关闭</button></div> }));
+vi.mock('../../components/SmartImage', () => ({ ImageActivityContext: React.createContext(true), SmartImage: ({ eager, previewTransform, ...props }: any) => <img {...props} data-eager={String(eager)} data-preview-transform={previewTransform} /> }));
+vi.mock('../../components/ImageShareActions', () => ({ ImageShareOverlay: (props: any) => { mocks.share(props); return <div data-testid="share" data-card-action="true" data-url={props.imageUrl} onClick={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()}><button aria-label="收藏" onClick={() => props.onFavoriteChange?.(true)}>收藏</button><button aria-label="下载图片">下载</button><button aria-label="复制图片">复制</button></div>; } }));
 beforeEach(() => {
   vi.clearAllMocks(); mocks.observers.length = 0;
   mocks.lookup.mockResolvedValue({ pack: 'v45', tag: 'synthetic artist', revision: 'one', imageCount: 2, sourceUrl: 'https://synthetic.invalid/pack' });
@@ -25,6 +24,7 @@ const setup = (ownSamples: ArtistOwnSample[] = [], hasPackSample = true) => {
 it('只在卡片可视时lookup，翻图同步分享身份，不伪造图包模型或配方；离屏保持已载图片', async () => {
   setup(); expect(mocks.lookup).not.toHaveBeenCalled(); visible();
   await screen.findByRole('img', { name: '合成画师' });
+  expect(screen.getByRole('img').getAttribute('data-preview-transform')).toBe('artist-sample-padding-v1');
   expect(mocks.lookup).toHaveBeenCalledOnce();
   const first = mocks.share.mock.calls.at(-1)![0];
   expect(first.favorite.analysis.artistSample).toEqual({ pack: 'v45', tag: 'synthetic artist', revision: 'one', index: 0 });
@@ -37,19 +37,30 @@ it('只在卡片可视时lookup，翻图同步分享身份，不伪造图包模�
   visible(); expect(mocks.lookup).toHaveBeenCalledOnce();
 });
 
-it('自建样张优先展示真实元数据和标记，仍可翻到图包；放大不触发选择卡片', async () => {
+it('自建样张优先展示真实元数据和标记，图片点击冒泡选择画师，仍可翻到图包', async () => {
   const own: ArtistOwnSample = { id: 'own-1', tag: 'synthetic artist', pack: 'v45', imageUrl: '/api/assets/own.png', prompt: 'own prompt', negativePrompt: 'own negative', createdAt: 1,
     params: { model: 'nai-diffusion-4-5-full', width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler_ancestral' } };
   const select = vi.fn();
   const props = { tag: own.tag, pack: own.pack, revision: 'one', hasPackSample: true, ownSamples: [own], alt: '合成画师', onSupplement: vi.fn(), notify: vi.fn() };
   render(<div onClick={select}><ArtistSampleCover {...props} /></div>);
   expect(screen.getByText('自建样张')).toBeTruthy(); expect(screen.getByRole('img').getAttribute('src')).toBe(own.imageUrl);
+  expect(screen.getByRole('img').getAttribute('data-preview-transform')).toBeNull();
   expect(mocks.share.mock.calls.at(-1)![0].favorite).toMatchObject({ prompt: own.prompt, negativePrompt: own.negativePrompt, params: own.params, analysis: { artistSample: { ownSampleId: own.id, model: own.params.model } } });
-  fireEvent.click(screen.getByRole('button', { name: '放大查看：合成画师' }));
-  expect(screen.getByRole('dialog').getAttribute('data-url')).toBe(own.imageUrl); expect(select).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole('button', { name: '关闭' })); visible(); await waitFor(() => expect(screen.getByRole('button', { name: '下一张' })).toBeTruthy());
+  fireEvent.click(screen.getByRole('img', { name: '合成画师' })); expect(select).toHaveBeenCalledOnce();
+  visible(); await waitFor(() => expect(screen.getByRole('button', { name: '下一张' })).toBeTruthy());
   fireEvent.click(screen.getByRole('button', { name: '下一张' })); expect(screen.queryByText('自建样张')).toBeNull();
   expect(mocks.share.mock.calls.at(-1)![0].favorite.params).toBeUndefined();
+});
+
+it('收藏、分享、翻图、补充与设置操作不会冒泡选择画师', async () => {
+  const select = vi.fn(), props = { tag: 'artist', pack: 'v45' as const, revision: 'one', hasPackSample: true, ownSamples: [], alt: 'artist', onSupplement: vi.fn(), onSettings: vi.fn(), notify: vi.fn() };
+  render(<div onClick={select}><ArtistSampleCover {...props} /></div>);
+  visible(); await screen.findByRole('img');
+  fireEvent.click(screen.getByRole('button', { name: '收藏' }));
+  fireEvent.click(screen.getByRole('button', { name: '下载图片' }));
+  fireEvent.click(screen.getByRole('button', { name: '复制图片' }));
+  fireEvent.click(screen.getByRole('button', { name: '下一张' }));
+  expect(select).not.toHaveBeenCalled();
 });
 
 it('切换模型包会取消旧lookup，迟到结果不生成旧包图片；后台页面不lookup', async () => {

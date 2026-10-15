@@ -12,6 +12,7 @@ import { IMPORT_SESSION_KEY } from '../../services/metadataService';
 import { operateAgentPage, readAgentPage } from '../../services/agentWorkspace';
 import { startGenerationJob } from '../../services/generationJob';
 import { copySharedImage, downloadSharedImage } from '../../services/imageSharing';
+import { clearImageDisplayPageOverride, getMobileImageDisplayPreferences, setMobileImageDisplayPreferences } from '../../services/imageDisplayPreferences';
 vi.mock('../../services/imageSharing', async original => ({ ...await original<typeof import('../../services/imageSharing')>(), copySharedImage: vi.fn(async () => {}), downloadSharedImage: vi.fn(async () => {}) }));
 import {
   getArtistDictionaryEntriesAt, getArtistDictionaryPage,
@@ -62,8 +63,8 @@ vi.mock('../../services/artistSamples', async original => ({ ...await original<t
 }));
 vi.mock('../../services/artistSampleDrafts', () => ({ getArtistSampleData: vi.fn(async () => ({ templates: {}, samples: [] })), prepareArtistSampleImport: vi.fn() }));
 // jsdom 没有容器宽度；布局由既有测试覆盖，这里直接渲染条目以验证目录状态。
-vi.mock('../../components/ShortestColumnMasonry', () => ({ useMasonryColumnCount: () => 6, ShortestColumnMasonry: ({ items, renderItem }: { items: unknown[]; renderItem: (item: unknown) => React.ReactNode }) =>
-  <div>{items.map((item, index) => <React.Fragment key={index}>{renderItem(item)}</React.Fragment>)}</div>,
+vi.mock('../../components/ShortestColumnMasonry', async original => ({ ...await original<typeof import('../../components/ShortestColumnMasonry')>(), ShortestColumnMasonry: ({ items, columns, renderItem }: { items: unknown[]; columns: number; renderItem: (item: unknown) => React.ReactNode }) =>
+  <div data-testid="masonry" data-columns={columns}>{items.map((item, index) => <React.Fragment key={index}>{renderItem(item)}</React.Fragment>)}</div>,
 }));
 vi.mock('../../services/danbooruService', () => ({ danbooruService: {
   getCoverSet: vi.fn(async () => ({ candidates: [] })),
@@ -174,6 +175,28 @@ afterEach(() => {
 });
 
 describe.each<Kind>(['artist', 'character'])('%s 目录只负责 Tag 取用', kind => {
+  it.each(['masonry', 'portrait', 'square'] as const)('%s布局的手机/桌面列数按当前页面覆盖，全局及另一目录不受影响', async layout => {
+    const page = kind === 'artist' ? 'artists' : 'characters';
+    const other = kind === 'artist' ? 'characters' : 'artists';
+    setMobileImageDisplayPreferences({ layout, columns: 3, desktopColumns: 5 });
+    setMobileImageDisplayPreferences({ layout: 'square', columns: 1, desktopColumns: 1 }, other);
+    const { container } = renderLibrary(kind);
+    await screen.findByTestId(`cover-${entriesFor(kind)[0].name}`);
+    const expectColumns = (count: number) => {
+      if (layout === 'masonry') expect(screen.getByTestId('masonry').getAttribute('data-columns')).toBe(String(count));
+      else expect((container.querySelector(`.workspace-${kind}-grid`) as HTMLElement).style.getPropertyValue('--mobile-gallery-columns')).toBe(String(count));
+    };
+    expectColumns(5);
+    act(() => setMobileImageDisplayPreferences({ layout, columns: 1, desktopColumns: 2 }, page));
+    expectColumns(2);
+    act(() => { vi.stubGlobal('innerWidth', 390); window.dispatchEvent(new Event('resize')); });
+    expectColumns(1);
+    act(() => clearImageDisplayPageOverride(page));
+    expectColumns(3);
+    expect(getMobileImageDisplayPreferences().desktopColumns).toBe(5);
+    expect(getMobileImageDisplayPreferences(other).desktopColumns).toBe(1);
+  });
+
   it('瀑布流封面在真实比例测出前完整显示', async () => {
     localStorage.setItem('nai_mobile_image_display', JSON.stringify({ layout: 'masonry' }));
     renderLibrary(kind);

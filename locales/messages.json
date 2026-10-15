@@ -1,4 +1,8 @@
 {
+  "设置范围": ["設定範圍", "Settings scope", "設定対象", "설정 범위"],
+  "全局默认": ["全域預設", "Global defaults", "全体の既定値", "전체 기본값"],
+  "跟随全局": ["跟隨全域", "Follow global settings", "全体設定に従う", "전체 설정 따르기"],
+  "当前值继承自全局设置；关闭后可单独调整此页面": ["目前值繼承自全域設定；關閉後可單獨調整此頁面", "Current values follow global settings. Turn this off to customize this page.", "現在は全体設定を使っています。オフにすると、このページだけ調整できます。", "현재 값은 전체 설정을 따릅니다. 끄면 이 페이지만 따로 조정할 수 있습니다."],
   "保持画师不变，自动生成不同权重的图片，再由你选择。": ["保持畫師不變，自動生成不同權重的圖片，再由你選擇。", "Keep the same artists, generate images with different weights, then choose your favorite.", "絵師は変えず、異なる重みで画像を自動生成し、好きな結果を選びます。", "작가는 유지하고 다른 가중치의 이미지를 자동 생성한 후 원하는 결과를 선택합니다."],
   "对比已有图片，选出偏好的画风；不会生成新图。": ["比較已有圖片，選出偏好的畫風；不會生成新圖。", "Compare existing images and choose your preferred style. No new images are generated.", "生成済みの画像を比較して、好みの画風を選びます。新しい画像は生成しません。", "기존 이미지를 비교해 선호하는 화풍을 선택합니다. 새 이미지는 생성하지 않습니다."],
   "服务暂时不可用 (HTTP {0})，请稍后重试": ["服務暫時無法使用 (HTTP {0})，請稍後重試", "Service temporarily unavailable (HTTP {0}). Try again later.", "サービスを一時的に利用できません（HTTP {0}）。しばらくしてから再試行してください。", "서비스를 일시적으로 사용할 수 없습니다 (HTTP {0}). 나중에 다시 시도하세요."],

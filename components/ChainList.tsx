@@ -51,8 +51,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
   useLanguage();
   const confirmAction = useConfirmDialog();
   const RENDER_BATCH_SIZE = 60;
-  const imageDisplay = useMobileImageDisplayPreferences();
-  const masonryColumns = useMasonryColumnCount(imageDisplay);
+  const imageDisplay = useMobileImageDisplayPreferences('chains');
   const [previewRatios, setPreviewRatios] = useState<Record<string, number>>({});
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newName, setNewName] = useState('');
@@ -293,6 +292,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
 
   // 滚动接近列表底部自动追加一批；按钮保留作兜底。
   const chainScrollRef = useRef<HTMLDivElement>(null);
+  const masonryColumns = useMasonryColumnCount(imageDisplay, undefined, chainScrollRef);
   const chainLoadSentinelRef = useRef<HTMLDivElement>(null);
   useRestoreListAnchor(chainScrollRef, returnTargetId, `${visibleCount}:${filteredChains.length}`);
   const onScrollRestore = useKeepAliveScrollRestore(chainScrollRef, 'list');
@@ -507,7 +507,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
                 renderItem={renderChainCard}
               />
             ) : (
-              <div className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid workspace-chain-grid`} style={mobileGalleryStyle(imageDisplay)}>
+              <div className={`${mobileGalleryClassName(imageDisplay)} workspace-card-grid workspace-chain-grid`} style={mobileGalleryStyle(imageDisplay, masonryColumns)}>
                 {visibleChains.map(renderChainCard)}
               </div>
             )}

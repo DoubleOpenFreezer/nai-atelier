@@ -35,18 +35,21 @@ it('自动列数按实际内容宽度收缩，忽略隐藏宽度，固定桌面�
   rerender(<Gallery value={preferences} />);
   rerender(<Gallery value={{ ...preferences, desktopColumns: 5 }} />); act(() => resize(300)); expectColumns(5);
   rerender(<Gallery value={preferences} override={6} />); expectColumns(6);
+  rerender(<Gallery value={{ ...preferences, desktopColumns: 5 }} override={6} />); expectColumns(5);
   vi.stubGlobal('innerWidth', 390); act(() => window.dispatchEvent(new Event('resize'))); expectColumns(2);
   rerender(<Gallery value={{ ...preferences, columns: 1 }} />); expectColumns(1);
   rerender(<Gallery value={preferences} />);
   vi.stubGlobal('innerWidth', 700); vi.stubGlobal('innerHeight', 390); act(() => window.dispatchEvent(new Event('resize'))); expectColumns(3);
 });
-it('两类目录桌面六列只覆盖桌面，手机列数与横屏仍遵循图片偏好', () => {
+it('桌面兜底列数不能覆盖明确偏好，手机列数与横屏始终遵循有效偏好', () => {
   const preferences: MobileImageDisplayPreferences = { layout: 'masonry', columns: 'auto', desktopColumns: 'auto' };
   expect(resolveMasonryColumnCount(preferences, 390, false, 6)).toBe(2);
   expect(resolveMasonryColumnCount({ ...preferences, columns: 1 }, 390, false, 6)).toBe(1);
   expect(resolveMasonryColumnCount({ ...preferences, columns: 3 }, 767, false, 6)).toBe(3);
   expect(resolveMasonryColumnCount(preferences, 700, true, 6)).toBe(3);
   expect(resolveMasonryColumnCount(preferences, 768, true, 6)).toBe(6);
+  expect(resolveMasonryColumnCount({ ...preferences, desktopColumns: 5 }, 768, true, 6)).toBe(5);
+  expect(resolveMasonryColumnCount({ ...preferences, desktopColumns: 2 }, 1600, false, 6)).toBe(2);
 });
 it('真实瀑布流尺寸更新不重建旧卡片，重新排序按新顺序安排首列', () => {
   vi.stubGlobal('ResizeObserver', class {

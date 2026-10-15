@@ -82,7 +82,7 @@ type DanbooruRatio = 'all' | 'portrait' | 'landscape' | 'square';
 
 export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, selectionFocusEnabled = true, notify, onNavigateToPlayground, onRefreshInspiration }) => {
   useLanguage();
-  const imageDisplay = useMobileImageDisplayPreferences();
+  const imageDisplay = useMobileImageDisplayPreferences('danbooru');
   const scrollRef = useRef<HTMLDivElement>(null);
   const galleryContentRef = useRef<HTMLDivElement>(null);
   const [input, setInput] = useState('');

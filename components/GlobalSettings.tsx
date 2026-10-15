@@ -23,7 +23,7 @@ import {
 } from '../services/mobileImageCache';
 import { useMobileHistoryLayer } from './MobileUI';
 import { useConfirmDialog } from './ConfirmDialog';
-import { DesktopImageColumns, getMobileImageDisplayPreferences, MobileImageColumns, MobileImageLayout, setMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
+import { clearImageDisplayPageOverride, DesktopImageColumns, getImageDisplayPageOverride, getMobileImageDisplayPreferences, IMAGE_DISPLAY_PAGES, ImageDisplayPage, MobileImageColumns, MobileImageLayout, setMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { anlasBudgetService, DEFAULT_ANLAS_BUDGET, getActiveKeyHash, useAnlasBudget } from '../services/anlasBudget';
 import { getNaiRuntimeConfig } from '../services/naiRuntime';
 import { isNovelaiSubscriptionActive, isActiveOpusSubscription, useNovelaiUsage } from '../services/naiUsage';
@@ -169,12 +169,40 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
   const [rememberApiKey, setRememberApiKey] = useState(() => getRememberNaiKey());
   const [cloudQueue, setCloudQueue] = useState(getCachedCloudQueuePreferences);
   const [mobileCacheStats, setMobileCacheStats] = useState(getMobileCacheStats);
+  const [imageDisplayScope, setImageDisplayScope] = useState<'global' | ImageDisplayPage>('global');
   const [imageDisplay, setImageDisplay] = useState(getMobileImageDisplayPreferences);
+  const [imageDisplayFollowsGlobal, setImageDisplayFollowsGlobal] = useState(true);
   const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches);
   const [isLabMobile, setIsLabMobile] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 1023px)').matches);
   const [activeSection, setActiveSection] = useState<SettingsPage>('home');
   const [draggingLabModule, setDraggingLabModule] = useState<{ pageId: LabPageId; moduleId: LabPageModuleId } | null>(null);
   const [expandedLabPages, setExpandedLabPages] = useState<Record<LabPageId, boolean>>(() => Object.fromEntries(LAB_PAGE_IDS.map(pageId => [pageId, false])) as Record<LabPageId, boolean>);
+  const changeImageDisplayScope = (scope: 'global' | ImageDisplayPage) => {
+    setImageDisplayScope(scope);
+    if (scope === 'global') {
+      setImageDisplay(getMobileImageDisplayPreferences());
+      setImageDisplayFollowsGlobal(true);
+    } else {
+      setImageDisplay(getMobileImageDisplayPreferences(scope));
+      setImageDisplayFollowsGlobal(getImageDisplayPageOverride(scope) === null);
+    }
+  };
+  const updateImageDisplay = (next: ReturnType<typeof getMobileImageDisplayPreferences>) => {
+    setImageDisplay(next);
+    if (imageDisplayScope === 'global') setMobileImageDisplayPreferences(next);
+    else if (!imageDisplayFollowsGlobal) setMobileImageDisplayPreferences(next, imageDisplayScope);
+  };
+  const toggleImageDisplayInheritance = () => {
+    if (imageDisplayScope === 'global') return;
+    if (imageDisplayFollowsGlobal) {
+      setMobileImageDisplayPreferences(imageDisplay, imageDisplayScope);
+      setImageDisplayFollowsGlobal(false);
+    } else {
+      clearImageDisplayPageOverride(imageDisplayScope);
+      setImageDisplay(getMobileImageDisplayPreferences(imageDisplayScope));
+      setImageDisplayFollowsGlobal(true);
+    }
+  };
   const anlasBudget = useAnlasBudget();
   // 当前使用密钥的订阅健康状态：每分钟轮询 + 切 Key 自动刷新，零额外探测请求。
   // 保管箱据此只对「当前使用」的 key 标失效，非当前 key 不做探测。
@@ -710,26 +738,39 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
               </div>
 
               <div className="border-t border-gray-200 pt-3 dark:border-gray-700">
-                <div className="mb-2 text-xs font-bold text-gray-700 dark:text-gray-200">{t("图片列表布局")}</div>
-                <div className="grid grid-cols-3 gap-2">
-                  {([['masonry', '瀑布流'], ['portrait', '竖向卡片'], ['square', '方形']] as const).map(([layout, label]) => <button key={layout} type="button" onClick={() => { const next = { ...imageDisplay, layout: layout as MobileImageLayout }; setImageDisplay(next); setMobileImageDisplayPreferences(next); }} className={`mobile-touch md:h-10 rounded-xl border px-2 text-xs font-bold ${imageDisplay.layout === layout ? 'border-indigo-500 bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-300' : 'border-gray-300 text-gray-600 dark:border-gray-600 dark:text-gray-300'}`}>{t(label)}</button>)}
+                <div id="image-display-heading" className="mb-2 text-xs font-bold text-gray-700 dark:text-gray-200">{t("图片列表布局")}</div>
+                <div className="mb-3 grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3">
+                  <label htmlFor="image-display-scope" className="text-xs font-bold text-gray-700 dark:text-gray-200">{t("设置范围")}</label>
+                  <select id="image-display-scope" value={imageDisplayScope} onChange={event => changeImageDisplayScope(event.target.value as 'global' | ImageDisplayPage)} className="min-w-0 rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-xs font-semibold text-gray-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">
+                    <option value="global">{t("全局默认")}</option>
+                    {IMAGE_DISPLAY_PAGES.map(page => <option key={page.id} value={page.id}>{t(page.label)}</option>)}
+                  </select>
                 </div>
-                <div className="mt-4 grid gap-x-6 gap-y-3 md:grid-cols-2">
-                <div>
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs font-bold text-gray-500 dark:text-gray-400">{t("移动端列数")}</span>
-                    <span className="text-xs font-bold text-gray-600 dark:text-gray-300">{imageDisplay.columns === 'auto' ? t("自适应") : t("{0} 列", [imageDisplay.columns])}</span>
+                {imageDisplayScope !== 'global' && <button type="button" role="switch" aria-checked={imageDisplayFollowsGlobal} aria-label={t("跟随全局")} onClick={toggleImageDisplayInheritance} className="mb-3 flex w-full items-center justify-between gap-3 rounded-lg border border-gray-200 bg-white px-3 py-2 text-left text-xs transition hover:border-indigo-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-indigo-700">
+                  <span><span className="block font-semibold text-gray-700 dark:text-gray-200">{t("跟随全局")}</span>{imageDisplayFollowsGlobal && <span className="mt-0.5 block text-gray-500 dark:text-gray-400">{t("当前值继承自全局设置；关闭后可单独调整此页面")}</span>}</span>
+                  <span aria-hidden="true" className={`relative h-5 w-9 flex-none rounded-full transition ${imageDisplayFollowsGlobal ? 'bg-indigo-500' : 'bg-gray-300 dark:bg-gray-600'}`}><span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition ${imageDisplayFollowsGlobal ? 'left-[18px]' : 'left-0.5'}`} /></span>
+                </button>}
+                <fieldset aria-labelledby="image-display-heading" disabled={imageDisplayScope !== 'global' && imageDisplayFollowsGlobal} className="min-w-0 disabled:opacity-60">
+                  <div className="grid grid-cols-3 gap-2">
+                    {([['masonry', '瀑布流'], ['portrait', '竖向卡片'], ['square', '方形']] as const).map(([layout, label]) => <button key={layout} type="button" onClick={() => updateImageDisplay({ ...imageDisplay, layout: layout as MobileImageLayout })} className={`mobile-touch md:h-10 rounded-xl border px-2 text-xs font-bold disabled:cursor-not-allowed ${imageDisplay.layout === layout ? 'border-indigo-500 bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-300' : 'border-gray-300 text-gray-600 dark:border-gray-600 dark:text-gray-300'}`}>{t(label)}</button>)}
                   </div>
-                  <input type="range" min={0} max={3} step={1} value={imageDisplay.columns === 'auto' ? 0 : imageDisplay.columns} onChange={event => { const value = Number(event.target.value); const next = { ...imageDisplay, columns: (value === 0 ? 'auto' : value) as MobileImageColumns }; setImageDisplay(next); setMobileImageDisplayPreferences(next); }} className="mt-2 block w-full accent-indigo-500" aria-label={t("移动端列数")} />
-                </div>
-                <div>
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs font-bold text-gray-500 dark:text-gray-400">{t("桌面端列数")}</span>
-                    <span className="text-xs font-bold text-gray-600 dark:text-gray-300">{imageDisplay.desktopColumns === 'auto' ? t("自适应") : t("{0} 列", [imageDisplay.desktopColumns])}</span>
+                  <div className="mt-4 grid gap-x-6 gap-y-3 md:grid-cols-2">
+                    <div>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-bold text-gray-500 dark:text-gray-400">{t("移动端列数")}</span>
+                        <span className="text-xs font-bold text-gray-600 dark:text-gray-300">{imageDisplay.columns === 'auto' ? t("自适应") : t("{0} 列", [imageDisplay.columns])}</span>
+                      </div>
+                      <input type="range" min={0} max={3} step={1} value={imageDisplay.columns === 'auto' ? 0 : imageDisplay.columns} onChange={event => { const value = Number(event.target.value); updateImageDisplay({ ...imageDisplay, columns: (value === 0 ? 'auto' : value) as MobileImageColumns }); }} className="mt-2 block w-full accent-indigo-500" aria-label={t("移动端列数")} />
+                    </div>
+                    <div>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-bold text-gray-500 dark:text-gray-400">{t("桌面端列数")}</span>
+                        <span className="text-xs font-bold text-gray-600 dark:text-gray-300">{imageDisplay.desktopColumns === 'auto' ? t("自适应") : t("{0} 列", [imageDisplay.desktopColumns])}</span>
+                      </div>
+                      <input type="range" min={0} max={5} step={1} value={imageDisplay.desktopColumns === 'auto' ? 0 : imageDisplay.desktopColumns} onChange={event => { const value = Number(event.target.value); updateImageDisplay({ ...imageDisplay, desktopColumns: (value === 0 ? 'auto' : value) as DesktopImageColumns }); }} className="mt-2 block w-full accent-indigo-500" aria-label={t("桌面端列数")} />
+                    </div>
                   </div>
-                  <input type="range" min={0} max={5} step={1} value={imageDisplay.desktopColumns === 'auto' ? 0 : imageDisplay.desktopColumns} onChange={event => { const value = Number(event.target.value); const next = { ...imageDisplay, desktopColumns: (value === 0 ? 'auto' : value) as DesktopImageColumns }; setImageDisplay(next); setMobileImageDisplayPreferences(next); }} className="mt-2 block w-full accent-indigo-500" aria-label={t("桌面端列数")} />
-                </div>
-                </div>
+                </fieldset>
               </div>
 
               {/* 设计主题与预设管理 */}

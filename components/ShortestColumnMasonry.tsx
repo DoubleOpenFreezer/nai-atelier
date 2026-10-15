@@ -33,10 +33,11 @@ export const resolveMasonryColumnCount = (
     }
     return columns;
   }
+  if (desktopColumns !== 'auto') return desktopColumns;
   if (desktopOverride !== undefined) return desktopOverride;
-  if (viewportWidth < 1280) return desktopColumns === 'auto' ? 4 : desktopColumns;
-  if (viewportWidth < 1600) return desktopColumns === 'auto' ? 5 : desktopColumns;
-  return desktopColumns === 'auto' ? 6 : desktopColumns;
+  if (viewportWidth < 1280) return 4;
+  if (viewportWidth < 1600) return 5;
+  return 6;
 };
 
 /** 自动列数同时受图库实际宽度约束；明确列数和手机偏好保持不变。 */
