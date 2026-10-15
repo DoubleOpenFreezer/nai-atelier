@@ -2045,6 +2045,10 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                         <ChainEditorPromptInputs
                             prompt={basePrompt}
                             setPrompt={setBasePrompt}
+                            sections={params._promptSections || null}
+                            setSections={(nextSections) => setParams(previous => ({ ...previous, _promptSections: nextSections }))}
+                            supplementPrompt={subjectPrompt}
+                            setSupplementPrompt={setSubjectPrompt}
                             presetSources={presetSources}
                             tagAssistEnabled={tagAssistEnabled}
                             canEdit={true}

@@ -18,13 +18,15 @@ const setup = (overrides: Partial<ChainEditorPromptInputsProps> = {}) => {
   return props;
 };
 
+// 全局提示词已拆成五栏（画师串 / 人物 / 服饰 / 姿势 / 补充）；
+// mock 给每个输入框同样的 aria-label，因此按顺序取第 1 栏（画师串）来断言旧行为。
 describe('提示词上下文工具隔离', () => {
   it('实验室未传入资料工具时维持复制按钮，输入及复制行为不变', () => {
     const props = setup();
     expect(screen.queryByRole('button', { name: /识别|辅助/ })).toBeNull();
-    fireEvent.click(screen.getByTitle('复制全局提示词'));
-    expect(props.copyPromptToClipboard).toHaveBeenCalledWith('original prompt', '全局提示词');
-    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'updated prompt' } });
+    fireEvent.click(screen.getByTitle('复制画师串'));
+    expect(props.copyPromptToClipboard).toHaveBeenCalledWith('original prompt', '画师串');
+    fireEvent.change(screen.getAllByRole('textbox')[0], { target: { value: 'updated prompt' } });
     expect(props.setPrompt).toHaveBeenCalledWith('updated prompt');
     expect(props.markPresetSectionModified).toHaveBeenCalledWith('base');
     expect(props.markChange).toHaveBeenCalledOnce();
@@ -33,8 +35,8 @@ describe('提示词上下文工具隔离', () => {
   it('提示词区不重复顶栏的识别和辅助入口，只读时仍可复制', () => {
     const props = setup({ canEdit: false });
     expect(screen.queryByRole('button', { name: /识别|辅助/ })).toBeNull();
-    expect((screen.getByRole('textbox') as HTMLTextAreaElement).disabled).toBe(true);
-    fireEvent.click(screen.getByTitle('复制全局提示词'));
-    expect(props.copyPromptToClipboard).toHaveBeenCalledWith('original prompt', '全局提示词');
+    expect((screen.getAllByRole('textbox')[0] as HTMLTextAreaElement).disabled).toBe(true);
+    fireEvent.click(screen.getByTitle('复制画师串'));
+    expect(props.copyPromptToClipboard).toHaveBeenCalledWith('original prompt', '画师串');
   });
 });
