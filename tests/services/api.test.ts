@@ -85,6 +85,22 @@ describe('parseErrorResponse', () => {
     expect(error.message.length).toBeLessThanOrEqual(510);
     expect(error.message).not.toContain(body);
     expect(error.status).toBe(502);
+    expect(error.message).toBe('服务暂时不可用 (HTTP 502)，请稍后重试');
+  });
+
+  it.each([502, 503, 504])('原始HTML与JSON包装的HTML都只显示状态说明：%s', async status => {
+    const html = '<!DOCTYPE html><html><head><title>novelai.net | 502: Bad gateway</title></head><body>synthetic-ray-id</body></html>';
+    const raw = await parseErrorResponse(new Response(html, { status, headers: { 'Content-Type': 'text/html' } }));
+    const wrapped = await parseErrorResponse(jsonResponse(status, { error: html, code: 'UPSTREAM_FAILED', retryAfter: 2.3 }));
+    expect(raw.message).toBe(`服务暂时不可用 (HTTP ${status})，请稍后重试`);
+    expect(wrapped).toMatchObject({ message: raw.message, status, code: 'UPSTREAM_FAILED', retryAfter: 3 });
+    expect(wrapped.message).not.toMatch(/DOCTYPE|synthetic-ray-id|<html/);
+  });
+
+  it('403错误网页不冒充服务端故障，普通纯文本仍保留有界的具体原因', async () => {
+    expect((await parseErrorResponse(new Response('<html>challenge</html>', { status: 403 }))).message).toBe('服务返回了错误页面 (HTTP 403)，请检查网络或代理后重试');
+    expect((await parseErrorResponse(new Response('quota limit reached', { status: 429 }))).message).toBe('quota limit reached');
+    expect((await parseErrorResponse(new Response('x'.repeat(3000), { status: 500 }))).message).toHaveLength(501);
   });
 });
 

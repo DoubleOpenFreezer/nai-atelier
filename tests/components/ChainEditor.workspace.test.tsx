@@ -25,6 +25,7 @@ const state = vi.hoisted(() => ({
   history: vi.fn(async (): Promise<LocalGenItem[]> => []),
   addHistory: vi.fn(async () => { throw new Error('后台任务不得再逐张写入历史'); }),
   notifySaved: vi.fn(),
+  saveArtistSample: vi.fn(async () => {}),
   unlinkHistory: vi.fn(async () => {}),
   getEditMask: vi.fn(async (): Promise<Blob | null> => null),
   confirm: vi.fn(async (_options?: unknown) => true),
@@ -52,6 +53,7 @@ const state = vi.hoisted(() => ({
 }));
 
 vi.mock('../../services/promptAgent', () => ({ promptAgentService: { getConfig: state.agentConfig } }));
+vi.mock('../../services/artistSampleDrafts', async original => ({ ...await original<typeof import('../../services/artistSampleDrafts')>(), saveArtistOwnSample: state.saveArtistSample }));
 vi.mock('../../services/generationJob', async importOriginal => {
   const actual = await importOriginal<typeof import('../../services/generationJob')>();
   return { ...actual, startGenerationJob: state.startJob, getGenerationJob: state.getJob, cancelGenerationJob: state.cancelJob, updateGenerationJobApproval: state.approveJob, observeGenerationJob: state.observeJob };
@@ -97,6 +99,7 @@ vi.mock('../../components/ChainEditorPreview', () => ({ ChainEditorPreview: (pro
   <output aria-label="预览历史编号">{props.historyLabel}</output>
   {props.canNavigateHistory && <button onClick={props.onNextHistory}>浏览下一张</button>}
   <output aria-label="生成不可用原因">{props.unavailableLabel}</output>
+  {props.onSaveArtistSample && <button onClick={props.onSaveArtistSample}>保存为画师样张</button>}
   <button disabled={props.generationDisabled} onClick={() => { fireEvent.keyDown(window, { key: 'Escape' }); void props.handleGenerate(); }}>生成合成文生图</button>
   {props.generationCountControl && <GenerationCountControl {...props.generationCountControl} disabled={props.isGenerating} busy={props.isGenerating || props.generationDisabled} />}
 </section> }));
@@ -202,6 +205,29 @@ const setup = (entry: PromptChain = chain, rememberGenerationSettings = true, ge
 };
 const textPrompt = () => screen.getByPlaceholderText('输入全局提示词，英文逗号分隔') as HTMLTextAreaElement;
 
+it('画师样张取用不自动生成，固定 Seed 不被随机偏好覆盖，保存真实新结果', async () => {
+  sessionStorage.setItem('nai_api_key', 'synthetic-key');
+  const templateParams = { ...chain.params, seed: 123, characters: [] };
+  const target = { id: 'synthetic-target', tag: 'synthetic artist', pack: 'v45', historyIds: [] };
+  sessionStorage.setItem('nai_pending_import', JSON.stringify({ mode: 'prompt-fragments', targetMode: 'text-to-image', fullMetadata: true,
+    prompt: 'solo, artist:synthetic artist', negativePrompt: 'low quality', params: templateParams, artistSampleTarget: target }));
+  const old = savedItem('old', { prompt: 'solo, artist:synthetic artist', params: templateParams, createdAt: 1 });
+  const next = savedItem('sample', { imageUrl: '/api/assets/sample.png', prompt: 'solo, artist:synthetic artist', negativePrompt: 'low quality', params: templateParams, createdAt: 0 });
+  state.history.mockResolvedValue([old]);
+  scriptJobs([backgroundResult('sample', 1, { lastSavedItem: next })]);
+  const view = setup({ ...chain, id: 'playground' });
+  view.rerender(<ChainEditor {...view.props} forceEmptySeed />);
+  await waitFor(() => expect(textPrompt().value).toBe('solo, artist:synthetic artist'));
+  expect(state.startJob).not.toHaveBeenCalled();
+  expect(screen.queryByRole('button', { name: '保存为画师样张' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '生成合成文生图' }));
+  await waitFor(() => expect(state.startJob).toHaveBeenCalledOnce());
+  expect(state.buildDescriptor.mock.calls[0][0]).toMatchObject({ params: { seed: 123 }, forceEmptySeed: false });
+  const save = await screen.findByRole('button', { name: '保存为画师样张' });
+  fireEvent.click(save);
+  await waitFor(() => expect(state.saveArtistSample).toHaveBeenCalledWith({ ...target, historyIds: ['sample'] }, expect.objectContaining({ id: 'sample', imageUrl: '/api/assets/sample.png', params: templateParams })));
+});
+
 it('文生图全局负词清空位于复制旁，撤销只恢复负词，切模式回来重新接入对应操作槽', async () => {
   setup();
   const initialPositive = textPrompt().value;
@@ -296,6 +322,7 @@ beforeEach(() => {
   state.history.mockReset(); state.history.mockResolvedValue([]);
   state.addHistory.mockClear();
   state.notifySaved.mockReset(); state.unlinkHistory.mockClear();
+  state.saveArtistSample.mockClear();
   localStorage.clear(); sessionStorage.clear();
   vi.stubGlobal('innerWidth', 1280);
   vi.stubGlobal('matchMedia', (media: string) => ({ matches: false, media, addEventListener: vi.fn(), removeEventListener: vi.fn() }));

@@ -1,5 +1,6 @@
 import JSZip from 'jszip';
 import sharp from 'sharp';
+import { parseHttpError } from '../services/httpErrors.mjs';
 
 const IMAGE_LIMIT = 20 * 1024 * 1024;
 const imageError = message => Object.assign(new Error(message), { code: 'generation_output_invalid' });
@@ -16,10 +17,8 @@ export const generationImageBytes = value => {
 /** 只认最终成图；SSE 已收齐 final 后连接/记账异常不能诱发再次生成。 */
 export async function readGenerationResponse(response, onPreview) {
   if (!response.ok) {
-    const body = await response.text();
-    let error;
-    try { error = JSON.parse(body); } catch { error = { error: body }; }
-    throw Object.assign(new Error(error.error || error.message || `生图请求失败 (${response.status})`), { code: error.code || 'generation_failed', status: response.status });
+    const error = parseHttpError(await response.text(), response.status, `生图请求失败 (${response.status})`);
+    throw Object.assign(new Error(error.message), { code: error.code || 'generation_failed', status: response.status });
   }
   const estimated = response.headers.get('X-Nai-Anlas-Estimated-Spent');
   const result = {
@@ -55,7 +54,7 @@ export async function readGenerationResponse(response, onPreview) {
     if (!encoded) return;
     let data;
     try { data = JSON.parse(encoded); } catch { throw imageError('流式生图响应数据损坏'); }
-    if (event === 'error') streamError = new Error(data.message || '流式生图失败');
+    if (event === 'error') { const error = parseHttpError(encoded, undefined, '流式生图失败'); streamError = Object.assign(new Error(error.message), { code: error.code || 'generation_failed' }); }
     if (event === 'nai_usage') result.estimatedCost = Number.isFinite(data.estimatedSpent) ? data.estimatedSpent : result.estimatedCost;
     if (event === 'nai_usage_error') result.accountingFailed = true;
     if (event === 'nai_queue_cleanup_error') result.cleanupError = data.message || '公共队列退出或释放失败，请检查队列状态';

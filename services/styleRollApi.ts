@@ -1,0 +1,53 @@
+import type { LocalGenItem } from '../types';
+import { api } from './api';
+import { localHistory } from './localHistory';
+import { rollCandidateModuleId, rollPrompt, rollSourceId, validateRollExperiment, type RollExperiment } from './styleRoll';
+
+export async function loadRollExperiments(): Promise<RollExperiment[]> {
+  const result = await api.get('/style-roll', { cache: 'no-store' });
+  if (!Array.isArray(result.experiments)) throw new Error('Roll 串资料读取失败');
+  result.experiments.forEach(validateRollExperiment);
+  return result.experiments;
+}
+
+export async function saveRollExperiment(experiment: RollExperiment): Promise<RollExperiment> {
+  validateRollExperiment(experiment);
+  const result = await api.put('/style-roll', experiment);
+  validateRollExperiment(result.experiment);
+  return result.experiment;
+}
+
+export async function loadRollHistory(experimentId: string): Promise<LocalGenItem[]> {
+  const order = await localHistory.getBrowseOrder({ source: rollSourceId(experimentId), sort: 'oldest' });
+  const result: LocalGenItem[] = [];
+  for (let page = 0; page * 100 < order.ids.length; page++) result.push(...(await localHistory.getPage(page, 100, { orderIds: order.ids }, false)).items);
+  return result;
+}
+
+const canonical = (value: unknown): string => {
+  if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
+  if (value && typeof value === 'object') return `{${Object.entries(value).filter(([, item]) => item !== undefined).sort(([a], [b]) => a.localeCompare(b)).map(([key, item]) => `${JSON.stringify(key)}:${canonical(item)}`).join(',')}}`;
+  return JSON.stringify(value) ?? 'null';
+};
+
+/** 以真实历史参数分组，官方规范化变化也不能让两张不同条件的图片参与同一票。 */
+export function rollHistoryContext(item: LocalGenItem): string {
+  return canonical({ params: item.params, negativePrompt: item.negativePrompt });
+}
+
+export function rollCandidateImages(experiment: RollExperiment, history: LocalGenItem[]): Map<string, LocalGenItem> {
+  const images = new Map<string, LocalGenItem>();
+  const votedImages = new Map(experiment.votes.flatMap(vote => [[vote.left, vote.leftImage], [vote.right, vote.rightImage]] as [string, string][]));
+  for (const item of [...history].sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id))) {
+    if (item.sourceChainId !== rollSourceId(experiment.id) || item.edit) continue;
+    const candidate = experiment.candidates.find(candidate => item.modules?.some(module => module.id === rollCandidateModuleId(candidate.id)));
+    if (candidate && !images.has(candidate.id) && (!votedImages.has(candidate.id) || votedImages.get(candidate.id) === item.id) &&
+      item.prompt === rollPrompt(experiment.template, candidate.genes) && item.params.seed === (candidate.seed ?? experiment.template.params.seed)) images.set(candidate.id, item);
+  }
+  return images;
+}
+
+export function comparableRollImages(images: Map<string, LocalGenItem>, anchorId?: string): Set<string> {
+  const anchor = anchorId ? images.get(anchorId) : images.values().next().value;
+  return new Set([...images].filter(([, item]) => anchor && rollHistoryContext(item) === rollHistoryContext(anchor)).map(([id]) => id));
+}

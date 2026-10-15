@@ -307,6 +307,16 @@ it('等待费用确认时暴露待确认信息，补充授权发 PATCH，停止�
     expect(getGenerationSeriesSession(scope)).toBeNull();
 });
 
+it('旧后台返回HTML错误时回执简明，保留5/6图片，不重发生成或取消已失败任务', async () => {
+    const scope = nextScope(), historyIds = ['h1', 'h2', 'h3', 'h4', 'h5'];
+    job.start.mockResolvedValueOnce(snapshot({ state: 'failed', requestedCount: 6, completedCount: 5, historyIds, code: 'generation_failed', error: '<!DOCTYPE html><html><body>synthetic-ray</body></html>' }));
+    const { session, settle } = beginGenerationSeries({ scope, key: 'synthetic-key', count: 6, agent: false, descriptor: descriptor() });
+    await vi.advanceTimersByTimeAsync(0);
+    await expect(settle).resolves.toMatchObject({ success: false, outcome: 'failed', code: 'generation_failed', completedCount: 5, requestedCount: 6, historyIds, error: '服务返回了错误页面，请稍后重试' });
+    expect(session.historyIds).toEqual(historyIds); expect(job.start).toHaveBeenCalledOnce();
+    expect(job.get).not.toHaveBeenCalled(); expect(job.cancel).not.toHaveBeenCalled(); expect(getGenerationSeriesSession(scope)).toBeNull();
+});
+
 it('后端失败终态保留错误码，忙碌归类为 blocked', async () => {
     const failedScope = nextScope();
     job.get.mockResolvedValue(snapshot({ state: 'failed', completedCount: 1, requestedCount: 2, historyIds: ['h1'], code: 'quota_exceeded', error: '额度不足' }));

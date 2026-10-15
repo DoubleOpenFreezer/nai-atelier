@@ -15,6 +15,7 @@ import { compilePrompt } from '../services/promptUtils';
 import { buildGenerationJobDescriptor } from '../services/naiService';
 import { localHistory } from '../services/localHistory';
 import { api } from '../services/api';
+import { canSaveArtistSample, saveArtistOwnSample, type ArtistSampleTarget } from '../services/artistSampleDrafts';
 import { extractMetadata, parseNovelAIMetadata, IMPORT_SESSION_KEY, PendingImportData, PromptFragmentImport, BaseImageImport, extractRawMetadataFromJsonText } from '../services/metadataService';
 import { ChainEditorParams } from './ChainEditorParams';
 import { ChainEditorPreview } from './ChainEditorPreview';
@@ -213,6 +214,11 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     const [generationProgress, setGenerationProgress] = useState<{ step: number; total: number } | null>(null);
     const [isUploading, setIsUploading] = useState(false);
     const [generatedImage, setGeneratedImage] = useState<string | null>(null);
+    const [artistSampleTarget, setArtistSampleTarget] = useState<ArtistSampleTarget | null>(null);
+    const artistSampleJobsRef = useRef(new Map<string, string>());
+    const [savingArtistSample, setSavingArtistSample] = useState(false);
+    const [artistSampleRandomSeed, setArtistSampleRandomSeed] = useState(false);
+    useEffect(() => { setArtistSampleTarget(null); artistSampleJobsRef.current.clear(); }, [chain.id]);
     const [previewHistory, setPreviewHistory] = useState<LocalGenItem[]>([]);
     const [previewIndex, setPreviewIndex] = useState(0);
     const [previewMode, setPreviewMode] = useState<'history' | 'cover' | 'result' | 'unsaved'>('cover');
@@ -831,6 +837,11 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 }
             }
             const item = session.lastSavedItem;
+            // 用本次任务的历史 ID 归属结果，局域网两端的时钟可能不一致。
+            const sampleTargetId = artistSampleJobsRef.current.get(session.token);
+            if (sampleTargetId && session.historyIds.length) setArtistSampleTarget(current =>
+                current?.id === sampleTargetId && session.historyIds.some(id => !current.historyIds.includes(id))
+                    ? { ...current, historyIds: [...new Set([...current.historyIds, ...session.historyIds])] } : current);
             if (!item || lastSeriesPreviewRef.current === item.id) return;
             lastSeriesPreviewRef.current = item.id;
             previewSelectionRevisionRef.current += 1;
@@ -1165,6 +1176,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
      * 由 useEffect 在检测到 sessionStorage 中的 nai_pending_import 时调用
      */
     const applyImportData = (data: PendingImportData | PromptFragmentImport | BaseImageImport) => {
+        setArtistSampleTarget(data.mode === 'prompt-fragments' ? data.artistSampleTarget || null : null);
+        setArtistSampleRandomSeed(false);
         if (data.mode === 'base-image') {
             void createEditDraftFromSource(data.imageEditOperation, data.baseImageUrl, 'upload', undefined,
                 activeEditDraft?.prompt ?? finalPrompt, activeEditDraft?.negativePrompt ?? negativePrompt,
@@ -1545,8 +1558,13 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             // 确认或准备期间关闭偏好后，不再投递尚未提交的多张/排队任务。
             assertGenerationPreference(count, options?.placement);
             const { session, settle } = beginGenerationSeries({ scope: chain.id, key: apiKey, count, agent: Boolean(options?.agent), placement: options?.placement, descriptor: { ...descriptor, ...(options?.autoApproveCost ? { autoApproveCost: true } : {}) } });
+            const sampleTargetId = !descriptor.history.edit ? artistSampleTarget?.id : undefined;
+            if (sampleTargetId) artistSampleJobsRef.current.set(session.token, sampleTargetId);
             if (!options?.placement) generationSeriesRef.current = session;
             const result = await settle;
+            if (sampleTargetId && mountedRef.current) setArtistSampleTarget(current => current?.id === sampleTargetId
+                ? { ...current, historyIds: [...new Set([...current.historyIds, ...(result.historyIds || [])])] } : current);
+            artistSampleJobsRef.current.delete(session.token);
             const completed = result.completedCount ?? 0;
             if (session.lastSavedItem) await options?.onCompleted?.(session.lastSavedItem);
             if (!mountedRef.current) return result;
@@ -1565,9 +1583,11 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
 
     /** 文生图：一次构建固定配置，随机种子交由后端每张重新抽取。 */
     const startTextToImageJob = async (draft: { basePrompt: string; subjectPrompt: string; negativePrompt: string; modules: PromptModule[]; params: NAIParams }, stream: boolean, approvedCost: number): Promise<GenerationJobDescriptor> => {
+        // 补图采用用户保存的固定 Seed，不被全局随机 Seed 偏好覆盖。
+        const randomSeed = artistSampleTarget ? artistSampleRandomSeed : forceEmptySeed;
         const activeParams: NAIParams = {
             ...applyNaiModelSettings(draft.params, naiRuntimeConfig || DEFAULT_NAI_RUNTIME),
-            ...(forceEmptySeed ? { seed: undefined } : {}),
+            ...(randomSeed ? { seed: undefined } : {}),
             vibes: draft.params.vibes ? {
                 ...draft.params.vibes,
                 slots: normalizeVibeSelections(draft.params.vibes.slots, draft.params.vibes.normalizeStrengths),
@@ -1577,7 +1597,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             operation: 'text-to-image',
             prompt: compilePrompt({ basePrompt: draft.basePrompt, modules: draft.modules }, draft.subjectPrompt),
             negative: isNaiMediumModel(activeParams.model) ? '' : draft.negativePrompt,
-            params: activeParams, stream, forceEmptySeed, approvedCost,
+            params: activeParams, stream, forceEmptySeed: randomSeed, approvedCost,
             history: {
                 basePrompt: draft.basePrompt, subjectPrompt: draft.subjectPrompt, modules: draft.modules,
                 sourceChainId, sourceChainName: chainName, sourceChainType: chain.id === 'playground' ? 'playground' : chain.type,
@@ -1862,6 +1882,17 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         }
     };
 
+    const handleSaveArtistSample = async (item = displayedPreviewItem) => {
+        if (!artistSampleTarget || !item || savingArtistSample) return;
+        setSavingArtistSample(true);
+        try {
+            await saveArtistOwnSample(artistSampleTarget, item);
+            notify('自建样张已保存到画师库', 'success');
+        } catch (error) {
+            notify(error instanceof Error ? error.message : '保存画师样张失败', 'error');
+        } finally { setSavingArtistSample(false); }
+    };
+
     const handleSavePreview = async () => {
         const coverImage = displayedPreviewImage;
         if (!coverImage || chain.id === 'playground') return;
@@ -2039,6 +2070,10 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             />
             {agentProposal && <AgentDraftReview current={currentAgentDraft()} proposed={agentProposal} onClose={() => setAgentProposal(null)} onApply={draft => { setAgentUndoSnapshot(currentAgentDraft()); applyAgentDraft(draft); setAgentProposal(null); }}/>}
             {activeGenerationMode === 'text-to-image' ? <>
+            {artistSampleTarget && <div className="flex min-w-0 flex-none items-center justify-between gap-3 border-b border-gray-200 px-4 py-2 text-xs dark:border-gray-800">
+                <span className="min-w-0 truncate text-gray-600 dark:text-gray-300" title={artistSampleTarget.tag}>{t('补充自建样张：{0} · {1}', [artistSampleTarget.tag, artistSampleTarget.pack === 'v45' ? 'V4.5' : 'V5'])}</span>
+                <button type="button" className="mobile-touch shrink-0 text-gray-500 hover:text-indigo-500 dark:text-gray-400" onClick={() => setArtistSampleTarget(null)}>{t('结束补图')}</button>
+            </div>}
             <nav className="grid h-10 grid-cols-3 border-b border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950 lg:hidden">
                 {([['global', '全局'], ['character', '角色'], ['params', '参数']] as const).map(([value, label]) => <button key={value} onClick={() => setMobileEditorTab(value)} className={`relative min-w-0 text-sm font-bold ${mobileEditorTab === value ? 'text-indigo-600 dark:text-indigo-300' : 'text-gray-500 dark:text-gray-400'}`}>{t(label)}{mobileEditorTab === value && <span className="absolute inset-x-6 bottom-0 h-0.5 rounded-full bg-indigo-500" />}</button>)}
             </nav>
@@ -2157,8 +2192,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                             canEdit={true}
                             markChange={markChange}
                             presetSource={presetSources.settings}
-                            forceEmptySeed={forceEmptySeed}
-                            onForceEmptySeedChange={onForceEmptySeedChange}
+                            forceEmptySeed={artistSampleTarget ? artistSampleRandomSeed : forceEmptySeed}
+                            onForceEmptySeedChange={artistSampleTarget ? setArtistSampleRandomSeed : onForceEmptySeedChange}
                             enforceFreeStepLimit={enforceFreeStepLimit}
                         />
                         </LabModuleSection>
@@ -2182,6 +2217,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                     isOwner={true}
                     isUploading={isUploading}
                     handleSavePreview={handleSavePreview}
+                    onSaveArtistSample={canSaveArtistSample(displayedPreviewItem, artistSampleTarget) ? () => { void handleSaveArtistSample(); } : undefined}
+                    savingArtistSample={savingArtistSample}
                     handleUploadCover={handleUploadCover}
                     getDownloadFilename={getDownloadFilename}
                     hideCoverActions={chain.id === 'playground'}
@@ -2375,6 +2412,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                         onSetCover={!activeEditOperation && chain.id !== 'playground' && lightboxImg === displayedPreviewImage ? handleSavePreview : undefined}
                         onUploadCover={!activeEditOperation && chain.id !== 'playground' ? handleUploadCover : undefined}
                         isUploading={isUploading}
+                        onSaveArtistSample={canSaveArtistSample(lightboxItem || undefined, artistSampleTarget) ? () => { void handleSaveArtistSample(lightboxItem || undefined); } : undefined}
+                        savingArtistSample={savingArtistSample}
                         onBack={() => setLightboxImg(null)}
                         backButtonRef={lightboxCloseBtnRef}
                     />

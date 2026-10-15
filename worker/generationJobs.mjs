@@ -95,12 +95,16 @@ export class GenerationJobs {
     const prior = this.jobs.get(index(key, token));
     if (prior) return this.snapshot(prior);
     if (!Number.isSafeInteger(count) || count < 1) throw failure('生成张数无效', 'invalid_generation_count');
-    const payload = descriptor?.payload, history = descriptor?.history;
-    if (!payload || !['generate', 'img2img', 'infill'].includes(payload.action) || typeof payload.model !== 'string' || !payload.parameters || payload.parameters.n_samples !== 1 || !history || typeof history.prompt !== 'string' || !history.params || !Number.isFinite(descriptor.approvedCost) || descriptor.approvedCost < 0) throw failure('后台任务配置无效', 'invalid_generation_job');
-    this.validate(descriptor);
+    const sequence = descriptor?.sequence;
+    if (sequence !== undefined && (!Array.isArray(sequence) || sequence.length !== count || !sequence.length || sequence.length > 24)) throw failure('后台任务配方数量无效', 'invalid_generation_job');
+    for (const entry of [descriptor, ...(sequence || [])]) {
+      const payload = entry?.payload, history = entry?.history;
+      if (!payload || !['generate', 'img2img', 'infill'].includes(payload.action) || typeof payload.model !== 'string' || !payload.parameters || payload.parameters.n_samples !== 1 || !history || typeof history.prompt !== 'string' || !history.params || !Number.isFinite(entry.approvedCost) || entry.approvedCost < 0 || (entry !== descriptor && entry.sequence !== undefined)) throw failure('后台任务配置无效', 'invalid_generation_job');
+      this.validate(entry);
+    }
     if (placement) this.tasks.enqueue(key, token, placement, count); else this.tasks.reserve(key, token, count);
     this.tasks.manage(key, token);
-    const job = { key, token, count, placement, descriptor, context, state: 'waiting', historyIds: [], previewVersion: 0, approvedCost: descriptor.approvedCost, cancelled: false };
+    const job = { key, token, count, placement, descriptor, sequence, context, state: 'waiting', historyIds: [], previewVersion: 0, approvedCost: descriptor.approvedCost, cancelled: false };
     this.jobs.set(index(key, token), job);
     job.running = this.run(job);
     return this.snapshot(job);
@@ -122,6 +126,7 @@ export class GenerationJobs {
     try {
       while (job.historyIds.length < job.count) {
         if (job.cancelled) break;
+        if (job.sequence) job.descriptor = job.sequence[job.historyIds.length];
         if (job.state === 'awaiting_confirmation') { await this.sleep(250); continue; }
         const status = this.tasks.status(job.key, job.token), current = this.tasks.current(job.key);
         if (status.paused || status.position > 0 || status.waitMs > 0 || current?.inFlight) {
@@ -202,6 +207,7 @@ export class GenerationJobs {
       if (job.cancelled) this.tasks.cancel(job.key, job.token); else this.tasks.release(job.key, job.token);
       job.finishedAt = this.now();
       job.descriptor = undefined;
+      job.sequence = undefined;
       job.context = undefined;
       if (job.state !== 'failed') { job.preview = undefined; job.previewVersion++; }
       this.notify(job);

@@ -18,6 +18,7 @@ tests/.tmp/
 Thumbs.db
 ehthumbs.db
 Desktop.ini
+*.lnk
 $RECYCLE.BIN/
 
 node_modules

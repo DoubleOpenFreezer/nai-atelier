@@ -7,6 +7,7 @@ import { setCleanSharedImages, useCleanSharedImages, setSharedImageCustomText, u
 import { copyTagText } from '../services/externalImageTags';
 import { DataBackupManager } from './DataBackupManager';
 import { StorageLocationManager } from './StorageLocationManager';
+import { ArtistSampleManager } from './ArtistSampleManager';
 import { beginExportTarget } from '../services/exportLocation';
 import { DesktopLauncherManager } from './DesktopLauncherManager';
 import { AndroidStorageManager } from './AndroidStorageManager';
@@ -1366,6 +1367,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
           <section id="settings-maintenance" className={`rounded-xl border border-gray-200 p-4 dark:border-gray-700 ${activeSection !== 'maintenance' ? 'hidden' : ''}`}>
             {activeSection === 'maintenance' && (isAndroidApp() ? <AndroidStorageManager notify={notify} /> : <div className="space-y-5">
               <div className="border-b border-gray-200 pb-5 dark:border-gray-700"><StorageLocationManager notify={notify} /></div>
+              <ArtistSampleManager />
               {/* 本地数据备份与还原 */}
               <div className="border-b border-gray-200 pb-5 dark:border-gray-700">
                 <DataBackupManager notify={notify} />

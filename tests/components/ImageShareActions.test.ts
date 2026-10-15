@@ -7,15 +7,26 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ImageShareActions, ImageShareOverlay } from '../../components/ImageShareActions';
 import { copySharedImage, downloadSharedImage, setCleanSharedImages } from '../../services/imageSharing';
 import { toggleCollectionTarget } from '../../services/collectionFavorites';
+import { setLanguage, t } from '../../services/i18n';
 
 vi.mock('../../services/imageSharing', async importOriginal => ({
   ...await importOriginal<typeof import('../../services/imageSharing')>(),
   copySharedImage: vi.fn(async () => {}), downloadSharedImage: vi.fn(async () => {}),
 }));
 beforeEach(() => { localStorage.clear(); vi.mocked(copySharedImage).mockReset().mockResolvedValue(); vi.mocked(downloadSharedImage).mockReset().mockResolvedValue(); });
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+afterEach(() => { cleanup(); setLanguage('zh-CN'); vi.unstubAllGlobals(); });
 
 describe('共用图片分享操作', () => {
+  it('图片下载与复制的提示及无障碍名称随界面语言原位切换', () => {
+    render(React.createElement(ImageShareActions, { imageUrl: '/synthetic.png', filename: 'synthetic.png', variant: 'card' }));
+    for (const language of ['zh-TW', 'en', 'ja', 'ko'] as const) {
+      act(() => setLanguage(language));
+      for (const label of ['下载图片', '复制图片']) {
+        const translated = t(label); expect(translated).not.toBe(label);
+        expect(screen.getByRole('button', { name: translated }).title).toBe(translated);
+      }
+    }
+  });
   it('用户取消保存保持安静并恢复操作按钮', async () => {
     vi.mocked(downloadSharedImage).mockRejectedValue(new DOMException('已取消保存', 'AbortError'));
     const notify = vi.fn();

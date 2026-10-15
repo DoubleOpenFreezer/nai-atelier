@@ -6,6 +6,7 @@ import { randomBytes, randomInt } from 'crypto';
 import { platform } from 'os';
 import { resolve as resolvePath, dirname, join } from 'node:path';
 import { resolveStorageDataRoot, getStoragePreferences, storageResourcePaths, launchStorageSwitch, assertStorageNotSwitching, requestDesktopStorageDirectory } from './storage-locations.mjs';
+import { requestDesktopArtistSampleFile } from './artist-samples.mjs';
 import { getLanUrls, LOCAL_LAUNCHER_PORT, prepareLocalServerLaunch } from './local-server-runtime.mjs';
 
 const IS_WINDOWS = platform() === 'win32';
@@ -499,7 +500,7 @@ async function startServer() {
     };
     mediaGateway = await Promise.race([
       createMediaGateway({ port: GATEWAY_PORT, workerPort, lanSecret: lanAccess.secret, outboundProxyUrl: gatewayOutboundProxy, requestStorageSwitch,
-        ...(PACKAGED ? { pickDirectory: initialPath => requestDesktopStorageDirectory(process, initialPath) } : {}) }),
+        ...(PACKAGED ? { pickDirectory: initialPath => requestDesktopStorageDirectory(process, initialPath), pickArtistFile: initialPath => requestDesktopArtistSampleFile(process, initialPath) } : {}) }),
       new Promise((_, reject) => setTimeout(() => reject(new Error('图片网关初始化超过 90 秒（可能为系统繁忙或磁盘异常），请关闭窗口后重试')), 90_000)),
     ]);
     preparePackagedUpdate = () => {

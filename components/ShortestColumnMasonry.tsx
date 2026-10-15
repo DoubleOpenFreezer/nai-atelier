@@ -40,7 +40,7 @@ export const resolveMasonryColumnCount = (
 };
 
 /** 自动列数同时受图库实际宽度约束；明确列数和手机偏好保持不变。 */
-export const useMasonryColumnCount = (preferences: MobileImageDisplayPreferences, desktopOverride?: number, containerRef?: RefObject<HTMLElement | null>): number => {
+export const useMasonryColumnCount = (preferences: MobileImageDisplayPreferences, desktopOverride?: number, containerRef?: RefObject<HTMLElement | null>, minimumCardWidth = 180): number => {
   const [viewport, setViewport] = useState(() => ({
     width: typeof window === 'undefined' ? 0 : window.innerWidth,
     height: typeof window === 'undefined' ? 0 : window.innerHeight,
@@ -57,12 +57,12 @@ export const useMasonryColumnCount = (preferences: MobileImageDisplayPreferences
     if (!automaticDesktop || !element || typeof ResizeObserver === 'undefined') return;
     const observer = new ResizeObserver(entries => {
       const width = entries[0]?.contentRect.width ?? 0;
-      // 自动档保留约 180px 卡片宽度；隐藏的零宽度不改变列数，同档宽度通知不更新状态。
-      if (width > 0) setContainerColumns(Math.max(1, Math.floor((width + 12) / 192)));
+      // 隐藏的零宽度不改变列数；图片为主的工作区可沿用同一布局并要求更大的预览。
+      if (width > 0) setContainerColumns(Math.max(1, Math.floor((width + 12) / (minimumCardWidth + 12))));
     });
     observer.observe(element);
     return () => observer.disconnect();
-  }, [containerRef, automaticDesktop]);
+  }, [containerRef, automaticDesktop, minimumCardWidth]);
   const requested = resolveMasonryColumnCount(preferences, viewport.width, viewport.width > viewport.height, desktopOverride);
   return automaticDesktop ? Math.min(requested, containerColumns) : requested;
 };

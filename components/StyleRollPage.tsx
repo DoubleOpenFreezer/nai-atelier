@@ -1,0 +1,444 @@
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ArrowRight, Check, ChevronDown, Columns2, Copy, Dice5, Download, FlaskConical, ImagePlus, ListChecks, LoaderCircle, MoreHorizontal, Pause, Plus, RefreshCw, RotateCcw, Save, Settings2, SlidersHorizontal, Sparkles, Trash2, X } from 'lucide-react';
+import type { LocalGenItem, PromptChain } from '../types';
+import { t, useLanguage } from '../services/i18n';
+import { DEFAULT_ROLL_RULES, formatRollStyle, manualRollVariant, nextRollPair, rankRollCandidates, resolveRollArtists, rollCandidateToChain, rollPairKey, rollSourceId, scoreRollCandidates, type RollCandidate, type RollExperiment, type RollVote } from '../services/styleRoll';
+import { beginRollRound, currentRollRound, finishRollRound, rollRoundProgress, rollVerificationIds } from '../services/styleRollWorkflow';
+import { rollPendingCandidates, rollWorkspaceCandidates } from '../services/styleRollWorkspace';
+import { getArtistSampleDictionary } from '../services/artistSamples';
+import { comparableRollImages, loadRollExperiments, loadRollHistory, rollCandidateImages, rollHistoryContext, saveRollExperiment } from '../services/styleRollApi';
+import { beginRollGeneration, readRollApiKey } from '../services/styleRollGeneration';
+import { api, notifyLanAccessRequired, parseErrorResponse } from '../services/api';
+import { parseHttpError } from '../services/httpErrors.mjs';
+import { applyEstimatorRuntime, estimateV45GenerationCost, formatGenerationCostLabel, useAnlasBudget } from '../services/anlasBudget';
+import { isActiveOpusSubscription, useNovelaiUsage } from '../services/naiUsage';
+import { useNaiRuntime } from '../services/naiRuntime';
+import { applyNaiModelSettings, DEFAULT_NAI_MODEL, getRuntimeNaiModelInfo } from '../services/naiModels';
+import { approveGenerationSeries, getGenerationSeriesSession, stopGenerationSeriesSession, subscribeGenerationSeries, type GenerationSeriesSession } from '../services/generationSeries';
+import { setGenerationQueuePaused } from '../services/generationTask';
+import { localHistory } from '../services/localHistory';
+import { IMPORT_SESSION_KEY } from '../services/metadataService';
+import { saveExportBlob } from '../services/exportLocation';
+import { createUuid } from '../services/id';
+import { useConfirmDialog } from './ConfirmDialog';
+import { EmptyState, IconButton, PageSpinner, ToolbarButton, ToolbarSearch, ToolbarSelect, WorkspaceToolbar } from './DesignSystem';
+import { ToolbarPopover, TOOLBAR_FIELD_CLASS, TOOLBAR_MENU_CLASS } from './ToolbarPopover';
+import { SmartImage } from './SmartImage';
+import { ImageLightbox } from './ImageLightbox';
+import { ImagePreviewPortal } from './ImagePreviewPortal';
+import { ImageShareActions } from './ImageShareActions';
+import { PressRevealSurface } from './PressRevealSurface';
+import { MobileDetailView } from './MobileUI';
+import { StyleRollSetup } from './roll/StyleRollSetup';
+import { StyleRollCompare } from './roll/StyleRollCompare';
+import { StyleRollGallery } from './roll/StyleRollGallery';
+import { useGallerySelectionAnchor } from './useGallerySelectionAnchor';
+import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
+
+interface Props {
+  active: boolean; chains: PromptChain[]; enforceFreeStepLimit: boolean; generationStreamPreview: boolean; selectionFocusEnabled?: boolean;
+  continuousGenerationEnabled?: boolean;
+  notify: (message: string, type?: 'success' | 'error') => void;
+  onSaveChain: (chain: PromptChain) => Promise<PromptChain>;
+  onOpenChain: (id: string) => void;
+  onNavigateToPlayground: () => void;
+}
+const methodLabels = { random: '随机组合', mutate: '参考保留组合', crossover: '双亲交叉', refine: '权重测试', manual: '手动变体' };
+const selectClass = 'mobile-touch h-10 min-w-0 rounded-xl border border-gray-200 bg-white px-2 text-sm dark:border-gray-700 dark:bg-gray-900';
+
+export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStepLimit, generationStreamPreview, selectionFocusEnabled = true, continuousGenerationEnabled = true, notify, onSaveChain, onOpenChain, onNavigateToPlayground }) => {
+  useLanguage();
+  const confirm = useConfirmDialog();
+  const runtime = useNaiRuntime(); applyEstimatorRuntime(runtime);
+  const subscription = useNovelaiUsage(), budget = useAnlasBudget();
+  const [experiments, setExperiments] = useState<RollExperiment[]>([]), [experimentId, setExperimentId] = useState('');
+  const [loading, setLoading] = useState(true), [busy, setBusy] = useState(false), [error, setErrorState] = useState('');
+  const [errorSource, setErrorSource] = useState<'request' | 'generation'>('request');
+  const setError = useCallback((message: string, source: 'request' | 'generation' = 'request') => { setErrorState(message ? parseHttpError(message).message : ''); setErrorSource(source); }, []);
+  const [library, setLibrary] = useState<string[]>([]), [libraryLoading, setLibraryLoading] = useState(true), [libraryError, setLibraryError] = useState('');
+  const [history, setHistory] = useState<LocalGenItem[]>([]), [historyLoading, setHistoryLoading] = useState(false);
+  const [historyReadyId, setHistoryReadyId] = useState('');
+  const [selectedId, setSelectedId] = useState(''), [tab, setTab] = useState<'candidates' | 'compare'>('candidates');
+  const [filter, setFilter] = useState('all'), [count, setCount] = useState(6), [artistsPerMix, setArtistsPerMix] = useState(4);
+  const [query, setQuery] = useState(''), [sort, setSort] = useState('new'), [roundId, setRoundId] = useState('');
+  const [selecting, setSelecting] = useState(false), [selectedIds, setSelectedIds] = useState(new Set<string>());
+  const [savingProgress, setSavingProgress] = useState<{ completed: number; total: number } | null>(null);
+  const [recordName, setRecordName] = useState('');
+  const [setup, setSetup] = useState<RollExperiment | null>(null), [lightbox, setLightbox] = useState<LocalGenItem | null>(null);
+  const [skipped, setSkipped] = useState(new Set<string>());
+  const [manualWeights, setManualWeights] = useState<number[] | null>(null);
+  const [session, setSession] = useState<GenerationSeriesSession | null>(null), [preparing, setPreparing] = useState(false);
+  const [isMobile, setIsMobile] = useState(() => window.matchMedia('(max-width: 767px)').matches);
+  const busyRef = useRef(false), generatingRef = useRef(false), selectedExperimentRef = useRef(experimentId), historySequence = useRef(0);
+  const loadingRef = useRef(true), loadSequence = useRef(0);
+  const savedChains = useRef(new Map<string, PromptChain>()), mounted = useRef(true);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const selectionAnchor = useGallerySelectionAnchor(scrollRef, scrollRef, selectedId || null, active && tab === 'candidates', selectionFocusEnabled);
+  const rememberScroll = useKeepAliveScrollRestore(scrollRef, `roll:${experimentId}:${filter}`, { skipRestore: selectionAnchor.hasAnchor, trigger: tab });
+  selectedExperimentRef.current = experimentId;
+  const experiment = experiments.find(item => item.id === experimentId && !item.archived);
+  const selected = experiment?.candidates.find(item => item.id === selectedId);
+  const images = useMemo(() => experiment ? rollCandidateImages(experiment, history) : new Map<string, LocalGenItem>(), [experiment, history]);
+  const scores = useMemo(() => experiment ? scoreRollCandidates(experiment) : new Map(), [experiment]);
+  const comparable = useMemo(() => comparableRollImages(images, experiment?.votes[0]?.left), [images, experiment?.votes]);
+  const round = experiment && currentRollRound(experiment);
+  const ready = round?.kind === 'verify' || round?.kind === 'batch' ? new Set(images.keys()) : comparable;
+  const progress = experiment && round ? rollRoundProgress(experiment, round, ready, skipped) : null;
+  const proposedPair = experiment ? round && round.kind !== 'batch' && !round.closedAt ? progress!.pair : nextRollPair(experiment, comparable, skipped) : null;
+  const contextMismatch = Boolean(proposedPair && rollHistoryContext(images.get(proposedPair[0])!) !== rollHistoryContext(images.get(proposedPair[1])!));
+  const pair = contextMismatch ? null : proposedPair;
+  const selectedImage = selected && images.get(selected.id);
+  const historyReady = Boolean(experiment && historyReadyId === experiment.id);
+  const cost = experiment ? estimateV45GenerationCost(experiment.template.params, isActiveOpusSubscription(subscription.info), subscription.info?.usage?.isNegative ?? true) : 0;
+  const costLabel = !subscription.info ? t(subscription.loading ? '费用确认中…' : '费用未知') : t(formatGenerationCostLabel(cost, experiment?.template.params.model));
+  const visible = useMemo(() => experiment ? rollWorkspaceCandidates(experiment, images, { filter, roundId, query, sort }) : [], [experiment, images, filter, roundId, query, sort]);
+  const chosen = visible.filter(candidate => selectedIds.has(candidate.id));
+  useEffect(() => { if (!busy) setSelectedIds(current => { const next = new Set([...current].filter(id => visible.some(candidate => candidate.id === id))); return next.size === current.size ? current : next; }); }, [visible, busy]);
+  useEffect(() => { if (selectedId && !visible.some(candidate => candidate.id === selectedId)) { setSelectedId(''); selectionAnchor.clearAnchor(); } }, [visible, selectedId]);
+
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  useEffect(() => { const media = window.matchMedia('(max-width: 767px)'); const changed = () => setIsMobile(media.matches); media.addEventListener('change', changed); return () => media.removeEventListener('change', changed); }, []);
+  const reload = useCallback(async () => {
+    const sequence = ++loadSequence.current; loadingRef.current = true;
+    setLoading(true); setError('');
+    try { const values = await loadRollExperiments(); if (!mounted.current || sequence !== loadSequence.current) return; setExperiments(values); setExperimentId(current => values.some(value => value.id === current && !value.archived) ? current : values.find(value => !value.archived)?.id || ''); }
+    catch (cause) { if (mounted.current && sequence === loadSequence.current) setError((cause as Error).message); }
+    finally { if (mounted.current && sequence === loadSequence.current) { loadingRef.current = false; setLoading(false); } }
+  }, []);
+  useEffect(() => { void reload(); }, [reload]);
+  const reloadLibrary = useCallback(async () => {
+    setLibraryLoading(true); setLibraryError('');
+    try { const artists = await getArtistSampleDictionary(); if (!artists.length) throw new Error('画师词库为空，请在画师库中检查词库资源'); if (mounted.current) setLibrary(artists.map(artist => artist.name)); }
+    catch (cause) { if (mounted.current) setLibraryError((cause as Error).message); }
+    finally { if (mounted.current) setLibraryLoading(false); }
+  }, []);
+  useEffect(() => { if (active) void reloadLibrary(); }, [active, reloadLibrary]);
+  const refreshHistory = useCallback(async (id: string) => {
+    const sequence = ++historySequence.current;
+    if (!id) { setHistory([]); return; }
+    setHistoryLoading(true); setHistoryReadyId('');
+    try { const values = await loadRollHistory(id); if (mounted.current && selectedExperimentRef.current === id && sequence === historySequence.current) { setHistory(values); setHistoryReadyId(id); } }
+    catch (cause) { if (mounted.current && selectedExperimentRef.current === id && sequence === historySequence.current) setError((cause as Error).message); }
+    finally { if (mounted.current && sequence === historySequence.current) setHistoryLoading(false); }
+  }, []);
+  useEffect(() => { setHistory([]); setSelectedId(''); setSkipped(new Set()); setSelectedIds(new Set()); setSelecting(false); setRoundId(''); setQuery(''); setFilter('all'); setTab('candidates'); }, [experimentId]);
+  useEffect(() => { setRecordName(experiment?.name || ''); }, [experiment?.id, experiment?.name]);
+  useEffect(() => { setManualWeights(null); }, [selectedId, experimentId]);
+  useEffect(() => { if (experiment) setArtistsPerMix(experiment.rules.minArtists === experiment.rules.maxArtists ? experiment.rules.minArtists : 4); }, [experimentId]);
+  useEffect(() => { if (active && experimentId) void refreshHistory(experimentId); }, [active, experimentId, refreshHistory]);
+  useEffect(() => localHistory.subscribe(() => { if (selectedExperimentRef.current) void refreshHistory(selectedExperimentRef.current); }), [refreshHistory]);
+  useEffect(() => {
+    const update = () => {
+      const found = experiments.map(item => getGenerationSeriesSession(rollSourceId(item.id))).find(Boolean);
+      setSession(found ? { ...found } : null);
+    };
+    update(); return subscribeGenerationSeries(update);
+  }, [experiments]);
+
+  const store = async (next: RollExperiment) => {
+    const saved = await saveRollExperiment(next);
+    if (mounted.current) setExperiments(current => [saved, ...current.filter(item => item.id !== saved.id)]);
+    return saved;
+  };
+  const perform = async (action: () => Promise<void>) => {
+    if (busyRef.current || loadingRef.current) return;
+    busyRef.current = true; setBusy(true); setError('');
+    try { await action(); }
+    catch (cause) { if (mounted.current) setError((cause as Error).message); }
+    finally { busyRef.current = false; if (mounted.current) setBusy(false); }
+  };
+  const makeExperiment = () => {
+    const now = Date.now();
+    const next: RollExperiment = {
+      version: 1, id: createUuid(), name: t('画风记录 {0}', [experiments.length + 1]), revision: 0, createdAt: now, updatedAt: now,
+      artists: experiment ? structuredClone(experiment.artists) : [], rules: experiment ? { ...experiment.rules } : { ...DEFAULT_ROLL_RULES },
+      template: experiment ? structuredClone(experiment.template) : { prompt: '{style}, 1girl, solo, upper body, simple background, looking at viewer', negativePrompt: '',
+        params: applyNaiModelSettings({ model: DEFAULT_NAI_MODEL, width: 832, height: 1216, steps: runtime.freeMaxSteps, scale: 5, sampler: 'k_euler_ancestral', qualityToggle: false, ucPreset: 4, seed: 0, characters: [] }, runtime) },
+      candidates: [], votes: [],
+    };
+    return next;
+  };
+  const vote = (result: RollVote['result']) => void perform(async () => {
+    if (!experiment || !pair) return;
+    const leftImage = images.get(pair[0]), rightImage = images.get(pair[1]); if (!leftImage || !rightImage) return;
+    if (!historyReady) return;
+    const record: RollVote = { id: createUuid(), left: pair[0], right: pair[1], leftImage: leftImage.id, rightImage: rightImage.id, result, createdAt: Date.now(), ...(round && round.kind !== 'batch' && !round.closedAt ? { roundId: round.id } : {}) };
+    await store({ ...experiment, votes: [...experiment.votes, record] });
+  });
+  const lastVote = experiment?.votes.at(-1);
+  const undoAllowed = Boolean(lastVote && (!lastVote.roundId || lastVote.roundId === round?.id && !round.closedAt));
+  const undoVote = () => void perform(async () => { if (experiment?.votes.length && undoAllowed) { await store({ ...experiment, votes: experiment.votes.slice(0, -1) }); setSkipped(new Set()); } });
+  const generate = async (candidates: RollCandidate[] = selected ? [selected] : [], target = experiment) => {
+    if (!target || target.archived || !candidates.length || manualWeights || candidates.some(candidate => candidate.archived || images.has(candidate.id) || target.votes.some(vote => vote.left === candidate.id || vote.right === candidate.id)) || loadingRef.current || generatingRef.current || session || (target.id === experiment?.id && (historyLoading || !historyReady))) return;
+    if (!continuousGenerationEnabled && candidates.length > 1) { setError(t('连续生成已关闭，请开启后生成本轮')); return; }
+    const key = readRollApiKey();
+    if (!key) { setError(t('请先在“全局设置”中配置 NovelAI API Key')); return; }
+    generatingRef.current = true; setPreparing(true); setError('');
+    const reportError = (message: string) => {
+      if (!mounted.current) return;
+      if (selectedExperimentRef.current === target.id) setError(message, 'generation');
+      else notify(t('实验 {0}：{1}', [target.name, t(parseHttpError(message).message)]), 'error');
+    };
+    try {
+      void subscription.refreshIfStale();
+      const eachCost = estimateV45GenerationCost(target.template.params, isActiveOpusSubscription(subscription.info), subscription.info?.usage?.isNegative ?? true), totalCost = eachCost * candidates.length;
+      if (totalCost > 0 && !await confirm({ title: budget.remaining <= 0 ? 'Anlas 预算已用尽' : '确认生成图片',
+        message: t('本轮生成 {0} 张，预计共消耗 {1} Anlas。本地剩余预算：{2}。', [candidates.length, totalCost, budget.remaining]),
+        confirmLabel: t('消耗 {0} 点并生成', [totalCost]), ...(totalCost > budget.remaining ? { tone: 'danger' as const } : {}) })) return;
+      const started = await beginRollGeneration(target, candidates.length === 1 ? candidates[0] : candidates, key, eachCost, generationStreamPreview && getRuntimeNaiModelInfo(target.template.params.model, runtime).supportsStreamedResponses);
+      const receipt = await started.settle;
+      if (mounted.current) {
+        if (started.session.accountingFailed) reportError(t('图片已保存，但本地记账异常，请核对额度后再继续'));
+        else if (started.session.cleanupError) reportError(t('后台任务清理异常：{0}', [started.session.cleanupError]));
+        else if (!receipt.success && receipt.outcome !== 'cancelled') reportError(receipt.error || t('生成失败'));
+        if (selectedExperimentRef.current === target.id) {
+          const saved = started.session.lastSavedItem;
+          if (saved) setHistory(current => [...current.filter(item => item.id !== saved.id), saved]);
+          await refreshHistory(target.id);
+        }
+      }
+    } catch (cause) { reportError((cause as Error).message); }
+    finally { generatingRef.current = false; if (mounted.current) setPreparing(false); }
+  };
+  const approve = () => void perform(async () => {
+    if (!session?.awaiting) return;
+    const current = getGenerationSeriesSession(session.scope); if (!current?.awaiting) return;
+    const nextCost = current.awaiting.cost;
+    const remaining = current.awaiting.requestedCount - current.awaiting.completedCount;
+    if (!await confirm({ title: '后台任务费用已变化', message: t('本轮剩余 {0} 张，当前每张预计 {1} Anlas，共 {2} Anlas。本地剩余预算：{3}。', [remaining, nextCost, nextCost * remaining, budget.remaining]), confirmLabel: t('消耗 {0} 点并生成', [nextCost * remaining]), tone: 'danger' })) { stopGenerationSeriesSession(current); return; }
+    if (readRollApiKey() !== current.key) throw new Error('NovelAI Key 已变化，请重新发起生成');
+    await approveGenerationSeries(current, nextCost);
+  });
+  const runRound = (kind: 'batch' | 'random' | 'evolve' | 'refine' | 'verify', parentId?: string) => void perform(async () => {
+    if (session || generatingRef.current) return;
+    if (experiment && (!historyReady || historyLoading)) throw new Error('历史暂不可用，请重新加载后再生成或对比。');
+    if (!continuousGenerationEnabled && (count > 1 || kind === 'verify')) throw new Error('连续生成已关闭，请开启后生成本轮');
+    if (['batch', 'random', 'evolve'].includes(kind) && (libraryLoading || libraryError || !library.length)) throw new Error(libraryError || '画师词库尚未就绪，请重新加载');
+    let source = experiment || makeExperiment();
+    if (round && !round.closedAt) source = { ...source, rounds: source.rounds!.map(item => item.id === round.id ? { ...item, closedAt: Date.now() } : item) };
+    if (['batch', 'random', 'evolve'].includes(kind)) source = { ...source, rules: { ...source.rules, minArtists: artistsPerMix, maxArtists: artistsPerMix } };
+    const next = beginRollRound(source, library, kind, count, parentId, comparable);
+    const saved = await store(next), created = currentRollRound(saved)!;
+    selectedExperimentRef.current = saved.id; setExperimentId(saved.id); setSelectedId(''); setSelectedIds(new Set()); setSelecting(false); setSkipped(new Set()); setFilter('all'); setQuery(''); setRoundId(created.id); setTab(kind === 'batch' ? 'candidates' : 'compare');
+    void generate(saved.candidates.filter(candidate => created.candidateIds.includes(candidate.id)), saved);
+  });
+  const generatePending = (ids?: string[]) => void perform(async () => {
+    if (!experiment || !historyReady || historyLoading || session || generatingRef.current) return;
+    let source = experiment;
+    const pending = rollPendingCandidates(experiment, images, ids).slice(0, continuousGenerationEnabled ? 24 : 1);
+    if (!pending.length) throw new Error('已评价的对照图在历史中不可用，请恢复原历史或新建复测实验。');
+    if (ids || !round || round.closedAt) source = await store({ ...experiment, rounds: [...(experiment.rounds || []).map(item => item.id === round?.id && !item.closedAt ? { ...item, closedAt: Date.now() } : item), { id: createUuid(), kind: 'batch', candidateIds: pending.map(candidate => candidate.id), opponents: [], createdAt: Date.now() }] });
+    setTab(currentRollRound(source)?.kind === 'batch' ? 'candidates' : 'compare'); setSelectedId(''); setSkipped(new Set()); setSelecting(false); setSelectedIds(new Set()); setRoundId(currentRollRound(source)?.id || ''); setFilter('all'); void generate(pending, source);
+  });
+  const finishRound = () => void perform(async () => { if (experiment) { await store(finishRollRound(experiment, ready)); setTab('candidates'); } });
+  const resume = () => void perform(async () => {
+    if (!session || session.state !== 'paused') return;
+    if (readRollApiKey() !== session.key) throw new Error('NovelAI Key 已变化，请重新发起生成');
+    await setGenerationQueuePaused(session.key, false);
+  });
+  const persistCandidate = async (target: RollExperiment, id: string) => {
+    const candidate = target.candidates.find(item => item.id === id); if (!candidate) return target;
+    const image = images.get(id);
+    let saved = savedChains.current.get(`${target.id}:${id}`) || chains.find(chain => chain.id === candidate.savedChainId);
+    if (!saved) {
+      const chain = rollCandidateToChain(target, candidate);
+      if (image) {
+        const response = await fetch(image.imageUrl); notifyLanAccessRequired(response);
+        if (!response.ok) throw await parseErrorResponse(response);
+        const blob = await response.blob();
+        if (!blob.type.startsWith('image/')) throw new Error('当前预览内容不是有效图片');
+        chain.previewImage = (await api.uploadFile(new File([blob], 'roll-cover.png', { type: blob.type }), 'covers')).url;
+        chain.basePrompt = image.prompt; chain.negativePrompt = image.negativePrompt ?? ''; chain.params = structuredClone(image.params);
+      }
+      saved = await onSaveChain(chain); savedChains.current.set(`${target.id}:${id}`, saved);
+    }
+    return store({ ...target, candidates: target.candidates.map(item => item.id === id ? { ...item, savedChainId: saved!.id } : item) });
+  };
+  const saveCandidate = (id = selectedId, final = false) => void perform(async () => {
+    if (!experiment) return;
+    const next = final && round && !round.closedAt ? finishRollRound(experiment, ready) : experiment;
+    await persistCandidate({ ...next, ...(final ? { finalCandidateId: id } : {}) }, id);
+    notify('已保存到风格串');
+  });
+  const saveChosen = () => void perform(async () => {
+    if (!experiment || !historyReady) return;
+    const items = chosen.filter(candidate => images.has(candidate.id) && !candidate.archived && !candidate.savedChainId);
+    let next = experiment;
+    setSelectedIds(new Set(chosen.filter(candidate => !candidate.savedChainId).map(candidate => candidate.id)));
+    setSavingProgress({ completed: 0, total: items.length });
+    try {
+      for (const [index, candidate] of items.entries()) {
+        next = await persistCandidate(next, candidate.id);
+        setSavingProgress({ completed: index + 1, total: items.length });
+        setSelectedIds(current => new Set([...current].filter(id => id !== candidate.id)));
+      }
+      notify(t('已保存 {0} 套画风', [items.length]), 'success');
+    } finally { setSavingProgress(null); }
+  });
+  const archiveCandidates = (ids: string[], archived: boolean) => void perform(async () => {
+    if (!experiment) return;
+    await store({ ...experiment, candidates: experiment.candidates.map(candidate => ids.includes(candidate.id) ? { ...candidate, archived } : candidate) });
+    setSelectedIds(new Set()); setSelectedId('');
+  });
+  const archiveRecord = (record: RollExperiment, archived: boolean) => void perform(async () => {
+    if (getGenerationSeriesSession(rollSourceId(record.id)) || generatingRef.current) return;
+    await store({ ...record, archived });
+    if (archived && record.id === experimentId) setExperimentId(experiments.find(item => item.id !== record.id && !item.archived)?.id || '');
+    if (!archived) setExperimentId(record.id);
+  });
+  const sendToLab = () => {
+    if (!experiment || !selected) return;
+    const chain = rollCandidateToChain(experiment, selected);
+    sessionStorage.setItem(IMPORT_SESSION_KEY, JSON.stringify({ mode: 'prompt-fragments', targetMode: 'text-to-image', fullMetadata: true, replace: true,
+      prompt: selectedImage?.prompt ?? chain.basePrompt, negativePrompt: selectedImage?.negativePrompt ?? chain.negativePrompt,
+      params: selectedImage?.params ?? chain.params, importSettings: true, importSeed: true, importModel: true }));
+    onNavigateToPlayground();
+  };
+  const saveManualWeights = () => void perform(async () => {
+    if (!experiment || !selected || !manualWeights) return;
+    const candidate = manualRollVariant({ ...experiment, artists: resolveRollArtists(library, experiment.artists, selected.genes) }, selected, manualWeights);
+    await store({ ...experiment, candidates: [...experiment.candidates, candidate] });
+    setManualWeights(null); setFilter('all'); setRoundId(''); setQuery(''); setSelectedId(candidate.id);
+  });
+
+  const detail = experiment && selected ? <div className="space-y-4 p-4">
+    {selectedImage ? <PressRevealSurface className="group relative overflow-hidden rounded-xl bg-gray-100 dark:bg-gray-950" data-safe-mode-work="true">
+      <button className="block w-full" type="button" aria-label={t('放大图片')} onClick={() => setLightbox(selectedImage)}><SmartImage src={selectedImage.imageUrl} alt={t('候选 {0}', [experiment.candidates.indexOf(selected) + 1])} eager className="max-h-[45vh] w-full object-contain" containerClassName="w-full" /></button>
+      <ImageShareActions imageUrl={selectedImage.imageUrl} filename={`roll-${selectedImage.id}.png`} generationData={selectedImage} favorite={{ imageUrl: selectedImage.imageUrl, sourceType: 'history', sourceId: selectedImage.id }} notify={notify} variant="card" className="absolute right-2 top-2 flex-col" />
+    </PressRevealSurface> : <div className="flex min-h-36 items-center justify-center rounded-xl border border-dashed border-gray-300 text-gray-400 dark:border-gray-700"><ImagePlus className="h-8 w-8" /></div>}
+    <div className="flex flex-wrap gap-2 text-xs text-gray-500"><span className="rounded-lg bg-gray-100 px-2 py-1 dark:bg-gray-800">{t(methodLabels[selected.method])}</span>{scores.get(selected.id)?.matches > 0 && <span className="rounded-lg bg-gray-100 px-2 py-1 dark:bg-gray-800">Elo {Math.round(scores.get(selected.id)?.rating || 1000)} · {t('{0} 次对比', [scores.get(selected.id)?.matches || 0])}</span>}</div>
+    {!!selected.parents.length && <div className="flex flex-wrap items-center gap-1 text-xs text-gray-500">{t('来源候选')}{selected.parents.map(id => <button key={id} type="button" className="mobile-touch rounded-md px-2 text-indigo-500 hover:underline" onClick={() => { setFilter('all'); setRoundId(''); setQuery(''); setSelectedId(id); }}>#{experiment.candidates.findIndex(candidate => candidate.id === id) + 1}</button>)}</div>}
+    <div className="space-y-2">{selected.genes.map((gene, index) => {
+      const artist = experiment.artists.find(item => item.tag === gene.tag);
+      return <div key={gene.tag} className="flex min-w-0 items-center gap-2 text-sm"><span className="min-w-0 flex-1 truncate" title={gene.tag}>{gene.tag}</span>
+        {manualWeights ? <input aria-label={t('候选权重：{0}', [gene.tag])} type="number" className={`${selectClass} w-20 text-right font-mono`} min={experiment.rules.minWeight} max={experiment.rules.maxWeight} step={0.1} value={artist?.locked ? artist.weight : manualWeights[index]} disabled={busy || loading || artist?.locked} onChange={event => setManualWeights(current => current?.map((weight, i) => i === index ? Number(event.target.value) : weight) || null)} /> : <><span className="h-1.5 w-16 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800"><span className="block h-full rounded-full bg-indigo-400" style={{ width: `${gene.weight / 3 * 100}%` }} /></span><span className="w-7 text-right font-mono text-xs">{gene.weight.toFixed(1)}</span></>}
+      </div>;
+    })}</div>
+    {manualWeights && <div className="flex flex-wrap gap-2"><ToolbarButton className="!border-emerald-600 !bg-emerald-600 !text-white" disabled={busy || loading} onClick={saveManualWeights}>{t('保存为新变体')}</ToolbarButton><ToolbarButton disabled={busy} onClick={() => setManualWeights(null)}>{t('取消')}</ToolbarButton></div>}
+    {!selectedImage && (scores.get(selected.id)?.matches > 0 ? <p className="text-xs text-amber-600 dark:text-amber-400">{t('已评价的对照图在历史中不可用，请恢复原历史或新建复测实验。')}</p> : <ToolbarButton data-agent-action="business" tone="primary" className="!h-11 w-full" disabled={busy || loading || preparing || Boolean(session) || Boolean(manualWeights) || historyLoading || !historyReady || selected.archived} onClick={() => void generate()}>{preparing ? <LoaderCircle className="animate-spin" /> : <ImagePlus />}{t('生成对照图')} · {costLabel}</ToolbarButton>)}
+    {!historyLoading && !historyReady && <p className="text-xs text-amber-600 dark:text-amber-400">{t('历史暂不可用，请重新加载后再生成或对比。')}</p>}
+    <div className="grid grid-cols-2 gap-2">
+      <ToolbarButton disabled={busy || loading || Boolean(manualWeights)} tone="primary" onClick={selected.savedChainId && chains.some(chain => chain.id === selected.savedChainId) ? () => onOpenChain(selected.savedChainId!) : () => saveCandidate()}><Save />{t(selected.savedChainId && chains.some(chain => chain.id === selected.savedChainId) ? '打开风格串' : '存为风格串')}</ToolbarButton>
+      <ToolbarButton disabled={busy || Boolean(manualWeights)} onClick={() => { try { sendToLab(); } catch (cause) { setError((cause as Error).message); } }}><FlaskConical />{t('送往实验室')}</ToolbarButton>
+    </div>
+    <details className="border-t border-gray-200 pt-3 dark:border-gray-800"><summary className="mobile-touch cursor-pointer text-xs text-gray-500">{t('更多操作')}</summary><div className="mt-2 grid grid-cols-2 gap-2">
+      <ToolbarButton data-agent-action="business" aria-describedby="roll-weight-test-description" disabled={busy || loading || Boolean(manualWeights) || Boolean(session) || !selectedImage} onClick={() => runRound('refine', selected.id)}><Sparkles />{t('权重测试')}</ToolbarButton>
+      <ToolbarButton disabled={busy || loading || Boolean(manualWeights)} onClick={() => void perform(async () => { if (!navigator.clipboard?.writeText) throw new Error('当前环境无法直接复制，请从完整提示词中手动复制'); await navigator.clipboard.writeText(formatRollStyle(selected.genes)); notify('已复制提示词'); })}><Copy />{t('复制画风')}</ToolbarButton>
+      <ToolbarButton disabled={busy || loading || Boolean(manualWeights)} onClick={() => archiveCandidates([selected.id], !selected.archived)}>{selected.archived ? <RotateCcw /> : <Trash2 />}{t(selected.archived ? '恢复候选' : '丢弃')}</ToolbarButton>
+      <ToolbarButton disabled={busy || loading || selected.archived || Boolean(manualWeights)} onClick={() => setManualWeights(selected.genes.map(gene => gene.weight))}><SlidersHorizontal />{t('手动调整权重')}</ToolbarButton>
+      <p id="roll-weight-test-description" className="col-span-2 text-xs leading-relaxed text-gray-500">{t('保持画师不变，自动生成不同权重的图片，再由你选择。')}</p>
+    </div></details>
+    <details className="text-xs text-gray-500"><summary className="cursor-pointer py-2">{t('完整提示词')}</summary><p className="break-words font-mono leading-5">{rollCandidateToChain(experiment, selected).basePrompt}</p></details>
+  </div> : null;
+
+  const verificationIds = experiment ? rollVerificationIds(experiment) : new Set<string>();
+  const ranked = experiment ? rankRollCandidates(experiment).filter(candidate => !candidate.archived && !verificationIds.has(candidate.id)) : [];
+  const best = ranked.find(candidate => images.has(candidate.id));
+  const roundPending = experiment ? rollPendingCandidates(experiment, images) : [];
+  const scopedRound = experiment?.rounds?.find(item => item.id === roundId);
+  const selectedPending = experiment ? rollPendingCandidates(experiment, images, chosen.map(candidate => candidate.id)) : [];
+  const saveable = chosen.filter(candidate => images.has(candidate.id) && !candidate.archived && !candidate.savedChainId);
+  const working = Boolean(session || preparing), frozen = busy || loading;
+  const canStart = !frozen && !working && !libraryLoading && !libraryError && library.length > 0 && (!experiment || historyReady);
+  const savedCount = ranked.filter(candidate => candidate.savedChainId).length;
+  const roundContext = round && round.kind !== 'batch' ? round.kind === 'refine' ? t('权重测试 · ±{0} · 剩余 {1} 套', [round.jitter, progress!.total - progress!.settled])
+    : round.kind === 'verify' ? t('换 Seed 验证 · 已完成 {0}/3 组', [progress!.settled / (round.candidateIds.length / 3)])
+    : t(round.kind === 'evolve' ? '进化评选 · 已完成 {0}/{1} 套' : '新画风排位 · 已完成 {0}/{1} 套', [progress!.settled, progress!.total]) : t('自动配对比较');
+  const roundResult = experiment && round && round.kind !== 'batch' && progress?.complete && !round.closedAt ? <div className="min-h-0 flex-1 overflow-y-auto p-4 md:p-6"><div className="mx-auto max-w-4xl space-y-4">
+    <h2 className="flex items-center gap-2 text-xl font-bold"><Check className="text-emerald-500" />{t('本轮评价完成')}</h2>
+    {round.kind === 'evolve' && <p className="text-sm text-gray-500">{t('本代 {0} 套胜出，{1} 套未胜出；确认后归档低位画风，原图保留。', [progress.accepted.length, progress.rejected.length])}</p>}
+    {round.kind === 'verify' ? <>
+      <p className="text-sm text-gray-500">{round.candidateIds.length === 3 ? t('原版保持最佳，仅生成三张验证图，不重复生成相同配方。') : t('三组 Seed 中，微调后画风获选 {0} 次。', [progress.accepted.length])}</p>
+      <div className="flex flex-wrap gap-2"><ToolbarButton tone="primary" disabled={frozen} onClick={() => saveCandidate(round.parentId, true)}><Save />{t(round.candidateIds.length === 3 ? '保存原版画风' : '保存微调后的画风')}</ToolbarButton>{round.candidateIds.length === 6 && <ToolbarButton disabled={frozen} onClick={() => saveCandidate(round.baseId, true)}>{t('保留原版')}</ToolbarButton>}</div>
+      <div className="grid gap-4 sm:grid-cols-3">{[0, 1, 2].map(group => { const width = round.candidateIds.length / 3, index = group * width; return <div key={index} className="space-y-2"><p className="text-xs text-gray-500">Seed {experiment.candidates.find(candidate => candidate.id === round.candidateIds[index])?.seed}</p><div className={`grid gap-2 ${width === 2 ? 'grid-cols-2' : 'grid-cols-1'}`}>{round.candidateIds.slice(index, index + width).map((id, side) => { const image = images.get(id); return image ? <button type="button" key={id} onClick={() => setLightbox(image)} className="overflow-hidden rounded-xl"><SmartImage src={image.imageUrl} alt={t(side ? '微调后画风' : '原版画风')} /><span className="block py-1 text-xs text-gray-500">{t(side ? '微调后画风' : '原版画风')}</span></button> : null; })}</div></div>; })}</div>
+    </> : round.kind === 'refine' ? <>
+      {images.get(progress.champion) && <div className="flex flex-col gap-4 sm:flex-row"><button type="button" className="w-full max-w-64 overflow-hidden rounded-2xl" onClick={() => setLightbox(images.get(progress.champion)!)}><SmartImage src={images.get(progress.champion)!.imageUrl} alt={t('当前最佳画风')} /></button><div className="flex flex-col items-start justify-center gap-3"><strong>{t('当前最佳画风')}</strong><ToolbarButton data-agent-action="business" tone="primary" disabled={frozen || working} onClick={() => runRound('verify', progress.champion)}>{t('换 Seed 验证')}<ArrowRight /></ToolbarButton><ToolbarButton data-agent-action="business" disabled={frozen || working} onClick={() => runRound('refine', progress.champion)}>{t('继续测试权重')}</ToolbarButton><ToolbarButton disabled={frozen} onClick={() => saveCandidate(progress.champion, true)}><Save />{t('完成并保存')}</ToolbarButton></div></div>}
+    </> : <div className="flex flex-wrap gap-2"><ToolbarButton tone="primary" disabled={frozen || working} onClick={finishRound}>{t('完成本轮')}<ArrowRight /></ToolbarButton>{best && <ToolbarButton data-agent-action="business" disabled={frozen || working} onClick={() => runRound('refine', best.id)}>{t('测试最佳组合权重')}</ToolbarButton>}</div>}
+    {undoAllowed && <ToolbarButton disabled={frozen} onClick={undoVote}>{t('撤销上次对比')}</ToolbarButton>}
+  </div></div> : null;
+  return <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-gray-50 text-gray-900 dark:bg-gray-900 dark:text-gray-100" data-roll-page="true">
+    <WorkspaceToolbar>
+      {selecting ? <>
+        <div role="group" aria-label={t('画风批量操作')} className="flex h-full min-w-0 flex-1 items-center gap-2 overflow-x-auto whitespace-nowrap [scrollbar-width:none]">
+          <b aria-live="polite" className="shrink-0 text-xs text-gray-600 dark:text-gray-300">{savingProgress ? t('正在保存 {0}/{1}', [savingProgress.completed, savingProgress.total]) : t('已选 {0} 套', [chosen.length])}</b>
+          {filter !== 'archived' && <ToolbarButton tone="primary" disabled={frozen || !historyReady || !saveable.length} onClick={saveChosen}><Save />{t('保存所选')}</ToolbarButton>}
+          {!!selectedPending.length && <ToolbarButton data-agent-action="business" disabled={frozen || working || !historyReady} onClick={() => generatePending(selectedPending.map(candidate => candidate.id))}><ImagePlus />{t('生成所选')} · {Math.min(selectedPending.length, continuousGenerationEnabled ? 24 : 1)}</ToolbarButton>}
+          <ToolbarButton tone={filter === 'archived' ? 'neutral' : 'danger'} disabled={frozen || !chosen.length} onClick={() => archiveCandidates(chosen.map(candidate => candidate.id), filter !== 'archived')}>{filter === 'archived' ? <RotateCcw /> : <Trash2 />}{t(filter === 'archived' ? '恢复所选' : '丢弃所选')}</ToolbarButton>
+          <ToolbarButton disabled={frozen} onClick={() => setSelectedIds(new Set(visible.map(candidate => candidate.id)))}>{t('全选筛选结果')}</ToolbarButton>
+          <ToolbarButton disabled={frozen} onClick={() => setSelectedIds(new Set(visible.filter(candidate => !selectedIds.has(candidate.id)).map(candidate => candidate.id)))}>{t('反选筛选结果')}</ToolbarButton>
+          <ToolbarButton disabled={frozen || !chosen.length} onClick={() => setSelectedIds(new Set())}>{t('清空选择')}</ToolbarButton>
+        </div>
+        <ToolbarButton aria-label={t('退出多选')} disabled={frozen} onClick={() => { setSelecting(false); setSelectedIds(new Set()); }}><X /><span className="hidden sm:inline">{t('退出多选')}</span></ToolbarButton>
+      </> : <>
+        <ToolbarSearch value={query} onChange={event => { setQuery(event.target.value); setSelectedId(''); selectionAnchor.clearAnchor(); }} aria-label={t('搜索画师或编号')} placeholder={t('搜索画师或编号')} containerClassName="md:!max-w-none" disabled={!experiment || tab !== 'candidates'} />
+        <ToolbarPopover title={t('筛选与排序')} label={t('筛选')} count={Number(filter !== 'all') + Number(Boolean(roundId)) + Number(sort !== 'new')} disabled={!experiment || tab !== 'candidates'}>
+          {close => <div className="space-y-4">
+            <div role="group" aria-label={t('画风筛选')} className="grid grid-cols-2 gap-2">
+              {(['all', 'saved', 'pending', 'archived'] as const).map(value => <ToolbarButton key={value} aria-label={t(value === 'all' ? '全部' : value === 'saved' ? '已保存' : value === 'pending' ? '待生成' : '回收站')} active={filter === value} onClick={() => { setFilter(value); setSelectedId(''); selectionAnchor.clearAnchor(); close(); }}>{t(value === 'all' ? '全部' : value === 'saved' ? '已保存' : value === 'pending' ? '待生成' : '回收站')}<span className="ml-auto text-xs opacity-60">{experiment ? rollWorkspaceCandidates(experiment, images, { filter: value, roundId, query: '', sort }).length : 0}</span></ToolbarButton>)}
+            </div>
+            <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300">{t('查看轮次')}<select aria-label={t('查看轮次')} value={roundId} onChange={event => { setRoundId(event.target.value); setSelectedId(''); }} className={TOOLBAR_FIELD_CLASS}><option value="">{t('全部轮次')}</option>{[...(experiment?.rounds || [])].reverse().map(item => <option key={item.id} value={item.id}>{t('第 {0} 轮', [(experiment?.rounds?.indexOf(item) ?? 0) + 1])} · {item.candidateIds.length}</option>)}</select></label>
+            <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300">{t('排序')}<select aria-label={t('画风排序')} value={sort} onChange={event => setSort(event.target.value)} className={TOOLBAR_FIELD_CLASS}><option value="new">{t('最新生成')}</option><option value="old">{t('最早优先')}</option><option value="rating">{t('Elo 从高到低')}</option></select></label>
+            <button type="button" className="mobile-touch text-xs font-semibold text-indigo-600 dark:text-indigo-300" onClick={() => { setFilter('all'); setRoundId(''); setSort('new'); setQuery(''); close(); }}>{t('重置筛选')}</button>
+          </div>}
+        </ToolbarPopover>
+        <ToolbarButton aria-label={t('批量选择画风')} title={t('多选')} disabled={frozen || !experiment || tab !== 'candidates'} onClick={() => { setSelectedId(''); setSelecting(true); setSelectedIds(new Set()); }}><ListChecks /><span className="hidden xl:inline">{t('多选')}</span></ToolbarButton>
+        <div className="flex shrink-0 items-center border-l border-gray-200 pl-2 dark:border-gray-700">
+          <ToolbarButton aria-label={t(experiment ? '再 Roll 一轮' : '开始 Roll')} data-agent-action="business" tone="primary" disabled={!canStart} className="!rounded-r-none !border-r-0" onClick={() => runRound('batch')}><Dice5 /><span className="sm:hidden">Roll</span><span className="hidden sm:inline">{t(experiment ? '再 Roll 一轮' : '开始 Roll')}</span></ToolbarButton>
+          <ToolbarPopover label={t('本轮设置')} title={t('本轮设置')} icon={<ChevronDown />} disabled={frozen || working} width={320} className="[&_button[aria-haspopup]]:rounded-l-none [&_button[aria-haspopup]>span]:hidden">
+            {close => <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <label className="text-xs font-semibold text-gray-600 dark:text-gray-300">{t('每串画师')}<input type="number" aria-label={t('每串画师数')} className={TOOLBAR_FIELD_CLASS} min={1} max={16} value={artistsPerMix} onChange={event => setArtistsPerMix(Number(event.target.value))} /></label>
+                <label className="text-xs font-semibold text-gray-600 dark:text-gray-300">{t('本轮张数')}<input type="number" aria-label={t('本轮生成张数')} className={TOOLBAR_FIELD_CLASS} min={1} max={24} value={count} onChange={event => setCount(Number(event.target.value))} /></label>
+              </div>
+              <p className="text-xs text-gray-500">{savedCount ? t('优先参考已保存的 {0} 套组合', [savedCount]) : t('从画师库自动抽取 · {0} 位画师', [library.length])}</p>
+              <ToolbarButton className="w-full" onClick={() => { setSetup(experiment || makeExperiment()); close(); }}><Settings2 />{t('提示词与生成设置')}</ToolbarButton>
+            </div>}
+          </ToolbarPopover>
+        </div>
+      </>}
+    </WorkspaceToolbar>
+    <div className="flex min-h-12 flex-none items-center gap-2 border-b border-gray-200/70 px-3 dark:border-gray-800/70 md:px-5">
+      <ToolbarSelect label={t('切换画风记录')} containerClassName="max-w-48 min-w-0 shrink" className="!h-8 !border-transparent !bg-transparent !pl-0 !text-xs" value={experimentId} disabled={frozen || preparing} onChange={event => setExperimentId(event.target.value)}>
+        {!experiment && <option value="">{t('新画风记录')}</option>}{experiments.filter(item => !item.archived).map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+      </ToolbarSelect>
+      <ToolbarPopover title={t('画风记录管理')} label={t('管理记录')} icon={<MoreHorizontal />} iconOnly disabled={frozen || working || selecting} width={320}>
+        {close => <div className="space-y-3">
+          {experiment && <form onSubmit={event => { event.preventDefault(); if (!recordName.trim() || recordName.trim() === experiment.name) return; void perform(async () => { await store({ ...experiment, name: recordName.trim() }); close(); }); }}>
+            <label className="text-xs font-semibold text-gray-600 dark:text-gray-300">{t('记录名称')}<input aria-label={t('记录名称')} value={recordName} maxLength={120} onChange={event => setRecordName(event.target.value)} className={TOOLBAR_FIELD_CLASS} /></label>
+            <ToolbarButton type="submit" className="mt-2 w-full" disabled={!recordName.trim() || recordName.trim() === experiment.name}>{t('重命名')}</ToolbarButton>
+          </form>}
+          <div className="space-y-1">
+            <button type="button" className={TOOLBAR_MENU_CLASS} onClick={() => { setSetup(makeExperiment()); close(); }}><Plus />{t('新建记录')}</button>
+            <button type="button" className={TOOLBAR_MENU_CLASS} onClick={() => { void reload(); void reloadLibrary(); if (experimentId) void refreshHistory(experimentId); close(); }}><RefreshCw />{t('重新加载实验')}</button>
+            {experiment && <><button type="button" className={TOOLBAR_MENU_CLASS} onClick={() => { void saveExportBlob(new Blob([JSON.stringify(experiment, null, 2)], { type: 'application/json' }), `roll-${experiment.id}.json`).catch(cause => setError((cause as Error).message)); close(); }}><Download />{t('导出实验配置')}</button>
+            <button type="button" className={`${TOOLBAR_MENU_CLASS} !text-red-500`} onClick={() => { archiveRecord(experiment, true); close(); }}><Trash2 />{t('将记录移入回收站')}</button></>}
+          </div>
+          {experiments.some(item => item.archived) && <div className="space-y-1 border-t border-gray-200 pt-3 dark:border-gray-800"><p className="mb-2 text-xs text-gray-400">{t('记录回收站')}</p>{experiments.filter(item => item.archived).map(item => <div key={item.id} className="flex items-center gap-2 text-sm"><span className="min-w-0 flex-1 truncate">{item.name}</span><button type="button" className="mobile-touch shrink-0 px-2 text-xs text-indigo-500" aria-label={t('恢复记录：{0}', [item.name])} onClick={() => { archiveRecord(item, false); close(); }}>{t('恢复')}</button></div>)}</div>}
+        </div>}
+      </ToolbarPopover>
+      {experiment && <div className="flex min-w-0 flex-1 items-center justify-end gap-2 text-xs text-gray-500">
+        <span className="truncate">{tab === 'compare' ? t('画风对比') : `${scopedRound ? t('第 {0} 轮', [(experiment.rounds?.indexOf(scopedRound) ?? 0) + 1]) : t('全部轮次')} · ${t('显示 {0} 套', [visible.length])}`}</span>
+        {(query || roundId || filter !== 'all') && tab === 'candidates' && <button type="button" aria-label={t('清除筛选')} className="mobile-touch flex shrink-0 items-center gap-1 rounded-lg bg-gray-100 px-2 text-gray-500 dark:bg-gray-800" onClick={() => { setFilter('all'); setRoundId(''); setQuery(''); }}>{t(filter === 'saved' ? '已保存' : filter === 'pending' ? '待生成' : filter === 'archived' ? '回收站' : '筛选')}<X className="h-3 w-3" /></button>}
+      </div>}
+      {experiment && <ToolbarPopover title={t('可选工具')} label={t('可选工具')} icon={<SlidersHorizontal />} iconOnly disabled={selecting} width={240}>{close => <div className="space-y-1">
+        <button type="button" aria-describedby={tab === 'compare' ? undefined : 'roll-comparison-description'} className={TOOLBAR_MENU_CLASS} onClick={() => { setSelectedId(''); setTab(tab === 'compare' ? 'candidates' : 'compare'); close(); }}><Columns2 />{t(tab === 'compare' ? '返回画风库' : '画风对比')}</button>
+        {tab !== 'compare' && <p id="roll-comparison-description" className="px-3 pb-2 text-xs leading-relaxed text-gray-500">{t('对比已有图片，选出偏好的画风；不会生成新图。')}</p>}
+        {experiment.votes.length > 0 && <button type="button" data-agent-action="business" className={TOOLBAR_MENU_CLASS} disabled={!canStart} onClick={() => { runRound('evolve'); close(); }}><Sparkles />{t('进化下一轮')}</button>}
+      </div>}</ToolbarPopover>}
+    </div>
+    {error && <div role="alert" className="flex flex-none items-center gap-2 border-b border-red-200 bg-red-50 px-4 py-2 text-xs text-red-600 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300"><span className="min-w-0 flex-1 break-words">{t(error)}</span>{errorSource !== 'generation' && <button type="button" className="mobile-touch shrink-0 px-2 underline" onClick={() => { void reload(); if (experimentId) void refreshHistory(experimentId); }}>{t('重新加载')}</button>}<IconButton label="关闭错误提示" className="!h-8 !w-8 !border-transparent !bg-transparent !text-current" onClick={() => setError('')}><X /></IconButton></div>}
+    {libraryError && <div role="alert" className="flex flex-none items-center gap-2 border-b border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-700 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300"><span className="flex-1">{t(libraryError)}</span><button type="button" className="mobile-touch px-2 underline" onClick={() => void reloadLibrary()}>{t('重新加载')}</button></div>}
+    {tab === 'compare' && contextMismatch && <p role="alert" className="px-4 py-2 text-xs text-amber-600">{t('这两张图片的实际生成条件不同，不能放在一起比较。')}</p>}
+    {working && <div role="status" className="flex flex-none flex-wrap items-center gap-2 border-b border-indigo-200 bg-indigo-50 px-4 py-2 text-xs text-indigo-600 dark:border-indigo-900 dark:bg-indigo-950/30 dark:text-indigo-300"><LoaderCircle className="h-4 w-4 animate-spin" /><span className="min-w-0 flex-1">{t(session?.connectionError || (session?.awaiting ? '等待费用确认' : session?.state === 'paused' ? '任务已暂停' : '正在逐张出图…'))}{session ? ` ${session.progress.current}/${session.progress.total}` : ''}</span>{session?.awaiting && <ToolbarButton data-agent-action="business" disabled={busy} onClick={approve}>{t('确认费用')}</ToolbarButton>}{session?.state === 'paused' ? <ToolbarButton data-agent-action="business" disabled={busy} onClick={resume}>{t('继续')}</ToolbarButton> : session && continuousGenerationEnabled && <ToolbarButton disabled={busy} onClick={() => void perform(async () => { if (readRollApiKey() !== session.key) throw new Error('NovelAI Key 已变化，请重新发起生成'); await setGenerationQueuePaused(session.key, true); })}><Pause />{t('暂停')}</ToolbarButton>}{session && <button type="button" disabled={session.stopped} className="mobile-touch px-2 underline" onClick={() => { const current = getGenerationSeriesSession(session.scope); if (current) stopGenerationSeriesSession(current); }}>{t(session.stopped ? '取消中…' : '取消')}</button>}</div>}
+    {!working && historyReady && experiment && roundPending.length > 0 && <div className="flex flex-none items-center gap-2 border-b border-gray-200 px-3 py-2 text-xs text-gray-500 dark:border-gray-800 md:px-5"><span className="min-w-0 flex-1">{t('本轮已出图 {0}/{1}', [round!.candidateIds.filter(id => images.has(id)).length, round!.candidateIds.length])}</span><ToolbarButton data-agent-action="business" disabled={frozen || !historyReady} onClick={() => generatePending()}><ImagePlus />{t('补齐剩余 {0} 张', [continuousGenerationEnabled ? roundPending.length : 1])}</ToolbarButton></div>}
+    {loading && !experiment ? <PageSpinner className="flex-1" /> : !experiment ? <EmptyState className="flex-1 p-6" icon={<Dice5 className="h-8 w-8" />} title={t('Roll 出你的画风')} hint="一键出图，只保存喜欢的画风。" />
+      : tab === 'compare' ? roundResult || <StyleRollCompare experiment={experiment} pair={pair} images={images} active={active && !setup && !lightbox} busy={frozen} historyReady={historyReady && !historyLoading} hasSkipped={skipped.size > 0} context={roundContext} undoAllowed={undoAllowed} onVote={vote} onUndo={undoVote} onSkip={() => setSkipped(current => pair ? new Set([...current, rollPairKey(...pair)]) : new Set())} />
+      : <div className="relative flex min-h-0 flex-1">
+        <StyleRollGallery experiment={experiment} candidates={visible} images={images} historyReady={historyReady} historyLoading={historyLoading} selectedId={selectedId} selectionFocusEnabled={selectionFocusEnabled} selecting={selecting} selectedIds={selectedIds} sort={sort} onSelect={setSelectedId} onToggle={id => setSelectedIds(current => { const next = new Set(current); next.has(id) ? next.delete(id) : next.add(id); return next; })} onSave={id => saveCandidate(id)} onArchive={id => archiveCandidates([id], !experiment.candidates.find(candidate => candidate.id === id)!.archived)} busy={frozen} scrollRef={scrollRef} onScroll={() => { selectionAnchor.onScroll(); rememberScroll(); }} notify={notify} />
+        {!isMobile && selected && <aside className="flex w-80 max-w-[40%] flex-none flex-col border-l border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900 xl:w-88"><div className="flex items-center justify-between border-b border-gray-200 px-4 py-2 dark:border-gray-800"><strong className="text-sm">{t('候选 {0}', [experiment.candidates.indexOf(selected) + 1])}</strong><IconButton label="关闭候选详情" onClick={() => setSelectedId('')}><X /></IconButton></div><div className="min-h-0 flex-1 overflow-y-auto">{detail}</div></aside>}
+      </div>}
+    {experiment && isMobile && <ImagePreviewPortal><MobileDetailView open={Boolean(selected) && tab === 'candidates' && !setup} title={t('候选 {0}', [experiment.candidates.findIndex(candidate => candidate.id === selectedId) + 1])} onClose={() => setSelectedId('')}>{detail}</MobileDetailView></ImagePreviewPortal>}
+    {setup && <StyleRollSetup initial={setup} chains={chains} libraryCount={library.length} libraryLoading={libraryLoading} enforceFreeStepLimit={enforceFreeStepLimit} onClose={() => setSetup(null)} onSave={async value => { await store(value); if (!experiments.some(item => item.id === value.id)) setExperimentId(value.id); }} />}
+    {lightbox && <ImageLightbox src={lightbox.imageUrl} generationData={lightbox} favorite={{ imageUrl: lightbox.imageUrl, sourceType: 'history', sourceId: lightbox.id }} notify={notify} onClose={() => setLightbox(null)} />}
+  </div>;
+};

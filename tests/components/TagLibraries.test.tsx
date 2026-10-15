@@ -52,6 +52,15 @@ vi.mock('../../components/ConfirmDialog', () => ({ useConfirmDialog: () => confi
 vi.mock('../../components/DanbooruCover', () => ({ DanbooruCover: ({ tag, fixedSrc, kind, notify, onFavoriteChange, imageClassName }: any) =>
   <div data-testid={`cover-${tag}`} data-fixed-src={fixedSrc} data-image-class={imageClassName}>{tag}<ImageShareOverlay imageUrl={fixedSrc || '/synthetic/' + tag + '.png'} filename={tag + '.png'} notify={notify} favorite={{ imageUrl: fixedSrc || '/synthetic/' + tag + '.png', sourceType: kind, sourceId: tag }} onFavoriteChange={onFavoriteChange} /></div>,
 }));
+vi.mock('../../components/ArtistSampleCover', () => ({ ArtistSampleCover: ({ tag, pack, notify, onFavoriteChange, imageClassName }: any) =>
+  <div data-testid={`cover-${tag}`} data-image-class={imageClassName}>{tag}<ImageShareOverlay imageUrl={'/synthetic/' + pack + '/' + tag + '.png'} filename={tag + '.png'} notify={notify} favorite={{ imageUrl: '/synthetic/' + pack + '/' + tag + '.png', sourceType: 'artist', sourceId: tag, imageId: pack + ':' + tag }} onFavoriteChange={onFavoriteChange} /></div>,
+}));
+vi.mock('../../services/artistSamples', async original => ({ ...await original<typeof import('../../services/artistSamples')>(),
+  getArtistSampleStatus: vi.fn(async () => ({ available: true, canManage: true, packs: ['v45', 'v5'].map(id => ({ id, phase: 'ready', count: 2, revision: 'synthetic' })) })),
+  getArtistSampleCatalog: vi.fn(async (pack: string) => ({ pack, revision: 'synthetic', tags: fixtures.artists.map(item => item.name) })),
+  getArtistSampleDictionary: vi.fn(async () => fixtures.artists),
+}));
+vi.mock('../../services/artistSampleDrafts', () => ({ getArtistSampleData: vi.fn(async () => ({ templates: {}, samples: [] })), prepareArtistSampleImport: vi.fn() }));
 // jsdom 没有容器宽度；布局由既有测试覆盖，这里直接渲染条目以验证目录状态。
 vi.mock('../../components/ShortestColumnMasonry', () => ({ useMasonryColumnCount: () => 6, ShortestColumnMasonry: ({ items, renderItem }: { items: unknown[]; renderItem: (item: unknown) => React.ReactNode }) =>
   <div>{items.map((item, index) => <React.Fragment key={index}>{renderItem(item)}</React.Fragment>)}</div>,
@@ -271,6 +280,7 @@ describe.each<Kind>(['artist', 'character'])('%s 目录只负责 Tag 取用', ki
     await screen.findByTestId(`cover-${entriesFor(kind)[0].name}`);
     const toolbar = within(container.querySelector('header')!);
     expect(toolbar.getAllByRole('button').map(button => button.getAttribute('aria-label'))).toEqual([
+      ...(kind === 'artist' ? [null, null] : []),
       '筛选', '随机抽卡', '抽卡设置', ...(kind === 'character' ? ['新建自定义角色'] : []),
     ]);
     expect(toolbar.getByRole('searchbox')).toBeTruthy();
@@ -305,7 +315,8 @@ describe.each<Kind>(['artist', 'character'])('%s 目录只负责 Tag 取用', ki
     await screen.findByText(/正在浏览随机抽取的 2 位/);
     expect(screen.getByRole('button', { name: '再抽一批' }).className).toContain('bg-white');
     expect(screen.getByRole('button', { name: '再抽一批' }).className).not.toContain('bg-indigo-600');
-    expect(vi.mocked(getEntriesFor(kind)).mock.calls.at(-1)?.[0]).toHaveLength(2);
+    if (kind === 'artist') expect(getArtistDictionaryEntriesAt).not.toHaveBeenCalled();
+    else expect(vi.mocked(getEntriesFor(kind)).mock.calls.at(-1)?.[0]).toHaveLength(2);
     fireEvent.click(screen.getByRole('button', { name: '筛选' }));
     fireEvent.click(screen.getByRole('checkbox', { name: '只看收藏' }));
     expect(screen.queryByText(/正在浏览随机抽取/)).toBeNull();
@@ -333,12 +344,12 @@ describe.each<Kind>(['artist', 'character'])('%s 目录只负责 Tag 取用', ki
 
   it('在途抽卡结果不能覆盖后来输入的搜索', async () => {
     let resolve!: (entries: typeof fixtures.artists) => void;
-    vi.mocked(getEntriesFor(kind)).mockImplementationOnce(() => new Promise(done => { resolve = done; }));
+    if (kind === 'character') vi.mocked(getEntriesFor(kind)).mockImplementationOnce(() => new Promise(done => { resolve = done; }));
     renderLibrary(kind);
     await screen.findByTestId(`cover-${entriesFor(kind)[0].name}`);
     fireEvent.click(screen.getByRole('button', { name: '随机抽卡' }));
     fireEvent.change(screen.getByRole('searchbox'), { target: { value: entriesFor(kind)[1].name } });
-    await act(async () => { resolve([entriesFor(kind)[0]]); });
+    if (kind === 'character') await act(async () => { resolve([entriesFor(kind)[0]]); });
     await waitFor(() => expect(screen.getAllByTestId(/^cover-/)).toHaveLength(1));
     expect(screen.getByTestId(`cover-${entriesFor(kind)[1].name}`)).toBeTruthy();
     expect(screen.queryByText(/正在浏览随机抽取/)).toBeNull();

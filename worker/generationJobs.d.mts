@@ -14,6 +14,8 @@ export interface GenerationJobDescriptor {
   approvedCost: number;
   /** 完全访问的 Agent 本轮已授权生图费用，费用上涨无需再次确认。 */
   autoApproveCost?: boolean;
+  /** 同一次授权内逐张执行不同配方；数量必须与请求张数一致，不允许嵌套。 */
+  sequence?: GenerationJobDescriptor[];
 }
 export interface GenerationJobSnapshot {
   token: string; state: GenerationJobState; completedCount: number; requestedCount: number;
@@ -30,6 +32,7 @@ export interface GenerationJob<Context> {
   key: string; token: string; count: number; placement?: 'end' | 'next'; descriptor: GenerationJobDescriptor;
   context: Context; state: GenerationJobState; historyIds: string[]; approvedCost: number; cancelled: boolean;
   running: Promise<void>; lastSavedItem?: LocalGenItem; lastQueueTaskId?: string;
+  sequence?: GenerationJobDescriptor[];
 }
 export class GenerationJobs<Context = unknown, Output extends GenerationJobOutput = GenerationJobOutput> {
   constructor(options: {

@@ -21,6 +21,8 @@ interface ChainEditorPreviewProps {
     isOwner: boolean;
     isUploading: boolean;
     handleSavePreview: () => void;
+    onSaveArtistSample?: () => void;
+    savingArtistSample?: boolean;
     handleUploadCover: (e: React.ChangeEvent<HTMLInputElement>) => void;
     getDownloadFilename: () => string;
     generationData?: ImageGenerationData;
@@ -57,6 +59,8 @@ export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
     isOwner,
     isUploading,
     handleSavePreview,
+    onSaveArtistSample,
+    savingArtistSample,
     handleUploadCover,
     getDownloadFilename,
     generationData,
@@ -164,6 +168,8 @@ export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
                         onSetCover={generatedImage && isOwner && !hideCoverActions ? handleSavePreview : undefined}
                         onUploadCover={isOwner && !hideCoverActions ? handleUploadCover : undefined}
                         isUploading={isUploading}
+                        onSaveArtistSample={onSaveArtistSample}
+                        savingArtistSample={savingArtistSample}
                     />
                 </PressRevealSurface>
 

@@ -29,12 +29,13 @@ const DanbooruGallery = lazy(() => import('./components/DanbooruGallery').then(m
 const PixivGallery = lazy(() => import('./components/PixivGallery').then(module => ({ default: module.PixivGallery })));
 const CodexGallery = lazy(() => import('./components/CodexGallery').then(module => ({ default: module.CodexGallery })));
 const CharacterLibrary = lazy(() => import('./components/CharacterLibrary').then(module => ({ default: module.CharacterLibrary })));
+const StyleRollPage = lazy(() => import('./components/StyleRollPage').then(module => ({ default: module.StyleRollPage })));
 
-type ViewState = 'list' | 'characters' | 'edit' | 'library' | 'aitag' | 'danbooru' | 'pixiv' | 'codex' | 'inspiration' | 'history' | 'playground';
+type ViewState = 'list' | 'characters' | 'edit' | 'library' | 'aitag' | 'danbooru' | 'pixiv' | 'codex' | 'inspiration' | 'history' | 'playground' | 'roll';
 type KeepAliveView = Exclude<ViewState, 'edit'>;
 
 // 手机端实验室返回箭头的落点：只记录内容页，编辑器/实验室本身不作为返回落点。
-const LAB_ENTRY_VIEWS: ViewState[] = ['list', 'characters', 'library', 'aitag', 'danbooru', 'pixiv', 'codex', 'inspiration', 'history'];
+const LAB_ENTRY_VIEWS: ViewState[] = ['list', 'characters', 'library', 'aitag', 'danbooru', 'pixiv', 'codex', 'inspiration', 'history', 'roll'];
 
 const CACHE_TTL = 60 * 60 * 1000; // 1 Hour Cache
 
@@ -143,13 +144,13 @@ const App = () => {
     };
     const navigate = (event: Event) => {
       const detail = (event as CustomEvent).detail || {};
-      if (['list', 'characters', 'library', 'aitag', 'danbooru', 'pixiv', 'codex', 'inspiration', 'history', 'playground'].includes(detail.view)) {
+      if (['list', 'characters', 'library', 'aitag', 'danbooru', 'pixiv', 'codex', 'inspiration', 'history', 'playground', 'roll'].includes(detail.view)) {
         void handleNavigateRef.current(detail.view, detail.id, { externalImport: detail.externalImport === true });
       }
     };
     const navigatePage = (event: Event) => {
       const detail = (event as CustomEvent).detail;
-      if (!detail || !['list', 'characters', 'library', 'aitag', 'danbooru', 'pixiv', 'codex', 'inspiration', 'history', 'playground'].includes(detail.view)) { detail?.reject?.(new Error('页面不存在')); return; }
+      if (!detail || !['list', 'characters', 'library', 'aitag', 'danbooru', 'pixiv', 'codex', 'inspiration', 'history', 'playground', 'roll'].includes(detail.view)) { detail?.reject?.(new Error('页面不存在')); return; }
       void handleNavigateRef.current(detail.view).then(detail.resolve, detail.reject);
     };
     window.addEventListener('nai-agent-ui-preferences', applyPreferences);
@@ -753,6 +754,21 @@ const App = () => {
         />;
       case 'history':
         return <GenHistory currentUser={currentUser} chains={chains} notify={notify} onNavigateToPlayground={() => handleNavigate('playground', undefined, { externalImport: true })} onRefreshInspiration={() => loadInspirations(true)} />;
+      case 'roll':
+        return <StyleRollPage active={view === 'roll'} chains={chains} notify={notify}
+          continuousGenerationEnabled={appearancePreferences.continuousGenerationEnabled}
+          selectionFocusEnabled={appearancePreferences.gallerySelectionFocus}
+          enforceFreeStepLimit={appearancePreferences.enforceFreeStepLimit}
+          generationStreamPreview={appearancePreferences.generationStreamPreview}
+          onNavigateToPlayground={() => handleNavigate('playground', undefined, { externalImport: true })}
+          onOpenChain={id => { void handleNavigate('edit', id); }}
+          onSaveChain={async chain => {
+            const saved = await db.createChainWithData(chain.name, chain.description, chain, 'style');
+            recentCreatedChainsRef.current.set(saved.id, { chain: saved, revision: ++chainCreateRevisionRef.current });
+            setChains(current => [saved, ...current.filter(item => item.id !== saved.id)]);
+            setLastChainFetch(0);
+            return saved;
+          }} />;
       case 'playground':
         if (!playgroundChain) return <div>Loading...</div>;
         return <ChainEditor

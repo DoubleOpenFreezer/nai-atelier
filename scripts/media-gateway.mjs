@@ -1,5 +1,6 @@
 import { GenerationTasks, DEFAULT_GENERATION_INTERVAL_SECONDS, MAX_GENERATION_INTERVAL_SECONDS, validateGenerationInterval } from '../worker/generationTasks.mjs';
 import { createDesktopGenerationJobs, handleGenerationJobRequest } from './generation-gateway.mjs';
+import { parseHttpError } from '../services/httpErrors.mjs';
 import { normalizeLanguage, translate } from '../locales/index.mjs';
 import { execFile as nodeExecFile } from 'node:child_process';
 import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
@@ -30,7 +31,8 @@ import { createResponseMemoryCache, danbooruResponseTtl } from './media-memory-c
 import { createDanbooruLimiter, createDanbooruDiskCache } from './danbooru-loading.mjs';
 import { createDanbooruResponseFailure, createDanbooruNetworkFailure } from '../services/danbooruErrors.mjs';
 import { getLanUrls } from './local-server-runtime.mjs';
-import { storageLocationStatus, getStoragePreferences, getDefaultExportDirectory, pickStorageDirectory, validateStorageSwitch } from './storage-locations.mjs';
+import { storageLocationStatus, getStoragePreferences, updateStoragePreferences, getDefaultExportDirectory, pickStorageDirectory, validateStorageSwitch } from './storage-locations.mjs';
+import { createArtistSamples, validateArtistSampleSource, pickArtistSampleFile } from './artist-samples.mjs';
 import { handleExportLocationRequest } from './export-locations.mjs';
 
 const CACHE_VERSION = 'v1';
@@ -2120,9 +2122,8 @@ export const handleGenerateStreamRequest = async (req, res, lanSecret, workerPor
     generationSignal.throwIfAborted();
     if (generationProxyUrl) cloudQueue.update(keyHash, queueTaskId, { phase: 'generating', cancelable: false });
     if (!upstream.ok) {
-      const upstreamError = new Error(await upstream.text() || `NovelAI HTTP ${upstream.status}`);
-      upstreamError.status = upstream.status;
-      throw upstreamError;
+      const detail = parseHttpError(await upstream.text(), upstream.status, `NovelAI HTTP ${upstream.status}`);
+      throw Object.assign(new Error(detail.message), { status: upstream.status, ...(detail.code ? { code: detail.code } : {}) });
     }
     if (!upstream.body) throw Object.assign(new Error('NovelAI 流式接口没有返回响应体'), { status: 502 });
 
@@ -2359,6 +2360,7 @@ export const createThumbnailPreWarmer = ({ cache, loadOriginal, concurrency = PR
 
 export const getValidatedSource = value => {  const source = String(value || '');
   if (!source || source.length > SOURCE_LIMIT || /[\r\n]/.test(source)) throw new Error('Invalid image source');
+  if (source.startsWith('/api/artist-samples/')) { validateArtistSampleSource(source); return { type: 'artist-sample', source }; }
   if (source.startsWith('/api/assets/')) return { type: 'local', source };
   if (/^\/api\/(?:local-history\/[^/]+\/image|inspirations\/[^/]+\/image|vibes\/[^/]+\/(?:image|thumbnail)|character-references\/[^/]+\/(?:image|thumbnail))(?:\?.*)?$/.test(source)) return { type: 'local', source };
   const stChatu8History = source.match(/^\/api\/integrations\/st-chatu8\/history\/([a-f0-9]{64})\/image$/i);
@@ -2957,7 +2959,7 @@ export async function handleImageTaggerRequest(req, res, url, lanSecret, imageTa
   } catch (error) { return sendJson(res, Number(error.status) || (statusRequest ? 503 : url.pathname === '/api/image-tagger' ? 500 : 400), { error: error.message || '反推模型操作失败' }); }
 }
 
-export async function createMediaGateway({ port = 3000, workerPort = 3001, lanSecret = '', outboundProxyUrl = '', pixivFetch, pixivTokenDir, pixivWebLogin, requestStorageSwitch, pickDirectory = pickStorageDirectory } = {}) {
+export async function createMediaGateway({ port = 3000, workerPort = 3001, lanSecret = '', outboundProxyUrl = '', pixivFetch, pixivTokenDir, pixivWebLogin, requestStorageSwitch, pickDirectory = pickStorageDirectory, pickArtistFile = pickArtistSampleFile } = {}) {
 // 静态前端资源直接由网关从 dist/ 提供：页面与资源加载不依赖 workerd，也不占用其请求槽。
 const STATIC_CONTENT_TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -3001,6 +3003,7 @@ const serveDistFile = async (req, res, url) => {
 };
   const proxyAgent = outboundProxyUrl ? new ProxyAgent(outboundProxyUrl) : null;
   const remoteFetch = (url, options = {}) => undiciFetch(url, { ...options, ...(proxyAgent ? { dispatcher: proxyAgent } : {}) });
+  const artistSamples = createArtistSamples({ cacheDir: join(process.env.NAI_RESOURCE_ROOT || join(process.cwd(), 'local-cache'), 'artist-samples'), loadPreferences: () => getStoragePreferences(), savePreferences: patch => updateStoragePreferences(patch), pickFile: pickArtistFile, fetchRemote: remoteFetch });
   const danbooruResponseCache = createResponseMemoryCache({
     maxEntries: 256, maxBytes: 64 * 1024 * 1024,
     cacheable: value => {
@@ -3069,7 +3072,7 @@ const serveDistFile = async (req, res, url) => {
   // 图库浏览预热：feed/搜索返回后后台抓取缩略图写盘，滚动时缓存命中秒出。
   const thumbnailPreWarmer = createThumbnailPreWarmer({
     cache,
-    loadOriginal: source => requestRemoteBuffer(source, remoteFetch),
+    loadOriginal: source => source.startsWith('/api/artist-samples/') ? artistSamples.readImage(source) : requestRemoteBuffer(source, remoteFetch),
   });
   const promptAgent = new PromptAgentService({ lanSecret, outboundProxyUrl, getDefaultExportDirectory: () => getDefaultExportDirectory(process.cwd()) });
   const stChatu8Bridge = new StChatu8Bridge({
@@ -3129,6 +3132,7 @@ const serveDistFile = async (req, res, url) => {
       const validated = getValidatedSource(source);
       const loadOriginal = () => validated.type === 'local'
         ? requestWorkerBuffer(validated.source, internalWorkerRequest, workerPort)
+        : validated.type === 'artist-sample' ? artistSamples.readImage(validated.source)
         : validated.type === 'st-chatu8-history'
           ? stChatu8Bridge.readHistoryImage(validated.externalId).then(image => ({
             status: 200,
@@ -3204,6 +3208,25 @@ const serveDistFile = async (req, res, url) => {
     markUserTraffic();
     let url;
     try { url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`); } catch { return sendJson(res, 400, { error: 'Invalid request URL' }); }
+    if (url.pathname.startsWith('/api/artist-samples/')) {
+      if (!hasValidLanCookie(req, lanSecret)) return sendJson(res, 401, { error: '需要局域网访问密码', code: 'LAN_ACCESS_REQUIRED' });
+      const canManage = process.platform === 'win32' && collectorLocalRequest(req);
+      try {
+        if (req.method === 'GET' && url.pathname === '/api/artist-samples/status') return sendJson(res, 200, await artistSamples.status(canManage));
+        if (req.method === 'GET' && url.pathname === '/api/artist-samples/catalog') return sendJson(res, 200, await artistSamples.catalog(url.searchParams.get('pack')));
+        if (req.method === 'GET' && url.pathname === '/api/artist-samples/lookup') return sendJson(res, 200, await artistSamples.lookup(url.searchParams.get('pack'), url.searchParams.get('tag') || ''));
+        if (req.method === 'GET' && url.pathname === '/api/artist-samples/image') {
+          const image = await artistSamples.readImage(url.pathname + url.search);
+          res.writeHead(200, { 'Content-Type': image.headers['content-type'], 'Content-Length': image.buffer.length, 'Cache-Control': 'private, max-age=3600' }); return res.end(image.buffer);
+        }
+        if (url.pathname === '/api/artist-samples/control') {
+          if (req.method !== 'POST' || !canManage || req.headers['x-nai-local-control'] !== 'true') return sendJson(res, 403, { error: '画师图包管理只允许 Windows 电脑本机页面操作' });
+          const body = await readJsonBody(req, 4096), result = await artistSamples.control(body.action, body.pack);
+          return sendJson(res, 200, { ...result, status: await artistSamples.status(canManage) });
+        }
+        return sendJson(res, 404, { error: '未知画师样张接口' });
+      } catch (error) { return sendJson(res, error.status || 400, { error: error.code ? '画师图包文件不可读取，请重新选择或建立索引' : error.message || '画师图包读取失败' }); }
+    }
     if (url.pathname === '/api/local-maintenance/export-location') {
       return handleExportLocationRequest(req, res, { workspace: process.cwd(), canManage: collectorLocalRequest(req), pickDirectory,
         systemDirectory: process.env.NAI_PACKAGED === '1' ? process.env.NAI_EXPORT_SYSTEM_DIR || '' : '' });
@@ -3903,6 +3926,7 @@ const serveDistFile = async (req, res, url) => {
       const validated = getValidatedSource(url.searchParams.get('source'));
       const loadOriginal = () => validated.type === 'local'
         ? requestWorkerBuffer(validated.source, req, workerPort)
+        : validated.type === 'artist-sample' ? artistSamples.readImage(validated.source)
         : validated.type === 'st-chatu8-history'
           ? stChatu8Bridge.readHistoryImage(validated.externalId).then(image => ({
             status: 200,
@@ -3973,6 +3997,7 @@ const serveDistFile = async (req, res, url) => {
     void handleRequest(req, res).catch(error => sendJson(res, Number(error.status) || 500, { error: error.message || '请求失败' })).finally(() => activeHandlers.delete(req));
   });
   server.on('close', () => {
+    void artistSamples.close();
     generationJobs.close();
     void imageTagger.pauseDownload();
     styleCollector.shutdown();
@@ -3981,7 +4006,7 @@ const serveDistFile = async (req, res, url) => {
   });
   // close 可能等待 SSE 连接，先同步结束监听再进入 HTTP 关闭流程。
   const closeServer = server.close.bind(server);
-  server.close = (...args) => { generationJobs.close(); void imageTagger.pauseDownload(); styleCollector.shutdown(); for (const subscriber of collectorSubscribers) subscriber.end(); return closeServer(...args); };
+  server.close = (...args) => { artistSamples.close(); generationJobs.close(); void imageTagger.pauseDownload(); styleCollector.shutdown(); for (const subscriber of collectorSubscribers) subscriber.end(); return closeServer(...args); };
   const exitCollector = () => styleCollector.shutdown();
   process.once('exit', exitCollector);
   server.once('close', () => process.off('exit', exitCollector));
@@ -4002,14 +4027,14 @@ const serveDistFile = async (req, res, url) => {
     const otherRequest = req => !String(req.url).startsWith('/api/local-maintenance/storage');
     const writingHandler = req => otherRequest(req) && !['GET', 'HEAD', 'OPTIONS'].includes(req.method);
     if (tasks.size || [...activeWrites].some(otherRequest) || [...activeHandlers].some(writingHandler) || localBackupService.status.running || promptAgent.activeAgents.size || promptAgent.startingAgents.size
-      || styleCollector.run || imageTagger.busy || imageTagger.changing || imageTagger.download || stChatu8Bridge.historySyncPromise || historyIndexStatus.running || cache.activeJobs) {
+      || styleCollector.run || imageTagger.busy || imageTagger.changing || imageTagger.download || artistSamples.busy() || stChatu8Bridge.historySyncPromise || historyIndexStatus.running || cache.activeJobs) {
       throw new Error('请先结束生成、助手、收集、备份、模型或词库任务，再切换存储位置');
     }
     updating = true;
   };
   server.prepareUpdate = () => {
     if (tasks.size || activeWrites.size || activeHandlers.size || localBackupService.status.running || promptAgent.activeAgents.size || promptAgent.startingAgents.size
-      || styleCollector.run || imageTagger.busy || imageTagger.changing || imageTagger.download || stChatu8Bridge.historySyncPromise || historyIndexStatus.running) {
+      || styleCollector.run || imageTagger.busy || imageTagger.changing || imageTagger.download || artistSamples.busy() || stChatu8Bridge.historySyncPromise || historyIndexStatus.running) {
       throw new Error('生成、Agent、收集、备份或数据写入仍在进行，请完成并关闭收集模式后再安装');
     }
     updating = true;

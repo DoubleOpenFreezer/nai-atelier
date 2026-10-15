@@ -50,6 +50,7 @@ export const parseGenerationJobBody = (raw: string): GenerationJobDescriptor => 
     stream: parsed.stream === true,
     approvedCost: parsed.approvedCost,
     ...(parsed.autoApproveCost === true ? { autoApproveCost: true } : {}),
+    ...(parsed.sequence !== undefined ? { sequence: parsed.sequence as GenerationJobDescriptor[] } : {}),
   };
 };
 

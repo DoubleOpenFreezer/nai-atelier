@@ -1,6 +1,6 @@
 import { t, useLanguage } from '../services/i18n';
 import React, { useRef } from 'react';
-import { ArrowLeft, Check, Image, ImageMinus, ListX, LoaderCircle, Upload } from 'lucide-react';
+import { ArrowLeft, Check, Image, ImageMinus, ListX, LoaderCircle, Palette, Upload } from 'lucide-react';
 import { IMAGE_CARD_ACTION_CLASS, ImageShareActions } from './ImageShareActions';
 import type { CollectionTarget } from '../services/collectionFavorites';
 import type { ImageGenerationData } from '../services/imageClipboardContext';
@@ -19,6 +19,8 @@ interface Props {
   onSetCover?: () => void;
   onUploadCover?: (event: React.ChangeEvent<HTMLInputElement>) => void;
   isUploading?: boolean;
+  onSaveArtistSample?: () => void;
+  savingArtistSample?: boolean;
   onBack?: () => void;
   backButtonRef?: React.Ref<HTMLButtonElement>;
 }
@@ -26,7 +28,7 @@ interface Props {
 /** 小图与大图共用操作位置、紧凑尺寸及权限，仅大图增加返回入口。 */
 export const ImagePreviewActions: React.FC<Props> = ({
   imageUrl, filename, generationData, favorite, notify, canManageHistoryGroup, onRemoveCurrentHistory, onClearHistoryGroup,
-  onSetCover, onUploadCover, isUploading = false, onBack, backButtonRef,
+  onSetCover, onUploadCover, isUploading = false, onSaveArtistSample, savingArtistSample = false, onBack, backButtonRef,
 }) => {
   useLanguage();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -43,6 +45,9 @@ export const ImagePreviewActions: React.FC<Props> = ({
     </div>}
     {imageUrl && <div data-card-action="true" className={`absolute top-4 right-4 z-30 flex flex-col items-center gap-2`} onClick={event => event.stopPropagation()}>
       <ImageShareActions imageUrl={imageUrl} generationData={generationData} favorite={favorite} filename={filename} notify={notify} variant="card" className="flex-col" revealClassName={visibility} />
+      {onSaveArtistSample && <button type="button" onClick={onSaveArtistSample} disabled={savingArtistSample} aria-busy={savingArtistSample} aria-label={t('保存为画师样张')} title={t('保存为画师样张')} className={`${visibility} ${IMAGE_PREVIEW_BUTTON_CLASS}`}>
+        {savingArtistSample ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Palette className="h-4 w-4" />}
+      </button>}
       {onSetCover && <button type="button" onClick={onSetCover} disabled={isUploading} aria-busy={isUploading} aria-label={t("设为封面")} title={isUploading ? t("封面处理中…") : t("设为封面并保存")} className={`${visibility} ${IMAGE_PREVIEW_BUTTON_CLASS} !bg-indigo-600/90 hover:!bg-indigo-600`}>
         {isUploading ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" /> : <span className="relative h-4 w-4" aria-hidden="true"><Image className="h-4 w-4" /><Check className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-indigo-600" strokeWidth={3} /></span>}
       </button>}

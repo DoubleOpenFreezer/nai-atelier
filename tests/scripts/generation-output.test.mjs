@@ -12,6 +12,29 @@ import { GenerationJobs } from '../../worker/generationJobs.mjs';
 const png = async (width, height, rgba) => sharp({ create: { width, height, channels: 4, background: { r: rgba[0], g: rgba[1], b: rgba[2], alpha: rgba[3] / 255 } } }).png().toBuffer();
 const uri = bytes => 'data:image/png;base64,' + bytes.toString('base64');
 
+test('第六张返回502网页时停止任务并保留前五张，回执不暴露HTML，不自动重试', async () => {
+  let requests = 0;
+  const html = '<!DOCTYPE html><html><title>novelai.net | 502: Bad gateway</title><body>synthetic-ray-id</body></html>';
+  const jobs = new GenerationJobs({ tasks: new GenerationTasks({ intervalSeconds: 0 }), validate: () => {}, estimate: async () => 0, readCleanup: () => undefined,
+    generate: async () => { if (++requests === 6) return readGenerationResponse(new Response(html, { status: 502 })); return { seed: requests }; },
+    save: async (_job, output, metadata) => ({ ...metadata, id: `saved-${output.seed}`, imageUrl: `/synthetic/${output.seed}.png` }),
+  });
+  const descriptor = { payload: { model: 'synthetic', action: 'generate', parameters: { n_samples: 1 } }, history: { prompt: 'synthetic', params: {} }, approvedCost: 0 };
+  jobs.start('synthetic-key', 'synthetic-http-error-token', 6, undefined, descriptor, {});
+  const job = jobs.get('synthetic-key', 'synthetic-http-error-token'); await job.running;
+  const snapshot = jobs.snapshot(job);
+  assert.equal(snapshot.state, 'failed'); assert.equal(snapshot.completedCount, 5); assert.equal(snapshot.requestedCount, 6);
+  assert.deepEqual(snapshot.historyIds, ['saved-1', 'saved-2', 'saved-3', 'saved-4', 'saved-5']);
+  assert.equal(snapshot.error, '服务暂时不可用 (HTTP 502)，请稍后重试'); assert.equal(requests, 6);
+  assert.doesNotMatch(snapshot.error, /DOCTYPE|synthetic-ray-id|<html/);
+});
+
+test('JSON中的HTML及SSE错误帧共用简明错误说明，保留业务错误码', async () => {
+  const html = '<html><body>synthetic upstream error</body></html>';
+  await assert.rejects(readGenerationResponse(new Response(JSON.stringify({ error: html, code: 'UPSTREAM_DOWN' }), { status: 503 })), { message: '服务暂时不可用 (HTTP 503)，请稍后重试', code: 'UPSTREAM_DOWN', status: 503 });
+  await assert.rejects(readGenerationResponse(new Response(`event: error\ndata: ${JSON.stringify({ message: html })}\n\n`, { headers: { 'Content-Type': 'text/event-stream' } })), { message: '服务返回了错误页面，请稍后重试', code: 'generation_failed' });
+});
+
 for (const stream of [false, true]) test(`电脑预览 ${stream}：上游尚在排队时任务已带公共任务标识与状态`, async t => {
   const records = new Map(); let finish;
   const previous = globalThis.fetch; t.after(() => { globalThis.fetch = previous; });

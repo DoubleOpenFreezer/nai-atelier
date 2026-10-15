@@ -16,6 +16,12 @@ it('读取真正当前页面，排除隐藏保活页、聊天与密钥；危险�
   expect(page.controls.find(item => item.label === '生成图片')?.actions).toEqual([]);
   expect(page.controls.find(item => item.label === '打开图片')?.actions).toContain('click');
 });
+it('Roll 串可识别为前景页，生图与费用确认仍通过业务标记隔离', () => {
+  document.body.innerHTML = '<main data-agent-view="roll"><button>Roll</button><button data-agent-action="business">生成对照图</button><button data-agent-action="business">确认费用</button></main>';
+  const page = readAgentPage(); expect(page.title).toBe('Roll 串');
+  expect(page.controls.find(item => item.label === 'Roll')?.actions).toContain('click');
+  for (const label of ['生成对照图', '确认费用']) expect(page.controls.find(item => item.label === label)?.actions).toEqual([]);
+});
 it('填入字段后返回新页面；输入变化后旧编号失效', async () => {
   const page = readAgentPage(), field = page.controls.find(item => item.label === '搜索作品')!;
   const next = await operateAgentPage({ action: 'fill', snapshotId: page.snapshotId, controlId: field.id, value: '星空' });

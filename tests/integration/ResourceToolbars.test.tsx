@@ -27,6 +27,11 @@ vi.mock('../../services/tagDictionary', async importOriginal => ({
   getArtistDictionaryPage: vi.fn(async () => ({ entries: [], total: 12, page: 0, pageCount: 1 })),
   getCharacterDictionaryPage: vi.fn(async () => ({ entries: [], total: 12, page: 0, pageCount: 1 })),
 }));
+vi.mock('../../services/artistSamples', async original => ({ ...await original<typeof import('../../services/artistSamples')>(),
+  getArtistSampleStatus: vi.fn(async () => ({ available: true, canManage: true, packs: [{ id: 'v45', phase: 'unconfigured' }] })),
+  getArtistSampleDictionary: vi.fn(async () => []),
+}));
+vi.mock('../../services/artistSampleDrafts', () => ({ getArtistSampleData: vi.fn(async () => ({ templates: {}, samples: [] })), prepareArtistSampleImport: vi.fn() }));
 vi.mock('../../services/naiRuntime', async importOriginal => {
   const actual = await importOriginal<typeof import('../../services/naiRuntime')>();
   return { ...actual, getNaiRuntimeConfig: vi.fn(async () => actual.DEFAULT_NAI_RUNTIME) };

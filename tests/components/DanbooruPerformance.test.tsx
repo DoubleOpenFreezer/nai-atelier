@@ -15,9 +15,9 @@ it('自动列数按实际内容宽度收缩，忽略隐藏宽度，固定桌面�
     disconnect() {}
   });
   const preferences: MobileImageDisplayPreferences = { layout: 'portrait', columns: 'auto', desktopColumns: 'auto' };
-  function Gallery({ value, override }: { value: MobileImageDisplayPreferences; override?: number }) {
+  function Gallery({ value, override, minimumCardWidth }: { value: MobileImageDisplayPreferences; override?: number; minimumCardWidth?: number }) {
     const ref = React.useRef<HTMLDivElement>(null);
-    const count = useMasonryColumnCount(value, override, ref);
+    const count = useMasonryColumnCount(value, override, ref, minimumCardWidth);
     return <div ref={ref} data-testid="columns" style={mobileGalleryStyle(value, count)}>{count}</div>;
   }
   const { rerender } = render(<Gallery value={preferences} />);
@@ -30,6 +30,9 @@ it('自动列数按实际内容宽度收缩，忽略隐藏宽度，固定桌面�
   act(() => resize(0)); expectColumns(3);
   act(() => resize(756)); expectColumns(4);
   act(() => resize(1400)); expectColumns(5);
+  rerender(<Gallery value={preferences} minimumCardWidth={240} />); act(() => resize(840)); expectColumns(3);
+  act(() => resize(500)); expectColumns(2);
+  rerender(<Gallery value={preferences} />);
   rerender(<Gallery value={{ ...preferences, desktopColumns: 5 }} />); act(() => resize(300)); expectColumns(5);
   rerender(<Gallery value={preferences} override={6} />); expectColumns(6);
   vi.stubGlobal('innerWidth', 390); act(() => window.dispatchEvent(new Event('resize'))); expectColumns(2);

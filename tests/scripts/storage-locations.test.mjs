@@ -55,7 +55,7 @@ async function fixture(mode = 'source') {
   const root = createWorkspace('storage-locations-'), source = join(root, 'original'), target = join(root, 'new'), anchor = join(root, 'anchor');
   const workspace = mode === 'desktop' ? join(source, 'workspace') : source;
   for (const directory of ['local-data/v3/d1', 'local-data/v3/r2', 'local-cache/models', 'public/tag-data']) await mkdir(join(workspace, directory), { recursive: true });
-  for (const [name, value] of Object.entries({ 'local-data/v3/d1/database.sqlite': 'synthetic-db', 'local-data/v3/r2/image.bin': 'synthetic-original', 'local-data/prompt-agent-sessions/chat.json': 'synthetic-conversation', 'local-cache/models/model.onnx': 'synthetic-model', 'public/tag-data/manifest.json': 'synthetic-tags', 'wrangler.toml': config })) {
+  for (const [name, value] of Object.entries({ 'local-data/v3/d1/database.sqlite': 'synthetic-db', 'local-data/v3/r2/image.bin': 'synthetic-original', 'local-data/prompt-agent-sessions/chat.json': 'synthetic-conversation', 'local-cache/models/model.onnx': 'synthetic-model', 'local-cache/artist-samples/packs/artist_thumbnail_nai': 'synthetic-artist-pack', 'local-cache/artist-samples/packs/NAID5-33000-55000-Curated.download': 'synthetic-partial-pack', 'local-cache/artist-samples/v45-index.json': 'synthetic-index', 'public/tag-data/manifest.json': 'synthetic-tags', 'wrangler.toml': config })) {
     await mkdir(join(workspace, name, '..'), { recursive: true }); await writeFile(join(workspace, name), value);
   }
   if (mode === 'desktop') {
@@ -71,7 +71,7 @@ for (const mode of ['source', 'desktop']) test(`${mode} 复制核验后切入口
   try {
     const states = []; const result = await executeStorageSwitch(job, { progress: async state => states.push(state) });
     assert.equal(await resolveStorageDataRoot(job.anchor, job.source), job.target);
-    for (const name of ['local-data/v3/d1/database.sqlite', 'local-data/v3/r2/image.bin', 'local-data/prompt-agent-sessions/chat.json', 'local-cache/models/model.onnx', 'public/tag-data/manifest.json', 'wrangler.toml']) assert.equal(await readFile(join(job.workspace, name), 'utf8'), await readFile(join(result.workspaceDir, name), 'utf8'));
+    for (const name of ['local-data/v3/d1/database.sqlite', 'local-data/v3/r2/image.bin', 'local-data/prompt-agent-sessions/chat.json', 'local-cache/models/model.onnx', 'local-cache/artist-samples/packs/artist_thumbnail_nai', 'local-cache/artist-samples/packs/NAID5-33000-55000-Curated.download', 'public/tag-data/manifest.json', 'wrangler.toml']) assert.equal(await readFile(join(job.workspace, name), 'utf8'), await readFile(join(result.workspaceDir, name), 'utf8'));
     assert.equal(await readFile(join(result.workspaceDir, 'wrangler.toml'), 'utf8'), config);
     assert.equal(states.at(-1).phase, 'switching');
     if (mode === 'desktop') for (const name of ['browser/Preferences', 'language-preferences.json', 'update-preferences.json']) assert.equal(await readFile(join(job.source, name), 'utf8'), await readFile(join(job.target, name), 'utf8'));
@@ -163,17 +163,19 @@ test('已选数据目录丢失或标记损坏时启动停止，不静默建立�
     assert.equal(await readFile(join(job.workspace, 'local-data/v3/r2/image.bin'), 'utf8'), 'synthetic-original');
   } finally { removeWorkspace(root); }
 });
-test('缓存单独迁移只复制四类资源，不带原图/会话/付费恢复，偏好与导出设置共存', async () => {
+test('缓存单独迁移包含图包及续传副本，不带原图/会话/付费恢复，偏好与导出设置共存', async () => {
   const { root, job } = await fixture();
   try {
     await updateStoragePreferences({ exportDir: join(root, 'exports'), exportMode: 'directory' }, job.workspace);
     await executeStorageSwitch({ ...job, kind: 'cache', source: join(job.workspace, 'local-cache') });
     assert.equal(await readFile(join(job.target, 'models/model.onnx'), 'utf8'), 'synthetic-model');
     assert.equal(await readFile(join(job.target, 'tag-data/manifest.json'), 'utf8'), 'synthetic-tags');
+    for (const name of ['packs/artist_thumbnail_nai', 'packs/NAID5-33000-55000-Curated.download', 'v45-index.json']) assert.equal(await readFile(join(job.target, 'artist-samples', name), 'utf8'), await readFile(join(job.workspace, 'local-cache/artist-samples', name), 'utf8'));
     assert.ok(!(await readdir(job.target)).includes('local-data'));
     assert.deepEqual(await getStoragePreferences(job.workspace), { exportDir: join(root, 'exports'), exportMode: 'directory', cacheDir: job.target, resourceLayout: 'unified' });
     assert.equal(storageResourcePaths(job.workspace).tagData, join(job.workspace, 'public', 'tag-data'));
     assert.equal(storageResourcePaths(job.workspace, job.target).tagData, join(job.target, 'tag-data'));
+    assert.equal(storageResourcePaths(job.workspace, job.target).artistSamples, join(job.target, 'artist-samples'));
     assert.equal(await resolveStorageDataRoot(job.anchor, job.source), job.source);
   } finally { removeWorkspace(root); }
 });
@@ -240,6 +242,8 @@ test('恢复跟随工坊时保留旧默认缓存，带回新词库及模型，�
     await executeStorageSwitch({ ...job, kind: 'cache', source: custom, target: join(job.workspace, 'local-cache'), currentCacheDir: custom, followData: true });
     assert.equal(await readFile(join(job.workspace, 'local-cache/models/model.onnx'), 'utf8'), 'updated-model');
     assert.equal(await readFile(join(job.workspace, 'local-cache/tag-data/manifest.json'), 'utf8'), 'synthetic-tags');
+    assert.equal(await readFile(join(job.workspace, 'local-cache/artist-samples/packs/artist_thumbnail_nai'), 'utf8'), 'synthetic-artist-pack');
+    assert.equal(await readFile(join(job.workspace, 'local-cache/artist-samples/packs/NAID5-33000-55000-Curated.download'), 'utf8'), 'synthetic-partial-pack');
     assert.equal((await getStoragePreferences(job.workspace)).cacheDir, '');
     assert.equal(await readFile(join(custom, 'models/model.onnx'), 'utf8'), 'updated-model');
     assert.equal(await readFile(join(job.workspace, 'local-data/v3/r2/image.bin'), 'utf8'), 'synthetic-original');

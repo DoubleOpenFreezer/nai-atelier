@@ -61,6 +61,23 @@ test('通用中转识别任意域名、端口与前缀，只接受明确的兼�
 });
 
 const proxyPreferences = { ...preferences, serviceUrl: 'https://relay.example/prefix/ai/generate-image/' };
+for (const wrapped of [false, true]) test(`流式上游502错误网页（JSON包装=${wrapped}）不会进入排队状态或错误响应，不结算或重试`, async () => {
+  const html = '<!DOCTYPE html><html><title>502 Bad Gateway</title><body>synthetic-ray</body></html>';
+  const q = setup(async () => assert.fail('中转不得调用独立队列'));
+  const taskId = `html-error-${wrapped}`; let calls = 0;
+  const { pending, res } = run(handleGenerateStreamRequest, q, async () => {
+    calls++; return new Response(wrapped ? JSON.stringify({ error: html, code: 'UPSTREAM_DOWN' }) : html, { status: 502 });
+  }, taskId, undefined, { settleGeneration: () => assert.fail('失败不结算') }, 'generate', proxyPreferences);
+  await pending;
+  assert.equal(calls, 1); assert.equal(res.statusCode, 502);
+  const payload = JSON.parse(res.body());
+  assert.equal(payload.error, '服务暂时不可用 (HTTP 502)，请稍后重试');
+  if (wrapped) assert.equal(payload.code, 'UPSTREAM_DOWN');
+  assert.equal(q.get(testKeyHash, taskId).error, payload.error);
+  assert.equal(q.get(testKeyHash, taskId).phase, 'error'); assert.equal(q.get(testKeyHash, taskId).controller, null);
+  assert.doesNotMatch(res.body(), /DOCTYPE|synthetic-ray|<html/);
+});
+
 for (const handler of handlers) {
   for (const action of modes) {
     test(`成员网关 ${handler === handleGenerateRequest ? 'ZIP' : '预览入口'} ${action}：Medium 参数原样透传，一次请求普通 ZIP`, async () => {

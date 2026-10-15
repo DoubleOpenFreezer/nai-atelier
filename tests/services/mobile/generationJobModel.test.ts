@@ -16,6 +16,10 @@ const idOf = (key: string, token = TOKEN) => `${key}\u0000${token}`;
 // 只推进微任务：保活释放由 running 的 finally 触发，不依赖真实时钟。
 const flush = async () => { for (let index = 0; index < 8; index += 1) await Promise.resolve(); };
 const json = (response: Response) => response.json() as Promise<Record<string, unknown>>;
+it('手机解析保留一轮不同配方，深层验证继续交给共享任务引擎', () => {
+  const entries = [0, 1].map(seed => ({ payload: { action: 'generate', model: 'nai-diffusion-5-full', parameters: { n_samples: 1, seed } }, history: { prompt: `synthetic-${seed}`, negativePrompt: '', params: { seed } }, randomSeed: false, stream: false, approvedCost: 0 }));
+  expect(parseGenerationJobBody(JSON.stringify({ ...entries[0], sequence: entries })).sequence).toEqual(entries);
+});
 
 const descriptorOf = (approvedCost = 4): GenerationJobDescriptor => ({
   payload: { model: 'nai-diffusion-4-5-full', action: 'generate', parameters: { n_samples: 1 } },

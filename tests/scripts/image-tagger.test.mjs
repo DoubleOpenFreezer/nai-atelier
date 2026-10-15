@@ -42,6 +42,16 @@ test('fresh download reports bytes, verifies digest and atomically promotes file
   await assert.rejects(stat(`${f.path}.download`), { code: 'ENOENT' });
 });
 
+test('共享下载器支持注册资源远端子路径，保留本地短文件名与默认模型地址', async t => {
+  const f = await fixture(t);
+  await downloadTaggerFile({ ...f.options, file: { ...f.file, sourcePath: 'nested/artist_thumbnail_nai', label: '画师图包' }, fetchRemote: async url => {
+    assert.ok(url.endsWith('/nested/artist_thumbnail_nai')); return new Response(bytes);
+  } });
+  assert.deepEqual(await readFile(f.path), bytes);
+  const controller = new AbortController(); controller.abort();
+  await assert.rejects(verifiedFile(f.path, f.file, controller.signal), { name: 'AbortError' });
+});
+
 test('interrupted download resumes exact bytes; server ignoring Range restarts safely', async t => {
   const f = await fixture(t);
   for (const supportsRange of [true, false]) {

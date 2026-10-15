@@ -1,3 +1,5 @@
+import { parseHttpError } from './httpErrors.mjs';
+
 export const CLOUD_QUEUE_SERVICE_URL = '';
 
 export interface CloudQueuePreferences {
@@ -60,7 +62,7 @@ export const getCloudQueuePreferences = async (): Promise<CloudQueuePreferences>
     if (response.status === 401 && payload?.code === 'LAN_ACCESS_REQUIRED') {
       window.dispatchEvent(new CustomEvent('nai-lan-access-required'));
     }
-    throw new Error(payload?.error || await response.text());
+    throw new Error(parseHttpError(await response.text(), response.status).message);
   }
   const next = normalizePreferences(await response.json());
   if (getActiveApiKey() !== requestedApiKey) return getCachedCloudQueuePreferences();
@@ -80,7 +82,7 @@ export const setCloudQueuePreferences = async (preferences: CloudQueuePreference
     if (response.status === 401 && payload?.code === 'LAN_ACCESS_REQUIRED') {
       window.dispatchEvent(new CustomEvent('nai-lan-access-required'));
     }
-    throw new Error(payload?.error || await response.text());
+    throw new Error(parseHttpError(await response.text(), response.status).message);
   }
   const next = normalizePreferences(await response.json());
   if (getActiveApiKey() !== requestedApiKey) return getCachedCloudQueuePreferences();
@@ -111,6 +113,8 @@ export const emitCloudQueueStatus = (status: CloudQueueStatus | null, sourceApiK
   currentQueueStatus = status && currentQueueStatus?.taskId === status.taskId && currentQueueStatusKey === normalizedSourceApiKey
     ? { ...status, proxy: status.proxy ?? currentQueueStatus.proxy, cleanupError: status.cleanupError || currentQueueStatus.cleanupError }
     : status;
+  if (currentQueueStatus?.error) currentQueueStatus = { ...currentQueueStatus, error: parseHttpError(currentQueueStatus.error).message };
+  if (currentQueueStatus?.cleanupError) currentQueueStatus = { ...currentQueueStatus, cleanupError: parseHttpError(currentQueueStatus.cleanupError).message };
   currentQueueStatusKey = status ? normalizedSourceApiKey : '';
   statusListeners.forEach(listener => listener());
   window.dispatchEvent(new CustomEvent('nai-cloud-queue-status', { detail: currentQueueStatus }));

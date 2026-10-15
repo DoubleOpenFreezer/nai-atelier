@@ -24,6 +24,7 @@ const gatewayExports = ['getNaiRuntime','applyNaiRuntimeOverride','computeNaiRun
 const gatewaySource = extractAndroidShared(path.join(root, 'scripts/media-gateway.mjs'), gatewayExports,
   `import { createHash,createHmac,randomUUID,randomBytes,timingSafeEqual } from '/mobile/shims/crypto.mjs';
 import { Buffer } from 'buffer';
+import { parseHttpError } from '/services/httpErrors.mjs';
 import { dirname,join } from 'path-browserify';
 import { mkdir,readFile,readdir,rename,unlink,writeFile } from '/mobile/shims/fs.mjs';
 import { readRequestBody,requestWorkerJson,requestWorkerBuffer } from '/mobile/node-http';
@@ -58,7 +59,8 @@ const remote=extractAndroidShared(path.join(root,'scripts/media-gateway.mjs'),['
 const generationOutput=extractAndroidShared(path.join(root,'scripts/generation-output.mjs'),
   ['generationImageBytes','readGenerationResponse','generationHistoryForm'],
   `import JSZip from 'jszip';
-import { Buffer } from 'buffer';`);
+import { Buffer } from 'buffer';
+import { parseHttpError } from '/services/httpErrors.mjs';`);
 const pixivLogin=extractAndroidShared(path.join(root,'scripts/pixiv-web-login.mjs'),['PixivWebLoginOrchestrator'],
 `import {createHash,randomBytes} from '/mobile/shims/crypto.mjs';
 import {PIXIV_APP_CLIENT_ID,PIXIV_APP_CLIENT_SECRET,PIXIV_HASH_SECRET,PIXIV_OAUTH_TOKEN_URL,PIXIV_USER_AGENT} from '/scripts/pixiv-local.mjs';

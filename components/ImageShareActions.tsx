@@ -90,7 +90,7 @@ export const ImageShareActions: React.FC<Props> = ({ imageUrl, filename, notify,
       {!iconOnly && <span>{t('收藏')}</span>}
     </button>
     {actions.map(({ action, label, title, Icon }) => <button
-      key={action} type="button" title={title} aria-label={title}
+      key={action} type="button" title={t(title)} aria-label={t(title)}
       disabled={Boolean(busy)} onClick={() => void perform(action)}
       className={`${variant === 'card' ? revealClassName : ''} ${variant === 'overlay' || variant === 'card' ? '' : 'mobile-touch min-h-10'} inline-flex shrink-0 items-center justify-center gap-1.5 whitespace-nowrap transition disabled:cursor-wait disabled:opacity-50 ${buttonClass} ${variant === 'compact' ? '!h-10 !w-10 !px-0' : ''}`}
     >

@@ -223,7 +223,9 @@ export async function deleteR2File(env: Env, url: string, db: D1Database) {
           EXISTS(SELECT 1 FROM local_generation_history WHERE image_key = ?) OR
           EXISTS(SELECT 1 FROM artists WHERE image_url IN (SELECT value FROM asset_urls) OR preview_url IN (SELECT value FROM asset_urls)) OR
           EXISTS(SELECT 1 FROM artists, json_each(CASE WHEN json_valid(benchmarks) THEN benchmarks ELSE '[]' END)
-            WHERE json_each.value IN (SELECT value FROM asset_urls)) AS referenced`)
+            WHERE json_each.value IN (SELECT value FROM asset_urls)) OR
+          EXISTS(SELECT 1 FROM settings WHERE key LIKE 'artist_sample_v1:%' AND
+            json_extract(CASE WHEN json_valid(value) THEN value ELSE '{}' END, '$.imageUrl') IN (SELECT value FROM asset_urls)) AS referenced`)
           .bind(JSON.stringify(assetUrls), key, key)
           .first<{ referenced: number }>();
         if (!reference || reference.referenced) return;

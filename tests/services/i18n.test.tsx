@@ -15,6 +15,24 @@ beforeEach(() => { localStorage.clear(); delete window.atelierLanguage; restoreL
 afterEach(() => { cleanup(); delete window.atelierLanguage; setLanguage('zh-CN'); vi.restoreAllMocks(); });
 
 describe('界面语言', () => {
+  it('画师图包管理与补图生成入口具备完整译文，数量与画师占位保持准确', () => {
+    for (const language of LANGUAGES.filter(item => item.code !== 'zh-CN')) {
+      for (const key of ['画师预览图库', '补图生成设置', '保存并进入实验室', '图包管理', '解除关联（不删文件）', '正在读取配置…']) expect(translate(language.code, key)).not.toBe(key);
+      const ready = translate(language.code, '可用 · {0} 个画师 Tag', [6145]);
+      expect(ready).toContain('6145'); expect(ready).not.toContain('{0}');
+      expect(translate(language.code, '自建配置，用于补充缺失样张。{artist} 会替换为画师 Tag。')).toContain('{artist}');
+    }
+  });
+  it('Roll 串的操作、数量、错误与画风占位符具备四种译文，切语言不改原 Tag', () => {
+    for (const language of LANGUAGES.filter(item => item.code !== 'zh-CN')) {
+      for (const key of ['生成对照图', '新建实验', '撤销上次对比', '已评价候选的对照图不可替换', '从风格串提取画师', '权重测试', '继续测试权重', '保存微调后的画风', '手动调整权重', '保持画师不变，自动生成不同权重的图片，再由你选择。', '对比已有图片，选出偏好的画风；不会生成新图。']) expect(translate(language.code, key)).not.toBe(key);
+      expect(translate(language.code, '画风对比')).toBe(({ 'zh-TW': '畫風比較', en: 'Style comparison', ja: '画風比較', ko: '화풍 비교' } as Record<string, string>)[language.code]);
+      expect(translate(language.code, '公共提示词（{style} 为画风位置）')).toContain('{style}');
+      expect(translate(language.code, '{0} 次对比', [12])).toContain('12');
+      expect(translate(language.code, '权重测试 · ±{0} · 剩余 {1} 套', [0.3, 2])).toContain('0.3');
+      expect(translate(language.code, '锁定画师：{0}', ['alpha_artist (style)'])).toContain('alpha_artist (style)');
+    }
+  });
   it('收藏批量导入的操作与结果具备完整译文，用户文件名和数量保持原样', () => {
     for (const language of LANGUAGES.filter(item => item.code !== 'zh-CN')) {
       for (const key of ['公共标签', '追加图片', '选择或拖入图片', '待导入', '读取失败', '图片已保存，但收藏库刷新失败', '拖入本地图片，加入收藏库', '生成信息（可选）']) expect(translate(language.code, key)).not.toBe(key);
@@ -110,6 +128,15 @@ describe('界面语言', () => {
     expect(t('删除“{0}”？', ['取消'])).toBe('Delete “取消”?');
     expect(t('保存失败：D:\\图片\\取消.png')).toBe('Save failed: D:\\图片\\取消.png');
     expect(t('已加载 {0} 条 · 共 {1} 条', [12, 31])).toBe('12 loaded · 31 total');
+  });
+
+  it('网关错误说明按当前语言翻译，保留502状态且不留下占位符', () => {
+    for (const language of LANGUAGES.filter(item => item.code !== 'zh-CN')) {
+      const source = '服务暂时不可用 (HTTP 502)，请稍后重试';
+      const message = translate(language.code, source);
+      expect(message).not.toBe(source); expect(message).toContain('502'); expect(message).not.toContain('{0}');
+      expect(translate(language.code, '服务返回了错误页面，请稍后重试')).not.toBe('服务返回了错误页面，请稍后重试');
+    }
   });
 
   it('词典包含所有界面显式翻译入口，四种译文都完整保留占位符', () => {

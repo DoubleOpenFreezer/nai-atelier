@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   abortMobileThumbnailRequests,
   acquireMobileThumbnailUrl,
+  canUseMediaGateway,
   getMobileOriginalUrl,
   ratchetVariantWidth,
   selectThumbnailVariant,
@@ -10,6 +11,10 @@ import {
 } from '../../services/mobileImageCache';
 
 describe('selectThumbnailVariant', () => {
+  it('本地图包样张复用网关缩略图，不能把任意本机路径当图源', () => {
+    expect(canUseMediaGateway('/api/artist-samples/image?pack=v5&tag=test&index=0&revision=abc')).toBe(true);
+    expect(canUseMediaGateway('file:///D:/private/image.png')).toBe(false);
+  });
   it('按像素宽落入正确档位', () => {
     expect(selectThumbnailVariant(100)).toBe('thumb-160');
     expect(selectThumbnailVariant(200)).toBe('thumb-240');

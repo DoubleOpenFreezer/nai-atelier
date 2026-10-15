@@ -26,6 +26,34 @@ const setup = (overrides = {}) => {
   return { tasks, jobs, calls, advance: value => { now += value; } };
 };
 
+test('一轮不同配方只占一个执行位，按顺序估价、生成和保存各自元数据', async () => {
+  const seen = [], saved = [], estimated = [];
+  const f = setup({ estimate: async job => { estimated.push(job.descriptor.history.prompt); return 0; },
+    generate: async (job, payload) => { seen.push([job.token, payload.parameters.seed, payload.parameters.prompt]); return { seed: payload.parameters.seed }; },
+    save: async (_job, _out, metadata) => { saved.push(metadata); return { ...metadata, imageUrl: '/synthetic.png' }; },
+  });
+  const entries = ['first', 'second', 'third'].map((prompt, index) => ({ ...descriptor(), randomSeed: false, payload: { ...descriptor().payload, parameters: { ...descriptor().payload.parameters, prompt, seed: index } }, history: { ...descriptor().history, prompt, modules: [{ id: prompt }] } }));
+  f.jobs.start('key', a, 3, undefined, { ...entries[0], sequence: entries }, {}); const job = f.jobs.get('key', a); await job.running;
+  assert.deepEqual(estimated, ['first', 'second', 'third']); assert.deepEqual(seen, [[a, 0, 'first'], [a, 1, 'second'], [a, 2, 'third']]);
+  assert.deepEqual(saved.map(item => [item.prompt, item.params.seed, item.modules[0].id]), [['first', 0, 'first'], ['second', 1, 'second'], ['third', 2, 'third']]);
+  assert.equal(job.historyIds.length, 3); assert.equal(job.sequence, undefined);
+});
+test('不同配方轮次也会在费用上涨时等待确认，取消后不再提交后续配方', async () => {
+  let made = 0;
+  const f = setup({ estimate: async () => made ? 8 : 0, generate: async () => { made++; return {}; } });
+  const first = descriptor(0), second = { ...descriptor(0), history: { ...descriptor().history, prompt: 'second' } };
+  f.jobs.start('key', a, 2, undefined, { ...first, sequence: [first, second] }, {}); const job = f.jobs.get('key', a);
+  await until(() => job.state === 'awaiting_confirmation'); assert.equal(made, 1); assert.equal(job.descriptor.history.prompt, 'second');
+  f.jobs.cancel('key', a); await job.running; assert.equal(made, 1); assert.equal(job.historyIds.length, 1);
+});
+test('配方列表全部通过验证才准入，数量不符、嵌套或坏条目不占执行位', () => {
+  const f = setup(), first = descriptor();
+  for (const sequence of [[first], [first, { ...first, sequence: [first] }], [first, { ...first, history: null }], 'invalid']) {
+    assert.throws(() => f.jobs.start('key', a, 2, undefined, { ...first, sequence }, {}), /后台任务/);
+    assert.equal(f.tasks.current('key'), undefined); assert.equal(f.jobs.has('key', a), false);
+  }
+});
+
 test('后台查询与实时推送携带公共队列状态，保留零与未知且不暴露内部字段', async () => {
   let queue = null, finish;
   const f = setup({ readQueue: () => queue,

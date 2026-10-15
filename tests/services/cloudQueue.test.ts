@@ -28,6 +28,19 @@ describe('cloud queue key scoping', () => {
     vi.useRealTimers();
   });
 
+  it('旧后台排队错误与清理警告不向弹窗透传HTML，保留任务归属且不改原回执', () => {
+    sessionStorage.setItem('nai_api_key', 'key-a');
+    const html = '<!DOCTYPE html><html><body>synthetic-ray</body></html>';
+    const status = { ...waitingStatus('task-a'), phase: 'error' as const, error: html, cleanupError: html, cancelable: false };
+    const listener = vi.fn(); window.addEventListener('nai-cloud-queue-status', listener);
+    try {
+      emitCloudQueueStatus(status, 'key-a');
+      expect(getCurrentCloudQueueStatus()).toEqual({ ...status, error: '服务返回了错误页面，请稍后重试', cleanupError: '服务返回了错误页面，请稍后重试' });
+      expect(listener.mock.calls[0][0].detail).toEqual(getCurrentCloudQueueStatus());
+      expect(status.error).toBe(html); expect(status.cleanupError).toBe(html);
+    } finally { window.removeEventListener('nai-cloud-queue-status', listener); }
+  });
+
   it('切换 Key 后清理旧任务并拒绝旧 Key 的迟到状态', () => {
     sessionStorage.setItem('nai_api_key', 'key-a');
     emitCloudQueueStatus(waitingStatus('task-a'), 'key-a');

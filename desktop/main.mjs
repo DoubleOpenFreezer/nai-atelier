@@ -101,6 +101,14 @@ async function startBackend() {
     const child = spawn(spec.command, spec.args, spec.options);
     backend = child;
     child.on('message', message => {
+      if (message?.type === 'atelier-artist-file-pick') {
+        void dialog.showOpenDialog(window, { title: t('选择画师图包'), properties: ['openFile'], ...(message.initialPath ? { defaultPath: message.initialPath } : {}) }).then(result => {
+          if (child.connected) child.send({ type: 'atelier-artist-file-result', requestId: message.requestId, result: { cancelled: result.canceled, path: result.filePaths[0] || '' } });
+        }, error => {
+          if (child.connected) child.send({ type: 'atelier-artist-file-result', requestId: message.requestId, error: error.message });
+        });
+        return;
+      }
       if (message?.type === 'atelier-directory-pick') {
         void chooseDirectory(message.initialPath).then(result => {
           if (child.connected) child.send({ type: 'atelier-directory-result', requestId: message.requestId, result });

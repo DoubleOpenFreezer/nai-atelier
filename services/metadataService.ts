@@ -25,6 +25,7 @@ export const IMPORT_SESSION_KEY = 'nai_pending_import';
 /** 外部素材只投递用户选中的字段，不用默认参数冒充原图配置。 */
 export interface PromptFragmentImport {
     mode: 'prompt-fragments';
+    artistSampleTarget?: import('./artistSampleDrafts').ArtistSampleTarget;
     /** 外部入口可明确投递文生图，未指定时沿用当前模式。 */
     targetMode?: 'text-to-image';
     /** 恢复原图已知内容；字段取舍时转回片段导入。 */

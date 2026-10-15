@@ -8,6 +8,7 @@ import {
   ChevronRight,
   CircleUserRound,
   Clock3,
+  Dice5,
   FlaskConical,
   FolderOpen,
   Heart,
@@ -30,7 +31,7 @@ import { DanbooruIcon, PixivIcon } from './PlatformIcons';
 
 const GlobalSettings = React.lazy(() => import('./GlobalSettings').then(module => ({ default: module.GlobalSettings })));
 
-type AppView = 'list' | 'characters' | 'edit' | 'library' | 'aitag' | 'danbooru' | 'pixiv' | 'codex' | 'inspiration' | 'history' | 'playground';
+type AppView = 'list' | 'characters' | 'edit' | 'library' | 'aitag' | 'danbooru' | 'pixiv' | 'codex' | 'inspiration' | 'history' | 'playground' | 'roll';
 type SettingsSection = 'home' | 'appearance' | 'generation' | 'novelai' | 'agent' | 'maintenance';
 
 interface LayoutProps {
@@ -117,6 +118,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
     { label: '工作区', items: [
       { id: 'list', label: '风格串', icon: icons.list },
       { id: 'playground', label: '实验室', icon: icons.lab },
+      { id: 'roll', label: 'Roll 串', icon: Dice5 },
     ] },
     { label: '资源库', items: [
       { id: 'library', label: '画师库', icon: icons.artist },
@@ -160,6 +162,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
     };
   }, [currentView]);
   const resourceItems = [
+    { id: 'roll', label: 'Roll 串', icon: Dice5 },
     { id: 'library', label: '画师库', icon: icons.artist },
     { id: 'characters', label: '角色库', icon: icons.character },
     { id: 'aitag', label: 'AITag', icon: icons.tag },

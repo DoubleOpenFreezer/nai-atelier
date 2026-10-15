@@ -50,6 +50,23 @@ it('法典图片保存失败不创建收藏记录，重试成功；非 NAI 图�
   await service.toggleCollectionTarget(image); expect(stored[0].prompt).toBe('known text'); expect(stored[0].params).toBeUndefined();
 });
 
+it('收藏本地图包样张先保存原件，解除图包关联后不依赖源地址，模型版本分别收藏', async () => {
+  const service = await import('../../services/collectionFavorites'); await service.loadCollection(user);
+  const fetchSample = vi.fn(async () => new Response(new Blob(['synthetic jpeg'], { type: 'image/jpeg' })));
+  vi.stubGlobal('fetch', fetchSample);
+  try {
+    const image = { sourceType: 'artist' as const, sourceId: 'synthetic artist', imageId: 'v45:revision:0',
+      imageUrl: '/api/artist-samples/image?pack=v45&tag=synthetic&index=0&revision=revision', analysis: { artistSample: { pack: 'v45' } } };
+    await service.toggleCollectionTarget(image);
+    expect(fetchSample).toHaveBeenCalledWith(image.imageUrl);
+    expect(mocks.uploadFile).toHaveBeenCalledOnce();
+    expect(stored[0]).toMatchObject({ imageUrl: '/api/assets/inspirations/saved.png', prompt: '', analysis: { collectionOriginalUrl: image.imageUrl, artistSample: { pack: 'v45' } } });
+    expect(stored[0].params).toBeUndefined();
+    expect(service.collectionTargetActive(image)).toBe(true);
+    expect(service.collectionTargetActive({ ...image, imageId: 'v5:revision:0', imageUrl: image.imageUrl.replace('v45', 'v5') })).toBe(false);
+  } finally { vi.unstubAllGlobals(); }
+});
+
 it('只读汇总全部旧历史收藏与 AITag 组内图片，不复制原图或写入旧资料', async () => {
   const histories = Array.from({ length: 202 }, (_, index) => ({ id: `h${index}`, imageUrl: `/api/local-history/h${index}/image`, prompt: 'source', negativePrompt: 'negative', params: { width: 832, height: 1216, seed: index }, createdAt: index + 1, favoriteAt: 1000 + index } as LocalGenItem));
   mocks.historyPage.mockImplementation(async page => ({ items: histories.slice(page * 200, (page + 1) * 200), count: 202 }));

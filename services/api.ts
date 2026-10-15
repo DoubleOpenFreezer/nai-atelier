@@ -1,4 +1,5 @@
 import { reportCloudQueueCleanupError } from './cloudQueue';
+import { parseHttpError } from './httpErrors.mjs';
 
 // Base API URL
 const API_BASE = '/api';
@@ -30,29 +31,9 @@ export class ApiError extends Error {
 const QUEUE_CANCELLED_CODE = 'QUEUE_CANCELLED';
 const QUEUE_CANCELLED_STATUS = 499;
 
-/** 统一解析网关错误响应：优先 JSON 的结构化 { error, message, code }，取用户可见 message；JSON 解析失败时回退截断后的响应文本。 */
+/** 保留结构化错误码／等待时间；HTML 错误页归为简短说明，普通文本保留有界原文。 */
 export const parseErrorResponse = async (res: Response): Promise<ApiError> => {
-  let message = `请求失败 (${res.status})`;
-  let code: string | undefined;
-  let retryAfter: number | undefined;
-  const truncated = (text: string) => text.length > 500 ? `${text.slice(0, 500)}…` : text;
-  try {
-    const payload: unknown = await res.clone().json();
-    if (payload && typeof payload === 'object') {
-      const record = payload as Record<string, unknown>;
-      const error = typeof record.error === 'string' ? record.error : undefined;
-      const fallbackMessage = typeof record.message === 'string' ? record.message : undefined;
-      if (typeof record.code === 'string' && record.code) code = record.code;
-      if (typeof record.retryAfter === 'number' && Number.isFinite(record.retryAfter) && record.retryAfter > 0) retryAfter = Math.ceil(record.retryAfter);
-      const candidate = error || fallbackMessage || code;
-      if (candidate) message = truncated(candidate);
-    }
-  } catch {
-    // 响应体不是 JSON（HTML/纯文本等），回退截断原文。
-    try {
-      message = truncated((await res.clone().text()).trim() || message);
-    } catch { /* 响应体不可读时保留默认文案。 */ }
-  }
+  const { message, code, retryAfter } = parseHttpError(await res.clone().text().catch(() => ''), res.status);
   return Object.assign(new ApiError(message, res.status, code), retryAfter ? { retryAfter } : {});
 };
 

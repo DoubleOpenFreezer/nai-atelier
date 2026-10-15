@@ -19,7 +19,7 @@ vi.mock('../../services/collectorAppearance', () => ({ useCollectorAppearance: (
 vi.mock('../../components/ConfirmDialog', () => ({ useConfirmDialog: () => mocks.confirm }));
 vi.mock('../../components/Layout', () => ({ Layout: ({ children, onNavigate, currentView, toast }: any) => <>
   <div data-testid="view">{currentView}</div>
-  {['aitag', 'inspiration', 'list'].map(view => <button key={view} onClick={() => onNavigate(view)}>{view}</button>)}
+  {['aitag', 'inspiration', 'list', 'roll'].map(view => <button key={view} onClick={() => onNavigate(view)}>{view}</button>)}
   {toast && <div role="status" data-type={toast.type}>{toast.message}</div>}{children}
 </> }));
 vi.mock('../../components/ChainList', () => ({ ChainList: ({ chains, onDelete, onBulkDelete, onReloadTags, onSelect, notify }: { chains: PromptChain[]; onDelete: (id: string) => Promise<void>; onBulkDelete?: (ids: string[], onProgress: (completed: number) => void) => Promise<unknown>; onReloadTags?: () => Promise<void>; onSelect: (id: string) => void; notify: (message: string, type?: string) => void }) => <div data-testid="list">{chains.map(chain => chain.id).join(',')}{onReloadTags && <button onClick={async () => {
@@ -53,6 +53,7 @@ const ExternalGallery = ({ onCreateArtistChain, onImportRefresh, notify }: any) 
 }}>回读合成导入图片</button>}</>;
 vi.mock('../../components/AitagGallery', () => ({ AitagGallery: (props: any) => <ExternalGallery {...props} /> }));
 vi.mock('../../components/InspirationGallery', () => ({ InspirationGallery: (props: any) => <><div data-testid="collection-items" data-module-order={JSON.stringify(props.labModuleOrder)}>{(props.inspirationsData || []).filter((item: any) => !item.archived).map((item: any) => item.title).join(',')}</div><ExternalGallery {...props} /></> }));
+vi.mock('../../components/StyleRollPage', () => ({ StyleRollPage: ({ onSaveChain, onNavigateToPlayground, chains }: any) => <div><span data-testid="roll-chains">{chains.map((chain: PromptChain) => chain.id).join(',')}</span><button onClick={() => void onSaveChain(source)}>保存 Roll 候选</button><button onClick={onNavigateToPlayground}>Roll 送往实验室</button></div> }));
 
 beforeEach(() => {
   vi.clearAllMocks(); localStorage.clear(); sessionStorage.clear();
@@ -75,6 +76,17 @@ const setup = async (entry = 'aitag') => {
   fireEvent.click(screen.getByRole('button', { name: entry }));
   await screen.findByRole('button', { name: '保存合成作品' });
 };
+
+it('Roll 页面保存加入同一风格串列表并停留原页，实验室返回可回到 Roll', async () => {
+  await setup(); fireEvent.click(screen.getByRole('button', { name: 'roll' }));
+  fireEvent.click(await screen.findByRole('button', { name: '保存 Roll 候选' }));
+  await waitFor(() => expect(screen.getByTestId('roll-chains').textContent).toContain(saved.id));
+  expect(screen.getByTestId('view').textContent).toBe('roll');
+  fireEvent.click(screen.getByRole('button', { name: 'Roll 送往实验室' }));
+  await screen.findByTestId('editor');
+  fireEvent.click(screen.getByRole('button', { name: '返回资料库' }));
+  await waitFor(() => expect(screen.getByTestId('view').textContent).toBe('roll'));
+});
 
 it.each([false, true])('共享删除回调失败=%s：结果传回调用方，成功刷新列表，失败保留条目', async fails => {
   mocks.getAllChains.mockResolvedValue([saved]);

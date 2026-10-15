@@ -1,4 +1,5 @@
 import { agentGenerationFailure, agentOperationError, normalizeAgentGenerationResult, validateGenerationCount } from './agentOperation.mjs';
+import { parseHttpError } from './httpErrors.mjs';
 import type { LocalGenItem, PromptAgentGenerationResult } from '../types';
 import {
     cancelGenerationJob, getGenerationJob, isGenerationJobState, isGenerationJobTerminal, observeGenerationJob, startGenerationJob, updateGenerationJobApproval,
@@ -125,7 +126,7 @@ const settleSnapshot = (session: GenerationSeriesSession, snapshot: GenerationJo
     }
     return normalizeAgentGenerationResult({
         success: false, historySaved: false, outcome: snapshot.code === 'generation_busy' ? 'blocked' : 'failed',
-        code: snapshot.code, error: snapshot.error || '后台生成失败',
+        code: snapshot.code, error: parseHttpError(snapshot.error || '', undefined, '后台生成失败').message,
         requestedCount: session.count, completedCount: session.historyIds.length, historyIds: session.historyIds,
     });
 };
@@ -146,7 +147,7 @@ const isDefinitiveSubmitFailure = (error: unknown): boolean => {
     return status !== undefined && status >= 400 && status < 500;
 };
 
-const describeError = (error: unknown, fallback: string) => error instanceof Error && error.message ? error.message : fallback;
+const describeError = (error: unknown, fallback: string) => parseHttpError(error instanceof Error ? error.message : '', httpStatus(error), fallback).message;
 
 const finishGenerationSeries = (session: GenerationSeriesSession) => {
     const list = groups.get(session.scope);

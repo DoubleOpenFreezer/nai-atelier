@@ -12,8 +12,10 @@ test('分发边界识别数据、缓存、词库、环境变量与测试资料�
   assert.ok(RUNTIME_FILES.includes('locales/messages.json'));
   assert.deepEqual(builder.nsis.installerLanguages, ['zh_CN', 'zh_TW', 'en_US', 'ja_JP', 'ko_KR']);
   assert.ok(RUNTIME_FILES.includes('worker/naiBilling.mjs'), '安装版必须包含网关共用的计费模块');
+  assert.ok(RUNTIME_FILES.includes('services/httpErrors.mjs'), '安装版必须包含生图错误解析共用模块');
   assert.ok(RUNTIME_FILES.includes('worker/cloudQueueTarget.mjs'), '安装版必须包含通用生图中转地址识别');
   assert.ok(RUNTIME_FILES.includes('worker/codexRemote.mjs'), '安装版必须包含法典远端读取模块');
+  assert.ok(RUNTIME_FILES.includes('scripts/artist-samples.mjs'), '安装版必须包含画师图包下载与索引模块');
   for (const name of ['local-data/prompt-agent.key', 'PUBLIC/TAG-DATA/tags.json', 'x\\local-cache\\model.onnx', '.env.local', '.dev.vars', '.git/config', 'logs/tests/gateway.log', 'tests/fixtures/synthetic.json', '.wrangler/tmp/test']) assert.equal(isPrivateDistributionPath(name), true, name);
   for (const name of RUNTIME_FILES) {
     assert.equal(isPrivateDistributionPath(name), false, name);

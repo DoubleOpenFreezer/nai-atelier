@@ -11,6 +11,8 @@ import { handleStBridgeRoute } from './routes/stBridgeRoutes';
 import { handleVibeRoute } from './routes/vibeRoutes';
 import { handleNaiKeyVaultRoute } from './routes/naiKeyVaultRoutes';
 import { handleStyleCollectorRoute } from './routes/styleCollectorRoutes';
+import { handleArtistSampleRoute } from './routes/artistSampleRoutes';
+import { handleStyleRollRoute } from './routes/styleRollRoutes';
 import {
   handleLanRoute, handleSettingsRoute, handleMediaRequest,
   isLoopbackHostname, hasValidLanAccess, lanAccessRequired,
@@ -184,6 +186,12 @@ export default {
       if (collectorResult) return collectorResult;
       const settingsResult = await handleSettingsRoute(routeContext);
       if (settingsResult) return settingsResult;
+
+      const artistSampleResult = await handleArtistSampleRoute(routeContext);
+      if (artistSampleResult) return artistSampleResult;
+
+      const styleRollResult = await handleStyleRollRoute(routeContext);
+      if (styleRollResult) return styleRollResult;
 
       const keyVaultResult = await handleNaiKeyVaultRoute(routeContext);
       if (keyVaultResult) return keyVaultResult;

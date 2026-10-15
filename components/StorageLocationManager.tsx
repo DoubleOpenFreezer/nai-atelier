@@ -146,7 +146,7 @@ export function StorageLocationManager({ notify }: { notify: (message: string, t
     <div className="pt-2 text-sm font-medium text-gray-900 dark:text-gray-100">{t(label)}</div>
     <div className="min-w-0">
       <p className="truncate pt-2 font-mono text-xs text-gray-700 dark:text-gray-300" title={path}>{path}</p>
-      <p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">{kind === 'data' ? t('风格串、原图、历史与设置。') : t('缩略图、反推模型与词库，可重新下载。')}{kind === 'cache' && storage?.cacheFollowsData && <span className="ml-2">{t('跟随工坊')}</span>}</p>
+      <p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">{kind === 'data' ? t('风格串、原图、历史与设置。') : t('缩略图、词库、反推模型与画师图包，可重新下载。')}{kind === 'cache' && storage?.cacheFollowsData && <span className="ml-2">{t('跟随工坊')}</span>}</p>
       {renderFeedback(kind)}
     </div>
     {storage?.canManage && <div className="flex flex-none gap-2">
