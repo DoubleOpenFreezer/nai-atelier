@@ -13,7 +13,7 @@ import { Readable } from 'node:stream';
 import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import { ProxyAgent, fetch as undiciFetch } from 'undici';
-import { PromptAgentService, readLibraryPrompts, writeLibraryPrompts, buildLibrarySystemPrompt } from './prompt-agent.mjs';
+import { PromptAgentService, readLibraryPrompts, writeLibraryPrompts, buildLibrarySystemPrompt, isLibraryKind } from './prompt-agent.mjs';
 import { StChatu8Bridge, installSillyTavernBridgeExtension } from './st-chatu8-bridge.mjs';
 import { ImageTaggerService } from './image-tagger.mjs';
 import { MEDIA_REMOTE_HOSTS, CODEX_MEDIA_HOSTS, LAN_ACCESS_COOKIE } from '../worker/sharedWhitelist.mjs';
@@ -3488,7 +3488,7 @@ const serveDistFile = async (req, res, url) => {
           // 预览某个库最终使用的 system prompt；带上当前输入框内容即可在保存前预览
           if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
           const body = JSON.parse((await readRequestBody(req, 64 * 1024)).toString('utf8') || '{}');
-          const kind = ['appearance', 'wardrobe', 'pose'].includes(String(body.kind)) ? String(body.kind) : 'wardrobe';
+          const kind = isLibraryKind(body.kind) ? String(body.kind) : 'wardrobe';
           const systemPrompt = buildLibrarySystemPrompt(kind, { spec: body.spec, extra: body.extra });
           return sendJson(res, 200, { kind, length: systemPrompt.length, systemPrompt });
         }

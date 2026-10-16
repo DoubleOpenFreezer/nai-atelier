@@ -2,15 +2,15 @@ import { t, useLanguage } from '../services/i18n';
 import React, { useEffect, useRef, useState } from 'react';
 import { PROMPT_LIBRARY_KIND_LABELS, promptAgentService, type PromptLibraryKind } from '../services/promptAgent';
 
-/** 预览可切换的三个库类型，顺序与标签由服务层常量决定。 */
-const libraryKinds: PromptLibraryKind[] = ['appearance', 'wardrobe', 'pose'];
+/** 预览可切换的四个库类型，顺序与标签由服务层常量决定。 */
+const libraryKinds: PromptLibraryKind[] = ['appearance', 'wardrobe', 'pose', 'scene'];
 
 const libraryFieldClass = 'w-full resize-y rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs leading-5 text-gray-800 outline-none focus:border-indigo-500 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-100';
 const libraryPrimaryButtonClass = 'mobile-touch rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-indigo-700 disabled:opacity-40';
 const librarySecondaryButtonClass = 'mobile-touch rounded-lg border border-gray-200 bg-white px-2.5 py-1 text-xs font-bold text-gray-700 hover:bg-gray-50 disabled:opacity-40 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700';
 
 /**
- * 库生成提示词设置：为人物形象 / 服饰 / 姿势三个提示词库置顶追加两段自定义内容，
+ * 库生成提示词设置：为人物形象 / 服饰 / 姿势 / 场景四个提示词库置顶追加两段自定义内容，
  * 并可按库类型预览最终系统提示词。仅影响提示词库生成，不改动创作助手。
  */
 export const PromptLibrarySettings: React.FC = () => {
@@ -70,7 +70,7 @@ export const PromptLibrarySettings: React.FC = () => {
       setSpec(next.spec);
       setExtra(next.extra);
       setSaved({ spec: next.spec, extra: next.extra });
-      setNotice(t('已保存，三个提示词库立即使用最新内容'));
+      setNotice(t('已保存，四个提示词库立即使用最新内容'));
       if (previewOpen) void loadPreview(kind);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : t('保存库生成提示词失败'));
@@ -98,7 +98,7 @@ export const PromptLibrarySettings: React.FC = () => {
   return (
     <section aria-label={t("库生成提示词")} className="appearance-panel rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
       <h3 className="mb-2 text-sm font-bold text-gray-900 dark:text-white">{t("库生成提示词")}</h3>
-      <p className="mb-3 text-xs leading-5 text-gray-500 dark:text-gray-400">{t("这两段内容会置顶追加到提示词库的系统提示词最前面，作用范围是人物形象、服饰与姿势三个库。")}</p>
+      <p className="mb-3 text-xs leading-5 text-gray-500 dark:text-gray-400">{t("这两段内容会置顶追加到提示词库的系统提示词最前面，作用范围是人物形象、服饰与姿势四个库。")}</p>
       <div className="space-y-3">
         <label className="block">
           <span className="mb-1 block text-xs font-bold text-gray-500 dark:text-gray-400">{t("规范提示词")}</span>

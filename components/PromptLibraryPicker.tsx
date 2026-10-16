@@ -23,7 +23,7 @@ export const appendPromptText = (current: string, addition: string): string => {
 };
 
 /** 三个库的固定顺序：人物形象 → 服饰 → 姿势，标签名与库常量保持一致。 */
-const LIBRARY_KINDS: PromptLibraryKind[] = ['appearance', 'wardrobe', 'pose'];
+const LIBRARY_KINDS: PromptLibraryKind[] = ['appearance', 'wardrobe', 'pose', 'scene'];
 
 const chainTags = (chain: PromptChain): string[] => (Array.isArray(chain?.tags) ? chain.tags : [])
     .map(value => String(value || '').trim())

@@ -29,23 +29,26 @@ const DanbooruGallery = lazy(() => import('./components/DanbooruGallery').then(m
 const PixivGallery = lazy(() => import('./components/PixivGallery').then(module => ({ default: module.PixivGallery })));
 const CodexGallery = lazy(() => import('./components/CodexGallery').then(module => ({ default: module.CodexGallery })));
 const CharacterLibrary = lazy(() => import('./components/CharacterLibrary').then(module => ({ default: module.CharacterLibrary })));
+const PromptLibraryHub = lazy(() => import('./components/PromptLibrary').then(module => ({ default: module.PromptLibraryHub })));
+const SceneLibrary = lazy(() => import('./components/PromptLibrary').then(module => ({ default: module.SceneLibrary })));
 const AppearanceLibrary = lazy(() => import('./components/PromptLibrary').then(module => ({ default: module.AppearanceLibrary })));
 const WardrobeLibrary = lazy(() => import('./components/PromptLibrary').then(module => ({ default: module.WardrobeLibrary })));
 const PoseLibrary = lazy(() => import('./components/PromptLibrary').then(module => ({ default: module.PoseLibrary })));
 
-type ViewState = 'list' | 'characters' | 'appearance' | 'wardrobe' | 'pose' | 'edit' | 'library' | 'aitag' | 'danbooru' | 'pixiv' | 'codex' | 'inspiration' | 'history' | 'playground';
+type ViewState = 'list' | 'characters' | 'appearance' | 'wardrobe' | 'pose' | 'scene' | 'prompts' | 'edit' | 'library' | 'aitag' | 'danbooru' | 'pixiv' | 'codex' | 'inspiration' | 'history' | 'playground';
 type KeepAliveView = Exclude<ViewState, 'edit'>;
 
 // 手机端实验室返回箭头的落点：只记录内容页，编辑器/实验室本身不作为返回落点。
 /** chain.type → 所属库视图；未登记的类型回落到风格串列表。 */
 const LIBRARY_VIEW_BY_TYPE: Partial<Record<ChainType, ViewState>> = {
   character: 'characters',
-  appearance: 'appearance',
-  wardrobe: 'wardrobe',
-  pose: 'pose',
+  appearance: 'prompts',
+  wardrobe: 'prompts',
+  pose: 'prompts',
+  scene: 'prompts',
 };
 
-const LAB_ENTRY_VIEWS: ViewState[] = ['list', 'characters', 'appearance', 'wardrobe', 'pose', 'library', 'aitag', 'danbooru', 'pixiv', 'codex', 'inspiration', 'history'];
+const LAB_ENTRY_VIEWS: ViewState[] = ['list', 'characters', 'appearance', 'wardrobe', 'pose', 'scene', 'prompts', 'library', 'aitag', 'danbooru', 'pixiv', 'codex', 'inspiration', 'history'];
 
 const CACHE_TTL = 60 * 60 * 1000; // 1 Hour Cache
 
@@ -154,13 +157,13 @@ const App = () => {
     };
     const navigate = (event: Event) => {
       const detail = (event as CustomEvent).detail || {};
-      if (['list', 'characters', 'appearance', 'wardrobe', 'pose', 'library', 'aitag', 'danbooru', 'pixiv', 'codex', 'inspiration', 'history', 'playground'].includes(detail.view)) {
+      if (['list', 'characters', 'appearance', 'wardrobe', 'pose', 'scene', 'prompts', 'library', 'aitag', 'danbooru', 'pixiv', 'codex', 'inspiration', 'history', 'playground'].includes(detail.view)) {
         void handleNavigateRef.current(detail.view, detail.id, { externalImport: detail.externalImport === true });
       }
     };
     const navigatePage = (event: Event) => {
       const detail = (event as CustomEvent).detail;
-      if (!detail || !['list', 'characters', 'appearance', 'wardrobe', 'pose', 'library', 'aitag', 'danbooru', 'pixiv', 'codex', 'inspiration', 'history', 'playground'].includes(detail.view)) { detail?.reject?.(new Error('页面不存在')); return; }
+      if (!detail || !['list', 'characters', 'appearance', 'wardrobe', 'pose', 'scene', 'prompts', 'library', 'aitag', 'danbooru', 'pixiv', 'codex', 'inspiration', 'history', 'playground'].includes(detail.view)) { detail?.reject?.(new Error('页面不存在')); return; }
       void handleNavigateRef.current(detail.view).then(detail.resolve, detail.reject);
     };
     window.addEventListener('nai-agent-ui-preferences', applyPreferences);
@@ -517,7 +520,7 @@ const App = () => {
     if (newView === 'playground') ensurePlayground();
 
     // Auto-load data based on view, respecting cache
-    if ((newView === 'list' || newView === 'characters' || newView === 'appearance' || newView === 'wardrobe' || newView === 'pose') && options.refreshData !== false) refreshData();
+    if ((newView === 'list' || newView === 'characters' || newView === 'appearance' || newView === 'wardrobe' || newView === 'pose' || newView === 'scene' || newView === 'prompts') && options.refreshData !== false) refreshData();
     if (newView === 'library') loadArtists();
     if (newView === 'inspiration') loadInspirations();
 
@@ -710,6 +713,28 @@ const App = () => {
           notify={notify}
           onNavigateToPlayground={() => handleNavigate('playground', undefined, { externalImport: true })}
         />;
+      case 'prompts':
+        return <PromptLibraryHub
+          chains={chains}
+          onCreate={createLibraryChain}
+          onSelect={id => handleNavigate('edit', id)}
+          onUpdateChain={handleUpdateChain}
+          onDelete={handleDelete}
+          notify={notify}
+          selectionFocusEnabled={appearancePreferences.gallerySelectionFocus}
+          returnTargetId={view === 'prompts' ? selectedId : undefined}
+        />;
+      case 'scene':
+        return <SceneLibrary
+          chains={chains}
+          onCreate={createLibraryChain}
+          onSelect={id => handleNavigate('edit', id)}
+          onUpdateChain={handleUpdateChain}
+          onDelete={handleDelete}
+          notify={notify}
+          selectionFocusEnabled={appearancePreferences.gallerySelectionFocus}
+          returnTargetId={view === 'scene' ? selectedId : undefined}
+        />;
       case 'appearance':
         return <AppearanceLibrary
           chains={chains}
@@ -848,7 +873,7 @@ const App = () => {
       const type = getSelectedChain()?.type;
       return (type && LIBRARY_VIEW_BY_TYPE[type]) || 'list';
     }
-    return view;
+    return ['appearance','wardrobe','pose','scene'].includes(view) ? 'prompts' : view;
   };
 
   return (

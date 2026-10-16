@@ -5,7 +5,7 @@ import { mergePromptSections } from '../../services/labWorkspace';
 import { LabModuleSection } from '../LabModuleSection';
 import { TagAutocompleteTextarea } from '../TagAutocompleteTextarea';
 import { appendPromptText, PromptLibraryPicker } from '../PromptLibraryPicker';
-import { PresetSection, PresetSource, PresetSourceBadges, PromptCopyButton } from './PresetSourceBadges';
+import { PresetSection, PresetSource, PresetSourceBadges, PromptCopyButton, PromptClearButton } from './PresetSourceBadges';
 import type { PromptLibraryKind } from '../../services/promptAgent';
 import type { PromptSections } from '../../types';
 
@@ -24,7 +24,7 @@ const PROMPT_SECTION_FIELDS: PromptSectionField[] = [
     { key: 'appearance', label: '人物', library: 'appearance', libraryLabel: '形象库', placeholder: '银发、红瞳、短发、娇小身材等外貌特征' },
     { key: 'wardrobe', label: '服饰', library: 'wardrobe', libraryLabel: '服饰库', placeholder: '白色连衣裙、草帽、吊带袜等服装与穿戴' },
     { key: 'pose', label: '姿势', library: 'pose', libraryLabel: '姿势库', placeholder: '站姿、看向镜头、双手叉腰等姿态动作' },
-    { key: 'extra', label: '补充', placeholder: '这次的人数、场景、构图、光线等其它补充' },
+    { key: 'extra', label: '补充', library: 'scene', libraryLabel: '场景库', placeholder: '这次的人数、场景、构图、光线等其它补充' },
 ];
 
 export interface ChainEditorPromptInputsProps {
@@ -90,6 +90,7 @@ export const ChainEditorPromptInputs: React.FC<ChainEditorPromptInputsProps> = (
                         onPick={picked => options.onValueChange(appendPromptText(options.value, picked))}
                     />}
                     <PromptCopyButton onClick={() => copyPromptToClipboard(options.value, options.label)} title={t('复制{0}', [t(options.label)])} />
+                    <PromptClearButton title={t('清空{0}', [t(options.label)])} disabled={!canEdit || !options.value.trim()} onClick={() => options.onValueChange('')} />
                 </div>
             </div>
             <TagAutocompleteTextarea

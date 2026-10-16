@@ -32,6 +32,7 @@ import {
   Trash2,
   UserRound,
   Wand2,
+  Image,
   X,
 } from 'lucide-react';
 import type { ChainType, LocalGenItem, NAIParams, PromptChain } from '../types';
@@ -46,115 +47,16 @@ import { OriginalImage, SmartImage } from './SmartImage';
 import { TOOLBAR_FIELD_CLASS, ToolbarPopover } from './ToolbarPopover';
 import { isTopmostModal, useModalA11y } from './useModalA11y';
 
-/* ---------------- 领域配置表 ---------------- */
-
-/** 一个「限定项」下拉：key 作为生成请求的顶层字段名，空串代表「不限」。 */
-export interface PromptLibraryFacet {
-  key: string;
-  label: string;
-  options: string[];
-}
-
-export interface PromptLibraryKindConfig {
-  kind: PromptLibraryKind;
-  /** 条目落库时的 PromptChain.type（三个领域与 kind 同名）。 */
-  type: ChainType;
-  /** 中文栏目名，如「人物形象库」。 */
-  title: string;
-  /** 条目量词说明用的名词，如「人物形象」。 */
-  itemNoun: string;
-  /** 计数单位：个 / 套。 */
-  unit: string;
-  /** 生成按钮文案（含 ✦ 前缀，按钮上会去掉）。 */
-  generateLabel: string;
-  createLabel: string;
-  defaultName: string;
-  briefLabel: string;
-  briefPlaceholder: string;
-  tagPlaceholder: string;
-  generateHint: string;
-  emptyTitle: string;
-  emptyHint: string;
-  facets: PromptLibraryFacet[];
-}
-
-export const PROMPT_LIBRARY_KINDS: Record<PromptLibraryKind, PromptLibraryKindConfig> = {
-  appearance: {
-    kind: 'appearance',
-    type: 'appearance',
-    title: '人物形象库',
-    itemNoun: '人物形象',
-    unit: '个',
-    generateLabel: '✦ AI 生成人物形象',
-    createLabel: '新建人物形象',
-    defaultName: '新人物形象',
-    briefLabel: '想要什么人物形象',
-    briefPlaceholder: '例如：银发红瞳的少女，短发，娇小身材，精灵耳',
-    tagPlaceholder: '银发, 红瞳, 短发',
-    generateHint: '使用创作助手当前配置的模型生成，输出中英对照与纯英文两版。只含外貌特征（发色／发型／瞳色／体型／年龄／特征），不含服装、姿势、镜头与背景；不消耗生图额度。',
-    emptyTitle: '人物形象库还是空的',
-    emptyHint: '用「AI 生成人物形象」按一句话需求生成提示词，或点「新建人物形象」手写一条；每条都能从本地历史挑封面和参考图。',
-    facets: [
-      { key: 'hair', label: '发色', options: ['', '黑', '棕', '金', '银白', '红', '蓝', '粉', '绿', '渐变'] },
-      { key: 'hairstyle', label: '发型', options: ['', '短发', '长发', '马尾', '双马尾', '丸子头', '卷发', '齐刘海', '麻花辫'] },
-      { key: 'eyes', label: '瞳色', options: ['', '黑', '棕', '蓝', '红', '绿', '紫', '金', '异色瞳'] },
-      { key: 'body', label: '体型', options: ['', '纤细', '标准', '丰满', '娇小', '高挑', '健壮'] },
-      { key: 'age', label: '年龄', options: ['', '少女', '成年', '成熟'] },
-      { key: 'traits', label: '特征', options: ['', '精灵耳', '兽耳', '雀斑', '泪痣', '眼镜', '纹身'] },
-    ],
-  },
-  wardrobe: {
-    kind: 'wardrobe',
-    type: 'wardrobe',
-    title: '服饰库',
-    itemNoun: '服饰',
-    unit: '套',
-    generateLabel: '✦ AI 生成穿搭',
-    createLabel: '新建服饰',
-    defaultName: '新服饰',
-    briefLabel: '想要什么穿搭',
-    briefPlaceholder: '例如：夏天海边度假，少女，清爽一点的连衣裙配草帽',
-    tagPlaceholder: '连衣裙, 夏, 甜美',
-    generateHint: '使用创作助手当前配置的模型生成，输出中英对照与纯英文两版。只含服装与穿戴的 Tag，不含人物外貌、镜头与背景；不消耗生图额度。',
-    emptyTitle: '服饰库还是空的',
-    emptyHint: '用「AI 生成穿搭」按一句话需求生成提示词，或点「新建服饰」手写一套；每套都能从本地历史挑封面和参考图。',
-    facets: [
-      { key: 'season', label: '季节', options: ['', '春', '夏', '秋', '冬', '四季'] },
-      { key: 'occasion', label: '场合', options: ['', '日常', '约会', '职场', '宴会', '海边', '校园', '居家', '运动'] },
-      { key: 'style', label: '风格', options: ['', '休闲', '正式', '甜美', '复古', '哥特', '未来感', '街头', '居家'] },
-      { key: 'gender', label: '对象', options: ['', '女性', '男性', '中性'] },
-      { key: 'palette', label: '配色', options: ['', '浅色', '深色', '暖色', '冷色', '黑白', '撞色'] },
-    ],
-  },
-  pose: {
-    kind: 'pose',
-    type: 'pose',
-    title: '姿势库',
-    itemNoun: '姿势',
-    unit: '个',
-    generateLabel: '✦ AI 生成姿势',
-    createLabel: '新建姿势',
-    defaultName: '新姿势',
-    briefLabel: '想要什么姿势',
-    briefPlaceholder: '例如：坐在地板上回头看镜头，双腿屈起，慵懒一点',
-    tagPlaceholder: '坐姿, 回头, 动态',
-    generateHint: '使用创作助手当前配置的模型生成，输出中英对照与纯英文两版。只含姿态、四肢与视角相关的 Tag，不含人物外貌、服装与背景；不消耗生图额度。',
-    emptyTitle: '姿势库还是空的',
-    emptyHint: '用「AI 生成姿势」按一句话需求生成提示词，或点「新建姿势」手写一条；每条都能从本地历史挑封面和参考图对照。',
-    facets: [
-      { key: 'view', label: '视角', options: ['', '正面', '侧面', '背面', '三分之二侧', '俯视', '仰视'] },
-      { key: 'posture', label: '姿态', options: ['', '站姿', '坐姿', '躺姿', '跪姿', '蹲姿', '跳跃', '行走'] },
-      { key: 'motion', label: '动态', options: ['', '静态', '动态', '张力', '放松', '舒展'] },
-      { key: 'interaction', label: '互动', options: ['', '看向镜头', '回头', '抱膝', '叉腰', '举手', '伸展'] },
-    ],
-  },
-};
+import { PROMPT_LIBRARY_KINDS, type PromptLibraryKindConfig } from './promptLibraryConfig';
+export { PROMPT_LIBRARY_KINDS } from './promptLibraryConfig';
+export type { PromptLibraryFacet, PromptLibraryKindConfig } from './promptLibraryConfig';
 
 /** 领域图标只用于展示，不放进纯数据配置表。 */
 const KIND_ICONS: Record<PromptLibraryKind, React.FC<{ className?: string }>> = {
   appearance: UserRound,
   wardrobe: Shirt,
   pose: PersonStanding,
+  scene: Image,
 };
 
 /* ---------------- 存储约定 ---------------- */
@@ -247,6 +149,7 @@ export interface PromptLibraryProps {
 
 interface PromptLibraryInternalProps extends PromptLibraryProps {
   config: PromptLibraryKindConfig;
+  registerLeaveGuard?: (guard: () => Promise<boolean>) => () => void;
 }
 
 const DETAIL_FIELD_CLASS = 'mt-1.5 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800 outline-none focus:border-indigo-400 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100';
@@ -261,6 +164,7 @@ const DETAIL_LABEL_CLASS = 'text-sm font-semibold text-gray-700 dark:text-gray-2
  */
 export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
   config,
+  registerLeaveGuard,
   chains,
   onCreate,
   onUpdateChain,
@@ -286,8 +190,8 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
 
   const [genOpen, setGenOpen] = useState(false);
   const [brief, setBrief] = useState('');
-  const [facets, setFacets] = useState<Record<string, string>>({});
-  const [count, setCount] = useState(3);
+  const [facets, setFacets] = useState<Record<string, string | string[]>>({});
+  const [count, setCount] = useState(1);
   const [drafts, setDrafts] = useState<PromptLibraryItem[] | null>(null);
   const [picked, setPicked] = useState<Set<number>>(new Set());
   const [generating, setGenerating] = useState(false);
@@ -318,11 +222,11 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
   }, []);
 
   useEffect(() => {
-    setFacets(Object.fromEntries(config.facets.map(facet => [facet.key, ''])));
+    setFacets(Object.fromEntries(config.facets.map(facet => [facet.key, facet.multiple ? [] : ''])));
   }, [config]);
 
   const items = useMemo(
-    () => (Array.isArray(chains) ? chains : []).filter(chain => chain && chain.type === config.type),
+    () => (Array.isArray(chains) ? chains : []).filter(chain => chain && (Array.isArray(config.type) ? config.type.includes(chain.type) : chain.type === config.type)),
     [chains, config.type],
   );
 
@@ -404,15 +308,25 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
   }, [detail, items]);
 
   const closeDetail = useCallback(async () => {
-    if (savingDetail) return;
+    if (savingDetail) return false;
     if (draftDirty && !await confirmAction({
       title: t('放弃未保存的修改？'),
       message: t('返回{0}将丢弃本次编辑的改动。', [config.title]),
       confirmLabel: t('放弃修改'),
       tone: 'danger',
-    })) return;
+    })) return false;
     setDetail(null);
+    return true;
   }, [config.title, confirmAction, draftDirty, savingDetail]);
+
+  useEffect(() => registerLeaveGuard?.(async () => {
+    if (generating || savingDrafts || creating || renamePending.current) return false;
+    if (!await closeDetail()) return false;
+    setGenOpen(false);
+    setPicker(null);
+    setViewer(null);
+    return true;
+  }), [registerLeaveGuard, closeDetail, generating, savingDrafts, creating]);
 
   const saveDetail = async () => {
     if (!detail || savingDetail) return;
@@ -476,7 +390,7 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
     if (creating) return;
     setCreating(true);
     try {
-      const newId = await onCreate(config.defaultName, '', config.type);
+      const newId = await onCreate(config.defaultName, '', config.kind);
       if (!newId) {
         notify(t('创建失败，请稍后重试'), 'error');
         return;
@@ -554,7 +468,7 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
     try {
       // 限定项按顶层字段提交：空串代表「不限」，由后端决定是否写进系统提示。
       const facetInput: Record<string, string> = {};
-      for (const facet of config.facets) facetInput[facet.key] = facets[facet.key] || '';
+      for (const facet of config.facets) facetInput[facet.key] = Array.isArray(facets[facet.key]) ? (facets[facet.key] as string[]).join(', ') : String(facets[facet.key] || '');
       const result = await promptAgentService.generateLibraryPrompt({
         kind: config.kind,
         brief: text,
@@ -614,7 +528,7 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
     let failed = 0;
     for (const item of chosen) {
       try {
-        const newId = await onCreate(String(item.name || '').trim() || t('未命名{0}', [config.itemNoun]), String(item.note || ''), config.type);
+        const newId = await onCreate(String(item.name || '').trim() || t('未命名{0}', [config.itemNoun]), String(item.note || ''), config.kind);
         if (!newId) { failed++; continue; }
         // 新条目的 params 也要保留（合并而非覆盖），拿不到就退化为空参数。
         const created = await awaitChain(newId);
@@ -651,6 +565,27 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
     notify(t('保存失败，请稍后重试'), 'error');
   };
 
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameText, setRenameText] = useState('');
+  const renameCancelled = useRef(false);
+  const renamePending = useRef(false);
+  const [savingRename, setSavingRename] = useState(false);
+  const commitRename = async (chain: PromptChain) => {
+    if (renameCancelled.current || renamePending.current) return;
+    const nextName = renameText.trim();
+    if (!nextName || nextName === chain.name) { setRenamingId(null); return; }
+    renamePending.current = true;
+    setSavingRename(true);
+    try { await onUpdateChain(chain.id, { name: nextName }); setRenamingId(current => current === chain.id ? null : current); }
+    catch { notify(t('改名失败，请重试'), 'error'); }
+    finally { renamePending.current = false; setSavingRename(false); }
+  };
+  const facetSummary = config.facets.flatMap(facet => {
+    const value = facets[facet.key];
+    const text = Array.isArray(value) ? value.join('、') : value;
+    return text ? [t(facet.label) + ' ' + text] : [];
+  }).join(' · ');
+
   /* ---------------- 列表态渲染 ---------------- */
 
   const renderCard = (chain: PromptChain) => {
@@ -669,8 +604,10 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
         data-agent-action="select"
         aria-label={t('{0}：{1}', [config.itemNoun, name])}
         tabIndex={0}
-        onClick={() => setDetail(draftFromChain(chain))}
+        aria-disabled={savingRename}
+        onClick={() => { if (!renamePending.current) setDetail(draftFromChain(chain)); }}
         onKeyDown={event => {
+          if (renamePending.current) return;
           if (event.target !== event.currentTarget || !['Enter', ' '].includes(event.key)) return;
           event.preventDefault();
           setDetail(draftFromChain(chain));
@@ -712,7 +649,19 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
         </div>
         <div className="gallery-card-caption p-3">
           <div className="flex items-center justify-between gap-1.5">
-            <h2 data-safe-mode-title="true" className="truncate text-sm font-bold text-gray-900 dark:text-white" title={name}>{name}</h2>
+            {renamingId === chain.id ? <input autoFocus aria-label={t('条目名称')} maxLength={200} aria-busy={savingRename} disabled={savingRename}
+              className="w-full min-w-0 rounded border border-indigo-400 bg-white px-1 text-sm text-gray-900 dark:bg-gray-900 dark:text-gray-100"
+              value={renameText} onClick={event => event.stopPropagation()}
+              onChange={event => setRenameText(event.target.value)}
+              onBlur={() => { void commitRename(chain); }}
+              onKeyDown={event => { event.stopPropagation();
+                if (event.key === 'Enter') { event.preventDefault(); void commitRename(chain); }
+                if (event.key === 'Escape') { event.preventDefault(); renameCancelled.current = true; setRenamingId(null); }
+              }} /> : <button type="button" data-safe-mode-title="true" aria-label={t('重命名{0}', [name])}
+            className="min-w-0 truncate text-left text-sm font-bold text-gray-900 dark:text-white" title={name} disabled={savingRename}
+              onClick={event => { event.stopPropagation(); if (renamePending.current) return; renameCancelled.current = false; setRenameText(name); setRenamingId(chain.id); }}
+              onKeyDown={event => event.stopPropagation()}>{name}</button>}
+            {config.hideActions && <span className="shrink-0 text-micro text-gray-500">{t(PROMPT_LIBRARY_KINDS[chain.type as PromptLibraryKind]?.itemNoun || '')}</span>}
           </div>
           <div className="gallery-card-meta mt-1 flex flex-wrap items-center gap-1">
             {tags.slice(0, 3).map(tag => (
@@ -777,14 +726,14 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
           {selectedTags.size > 1 && <p className="text-xs text-gray-400">{t('只显示同时包含全部所选标签的{0}', [config.itemNoun])}</p>}
         </div>
       </ToolbarPopover>
-      <div className="flex flex-none items-center gap-1 border-l border-gray-200 pl-2 dark:border-gray-700">
-        <ToolbarButton onClick={openGenerator} aria-label={t(config.generateLabel)} title={t(config.generateLabel)} className="mobile-touch !px-2.5 md:!px-3">
+      {!config.hideActions && <div className="flex flex-none items-center gap-1 border-l border-gray-200 pl-2 dark:border-gray-700">
+        <ToolbarButton onClick={config.hideActions ? undefined : openGenerator} aria-label={t(config.generateLabel)} title={t(config.generateLabel)} className="mobile-touch !px-2.5 md:!px-3">
           <Sparkles /><span className="hidden sm:inline">{t(generatorTitle)}</span>
         </ToolbarButton>
         <ToolbarButton tone="primary" onClick={() => void createBlank()} disabled={creating} aria-label={t(config.createLabel)} title={t(config.createLabel)} className="mobile-touch !px-2.5 md:!px-3">
           {creating ? <LoaderCircle className="animate-spin" /> : <Plus />}<span className="hidden sm:inline">{t(config.createLabel)}</span>
         </ToolbarButton>
-      </div>
+      </div>}
     </WorkspaceToolbar>
   );
 
@@ -799,7 +748,7 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
       title={items.length ? t('没有找到符合条件的{0}', [config.itemNoun]) : t(config.emptyTitle)}
       hint={items.length ? t('换个关键词，或清除标签筛选。') : t(config.emptyHint)}
       action={!items.length ? (
-        <ToolbarButton tone="primary" onClick={openGenerator}><Sparkles /><span>{t(generatorTitle)}</span></ToolbarButton>
+        !config.hideActions ? <ToolbarButton tone="primary" onClick={openGenerator}><Sparkles /><span>{t(generatorTitle)}</span></ToolbarButton> : undefined
       ) : undefined}
     />
   );
@@ -983,16 +932,27 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
               />
             </label>
 
+            {facetSummary && <p className="text-xs text-gray-600 dark:text-gray-300">{t(`限定：${facetSummary}`)}</p>}
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-              {config.facets.map(facet => (
+              {config.facets.map(facet => facet.multiple ? (
+                <fieldset key={facet.key} className="min-w-0">
+                  <legend className="text-xs font-semibold text-gray-600 dark:text-gray-300">{t(facet.label)}</legend>
+                  <div className="mt-1 flex flex-wrap gap-1">
+                    <button type="button" className="mobile-touch rounded-full border px-2 text-xs" onClick={() => setFacets(previous => ({...previous, [facet.key]: []}))}>{t('不限')}</button>
+                    {facet.options.filter(Boolean).map(option => {
+                      const selected = Array.isArray(facets[facet.key]) ? facets[facet.key] as string[] : [];
+                      return <button key={option} type="button" aria-pressed={selected.includes(option)}
+                        className={`mobile-touch rounded-full border px-2 text-xs ${selected.includes(option) ? 'border-indigo-400 bg-indigo-50 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-200' : 'border-gray-300 text-gray-600 dark:border-gray-700 dark:text-gray-300'}`}
+                        onClick={() => setFacets(previous => ({...previous, [facet.key]: selected.includes(option) ? selected.filter(value => value !== option) : [...selected, option]}))}>{t(option)}</button>;
+                    })}
+                  </div>
+                </fieldset>
+              ) : (
                 <label key={facet.key} className="block">
                   <span className="text-xs font-semibold text-gray-600 dark:text-gray-300">{t(facet.label)}</span>
-                  <select
-                    value={facets[facet.key] || ''}
-                    onChange={event => setFacets(previous => ({ ...previous, [facet.key]: event.target.value }))}
-                    aria-label={t(facet.label)}
-                    className={TOOLBAR_FIELD_CLASS}
-                  >
+                  <select value={String(facets[facet.key] || '')}
+                    onChange={event => setFacets(previous => ({...previous, [facet.key]: event.target.value}))}
+                    aria-label={t(facet.label)} className={TOOLBAR_FIELD_CLASS}>
                     {facet.options.map(option => <option key={option || 'any'} value={option}>{option ? t(option) : t('不限')}</option>)}
                   </select>
                 </label>
@@ -1161,3 +1121,38 @@ export const WardrobeLibrary: React.FC<PromptLibraryProps> = props => (
 export const PoseLibrary: React.FC<PromptLibraryProps> = props => (
   <PromptLibrary config={PROMPT_LIBRARY_KINDS.pose} {...props} />
 );
+
+export const SceneLibrary: React.FC<PromptLibraryProps> = props => <PromptLibrary {...props} config={PROMPT_LIBRARY_KINDS.scene} />;
+const ALL_CONFIG: PromptLibraryKindConfig = {...PROMPT_LIBRARY_KINDS.appearance, type: ['appearance','wardrobe','pose','scene'], title:'图片提示词库', itemNoun:'提示词', emptyTitle:'图片提示词库还是空的', hideActions:true};
+const LIBRARY_CATEGORIES = ['all','appearance','wardrobe','pose','scene'] as const;
+type LibraryCategory = typeof LIBRARY_CATEGORIES[number];
+export const PromptLibraryHub: React.FC<PromptLibraryProps> = props => {
+  useLanguage();
+  const leaveGuards = useRef<Partial<Record<LibraryCategory, () => Promise<boolean>>>>({});
+  const [kind, setKind] = useState<LibraryCategory>(() => {
+    try { const saved=localStorage.getItem('nai-prompt-library-kind'); return LIBRARY_CATEGORIES.includes(saved as LibraryCategory) ? saved as LibraryCategory : 'all'; }
+    catch { return 'all'; }
+  });
+  const selectKind = async (category: LibraryCategory) => {
+    if (category === kind) return;
+    const guard = leaveGuards.current[kind];
+    if (guard && !await guard()) return;
+    setKind(category);
+    try { localStorage.setItem('nai-prompt-library-kind', category); } catch { /* 存储受限时仍可切换分类。 */ }
+  };
+  return <div className="flex h-full min-h-0 flex-1 flex-col">
+    <div role="tablist" aria-label={t('提示词分类')} className="flex shrink-0 gap-1 overflow-x-auto border-b border-gray-200 bg-white p-2 dark:border-gray-800 dark:bg-gray-900">
+      {LIBRARY_CATEGORIES.map(category => {
+        const count=props.chains.filter(chain => category==='all' ? LIBRARY_CATEGORIES.includes(chain.type as LibraryCategory) : chain.type===category).length;
+        const label=category==='all' ? '全部' : category==='scene' ? '场景' : PROMPT_LIBRARY_KINDS[category].title.replace('库','');
+        return <button key={category} type="button" role="tab" aria-selected={kind===category}
+          className={`mobile-touch shrink-0 rounded-lg px-3 text-sm ${kind===category ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-200' : 'text-gray-600 dark:text-gray-300'}`}
+          onClick={() => { void selectKind(category); }}>{t(label)} {count}</button>;
+      })}
+    </div>
+    {LIBRARY_CATEGORIES.map(category => <div key={category} hidden={kind!==category} className="h-full min-h-0 flex-1">
+      <PromptLibrary {...props} config={category==='all' ? ALL_CONFIG : PROMPT_LIBRARY_KINDS[category]}
+        registerLeaveGuard={guard => { leaveGuards.current[category] = guard; return () => { delete leaveGuards.current[category]; }; }} />
+    </div>)}
+  </div>;
+};

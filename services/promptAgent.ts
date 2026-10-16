@@ -249,7 +249,7 @@ export const formatModelOptionTitle = (
 
 
 /* ---------- 提示词库（人物形象 / 服饰 / 姿势） ---------- */
-export type PromptLibraryKind = 'appearance' | 'wardrobe' | 'pose';
+export type PromptLibraryKind = 'appearance' | 'wardrobe' | 'pose' | 'scene';
 
 /** 一次生成产出的单条方案。 */
 export interface PromptLibraryItem {
@@ -258,6 +258,8 @@ export interface PromptLibraryItem {
   bilingual: string;
   tags: string[];
   note?: string;
+  filtered?: string[];
+  filteredWarning?: boolean;
 }
 
 export interface PromptLibraryResult {
@@ -266,6 +268,7 @@ export interface PromptLibraryResult {
   model: string;
   count: number;
   kind: PromptLibraryKind;
+  filteredCount?: number;
 }
 
 /** 库生成时置顶追加的两段自定义提示词。 */
@@ -278,6 +281,7 @@ export const PROMPT_LIBRARY_KIND_LABELS: Record<PromptLibraryKind, string> = {
   appearance: '人物形象',
   wardrobe: '服饰',
   pose: '姿势',
+  scene: '场景',
 };
 
 export const promptAgentService = {
