@@ -45,6 +45,7 @@ interface Props {
 }
 const methodLabels = { random: '随机组合', mutate: '参考保留组合', crossover: '双亲交叉', refine: '权重测试', manual: '手动变体' };
 const selectClass = 'mobile-touch h-10 min-w-0 rounded-xl border border-gray-200 bg-white px-2 text-sm dark:border-gray-700 dark:bg-gray-900';
+const GENE_ACCENTS = ['bg-indigo-500', 'bg-emerald-500', 'bg-purple-500', 'bg-amber-500', 'bg-rose-500', 'bg-sky-500'];
 
 export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStepLimit, generationStreamPreview, selectionFocusEnabled = true, continuousGenerationEnabled = true, notify, onSaveChain, onOpenChain, onNavigateToPlayground }) => {
   useLanguage();
@@ -308,27 +309,42 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
     </PressRevealSurface> : <div className="flex min-h-36 items-center justify-center rounded-xl border border-dashed border-gray-300 text-gray-400 dark:border-gray-700"><ImagePlus className="h-8 w-8" /></div>}
     <div className="flex flex-wrap gap-2 text-xs text-gray-500"><span className="rounded-lg bg-gray-100 px-2 py-1 dark:bg-gray-800">{t(methodLabels[selected.method])}</span>{scores.get(selected.id)?.matches > 0 && <span className="rounded-lg bg-gray-100 px-2 py-1 dark:bg-gray-800">Elo {Math.round(scores.get(selected.id)?.rating || 1000)} · {t('{0} 次对比', [scores.get(selected.id)?.matches || 0])}</span>}</div>
     {!!selected.parents.length && <div className="flex flex-wrap items-center gap-1 text-xs text-gray-500">{t('来源候选')}{selected.parents.map(id => <button key={id} type="button" className="mobile-touch rounded-md px-2 text-indigo-500 hover:underline" onClick={() => { setFilter('all'); setRoundId(''); setQuery(''); setSelectedId(id); }}>#{experiment.candidates.findIndex(candidate => candidate.id === id) + 1}</button>)}</div>}
-    <div className="space-y-2">{selected.genes.map((gene, index) => {
-      const artist = experiment.artists.find(item => item.tag === gene.tag);
-      return <div key={gene.tag} className="flex min-w-0 items-center gap-2 text-sm"><span className="min-w-0 flex-1 truncate" title={gene.tag}>{gene.tag}</span>
-        {manualWeights ? <input aria-label={t('候选权重：{0}', [gene.tag])} type="number" className={`${selectClass} w-20 text-right font-mono`} min={experiment.rules.minWeight} max={experiment.rules.maxWeight} step={0.1} value={artist?.locked ? artist.weight : manualWeights[index]} disabled={busy || loading || artist?.locked} onChange={event => setManualWeights(current => current?.map((weight, i) => i === index ? Number(event.target.value) : weight) || null)} /> : <><span className="h-1.5 w-16 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800"><span className="block h-full rounded-full bg-indigo-400" style={{ width: `${gene.weight / 3 * 100}%` }} /></span><span className="w-7 text-right font-mono text-xs">{gene.weight.toFixed(1)}</span></>}
-      </div>;
-    })}</div>
+    <div className="rounded-2xl border border-gray-100 bg-gray-50/70 p-3.5 space-y-2.5 dark:border-gray-800/80 dark:bg-gray-900/40 shadow-inner">
+      <div className="flex items-center justify-between text-xs font-semibold text-gray-500 dark:text-gray-400">
+        <span>{t('画师基因配方')}</span>
+        <span className="font-mono text-xs">{selected.genes.length} {t('位画师')}</span>
+      </div>
+      <div className="space-y-2">{selected.genes.map((gene, index) => {
+        const artist = experiment.artists.find(item => item.tag === gene.tag);
+        const barColor = GENE_ACCENTS[index % GENE_ACCENTS.length];
+        return <div key={gene.tag} className="flex min-w-0 items-center gap-2 text-sm">
+          <span className={`h-2 w-2 rounded-full shrink-0 ${barColor}`} />
+          <span className="min-w-0 flex-1 truncate text-xs font-medium text-gray-800 dark:text-gray-200" title={gene.tag}>{gene.tag}</span>
+          {manualWeights ? <input aria-label={t('候选权重：{0}', [gene.tag])} type="number" className={`${selectClass} w-20 text-right font-mono text-xs`} min={experiment.rules.minWeight} max={experiment.rules.maxWeight} step={0.1} value={artist?.locked ? artist.weight : manualWeights[index]} disabled={busy || loading || artist?.locked} onChange={event => setManualWeights(current => current?.map((weight, i) => i === index ? Number(event.target.value) : weight) || null)} /> : <div className="flex items-center gap-2"><span className="h-1.5 w-16 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-800"><span className={`block h-full rounded-full ${barColor}`} style={{ width: `${Math.min(100, Math.max(5, (gene.weight / 3) * 100))}%` }} /></span><span className="w-7 text-right font-mono text-xs font-semibold text-gray-600 dark:text-gray-300">{gene.weight.toFixed(1)}</span></div>}
+        </div>;
+      })}</div>
+    </div>
     {manualWeights && <div className="flex flex-wrap gap-2"><ToolbarButton className="!border-emerald-600 !bg-emerald-600 !text-white" disabled={busy || loading} onClick={saveManualWeights}>{t('保存为新变体')}</ToolbarButton><ToolbarButton disabled={busy} onClick={() => setManualWeights(null)}>{t('取消')}</ToolbarButton></div>}
     {!selectedImage && (scores.get(selected.id)?.matches > 0 ? <p className="text-xs text-amber-600 dark:text-amber-400">{t('已评价的对照图在历史中不可用，请恢复原历史或新建复测实验。')}</p> : <ToolbarButton data-agent-action="business" tone="primary" className="!h-11 w-full" disabled={busy || loading || preparing || Boolean(session) || Boolean(manualWeights) || historyLoading || !historyReady || selected.archived} onClick={() => void generate()}>{preparing ? <LoaderCircle className="animate-spin" /> : <ImagePlus />}{t('生成对照图')} · {costLabel}</ToolbarButton>)}
     {!historyLoading && !historyReady && <p className="text-xs text-amber-600 dark:text-amber-400">{t('历史暂不可用，请重新加载后再生成或对比。')}</p>}
     <div className="grid grid-cols-2 gap-2">
-      <ToolbarButton disabled={busy || loading || Boolean(manualWeights)} tone="primary" onClick={selected.savedChainId && chains.some(chain => chain.id === selected.savedChainId) ? () => onOpenChain(selected.savedChainId!) : () => saveCandidate()}><Save />{t(selected.savedChainId && chains.some(chain => chain.id === selected.savedChainId) ? '打开风格串' : '存为风格串')}</ToolbarButton>
-      <ToolbarButton disabled={busy || Boolean(manualWeights)} onClick={() => { try { sendToLab(); } catch (cause) { setError((cause as Error).message); } }}><FlaskConical />{t('送往实验室')}</ToolbarButton>
+      <ToolbarButton disabled={busy || loading || Boolean(manualWeights)} tone="primary" className="!h-10 rounded-xl font-bold shadow-sm" onClick={selected.savedChainId && chains.some(chain => chain.id === selected.savedChainId) ? () => onOpenChain(selected.savedChainId!) : () => saveCandidate()}><Save />{t(selected.savedChainId && chains.some(chain => chain.id === selected.savedChainId) ? '打开风格串' : '存为风格串')}</ToolbarButton>
+      <ToolbarButton disabled={busy || Boolean(manualWeights)} className="!h-10 rounded-xl border-purple-200 bg-purple-50 text-purple-700 hover:bg-purple-100 dark:border-purple-800 dark:bg-purple-950/40 dark:text-purple-300 font-bold shadow-sm" onClick={() => { try { sendToLab(); } catch (cause) { setError((cause as Error).message); } }}><FlaskConical />{t('送往实验室')}</ToolbarButton>
     </div>
-    <details className="border-t border-gray-200 pt-3 dark:border-gray-800"><summary className="mobile-touch cursor-pointer text-xs text-gray-500">{t('更多操作')}</summary><div className="mt-2 grid grid-cols-2 gap-2">
-      <ToolbarButton data-agent-action="business" aria-describedby="roll-weight-test-description" disabled={busy || loading || Boolean(manualWeights) || Boolean(session) || !selectedImage} onClick={() => runRound('refine', selected.id)}><Sparkles />{t('权重测试')}</ToolbarButton>
-      <ToolbarButton disabled={busy || loading || Boolean(manualWeights)} onClick={() => void perform(async () => { if (!navigator.clipboard?.writeText) throw new Error('当前环境无法直接复制，请从完整提示词中手动复制'); await navigator.clipboard.writeText(formatRollStyle(selected.genes)); notify('已复制提示词'); })}><Copy />{t('复制画风')}</ToolbarButton>
-      <ToolbarButton disabled={busy || loading || Boolean(manualWeights)} onClick={() => archiveCandidates([selected.id], !selected.archived)}>{selected.archived ? <RotateCcw /> : <Trash2 />}{t(selected.archived ? '恢复候选' : '丢弃')}</ToolbarButton>
-      <ToolbarButton disabled={busy || loading || selected.archived || Boolean(manualWeights)} onClick={() => setManualWeights(selected.genes.map(gene => gene.weight))}><SlidersHorizontal />{t('手动调整权重')}</ToolbarButton>
-      <p id="roll-weight-test-description" className="col-span-2 text-xs leading-relaxed text-gray-500">{t('保持画师不变，自动生成不同权重的图片，再由你选择。')}</p>
-    </div></details>
-    <details className="text-xs text-gray-500"><summary className="cursor-pointer py-2">{t('完整提示词')}</summary><p className="break-words font-mono leading-5">{rollCandidateToChain(experiment, selected).basePrompt}</p></details>
+    <details className="rounded-2xl border border-gray-100 bg-gray-50/50 p-3 transition-all dark:border-gray-800/80 dark:bg-gray-900/40">
+      <summary className="mobile-touch cursor-pointer text-xs font-semibold text-gray-500 hover:text-indigo-600 dark:text-gray-400 dark:hover:text-indigo-400">{t('更多操作')}</summary>
+      <div className="mt-2.5 grid grid-cols-2 gap-2">
+        <ToolbarButton data-agent-action="business" aria-describedby="roll-weight-test-description" disabled={busy || loading || Boolean(manualWeights) || Boolean(session) || !selectedImage} onClick={() => runRound('refine', selected.id)}><Sparkles />{t('权重测试')}</ToolbarButton>
+        <ToolbarButton disabled={busy || loading || Boolean(manualWeights)} onClick={() => void perform(async () => { if (!navigator.clipboard?.writeText) throw new Error('当前环境无法直接复制，请从完整提示词中手动复制'); await navigator.clipboard.writeText(formatRollStyle(selected.genes)); notify('已复制提示词'); })}><Copy />{t('复制画风')}</ToolbarButton>
+        <ToolbarButton disabled={busy || loading || Boolean(manualWeights)} onClick={() => archiveCandidates([selected.id], !selected.archived)}>{selected.archived ? <RotateCcw /> : <Trash2 />}{t(selected.archived ? '恢复候选' : '丢弃')}</ToolbarButton>
+        <ToolbarButton disabled={busy || loading || selected.archived || Boolean(manualWeights)} onClick={() => setManualWeights(selected.genes.map(gene => gene.weight))}><SlidersHorizontal />{t('手动调整权重')}</ToolbarButton>
+        <p id="roll-weight-test-description" className="col-span-2 text-xs leading-relaxed text-gray-400 dark:text-gray-500">{t('保持画师不变，自动生成不同权重的图片，再由你选择。')}</p>
+      </div>
+    </details>
+    <details className="rounded-2xl border border-gray-100 bg-gray-50/50 p-3 transition-all dark:border-gray-800/80 dark:bg-gray-900/40 text-xs text-gray-500">
+      <summary className="mobile-touch cursor-pointer font-semibold text-gray-500 hover:text-indigo-600 dark:text-gray-400 dark:hover:text-indigo-400">{t('完整提示词')}</summary>
+      <p className="mt-2 break-words rounded-xl bg-white p-2.5 font-mono leading-relaxed text-gray-700 shadow-inner dark:bg-gray-950 dark:text-gray-300">{rollCandidateToChain(experiment, selected).basePrompt}</p>
+    </details>
   </div> : null;
 
   const verificationIds = experiment ? rollVerificationIds(experiment) : new Set<string>();
@@ -369,63 +385,92 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
           <ToolbarButton disabled={frozen || !chosen.length} onClick={() => setSelectedIds(new Set())}>{t('清空选择')}</ToolbarButton>
         </div>
         <ToolbarButton aria-label={t('退出多选')} disabled={frozen} onClick={() => { setSelecting(false); setSelectedIds(new Set()); }}><X /><span className="hidden sm:inline">{t('退出多选')}</span></ToolbarButton>
-      </> : <>
-        <ToolbarSearch value={query} onChange={event => { setQuery(event.target.value); setSelectedId(''); selectionAnchor.clearAnchor(); }} aria-label={t('搜索画师或编号')} placeholder={t('搜索画师或编号')} containerClassName="md:!max-w-none" disabled={!experiment || tab !== 'candidates'} />
-        <ToolbarPopover title={t('筛选与排序')} label={t('筛选')} count={Number(filter !== 'all') + Number(Boolean(roundId)) + Number(sort !== 'new')} disabled={!experiment || tab !== 'candidates'}>
-          {close => <div className="space-y-4">
-            <div role="group" aria-label={t('画风筛选')} className="grid grid-cols-2 gap-2">
-              {(['all', 'saved', 'pending', 'archived'] as const).map(value => <ToolbarButton key={value} aria-label={t(value === 'all' ? '全部' : value === 'saved' ? '已保存' : value === 'pending' ? '待生成' : '回收站')} active={filter === value} onClick={() => { setFilter(value); setSelectedId(''); selectionAnchor.clearAnchor(); close(); }}>{t(value === 'all' ? '全部' : value === 'saved' ? '已保存' : value === 'pending' ? '待生成' : '回收站')}<span className="ml-auto text-xs opacity-60">{experiment ? rollWorkspaceCandidates(experiment, images, { filter: value, roundId, query: '', sort }).length : 0}</span></ToolbarButton>)}
-            </div>
-            <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300">{t('查看轮次')}<select aria-label={t('查看轮次')} value={roundId} onChange={event => { setRoundId(event.target.value); setSelectedId(''); }} className={TOOLBAR_FIELD_CLASS}><option value="">{t('全部轮次')}</option>{[...(experiment?.rounds || [])].reverse().map(item => <option key={item.id} value={item.id}>{t('第 {0} 轮', [(experiment?.rounds?.indexOf(item) ?? 0) + 1])} · {item.candidateIds.length}</option>)}</select></label>
-            <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300">{t('排序')}<select aria-label={t('画风排序')} value={sort} onChange={event => setSort(event.target.value)} className={TOOLBAR_FIELD_CLASS}><option value="new">{t('最新生成')}</option><option value="old">{t('最早优先')}</option><option value="rating">{t('Elo 从高到低')}</option></select></label>
-            <button type="button" className="mobile-touch text-xs font-semibold text-indigo-600 dark:text-indigo-300" onClick={() => { setFilter('all'); setRoundId(''); setSort('new'); setQuery(''); close(); }}>{t('重置筛选')}</button>
-          </div>}
-        </ToolbarPopover>
-        <ToolbarButton aria-label={t('批量选择画风')} title={t('多选')} disabled={frozen || !experiment || tab !== 'candidates'} onClick={() => { setSelectedId(''); setSelecting(true); setSelectedIds(new Set()); }}><ListChecks /><span className="hidden xl:inline">{t('多选')}</span></ToolbarButton>
-        <div className="flex shrink-0 items-center border-l border-gray-200 pl-2 dark:border-gray-700">
-          <ToolbarButton aria-label={t(experiment ? '再 Roll 一轮' : '开始 Roll')} data-agent-action="business" tone="primary" disabled={!canStart} className="!rounded-r-none !border-r-0" onClick={() => runRound('batch')}><Dice5 /><span className="sm:hidden">Roll</span><span className="hidden sm:inline">{t(experiment ? '再 Roll 一轮' : '开始 Roll')}</span></ToolbarButton>
-          <ToolbarPopover label={t('本轮设置')} title={t('本轮设置')} icon={<ChevronDown />} disabled={frozen || working} width={320} className="[&_button[aria-haspopup]]:rounded-l-none [&_button[aria-haspopup]>span]:hidden">
-            {close => <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-3">
-                <label className="text-xs font-semibold text-gray-600 dark:text-gray-300">{t('每串画师')}<input type="number" aria-label={t('每串画师数')} className={TOOLBAR_FIELD_CLASS} min={1} max={16} value={artistsPerMix} onChange={event => setArtistsPerMix(Number(event.target.value))} /></label>
-                <label className="text-xs font-semibold text-gray-600 dark:text-gray-300">{t('本轮张数')}<input type="number" aria-label={t('本轮生成张数')} className={TOOLBAR_FIELD_CLASS} min={1} max={24} value={count} onChange={event => setCount(Number(event.target.value))} /></label>
+      </> : <div data-roll-toolbar-scroll="true" className="flex h-full min-w-0 flex-1 items-center gap-2 overflow-x-auto [scrollbar-width:none]">
+        {/* 左侧：实验选择与管理（胶囊卡片，归正核心上下文） */}
+        <div className="flex shrink-0 items-center gap-1 rounded-xl border border-gray-200/80 bg-gray-100/60 p-0.5 dark:border-gray-800 dark:bg-gray-800/40">
+          <ToolbarSelect label={t('切换画风记录')} containerClassName="max-w-32 sm:max-w-44 lg:max-w-56 min-w-0" className="!h-8 !border-transparent !bg-transparent !pl-2 !text-xs font-semibold" value={experimentId} disabled={frozen || preparing} onChange={event => setExperimentId(event.target.value)}>
+            {!experiment && <option value="">{t('新画风记录')}</option>}{experiments.filter(item => !item.archived).map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+          </ToolbarSelect>
+          <ToolbarPopover title={t('画风记录管理')} label={t('管理记录')} icon={<MoreHorizontal className="h-4 w-4" />} iconOnly disabled={frozen || working || selecting} width={320} className="[&_button]:!h-7 [&_button]:!w-7">
+            {close => <div className="space-y-3">
+              {experiment && <form onSubmit={event => { event.preventDefault(); if (!recordName.trim() || recordName.trim() === experiment.name) return; void perform(async () => { await store({ ...experiment, name: recordName.trim() }); close(); }); }}>
+                <label className="text-xs font-semibold text-gray-600 dark:text-gray-300">{t('记录名称')}<input aria-label={t('记录名称')} value={recordName} maxLength={120} onChange={event => setRecordName(event.target.value)} className={TOOLBAR_FIELD_CLASS} /></label>
+                <ToolbarButton type="submit" className="mt-2 w-full" disabled={!recordName.trim() || recordName.trim() === experiment.name}>{t('重命名')}</ToolbarButton>
+              </form>}
+              <div className="space-y-1">
+                <button type="button" className={TOOLBAR_MENU_CLASS} onClick={() => { setSetup(makeExperiment()); close(); }}><Plus />{t('新建记录')}</button>
+                <button type="button" className={TOOLBAR_MENU_CLASS} onClick={() => { void reload(); void reloadLibrary(); if (experimentId) void refreshHistory(experimentId); close(); }}><RefreshCw />{t('重新加载实验')}</button>
+                {experiment && <><button type="button" className={TOOLBAR_MENU_CLASS} onClick={() => { void saveExportBlob(new Blob([JSON.stringify(experiment, null, 2)], { type: 'application/json' }), `roll-${experiment.id}.json`).catch(cause => setError((cause as Error).message)); close(); }}><Download />{t('导出实验配置')}</button>
+                <button type="button" className={`${TOOLBAR_MENU_CLASS} !text-red-500`} onClick={() => { archiveRecord(experiment, true); close(); }}><Trash2 />{t('将记录移入回收站')}</button></>}
               </div>
-              <p className="text-xs text-gray-500">{savedCount ? t('优先参考已保存的 {0} 套组合', [savedCount]) : t('从画师库自动抽取 · {0} 位画师', [library.length])}</p>
-              <ToolbarButton className="w-full" onClick={() => { setSetup(experiment || makeExperiment()); close(); }}><Settings2 />{t('提示词与生成设置')}</ToolbarButton>
+              {experiments.some(item => item.archived) && <div className="space-y-1 border-t border-gray-200 pt-3 dark:border-gray-800"><p className="mb-2 text-xs text-gray-400">{t('记录回收站')}</p>{experiments.filter(item => item.archived).map(item => <div key={item.id} className="flex items-center gap-2 text-sm"><span className="min-w-0 flex-1 truncate">{item.name}</span><button type="button" className="mobile-touch shrink-0 px-2 text-xs text-indigo-500" aria-label={t('恢复记录：{0}', [item.name])} onClick={() => { archiveRecord(item, false); close(); }}>{t('恢复')}</button></div>)}</div>}
             </div>}
           </ToolbarPopover>
         </div>
-      </>}
-    </WorkspaceToolbar>
-    <div className="flex min-h-12 flex-none items-center gap-2 border-b border-gray-200/70 px-3 dark:border-gray-800/70 md:px-5">
-      <ToolbarSelect label={t('切换画风记录')} containerClassName="max-w-48 min-w-0 shrink" className="!h-8 !border-transparent !bg-transparent !pl-0 !text-xs" value={experimentId} disabled={frozen || preparing} onChange={event => setExperimentId(event.target.value)}>
-        {!experiment && <option value="">{t('新画风记录')}</option>}{experiments.filter(item => !item.archived).map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
-      </ToolbarSelect>
-      <ToolbarPopover title={t('画风记录管理')} label={t('管理记录')} icon={<MoreHorizontal />} iconOnly disabled={frozen || working || selecting} width={320}>
-        {close => <div className="space-y-3">
-          {experiment && <form onSubmit={event => { event.preventDefault(); if (!recordName.trim() || recordName.trim() === experiment.name) return; void perform(async () => { await store({ ...experiment, name: recordName.trim() }); close(); }); }}>
-            <label className="text-xs font-semibold text-gray-600 dark:text-gray-300">{t('记录名称')}<input aria-label={t('记录名称')} value={recordName} maxLength={120} onChange={event => setRecordName(event.target.value)} className={TOOLBAR_FIELD_CLASS} /></label>
-            <ToolbarButton type="submit" className="mt-2 w-full" disabled={!recordName.trim() || recordName.trim() === experiment.name}>{t('重命名')}</ToolbarButton>
-          </form>}
-          <div className="space-y-1">
-            <button type="button" className={TOOLBAR_MENU_CLASS} onClick={() => { setSetup(makeExperiment()); close(); }}><Plus />{t('新建记录')}</button>
-            <button type="button" className={TOOLBAR_MENU_CLASS} onClick={() => { void reload(); void reloadLibrary(); if (experimentId) void refreshHistory(experimentId); close(); }}><RefreshCw />{t('重新加载实验')}</button>
-            {experiment && <><button type="button" className={TOOLBAR_MENU_CLASS} onClick={() => { void saveExportBlob(new Blob([JSON.stringify(experiment, null, 2)], { type: 'application/json' }), `roll-${experiment.id}.json`).catch(cause => setError((cause as Error).message)); close(); }}><Download />{t('导出实验配置')}</button>
-            <button type="button" className={`${TOOLBAR_MENU_CLASS} !text-red-500`} onClick={() => { archiveRecord(experiment, true); close(); }}><Trash2 />{t('将记录移入回收站')}</button></>}
+
+        {/* 当处于盲选对比模式时，顶栏左侧显眼提供返回画风库按钮 */}
+        {tab === 'compare' && (
+          <ToolbarButton tone="primary" className="!rounded-xl shadow-sm" onClick={() => { setSelectedId(''); setTab('candidates'); }}>
+            <Columns2 className="h-4 w-4" />
+            <span>{t('返回画风库')}</span>
+          </ToolbarButton>
+        )}
+
+        {/* 中间：自适应搜索框铺满可用宽度 */}
+        <ToolbarSearch value={query} onChange={event => { setQuery(event.target.value); setSelectedId(''); selectionAnchor.clearAnchor(); }} aria-label={t('搜索画师或编号')} placeholder={t('搜索画师或编号')} containerClassName="flex-1 !max-w-none md:!max-w-none min-w-[160px] mx-1 md:mx-2" disabled={!experiment || tab !== 'candidates'} />
+
+        {/* 右侧集群：紧密贴紧屏幕最右端，彻底消除右侧空白 */}
+        <div className="ml-auto flex shrink-0 items-center gap-1.5 md:gap-2">
+          {/* 筛选与排序 */}
+          <ToolbarPopover title={t('筛选与排序')} label={t('筛选')} count={Number(filter !== 'all') + Number(Boolean(roundId)) + Number(sort !== 'new')} disabled={!experiment || tab !== 'candidates'}>
+            {close => <div className="space-y-4">
+              <div role="group" aria-label={t('画风筛选')} className="grid grid-cols-2 gap-2">
+                {(['all', 'originals', 'variants', 'saved', 'pending', 'archived'] as const).map(value => <ToolbarButton key={value} aria-label={t(value === 'all' ? '全部' : value === 'originals' ? '纯新探索' : value === 'variants' ? '微调变体' : value === 'saved' ? '已保存' : value === 'pending' ? '待生成' : '回收站')} active={filter === value} onClick={() => { setFilter(value); setSelectedId(''); selectionAnchor.clearAnchor(); close(); }}>{t(value === 'all' ? '全部' : value === 'originals' ? '纯新探索' : value === 'variants' ? '微调变体' : value === 'saved' ? '已保存' : value === 'pending' ? '待生成' : '回收站')}<span className="ml-auto text-xs opacity-60">{experiment ? rollWorkspaceCandidates(experiment, images, { filter: value, roundId, query: '', sort }).length : 0}</span></ToolbarButton>)}
+              </div>
+              <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300">{t('查看轮次')}<select aria-label={t('查看轮次')} value={roundId} onChange={event => { setRoundId(event.target.value); setSelectedId(''); }} className={TOOLBAR_FIELD_CLASS}><option value="">{t('全部轮次')}</option>{[...(experiment?.rounds || [])].reverse().map(item => <option key={item.id} value={item.id}>{t('第 {0} 轮', [(experiment?.rounds?.indexOf(item) ?? 0) + 1])} · {item.candidateIds.length}</option>)}</select></label>
+              <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300">{t('排序')}<select aria-label={t('画风排序')} value={sort} onChange={event => setSort(event.target.value)} className={TOOLBAR_FIELD_CLASS}><option value="new">{t('最新生成')}</option><option value="old">{t('最早优先')}</option><option value="rating">{t('Elo 从高到低')}</option></select></label>
+              <button type="button" className="mobile-touch text-xs font-semibold text-indigo-600 dark:text-indigo-300" onClick={() => { setFilter('all'); setRoundId(''); setSort('new'); setQuery(''); close(); }}>{t('重置筛选')}</button>
+            </div>}
+          </ToolbarPopover>
+
+          {/* 快速清除筛选标记 */}
+          {(query || roundId || filter !== 'all') && tab === 'candidates' && (
+            <button type="button" aria-label={t('清除筛选')} className="mobile-touch hidden sm:flex shrink-0 items-center gap-1 rounded-lg bg-gray-100 px-2 py-1 text-xs text-gray-600 dark:bg-gray-800 dark:text-gray-300 hover:text-red-500" onClick={() => { setFilter('all'); setRoundId(''); setQuery(''); }}>
+              {t(filter === 'saved' ? '已保存' : filter === 'pending' ? '待生成' : filter === 'archived' ? '回收站' : '已筛选')}<X className="h-3 w-3" />
+            </button>
+          )}
+
+          {/* 批量多选 */}
+          <ToolbarButton aria-label={t('批量选择画风')} title={t('多选')} disabled={frozen || !experiment || tab !== 'candidates'} onClick={() => { setSelectedId(''); setSelecting(true); setSelectedIds(new Set()); }}><ListChecks /><span className="hidden xl:inline">{t('多选')}</span></ToolbarButton>
+
+          {experiment && <span className="hidden xl:inline text-xs text-gray-400 dark:text-gray-500 whitespace-nowrap">
+            {tab === 'compare' ? t('画风对比') : `${scopedRound ? t('第 {0} 轮', [(experiment.rounds?.indexOf(scopedRound) ?? 0) + 1]) : t('全部轮次')} · ${t('显示 {0} 套', [visible.length])}`}
+          </span>}
+
+          {/* 可选工具（对决对比 / 进化下一轮） */}
+          {experiment && <ToolbarPopover title={t('可选工具')} label={t('可选工具')} icon={<SlidersHorizontal />} iconOnly disabled={selecting} width={240}>{close => <div className="space-y-1">
+            <button type="button" aria-describedby={tab === 'compare' ? undefined : 'roll-comparison-description'} className={TOOLBAR_MENU_CLASS} onClick={() => { setSelectedId(''); setTab(tab === 'compare' ? 'candidates' : 'compare'); close(); }}><Columns2 />{t(tab === 'compare' ? '返回画风库' : '画风对比')}</button>
+            {tab !== 'compare' && <p id="roll-comparison-description" className="px-3 pb-2 text-xs leading-relaxed text-gray-500">{t('对比已有图片，选出偏好的画风；不会生成新图。')}</p>}
+            {experiment.votes.length > 0 && <button type="button" data-agent-action="business" className={TOOLBAR_MENU_CLASS} disabled={!canStart} onClick={() => { runRound('evolve'); close(); }}><Sparkles />{t('进化下一轮')}</button>}
+          </div>}</ToolbarPopover>}
+
+          {/* 最右侧主 CTA 组合：开始 Roll + 本轮设置 */}
+          <div className="flex shrink-0 items-center">
+            <ToolbarButton aria-label={t(experiment ? '再 Roll 一轮' : '开始 Roll')} data-agent-action="business" tone="primary" disabled={!canStart} className="!rounded-r-none !border-r-0 font-bold shadow-sm transition-transform active:scale-95" onClick={() => runRound('batch')}><Dice5 className="h-4 w-4" /><span className="sm:hidden">Roll</span><span className="hidden sm:inline">{t(experiment ? '再 Roll 一轮' : '开始 Roll')}</span></ToolbarButton>
+            <ToolbarPopover label={t('本轮设置')} title={t('本轮设置')} icon={<ChevronDown />} disabled={frozen || working} width={320} className="[&_button[aria-haspopup]]:rounded-l-none [&_button[aria-haspopup]>span]:hidden">
+              {close => <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-3">
+                  <label className="text-xs font-semibold text-gray-600 dark:text-gray-300">{t('每串画师')}<input type="number" aria-label={t('每串画师数')} className={TOOLBAR_FIELD_CLASS} min={1} max={16} value={artistsPerMix} onChange={event => setArtistsPerMix(Number(event.target.value))} /></label>
+                  <label className="text-xs font-semibold text-gray-600 dark:text-gray-300">{t('本轮张数')}<input type="number" aria-label={t('本轮生成张数')} className={TOOLBAR_FIELD_CLASS} min={1} max={24} value={count} onChange={event => setCount(Number(event.target.value))} /></label>
+                </div>
+                <p className="text-xs text-gray-500">{savedCount ? t('优先参考已保存的 {0} 套组合', [savedCount]) : t('从画师库自动抽取 · {0} 位画师', [library.length])}</p>
+                <ToolbarButton className="w-full" onClick={() => { setSetup(experiment || makeExperiment()); close(); }}><Settings2 />{t('提示词与生成设置')}</ToolbarButton>
+              </div>}
+            </ToolbarPopover>
           </div>
-          {experiments.some(item => item.archived) && <div className="space-y-1 border-t border-gray-200 pt-3 dark:border-gray-800"><p className="mb-2 text-xs text-gray-400">{t('记录回收站')}</p>{experiments.filter(item => item.archived).map(item => <div key={item.id} className="flex items-center gap-2 text-sm"><span className="min-w-0 flex-1 truncate">{item.name}</span><button type="button" className="mobile-touch shrink-0 px-2 text-xs text-indigo-500" aria-label={t('恢复记录：{0}', [item.name])} onClick={() => { archiveRecord(item, false); close(); }}>{t('恢复')}</button></div>)}</div>}
-        </div>}
-      </ToolbarPopover>
-      {experiment && <div className="flex min-w-0 flex-1 items-center justify-end gap-2 text-xs text-gray-500">
-        <span className="truncate">{tab === 'compare' ? t('画风对比') : `${scopedRound ? t('第 {0} 轮', [(experiment.rounds?.indexOf(scopedRound) ?? 0) + 1]) : t('全部轮次')} · ${t('显示 {0} 套', [visible.length])}`}</span>
-        {(query || roundId || filter !== 'all') && tab === 'candidates' && <button type="button" aria-label={t('清除筛选')} className="mobile-touch flex shrink-0 items-center gap-1 rounded-lg bg-gray-100 px-2 text-gray-500 dark:bg-gray-800" onClick={() => { setFilter('all'); setRoundId(''); setQuery(''); }}>{t(filter === 'saved' ? '已保存' : filter === 'pending' ? '待生成' : filter === 'archived' ? '回收站' : '筛选')}<X className="h-3 w-3" /></button>}
+        </div>
       </div>}
-      {experiment && <ToolbarPopover title={t('可选工具')} label={t('可选工具')} icon={<SlidersHorizontal />} iconOnly disabled={selecting} width={240}>{close => <div className="space-y-1">
-        <button type="button" aria-describedby={tab === 'compare' ? undefined : 'roll-comparison-description'} className={TOOLBAR_MENU_CLASS} onClick={() => { setSelectedId(''); setTab(tab === 'compare' ? 'candidates' : 'compare'); close(); }}><Columns2 />{t(tab === 'compare' ? '返回画风库' : '画风对比')}</button>
-        {tab !== 'compare' && <p id="roll-comparison-description" className="px-3 pb-2 text-xs leading-relaxed text-gray-500">{t('对比已有图片，选出偏好的画风；不会生成新图。')}</p>}
-        {experiment.votes.length > 0 && <button type="button" data-agent-action="business" className={TOOLBAR_MENU_CLASS} disabled={!canStart} onClick={() => { runRound('evolve'); close(); }}><Sparkles />{t('进化下一轮')}</button>}
-      </div>}</ToolbarPopover>}
-    </div>
+    </WorkspaceToolbar>
     {error && <div role="alert" className="flex flex-none items-center gap-2 border-b border-red-200 bg-red-50 px-4 py-2 text-xs text-red-600 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300"><span className="min-w-0 flex-1 break-words">{t(error)}</span>{errorSource !== 'generation' && <button type="button" className="mobile-touch shrink-0 px-2 underline" onClick={() => { void reload(); if (experimentId) void refreshHistory(experimentId); }}>{t('重新加载')}</button>}<IconButton label="关闭错误提示" className="!h-8 !w-8 !border-transparent !bg-transparent !text-current" onClick={() => setError('')}><X /></IconButton></div>}
     {libraryError && <div role="alert" className="flex flex-none items-center gap-2 border-b border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-700 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300"><span className="flex-1">{t(libraryError)}</span><button type="button" className="mobile-touch px-2 underline" onClick={() => void reloadLibrary()}>{t('重新加载')}</button></div>}
     {tab === 'compare' && contextMismatch && <p role="alert" className="px-4 py-2 text-xs text-amber-600">{t('这两张图片的实际生成条件不同，不能放在一起比较。')}</p>}
@@ -435,7 +480,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
       : tab === 'compare' ? roundResult || <StyleRollCompare experiment={experiment} pair={pair} images={images} active={active && !setup && !lightbox} busy={frozen} historyReady={historyReady && !historyLoading} hasSkipped={skipped.size > 0} context={roundContext} undoAllowed={undoAllowed} onVote={vote} onUndo={undoVote} onSkip={() => setSkipped(current => pair ? new Set([...current, rollPairKey(...pair)]) : new Set())} />
       : <div className="relative flex min-h-0 flex-1">
         <StyleRollGallery experiment={experiment} candidates={visible} images={images} historyReady={historyReady} historyLoading={historyLoading} selectedId={selectedId} selectionFocusEnabled={selectionFocusEnabled} selecting={selecting} selectedIds={selectedIds} sort={sort} onSelect={setSelectedId} onToggle={id => setSelectedIds(current => { const next = new Set(current); next.has(id) ? next.delete(id) : next.add(id); return next; })} onSave={id => saveCandidate(id)} onArchive={id => archiveCandidates([id], !experiment.candidates.find(candidate => candidate.id === id)!.archived)} busy={frozen} scrollRef={scrollRef} onScroll={() => { selectionAnchor.onScroll(); rememberScroll(); }} notify={notify} />
-        {!isMobile && selected && <aside className="flex w-80 max-w-[40%] flex-none flex-col border-l border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900 xl:w-88"><div className="flex items-center justify-between border-b border-gray-200 px-4 py-2 dark:border-gray-800"><strong className="text-sm">{t('候选 {0}', [experiment.candidates.indexOf(selected) + 1])}</strong><IconButton label="关闭候选详情" onClick={() => setSelectedId('')}><X /></IconButton></div><div className="min-h-0 flex-1 overflow-y-auto">{detail}</div></aside>}
+        {!isMobile && selected && <aside className="flex w-84 max-w-[40%] flex-none flex-col border-l border-gray-200/80 bg-white/95 backdrop-blur-md dark:border-gray-800/80 dark:bg-gray-900/95 xl:w-92 shadow-sm"><div className="flex items-center justify-between border-b border-gray-200 px-4 py-2 dark:border-gray-800"><strong className="text-sm">{t('候选 {0}', [experiment.candidates.indexOf(selected) + 1])}</strong><IconButton label="关闭候选详情" onClick={() => setSelectedId('')}><X /></IconButton></div><div className="min-h-0 flex-1 overflow-y-auto">{detail}</div></aside>}
       </div>}
     {experiment && isMobile && <ImagePreviewPortal><MobileDetailView open={Boolean(selected) && tab === 'candidates' && !setup} title={t('候选 {0}', [experiment.candidates.findIndex(candidate => candidate.id === selectedId) + 1])} onClose={() => setSelectedId('')}>{detail}</MobileDetailView></ImagePreviewPortal>}
     {setup && <StyleRollSetup initial={setup} chains={chains} libraryCount={library.length} libraryLoading={libraryLoading} enforceFreeStepLimit={enforceFreeStepLimit} onClose={() => setSetup(null)} onSave={async value => { await store(value); if (!experiments.some(item => item.id === value.id)) setExperimentId(value.id); }} />}

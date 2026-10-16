@@ -22,7 +22,7 @@ vi.mock('../../services/api', async original => ({ ...await original<typeof impo
 vi.mock('../../components/ConfirmDialog', () => ({ useConfirmDialog: () => mocks.confirm }));
 vi.mock('../../components/ImageShareActions', () => ({ ImageShareActions: () => null, IMAGE_CARD_ACTION_CLASS: 'image-action' }));
 vi.mock('../../components/ImageLightbox', () => ({ ImageLightbox: () => null }));
-vi.mock('../../components/SmartImage', async original => ({ ...await original<typeof import('../../components/SmartImage')>(), SmartImage: ({ src, alt }: any) => <img src={src} alt={alt} />, OriginalImage: (props: any) => <img {...props} /> }));
+vi.mock('../../components/SmartImage', async original => ({ ...await original<typeof import('../../components/SmartImage')>(), SmartImage: ({ src, alt, className }: any) => <img src={src} alt={alt} className={className} />, OriginalImage: (props: any) => <img {...props} /> }));
 vi.mock('../../components/roll/StyleRollSetup', () => ({ StyleRollSetup: ({ initial, onSave, onClose }: any) => <div role="dialog"><button onClick={async () => { await onSave(initial); onClose(); }}>保存合成实验</button></div> }));
 
 let experiment: RollExperiment;
@@ -57,6 +57,43 @@ const reloadRecords = () => { fireEvent.click(screen.getByRole('button', { name:
 const details = () => fireEvent.click(screen.getByText('更多操作', { exact: true }));
 const duel = () => { fireEvent.click(screen.getByRole('button', { name: '可选工具' })); fireEvent.click(screen.getByRole('button', { name: '画风对比' })); };
 const loadPair = () => { fireEvent.load(screen.getByAltText('左侧候选')); fireEvent.load(screen.getByAltText('右侧候选')); };
+
+it('手机390px工具栏在内部横向滚动，主操作保持触控尺寸，菜单通过Portal显示且预览不单独放大', async () => {
+  mocks.mobile = true; vi.stubGlobal('innerWidth', 390);
+  const { container } = await setup();
+  const scroller = container.querySelector<HTMLElement>('[data-roll-toolbar-scroll]')!;
+  expect(scroller.classList.contains('min-w-0')).toBe(true);
+  expect(scroller.classList.contains('overflow-x-auto')).toBe(true);
+  expect(scroller.closest('header')).toBeTruthy();
+  const roll = screen.getByRole('button', { name: '再 Roll 一轮' });
+  const settings = screen.getByRole('button', { name: '本轮设置' });
+  expect(scroller.contains(roll)).toBe(true); expect(scroller.contains(settings)).toBe(true);
+  expect(roll.classList.contains('h-10')).toBe(true);
+  expect(roll.className).not.toContain('!h-7');
+  const preview = screen.getByAltText('候选 1');
+  expect(preview.classList.contains('object-contain')).toBe(true);
+  expect(preview.className).not.toMatch(/(?:group-hover:|hover:)scale/);
+  fireEvent.click(settings);
+  const menu = screen.getByRole('dialog', { name: '本轮设置' });
+  expect(scroller.contains(menu)).toBe(false);
+  expect(menu.closest('[data-roll-page]')).toBeNull();
+});
+
+it('纯新探索与微调变体实际切换候选，退出筛选回到完整集合且不提交生图', async () => {
+  experiment.candidates = [candidateFixture('a', 'alpha'), { ...candidateFixture('b', 'beta'), method: 'refine', parents: ['a'] }, { ...candidateFixture('c', 'gamma'), method: 'mutate', parents: ['a'] }];
+  mocks.history.mockResolvedValue(rows(experiment));
+  await setup();
+  filterBy('纯新探索');
+  expect(screen.getByRole('button', { name: '查看候选 1' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: '查看候选 2' })).toBeNull();
+  filterBy('微调变体');
+  expect(screen.queryByRole('button', { name: '查看候选 1' })).toBeNull();
+  expect(screen.getByRole('button', { name: '查看候选 2' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: '查看候选 3' })).toBeTruthy();
+  filterBy('全部');
+  expect(screen.getAllByRole('button', { name: /^查看候选/ })).toHaveLength(3);
+  expect(mocks.generate).not.toHaveBeenCalled(); expect(mocks.save).not.toHaveBeenCalled();
+});
 
 it('首次使用直接设置人数与张数开始一轮，无需先建实验或手填名单；多配方一次提交', async () => {
   experiment.candidates = []; experiment.artists = []; mocks.load.mockResolvedValue([]);

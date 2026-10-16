@@ -31,7 +31,9 @@ describe('界面语言', () => {
   });
   it('Roll 串的操作、数量、错误与画风占位符具备四种译文，切语言不改原 Tag', () => {
     for (const language of LANGUAGES.filter(item => item.code !== 'zh-CN')) {
-      for (const key of ['生成对照图', '新建实验', '撤销上次对比', '已评价候选的对照图不可替换', '从风格串提取画师', '权重测试', '继续测试权重', '保存微调后的画风', '手动调整权重', '保持画师不变，自动生成不同权重的图片，再由你选择。', '对比已有图片，选出偏好的画风；不会生成新图。']) expect(translate(language.code, key)).not.toBe(key);
+      for (const key of ['生成对照图', '新建实验', '撤销上次对比', '已评价候选的对照图不可替换', '从风格串提取画师', '权重测试', '继续测试权重', '保存微调后的画风', '手动调整权重', '保持画师不变，自动生成不同权重的图片，再由你选择。', '对比已有图片，选出偏好的画风；不会生成新图。', '画师基因配方', '画风对决', '盲选已遮盖画师信息', '纯新探索', '微调变体', '随机', '变异', '双亲', '微调', '手动', '已筛选', '候选 A', '候选 B']) expect(translate(language.code, key)).not.toBe(key);
+      expect(translate(language.code, '左')).toBe(({ 'zh-TW': '左', en: 'Left', ja: '左', ko: '왼쪽' } as Record<string, string>)[language.code]);
+      expect(translate(language.code, '右')).toBe(({ 'zh-TW': '右', en: 'Right', ja: '右', ko: '오른쪽' } as Record<string, string>)[language.code]);
       expect(translate(language.code, '画风对比')).toBe(({ 'zh-TW': '畫風比較', en: 'Style comparison', ja: '画風比較', ko: '화풍 비교' } as Record<string, string>)[language.code]);
       expect(translate(language.code, '公共提示词（{style} 为画风位置）')).toContain('{style}');
       expect(translate(language.code, '{0} 次对比', [12])).toContain('12');

@@ -1,4 +1,5 @@
 import { expect, it } from 'vitest';
+import type { RollCandidate } from '../../services/styleRoll';
 import { candidateFixture, rollFixture, rollImageFixture } from '../fixtures/styleRoll';
 import { rollPendingCandidates, rollWorkspaceCandidates } from '../../services/styleRollWorkspace';
 
@@ -9,6 +10,25 @@ const fixture = () => {
   return { e, images: new Map([['saved', rollImageFixture(e, e.candidates[1])]]) };
 };
 const view = { filter: 'all', roundId: '', query: '', sort: 'new' };
+
+it('纯新探索与衍生变体按来源划分，和轮次/搜索/回收站规则交叉且不包含验证副本', () => {
+  const e = rollFixture();
+  const variant = (id: string, method: RollCandidate['method']): RollCandidate => ({ ...candidateFixture(id, `artist_${id}`), method, parents: ['original'] });
+  e.candidates = [candidateFixture('original', 'original_artist'), variant('refine', 'refine'), variant('mutate', 'mutate'), variant('crossover', 'crossover'), variant('manual', 'manual'),
+    { ...variant('trash', 'refine'), archived: true }, variant('verification', 'manual'), candidateFixture('old')];
+  e.rounds = [{ id: 'current', kind: 'batch', candidateIds: ['original', 'refine', 'mutate', 'crossover', 'manual', 'trash'], opponents: [], createdAt: 1 },
+    { id: 'verification-round', kind: 'verify', candidateIds: ['verification'], opponents: [], createdAt: 2 }];
+  const images = new Map();
+  const ids = (filter: string, roundId = '', query = '') => rollWorkspaceCandidates(e, images, { ...view, filter, roundId, query }).map(item => item.id);
+  expect(ids('originals')).toEqual(['old', 'original']);
+  expect(ids('variants')).toEqual(['manual', 'crossover', 'mutate', 'refine']);
+  expect(ids('originals', 'current')).toEqual(['original']);
+  expect(ids('variants', 'current', 'artist mutate')).toEqual(['mutate']);
+  expect(ids('variants', 'current', '#2')).toEqual(['refine']);
+  expect(ids('originals', 'missing')).toEqual([]);
+  expect(ids('variants', 'current', 'trash')).toEqual([]);
+  expect(ids('archived', 'current')).toEqual(['trash']);
+});
 
 it('全部如实展示成图与待生成，回收站独立；编号与归一化画师查询可交叉轮次', () => {
   const { e, images } = fixture();
