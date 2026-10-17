@@ -122,7 +122,7 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
   };
 
   const deleteCustom = async (provider: PromptAgentCustomProvider) => {
-    if (!provider.id || !await confirmAction({ title: `删除 ${provider.name}？`, message: '将删除这套接口配置和电脑中加密保存的密钥，不影响已有助手对话。', confirmLabel: '删除接口', tone: 'danger' })) return;
+    if (!provider.id || !await confirmAction({ rememberKey: 'agent.provider.delete', title: `删除 ${provider.name}？`, message: '将删除这套接口配置和电脑中加密保存的密钥，不影响已有助手对话。', confirmLabel: '删除接口', tone: 'danger' })) return;
     setBusy(true);
     try { await promptAgentService.deleteCustomProvider(provider.id); await reload(); notify('自定义接口已删除'); }
     catch (error) { notify(error instanceof Error ? error.message : '删除失败', 'error'); }

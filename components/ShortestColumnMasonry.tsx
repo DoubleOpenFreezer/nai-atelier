@@ -17,7 +17,7 @@ import { MobileImageDisplayPreferences } from '../services/imageDisplayPreferenc
  *
  * 默认/手机：2；>= 768px：4；>= 1280px：5；>= 1600px：6。
  * 移动端设置（columns: 'auto' | 1 | 2 | 3）只在 < 768px 生效；
- * 桌面端设置（desktopColumns: 'auto' | 1-5）为明确数值时优先，auto 时用断点默认值。
+ * 桌面端设置（desktopColumns: 'auto' | 1-7）为明确数值时优先，auto 时用断点默认值。
  * 600-767px 横屏且移动端为 auto 时按 CSS 规则为 3 列。
  */
 export const resolveMasonryColumnCount = (
@@ -80,24 +80,26 @@ export const computeShortestColumnAssignment = <T,>(
   estimateHeight: (item: T, columnWidth: number) => number,
   columnWidth: number,
   /** 已显示卡片保持原列，尺寸更新只影响新卡片的最短列选择。 */
-  placement?: { previous: ReadonlyMap<string, number>; next: Map<string, number>; key: (item: T) => string },
+  placement?: { previous: ReadonlyMap<string, number>; next: Map<string, number>; key: (item: T) => string; measuredHeights?: readonly number[] },
+  gap = 0,
 ): T[][] => {
   const count = Math.max(0, Math.min(columnCount, items.length));
   const columns: T[][] = Array.from({ length: count }, () => []);
   if (count === 0) return columns;
-  const heights = new Array<number>(count).fill(0);
+  const heights = placement?.measuredHeights ? placement.measuredHeights.map(height => height + gap) : new Array<number>(count).fill(0);
   for (const item of items) {
     let target = 0;
     for (let i = 1; i < count; i += 1) {
       if (heights[i] < heights[target]) target = i;
     }
+    const retained = placement?.previous.get(placement.key(item));
     if (placement) {
-      const retained = placement.previous.get(placement.key(item));
       if (retained !== undefined && retained < count) target = retained;
       placement.next.set(placement.key(item), target);
     }
     columns[target].push(item);
-    heights[target] += estimateHeight(item, columnWidth);
+    // 实测高度已包含旧卡片及其间距，只有新增卡片才继续累计。
+    if (retained === undefined || !placement?.measuredHeights) heights[target] += estimateHeight(item, columnWidth) + gap;
   }
   return columns;
 };
@@ -116,6 +118,8 @@ interface ShortestColumnMasonryProps<T> {
   gap?: number;
   /** 默认保留已显示卡片所属列，避免侧栏挤压或图片尺寸返回时重挂载。 */
   stableColumns?: boolean;
+  /** 主动改变查询条件时，即使结果恰好沿用旧前缀，也按新集合分列。 */
+  resetKey?: unknown;
 }
 
 /**
@@ -131,10 +135,11 @@ export const ShortestColumnMasonry = <T,>({
   className,
   gap = 12,
   stableColumns = true,
+  resetKey,
 }: ShortestColumnMasonryProps<T>) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState(0);
-  const committed = useRef({ count: 0, keys: [] as string[], placement: new Map<string, number>() });
+  const committed = useRef({ count: 0, keys: [] as string[], placement: new Map<string, number>(), resetKey });
 
   useEffect(() => {
     const element = containerRef.current;
@@ -162,14 +167,18 @@ export const ShortestColumnMasonry = <T,>({
     const keys = items.map(getItemKey);
     // 仅同序列或尾部追加沿用列；筛选删项与中途插入必须按新集合重新平衡。
     const samePrefix = keys.length >= committed.current.keys.length && committed.current.keys.every((key, index) => key === keys[index]);
-    const previous = stableColumns && committed.current.count === usedColumns && samePrefix
+    const previous = stableColumns && committed.current.count === usedColumns && samePrefix && Object.is(committed.current.resetKey, resetKey)
       ? committed.current.placement : new Map<string, number>();
+    // 纯尾追加按屏幕上的真实列高接续；异步图片/文字的估高误差不能让实际短列一直断粮。
+    const measured = previous.size && keys.length > committed.current.keys.length
+      ? Array.from(containerRef.current?.children || [], column => column.getBoundingClientRect().height) : [];
+    const measuredHeights = measured.length === usedColumns && measured.every(height => height > 0) ? measured : undefined;
     const placement = new Map<string, number>();
     const layout = usedColumns === 0 || columnWidth <= 0 ? [] as T[][]
       : computeShortestColumnAssignment(items, usedColumns, estimateItemHeight, columnWidth,
-        stableColumns ? { previous, next: placement, key: getItemKey } : undefined);
-    return { layout, placement, keys, count: usedColumns };
-  }, [items, usedColumns, estimateItemHeight, columnWidth, stableColumns, getItemKey]);
+        stableColumns ? { previous, next: placement, key: getItemKey, measuredHeights } : undefined, gap);
+    return { layout, placement, keys, count: usedColumns, resetKey };
+  }, [items, usedColumns, estimateItemHeight, columnWidth, stableColumns, getItemKey, gap, resetKey]);
   useEffect(() => { if (columnWidth > 0) committed.current = computed; }, [computed, columnWidth]);
   const layout = computed.layout;
 

@@ -12,6 +12,7 @@ vi.mock('../../services/imageSharing', async original => ({ ...await original<ty
 
 const { get, post, put, preferences } = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), put: vi.fn(), preferences: { enabled: true } }));
 const confirmAction = vi.hoisted(() => vi.fn(async () => false));
+const collectionState = vi.hoisted(() => ({ rows: [] as any[], revision: 0, listeners: new Set<() => void>() }));
 vi.mock('../../components/ConfirmDialog', () => ({ useConfirmDialog: () => confirmAction }));
 vi.mock('../../services/stChatu8Preferences', () => ({ useStChatu8Preferences: () => preferences }));
 vi.mock('../../services/api', () => ({ api: { get, post, put } }));
@@ -76,6 +77,7 @@ it.each(['style', 'character'] as const)('%s 封面右上保留透明图片操�
 });
 beforeEach(() => {
   localStorage.clear(); preferences.enabled = true;
+  collectionState.rows = []; collectionState.revision = 0; collectionState.listeners.clear();
   confirmAction.mockReset(); confirmAction.mockResolvedValue(false);
   get.mockReset(); post.mockReset(); get.mockResolvedValue({ entries: [], lastSnapshotAt: 0 });
   put.mockReset(); put.mockResolvedValue(undefined);
@@ -667,6 +669,31 @@ describe('风格串列表的酒馆筛选交互', () => {
 vi.mock('../../services/collectionFavorites', async original => ({
   ...await original<typeof import('../../services/collectionFavorites')>(),
   ensureCollection: vi.fn(async () => {}), loadCollection: vi.fn(async () => []),
-  subscribeCollection: () => () => {}, collectionRevision: () => 0, collectionTargetActive: () => false,
+  collectionSnapshot: () => collectionState.rows,
+  subscribeCollection: (listener: () => void) => { collectionState.listeners.add(listener); return () => { collectionState.listeners.delete(listener); }; },
+  collectionRevision: () => collectionState.revision,
+  collectionTargetActive: (target: any) => collectionState.rows.some(item => !item.archived && (item.imageUrl === target.imageUrl || item.analysis?.collectionOriginalUrl === target.imageUrl)),
   toggleCollectionTarget: vi.fn(async () => true), syncHistoryCollectionFavorites: vi.fn(async () => {}),
 }));
+
+it.each(['style', 'character'] as const)('%s收藏筛选与当前封面红心一致，无封面旧标记保留，归档不会滞留筛选', async type => {
+  const current = { ...chain('legacy-current', '旧当前封面'), type, previewImage: '/api/assets/current.png' };
+  const replaced = { ...chain('legacy-replaced', '已换封面'), type, previewImage: '/api/assets/replaced.png' };
+  const missing = { ...chain('legacy-missing', '无封面旧标记'), type };
+  const raw = JSON.stringify([current.id, replaced.id, missing.id, 'unknown']); localStorage.setItem('nai_chain_favs', raw);
+  collectionState.rows = [
+    { sourceType: type === 'style' ? 'chain' : 'character', sourceId: current.id, imageUrl: '/api/inspirations/current/image', analysis: { collectionOriginalUrl: current.previewImage } },
+    { sourceType: type === 'style' ? 'chain' : 'character', sourceId: replaced.id, imageUrl: '/api/assets/previous.png' },
+  ];
+  render(React.createElement(ChainList, { ...props(), type, chains: [current, replaced, missing] }));
+  const label = type === 'style' ? '风格串' : '自定义角色';
+  const card = screen.getByRole('button', { name: `打开${label}：${current.name}` });
+  expect(within(card).getByRole('button', { name: '取消收藏' })).toBeTruthy();
+  expect(within(screen.getByRole('button', { name: `打开${label}：${replaced.name}` })).getByRole('button', { name: '收藏' })).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: '筛选' }));
+  fireEvent.click(within(screen.getByRole('dialog', { name: '筛选与排序' })).getByRole('button', { name: '只看收藏' }));
+  expect(screen.getByText(current.name)).toBeTruthy(); expect(screen.getByText(missing.name)).toBeTruthy(); expect(screen.queryByText(replaced.name)).toBeNull();
+  act(() => { collectionState.rows[0].archived = true; collectionState.revision++; collectionState.listeners.forEach(listener => listener()); });
+  expect(screen.queryByText(current.name)).toBeNull(); expect(screen.getByText(missing.name)).toBeTruthy();
+  expect(localStorage.getItem('nai_chain_favs')).toBe(raw);
+});

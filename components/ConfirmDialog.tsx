@@ -2,6 +2,7 @@ import { t, useLanguage } from '../services/i18n';
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { useModalA11y, isTopmostModal } from './useModalA11y';
 import { useMobileHistoryLayer } from './MobileUI';
+import { confirmationIdentity, readDailyConfirmation, rememberDailyConfirmation, type ConfirmationChoice } from '../services/dailyConfirmation';
 
 export interface ConfirmDialogOptions {
     title: string;
@@ -9,6 +10,9 @@ export interface ConfirmDialogOptions {
     confirmLabel?: string;
     cancelLabel?: string;
     tone?: 'primary' | 'danger';
+    /** 稳定的操作类型；实质授权范围变化通过 scope 隔离，不能使用翻译文案。 */
+    rememberKey?: string;
+    rememberScope?: unknown;
     /** 保存成功才确认离开；失败取消本次跳转，让原页继续处理错误。 */
     onSave?: () => Promise<boolean>;
 }
@@ -25,13 +29,16 @@ export const ConfirmDialogProvider: React.FC<{ children: React.ReactNode }> = ({
     const resolverRef = useRef<((confirmed: boolean) => void) | null>(null);
     const savingRef = useRef(false);
     const [isSaving, setIsSaving] = useState(false);
+    const [remember, setRemember] = useState(false);
+    const identityRef = useRef<string | null>(null);
     // 打开确认框前的焦点元素：确认框卸载后归还焦点，保证键盘用户留在触发点附近。
     const openerRef = useRef<HTMLElement | null>(null);
     // P2-17：焦点管理（取消键已有 autoFocus，此 hook 负责 Tab 圈禁与归还）。
     const dialogRef = useModalA11y<HTMLDivElement>(Boolean(options));
 
-    const closeDialog = useCallback((confirmed: boolean) => {
+    const closeDialog = useCallback((confirmed: boolean, choice?: ConfirmationChoice) => {
         if (savingRef.current) return;
+        if (confirmed && choice && remember) rememberDailyConfirmation(identityRef.current, choice);
         const resolve = resolverRef.current;
         resolverRef.current = null;
         setOptions(null);
@@ -42,16 +49,29 @@ export const ConfirmDialogProvider: React.FC<{ children: React.ReactNode }> = ({
             opener.focus({ preventScroll: true });
         }
         resolve?.(confirmed);
-    }, []);
+    }, [remember]);
 
     useMobileHistoryLayer(Boolean(options), () => {
         if (savingRef.current) return false;
         closeDialog(false);
     }, 'confirm');
 
-    const confirmAction = useCallback((nextOptions: ConfirmDialogOptions) => {
-        if (savingRef.current) return Promise.resolve(false);
+    const confirmAction = useCallback(async (nextOptions: ConfirmDialogOptions) => {
+        if (savingRef.current) return false;
         resolverRef.current?.(false);
+        resolverRef.current = null;
+        setOptions(null);
+        const identity = nextOptions.rememberKey ? confirmationIdentity(nextOptions.rememberKey, nextOptions.rememberScope) : null;
+        const choice = readDailyConfirmation(identity);
+        if (choice === 'confirm') return true;
+        if (choice === 'save' && nextOptions.onSave) {
+            savingRef.current = true;
+            try { return await nextOptions.onSave(); }
+            catch (error) { console.error('离开前保存失败:', error); return false; }
+            finally { savingRef.current = false; }
+        }
+        identityRef.current = identity;
+        setRemember(false);
         // 记录打开确认框时的焦点元素：多数入口是按钮，对话框关闭后把焦点归还给它。
         const active = document.activeElement;
         openerRef.current = active instanceof HTMLElement && active !== document.body ? active : null;
@@ -73,7 +93,7 @@ export const ConfirmDialogProvider: React.FC<{ children: React.ReactNode }> = ({
         } finally {
             savingRef.current = false;
             setIsSaving(false);
-            closeDialog(saved);
+            closeDialog(saved, 'save');
         }
     };
 
@@ -134,7 +154,11 @@ export const ConfirmDialogProvider: React.FC<{ children: React.ReactNode }> = ({
                                 </p>
                             </div>
                         </div>
-                        <div className={`mt-6 grid gap-3 md:flex md:justify-end ${options.onSave ? 'grid-cols-1 md:flex-wrap' : 'grid-cols-2'}`}>
+                        {options.rememberKey && <label className="mt-4 flex min-h-11 cursor-pointer items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
+                            <input type="checkbox" data-agent-action="business" checked={remember} disabled={isSaving} onChange={event => setRemember(event.target.checked)} className="h-4 w-4 accent-indigo-600" />
+                            {t('今日内不再显示')}
+                        </label>}
+                        <div className={`${options.rememberKey ? 'mt-2' : 'mt-6'} grid gap-3 md:flex md:justify-end ${options.onSave ? 'grid-cols-1 md:flex-wrap' : 'grid-cols-2'}`}>
                             <button
                                 type="button"
                                 autoFocus
@@ -149,7 +173,7 @@ export const ConfirmDialogProvider: React.FC<{ children: React.ReactNode }> = ({
                                 type="button"
                                 disabled={isSaving}
                                 data-agent-action="business"
-                                onClick={() => closeDialog(true)}
+                                onClick={() => closeDialog(true, 'confirm')}
                                 className={`mobile-touch rounded-xl px-4 py-2 text-sm font-bold transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 dark:focus:ring-offset-gray-850 ${options.onSave
                                     ? 'order-2 min-h-11 bg-red-600 text-white shadow-lg shadow-red-600/20 hover:bg-red-500 focus:ring-red-500 md:order-1 md:mr-auto'
                                     : isDanger

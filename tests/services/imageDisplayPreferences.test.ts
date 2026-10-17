@@ -31,6 +31,22 @@ describe('图片显示的全局默认与页面覆盖', () => {
     expect(getMobileImageDisplayPreferences('artists')).toEqual({ layout: 'square', columns: 1, desktopColumns: 'auto' });
   });
 
+  it('全局和页面都接受7列桌面值，保留旧的显式列数并限制手机仍为3列', () => {
+    const sevenColumns = { ...global, desktopColumns: 7 as const };
+    setMobileImageDisplayPreferences(sevenColumns);
+    setMobileImageDisplayPreferences(sevenColumns, 'artists');
+    expect(getMobileImageDisplayPreferences()).toEqual(sevenColumns);
+    expect(getImageDisplayPageOverride('artists')).toEqual(sevenColumns);
+    expect(mobileGalleryStyle(sevenColumns, 7)).toMatchObject({ '--mobile-gallery-cols-desktop': 7, '--mobile-gallery-columns': 7 });
+
+    for (const desktopColumns of [5, 6, 7] as const) {
+      localStorage.setItem('nai_mobile_image_display', JSON.stringify({ ...global, desktopColumns }));
+      expect(getMobileImageDisplayPreferences().desktopColumns).toBe(desktopColumns);
+    }
+    localStorage.setItem('nai_mobile_image_display', JSON.stringify({ ...global, desktopColumns: 7, columns: 3 }));
+    expect(getMobileImageDisplayPreferences().columns).toBe(3);
+  });
+
   it.each(IMAGE_DISPLAY_PAGES)('$id：整页覆盖独立于全局与其他页面，清除后恢复最新全局', ({ id }) => {
     setMobileImageDisplayPreferences(global);
     setMobileImageDisplayPreferences(own, id);

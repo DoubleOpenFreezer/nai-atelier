@@ -7,10 +7,17 @@ export const useRestoreListAnchor = (
   scrollRef: RefObject<HTMLElement | null>,
   targetId?: string,
   readyKey?: string | number,
+  resetKey?: unknown,
 ) => {
   const restoredTargetRef = useRef<string | undefined>(undefined);
+  const previousResetKey = useRef(resetKey);
 
   useLayoutEffect(() => {
+    // 主动筛选压过旧返回目标，即使该目标此时尚未出现在结果里。
+    if (!Object.is(previousResetKey.current, resetKey)) {
+      previousResetKey.current = resetKey;
+      restoredTargetRef.current = targetId;
+    }
     if (!targetId) {
       restoredTargetRef.current = undefined;
       return;
@@ -32,5 +39,5 @@ export const useRestoreListAnchor = (
       root.scrollTop = Math.max(0, centeredTop);
     }
     restoredTargetRef.current = targetId;
-  }, [readyKey, scrollRef, targetId]);
+  }, [readyKey, scrollRef, targetId, resetKey]);
 };

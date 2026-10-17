@@ -37,7 +37,10 @@ vi.mock('../../services/collectionFavorites', async original => ({
   collectionSnapshot: () => Array.from(fixtures.favorites.values()),
   collectionRevision: () => fixtures.revision,
   subscribeCollection: (listener: () => void) => { fixtures.listeners.add(listener); return () => { fixtures.listeners.delete(listener); }; },
-  collectionTargetActive: (target: any) => fixtures.favorites.has(target.sourceType + ':' + target.sourceId),
+  collectionTargetActive: (target: any) => {
+    const item = fixtures.favorites.get(target.sourceType + ':' + target.sourceId);
+    return Boolean(item && !item.archived && (!item.imageUrl || item.imageUrl === target.imageUrl || item.analysis?.collectionOriginalUrl === target.imageUrl));
+  },
   toggleCollectionTarget: vi.fn(async (target: any) => {
     const key = target.sourceType + ':' + target.sourceId, active = !fixtures.favorites.has(key);
     if (active) fixtures.favorites.set(key, { ...target, archived: false }); else fixtures.favorites.delete(key);
@@ -116,6 +119,30 @@ const seedFavorites = (kind: Kind, names: string[]) => {
   if (kind === 'character') localStorage.setItem('nai_character_favorites', JSON.stringify(names.map(name => `catalog:${name}`)));
   else names.forEach(name => fixtures.favorites.set(`artist:${name}`, { sourceType: 'artist', sourceId: name, archived: false }));
 };
+
+it.each(['nai_chain_favs', 'nai_character_favorites'] as const)('自建角色兼容%s旧标记，有图筛选跟随当前图片，取消后保留无图标记', async key => {
+  const current = { ...custom, previewImage: '/api/assets/current.png' };
+  const changed = { ...custom, id: 'changed', name: '已换封面的角色', previewImage: '/api/assets/changed.png' };
+  const missing = { ...custom, id: 'missing', name: '无封面旧角色' };
+  const raw = JSON.stringify([current.id, changed.id, missing.id, 'unknown'].map(id => key === 'nai_chain_favs' ? id : `custom:${id}`));
+  localStorage.setItem(key, raw);
+  fixtures.favorites.set('character:' + current.id, { sourceType: 'character', sourceId: current.id, imageUrl: '/api/inspirations/saved/image', analysis: { collectionOriginalUrl: current.previewImage } });
+  fixtures.favorites.set('character:' + changed.id, { sourceType: 'character', sourceId: changed.id, imageUrl: '/api/assets/previous.png' });
+  renderLibrary('character', 1280, [current, changed, missing]);
+  const card = screen.getByRole('button', { name: '选择角色：' + current.name });
+  expect(within(card).getByRole('button', { name: '取消收藏' })).toBeTruthy();
+  expect(within(screen.getByRole('button', { name: '选择角色：' + changed.name })).getByRole('button', { name: '收藏' })).toBeTruthy();
+  await screen.findByTestId('cover-' + fixtures.characters[0].name);
+  fireEvent.click(screen.getByRole('button', { name: '筛选' }));
+  fireEvent.click(screen.getByRole('checkbox', { name: '只看收藏' }));
+  expect(screen.getByRole('button', { name: '选择角色：' + current.name })).toBeTruthy();
+  expect(screen.getByRole('button', { name: '选择角色：' + missing.name })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: '选择角色：' + changed.name })).toBeNull();
+  act(() => { fixtures.favorites.get('character:' + current.id).archived = true; fixtures.revision++; fixtures.listeners.forEach(listener => listener()); });
+  expect(screen.queryByRole('button', { name: '选择角色：' + current.name })).toBeNull();
+  expect(screen.getByRole('button', { name: '选择角色：' + missing.name })).toBeTruthy();
+  expect(localStorage.getItem(key)).toBe(raw);
+});
 
 function renderLibrary(kind: Kind, width = 1280, chains: PromptChain[] = [], selectionFocusEnabled = true) {
   vi.stubGlobal('innerWidth', width);
@@ -267,11 +294,34 @@ describe.each<Kind>(['artist', 'character'])('%s 目录只负责 Tag 取用', ki
     fireEvent.keyDown(window, { key: 'Escape' });
     await screen.findByTestId(`cover-${entries[0].name}`);
     const currentCards = entries.map(entry => screen.getByTestId(`cover-${entry.name}`).closest<HTMLElement>('[aria-pressed]')!);
+    expect(root.scrollTop).toBe(0);
     const currentGeometry = mockGalleryGeometry(currentCards);
     currentGeometry.tops[1] = 3000; root.scrollTop = 400;
     await act(async () => { root.style.paddingTop = '1px'; await new Promise(resolve => setTimeout(resolve, 40)); });
     expect(root.scrollTop).toBe(400);
     expect(cards[0].getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('主动切换收藏和搜索回到顶部，异步尺寸变化保留当前浏览位置', async () => {
+    renderLibrary(kind);
+    const entries = entriesFor(kind);
+    await screen.findByTestId(`cover-${entries[0].name}`);
+    const cards = entries.map(entry => screen.getByTestId(`cover-${entry.name}`).closest<HTMLElement>('[aria-pressed]')!);
+    const { root } = mockGalleryGeometry(cards);
+    root.scrollTop = 1600;
+    fireEvent.click(screen.getByRole('button', { name: /^筛选/ }));
+    fireEvent.click(screen.getByRole('checkbox', { name: '只看收藏' }));
+    expect(root.scrollTop).toBe(0);
+    root.scrollTop = 800;
+    fireEvent.click(screen.getByRole('checkbox', { name: '只看收藏' }));
+    expect(root.scrollTop).toBe(0);
+    fireEvent.keyDown(window, { key: 'Escape' });
+    root.scrollTop = 900;
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: entries[0].name } });
+    expect(root.scrollTop).toBe(0);
+    root.scrollTop = 400;
+    await act(async () => { root.style.paddingTop = '1px'; await new Promise(resolve => setTimeout(resolve, 40)); });
+    expect(root.scrollTop).toBe(400);
   });
 
   it('关闭选中聚焦后仍可多选，但不会压暗或自动居中', async () => {

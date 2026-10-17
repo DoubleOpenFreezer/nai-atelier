@@ -1,12 +1,12 @@
 import { useGalleryFrostedCaption } from '../services/appearancePreferences';
-import { collectionSnapshot, subscribeCollection } from '../services/collectionFavorites';
+import { collectionTargetActive, readLegacyFavoriteIds, subscribeCollection } from '../services/collectionFavorites';
 import { t, useLanguage, getLanguage } from '../services/i18n';
 
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { PromptChain, ChainType } from '../types';
 import { MobileBottomSheet, MobileIconButton } from './MobileUI';
-import { SmartImage } from './SmartImage';
+import { SmartImage, ImageActivityContext } from './SmartImage';
 import { IMAGE_CARD_ACTION_CLASS, ImageShareActions } from './ImageShareActions';
 import { getMobileOriginalUrl } from '../services/mobileImageCache';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
@@ -30,6 +30,9 @@ import { ChainInfoModal, UpdateChainInfo } from './chain/ChainInfoModal';
 import { ChainTagManager } from './chain/ChainTagManager';
 import { getCustomChainTags } from '../services/chainTags';
 import { useConfirmDialog } from './ConfirmDialog';
+import { ensureRoleModeCopy, loadRoleModeState, materializeRoleModeCopy, roleModeSnapshot, subscribeRoleMode } from '../services/chainRoleMode';
+import { createRoleModeCopy } from '../services/chainRoleModeModel';
+const ChainRoleModeDialog = React.lazy(() => import('./chain/ChainRoleModeDialog').then(module => ({ default: module.ChainRoleModeDialog })));
 
 interface ChainListProps {
   chains: PromptChain[];
@@ -45,14 +48,40 @@ interface ChainListProps {
   notify: (msg: string, type?: 'success' | 'error') => void;
   isGuest?: boolean;
   returnTargetId?: string;
+  onSelectRoleCopy?: (chain: PromptChain) => void;
 }
 
-export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, onSelect, onDelete, onBulkDelete, onRefresh, onReloadTags, onUpdateChain, notify, isGuest = false, returnTargetId }) => {
+const chainPreviewRatio = (chain: PromptChain, measured?: number) => {
+  if (!chain.previewImage) return 4 / 3;
+  if (measured) return measured;
+  // 封面尚未加载时用生成尺寸预留，真实封面比例返回后优先替换；无封面仍用横向占位。
+  const { width, height } = chain.params || {};
+  return typeof width === 'number' && typeof height === 'number' && Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0 ? width / height : 4 / 3;
+};
+
+export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, onSelect, onDelete, onBulkDelete, onRefresh, onReloadTags, onUpdateChain, notify, isGuest = false, returnTargetId, onSelectRoleCopy }) => {
   useLanguage();
   const confirmAction = useConfirmDialog();
   const RENDER_BATCH_SIZE = 60;
   const imageDisplay = useMobileImageDisplayPreferences('chains');
   const [previewRatios, setPreviewRatios] = useState<Record<string, number>>({});
+  const [roleMode, setRoleMode] = useState(false), [roleState, setRoleState] = useState(roleModeSnapshot);
+  const [roleDialog, setRoleDialog] = useState<PromptChain | 'config' | null>(null), [roleBusy, setRoleBusy] = useState(false);
+  const listActive = React.useContext(ImageActivityContext), roleNavigation = useRef({ active: listActive, mode: roleMode });
+  roleNavigation.current = { active: listActive, mode: roleMode };
+  useEffect(() => { roleNavigation.current.active = listActive; return () => { roleNavigation.current.active = false; }; }, []);
+  useEffect(() => subscribeRoleMode(() => setRoleState(roleModeSnapshot())), []);
+  const toggleRoleMode = async () => {
+    if (roleMode) { setRoleMode(false); return; }
+    setRoleBusy(true);
+    try { await loadRoleModeState(); if (!roleNavigation.current.active) return; setRoleMode(true); }
+    catch (cause) { notify((cause as Error).message, 'error'); } finally { setRoleBusy(false); }
+  };
+  const openChain = async (source: PromptChain) => {
+    if (!roleMode || !onSelectRoleCopy) { onSelect(source.id); return; }
+    if (roleBusy) return;
+    setRoleBusy(true); try { const copy = await ensureRoleModeCopy(source); if (roleNavigation.current.active && roleNavigation.current.mode) onSelectRoleCopy(copy); } catch (cause) { notify((cause as Error).message, 'error'); } finally { setRoleBusy(false); }
+  };
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newName, setNewName] = useState('');
   const [newDesc, setNewDesc] = useState('');
@@ -75,7 +104,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
   const [filterPosition, setFilterPosition] = useState({ left: 0, top: 0, offset: 0 });
   const [visibleCount, setVisibleCount] = useState(RENDER_BATCH_SIZE);
   const syncPreferences = useStChatu8Preferences(!isGuest && type === 'style');
-  const canSync = !isGuest && type === 'style' && syncPreferences.enabled;
+  const canSync = !roleMode && !isGuest && type === 'style' && syncPreferences.enabled;
   const syncSelection = useStChatu8Selection(canSync, chains, notify);
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -99,52 +128,30 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
     return () => document.removeEventListener('keydown', closeOnEscape);
   }, [showDesktopFilters]);
 
-  // Load favorites from localStorage (client-side only)
+  const legacyFavorites = useRef(new Set<string>());
+  // 无封面旧标记继续可筛选；有图项由共用图片收藏决定。
   useEffect(() => {
     if (typeof window === 'undefined') return;
     try {
-      const saved = localStorage.getItem('nai_chain_favs');
-      if (saved) {
-        const parsed: string[] = JSON.parse(saved);
-        setFavorites(new Set(parsed));
-      }
+      legacyFavorites.current = readLegacyFavoriteIds('nai_chain_favs');
+      setFavorites(new Set(legacyFavorites.current));
     } catch (e) {
       console.error('Failed to load chain favorites', e);
     }
   }, []);
 
   useEffect(() => {
-    const sync = () => setFavorites(previous => {
-      const next = new Set(previous);
-      const groups = new Map<string, boolean>();
-      for (const item of collectionSnapshot()) {
-        if (!["chain","character"].includes(item.sourceType || '') || !item.sourceId) continue;
-        const id = item.sourceId!;
-        groups.set(id, Boolean(groups.get(id) || !item.archived));
+    const sync = () => {
+      const next = new Set(legacyFavorites.current);
+      for (const chain of chains) {
+        if (!chain.previewImage) continue;
+        if (collectionTargetActive({ imageUrl: chain.previewImage, sourceType: chain.type === 'character' ? 'character' : 'chain', sourceId: chain.id })) next.add(chain.id);
+        else next.delete(chain.id);
       }
-      groups.forEach((active, id) => active ? next.add(id) : next.delete(id));
-      return next;
-    });
+      setFavorites(next);
+    };
     sync(); return subscribeCollection(sync);
-  }, []);
-
-  const toggleFav = (id: string, e?: React.MouseEvent, active?: boolean) => {
-    if (e) e.stopPropagation();
-    setFavorites(prev => {
-      const next = new Set(prev);
-      if (!(active ?? !next.has(id))) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
-      try {
-        localStorage.setItem('nai_chain_favs', JSON.stringify(Array.from(next)));
-      } catch (err) {
-        console.error('Failed to save chain favorites', err);
-      }
-      return next;
-    });
-  };
+  }, [chains]);
 
   const handleCreate = () => {
     if (!newName.trim()) return;
@@ -156,6 +163,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
 
   const handleDelete = async (chain: PromptChain) => {
     if (!await confirmAction({
+      rememberKey: type === 'character' ? 'character.delete' : 'chain.delete',
       title: t('删除“{0}”？', [chain.name]),
       message: type === 'character' ? t('该自定义角色将被永久删除，此操作无法撤销。') : t('该风格串将被永久删除，此操作无法撤销。'),
       confirmLabel: t('确认删除'),
@@ -263,7 +271,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
     const operation = ++bulkOperationRef.current;
     bulkDeletingRef.current = true; setBulkDeleteBusy(true);
     try {
-      if (!await confirmAction({ title: t('删除 {0} 条风格串？', [ids.length]), message: t('所选风格串将被永久删除，此操作无法撤销。'), confirmLabel: t('确认删除'), tone: 'danger' })
+      if (!await confirmAction({ rememberKey: 'chain.delete-batch', title: t('删除 {0} 条风格串？', [ids.length]), message: t('所选风格串将被永久删除，此操作无法撤销。'), confirmLabel: t('确认删除'), tone: 'danger' })
         || operation !== bulkOperationRef.current) return;
       setDeleteProgress({ completed: 0, total: ids.length });
       const result = await onBulkDelete(ids, completed => {
@@ -282,33 +290,52 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
     }
   };
 
-  useEffect(() => setVisibleCount(RENDER_BATCH_SIZE), [chains, type, searchTerm, favOnly, untestedOnly, selectedModel, selectedTags, sortOption, syncSelection.view, syncSelection.recordFilter, syncSelection.open]);
+  const resultKey = JSON.stringify([type, searchTerm, favOnly, untestedOnly, selectedModel, [...selectedTags].sort(), sortOption, syncSelection.view, syncSelection.recordFilter, syncSelection.open]);
+  useEffect(() => setVisibleCount(RENDER_BATCH_SIZE), [resultKey]);
+  const expandedReturnTarget = useRef<string | undefined>(undefined);
+  const returnResultKey = useRef(resultKey);
   useEffect(() => {
-    if (!returnTargetId) return;
+    if (returnResultKey.current !== resultKey) {
+      returnResultKey.current = resultKey;
+      expandedReturnTarget.current = returnTargetId;
+      return;
+    }
+    if (!returnTargetId) { expandedReturnTarget.current = undefined; return; }
+    if (expandedReturnTarget.current === returnTargetId) return;
     const targetIndex = filteredChains.findIndex(chain => chain.id === returnTargetId);
-    if (targetIndex >= 0) setVisibleCount(count => Math.max(count, targetIndex + 1));
-  }, [filteredChains, returnTargetId]);
+    if (targetIndex >= 0) {
+      expandedReturnTarget.current = returnTargetId;
+      setVisibleCount(count => Math.max(count, targetIndex + 1));
+    }
+  }, [filteredChains, returnTargetId, resultKey]);
   const visibleChains = filteredChains.slice(0, visibleCount);
 
   // 滚动接近列表底部自动追加一批；按钮保留作兜底。
   const chainScrollRef = useRef<HTMLDivElement>(null);
   const masonryColumns = useMasonryColumnCount(imageDisplay, undefined, chainScrollRef);
   const chainLoadSentinelRef = useRef<HTMLDivElement>(null);
-  useRestoreListAnchor(chainScrollRef, returnTargetId, `${visibleCount}:${filteredChains.length}`);
-  const onScrollRestore = useKeepAliveScrollRestore(chainScrollRef, 'list');
+  useRestoreListAnchor(chainScrollRef, returnTargetId, `${visibleCount}:${filteredChains.length}`, resultKey);
+  const onScrollRestore = useKeepAliveScrollRestore(chainScrollRef, 'list', { resetKey: resultKey });
   useGalleryLoadMore(chainScrollRef, chainLoadSentinelRef, visibleCount < filteredChains.length, () => setVisibleCount(count => count + RENDER_BATCH_SIZE), '600px 0px');
 
-  // 卡片预计高度：图片区（列宽 / 实际宽高比）+ 图下信息栏（开启磨砂时不占额外高度）+ 边框。previewRatios 更新后自动重算分列。
+  // 卡片预计高度用于新卡分列；尺寸返回只修正高度，旧卡保留原列。
   const frostedCaption = useGalleryFrostedCaption();
   const estimateChainCardHeight = useCallback(
     (chain: PromptChain, columnWidth: number) => {
-      const ratio = previewRatios[chain.id] || 4 / 3;
+      const copy = roleMode ? roleState.copies.find(item => item.sourceId === chain.id) || createRoleModeCopy(chain, roleState.config) : undefined;
+      const ratio = chainPreviewRatio(copy ? materializeRoleModeCopy(copy, roleState.config) : chain, previewRatios[chain.id]);
       return Math.max(1, columnWidth) / Math.max(0.1, ratio) + (frostedCaption ? 2 : 50) + (syncSelection.open && syncSelection.entries.has(chain.id) ? 78 : 0);
     },
-    [previewRatios, syncSelection.open, syncSelection.entries, frostedCaption],
+    [previewRatios, syncSelection.open, syncSelection.entries, frostedCaption, roleMode, roleState],
   );
 
-  const renderChainCard = (chain: PromptChain) => (
+  const renderChainCard = (source: PromptChain) => {
+    const copy = roleMode ? roleState.copies.find(item => item.sourceId === source.id) || createRoleModeCopy(source, roleState.config) : undefined;
+    // 全部卡片即时投影公共角色，不预写整库；模式无结果时留空，原卡key和锚点保持。
+    const actual = copy ? materializeRoleModeCopy(copy, roleState.config) : source;
+    const chain = { ...actual, id: source.id };
+    const favoriteChain = roleMode ? actual : source;
+    return (
     <PressRevealSurface pressDisabled={syncSelection.open || selecting} key={chain.id} data-safe-mode-work="true" data-return-item-id={chain.id}
       role={selecting || syncSelection.selecting ? 'checkbox' : 'button'}
       data-agent-action={selecting || syncSelection.selecting ? 'select' : 'browse'}
@@ -316,8 +343,8 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
       aria-checked={selecting ? selectedIds.has(chain.id) : syncSelection.selecting ? syncSelection.selected.has(chain.id) : undefined}
       aria-disabled={selecting ? bulkDeleteBusy : syncSelection.selecting ? syncSelection.busy || !syncSelection.available.has(chain.id) : undefined}
       tabIndex={0}
-      onKeyDown={event => { if (event.target === event.currentTarget && (event.key === ' ' || event.key === 'Enter')) { event.preventDefault(); if (selecting) toggleSelected(chain.id); else if (syncSelection.selecting) syncSelection.toggle(chain.id); else onSelect(chain.id); } }}
-      onClick={() => selecting ? toggleSelected(chain.id) : syncSelection.selecting ? syncSelection.toggle(chain.id) : onSelect(chain.id)}
+      onKeyDown={event => { if (event.target === event.currentTarget && (event.key === ' ' || event.key === 'Enter')) { event.preventDefault(); if (selecting) toggleSelected(chain.id); else if (syncSelection.selecting) syncSelection.toggle(chain.id); else void openChain(source); } }}
+      onClick={() => selecting ? toggleSelected(chain.id) : syncSelection.selecting ? syncSelection.toggle(chain.id) : void openChain(source)}
       className={`mobile-gallery-item gallery-image-card gallery-card-visual group bg-white dark:bg-gray-850 border border-gray-200 dark:border-gray-800/80 hover:border-indigo-500 dark:hover:border-indigo-500/50 rounded-xl overflow-hidden transition-[border-color,box-shadow,transform] duration-200 hover:shadow-xl hover:shadow-indigo-500/10 flex flex-col cursor-pointer relative focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${selecting && selectedIds.has(chain.id) || syncSelection.selecting && syncSelection.selected.has(chain.id) ? '!border-indigo-500 ring-2 ring-indigo-500/20' : ''} ${syncSelection.selecting && !isStChatu8ExportableChain(chain) ? '!cursor-default opacity-60' : ''}`}>
       {syncSelection.selecting && syncSelection.available.has(chain.id) && <span aria-hidden="true" className={`absolute right-2 top-2 z-10 flex h-7 w-7 items-center justify-center rounded-lg border shadow-sm ${syncSelection.selected.has(chain.id) ? 'border-indigo-500 bg-indigo-600 text-white' : 'border-gray-400 bg-white/90 text-transparent dark:border-gray-500 dark:bg-gray-900/90'}`}><Check className="h-4 w-4" /></span>}
       {syncSelection.selecting && !isStChatu8ExportableChain(chain) && <span className="absolute right-2 top-2 z-10 rounded-lg bg-white/90 px-2 py-1 text-xs text-gray-500 shadow-sm dark:bg-gray-900/90 dark:text-gray-400">{t("仅 V4.5 / V5")}</span>}
@@ -325,18 +352,20 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
       {/* Preview Image */}
       <div
           className="mobile-gallery-frame md:aspect-square bg-gray-200 dark:bg-gray-900 relative border-b border-gray-200 dark:border-gray-700 overflow-hidden flex items-center justify-center"
-          style={{ '--mobile-image-ratio': String(previewRatios[chain.id] || 4 / 3) } as React.CSSProperties}
+          style={{ '--mobile-image-ratio': String(chainPreviewRatio(chain, previewRatios[chain.id])) } as React.CSSProperties}
       >
           {selecting && <span aria-hidden="true" className={`absolute left-2 top-2 z-20 flex h-7 w-7 items-center justify-center rounded-full border shadow backdrop-blur ${selectedIds.has(chain.id) ? 'border-indigo-500 bg-indigo-600 text-white' : 'border-white/80 bg-black/35 text-transparent'}`}><Check className="h-4 w-4" /></span>}
-          {!selecting && !syncSelection.open && !isGuest && <div data-card-action="true" className="hover-reveal-md absolute left-2 top-2 z-20">
+          {!roleMode && !selecting && !syncSelection.open && !isGuest && <div data-card-action="true" className="hover-reveal-md absolute left-2 top-2 z-20">
             <button type="button" onClick={event => { event.stopPropagation(); void handleDelete(chain); }} className="mobile-size-locked flex h-11 w-11 items-center justify-center rounded-full bg-red-500 text-white shadow hover:bg-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white md:h-8 md:w-8" aria-label={t('删除：{0}', [chain.name])} title={t('删除')}><Trash2 className="h-4 w-4" /></button>
           </div>}
           {/* 图片取用与编辑共用透明竖排；无封面时仍保留编辑。 */}
           {!selecting && !syncSelection.open && (chain.previewImage || !isGuest) && <div data-card-action="true" className="absolute right-2 top-2 z-20 flex flex-col items-center gap-2">
-            {chain.previewImage && <ImageShareActions variant="card" className="flex-col" imageUrl={getMobileOriginalUrl(chain.previewImage)} filename={`${chain.name || 'cover'}.png`} notify={notify} favorite={{ imageUrl: chain.previewImage, title: chain.name, sourceType: chain.type === 'character' ? 'character' : 'chain', sourceId: chain.id, prompt: chain.basePrompt, negativePrompt: chain.negativePrompt, params: chain.params }} onFavoriteChange={() => toggleFav(chain.id, undefined, collectionSnapshot().some(item => item.sourceId === chain.id && !item.archived))} />}
-            {!isGuest && <button type="button" onClick={event => { event.stopPropagation(); setInfoChain(chain); }} className={`hover-reveal-md ${IMAGE_CARD_ACTION_CLASS} inline-flex shrink-0 items-center justify-center transition`} title={t("编辑信息")} aria-label={t("编辑{0}信息：{1}", [chain.type === 'character' ? t('自定义角色') : t('风格串'), chain.name])}><Pencil className="h-4 w-4" /></button>}
+            {chain.previewImage && <ImageShareActions variant="card" className="flex-col" imageUrl={getMobileOriginalUrl(chain.previewImage)} filename={`${chain.name || 'cover'}.png`} notify={notify} favorite={{ imageUrl: chain.previewImage, title: chain.name, sourceType: chain.type === 'character' ? 'character' : 'chain', sourceId: favoriteChain.id, prompt: favoriteChain.basePrompt, negativePrompt: favoriteChain.negativePrompt, params: favoriteChain.params }} />}
+            {roleMode && <button type="button" onClick={event => { event.stopPropagation(); setRoleDialog(source); }} className={`hover-reveal-md ${IMAGE_CARD_ACTION_CLASS} inline-flex shrink-0 items-center justify-center transition`} title={t('拆分角色混合词')} aria-label={t('拆分角色混合词：{0}', [source.name])}><User className="h-4 w-4" /></button>}
+            {!isGuest && !roleMode && <button type="button" onClick={event => { event.stopPropagation(); setInfoChain(chain); }} className={`hover-reveal-md ${IMAGE_CARD_ACTION_CLASS} inline-flex shrink-0 items-center justify-center transition`} title={t("编辑信息")} aria-label={t("编辑{0}信息：{1}", [chain.type === 'character' ? t('自定义角色') : t('风格串'), chain.name])}><Pencil className="h-4 w-4" /></button>}
           </div>}
-          {isUntestedChain(chain) && (
+          {roleMode && copy?.fields.some(field => !field.reviewed) && <span className="absolute left-2 bottom-2 z-10 rounded bg-black/65 px-2 py-1 text-micro text-white">{t('混合词待审查')}</span>}
+          {!roleMode && isUntestedChain(chain) && (
             <div
               className="gallery-chain-status absolute left-2 bottom-2 z-10 flex items-center gap-1 rounded-md bg-black/65 px-1.5 py-0.5 text-micro font-medium text-amber-300 backdrop-blur-md shadow-sm border border-amber-400/20"
               title={t("待实测：在此风格串生成后自动去除")}
@@ -390,7 +419,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
         {syncSelection.view === 'records' && <p className="truncate text-micro text-gray-400">{t("最近核对 {0}", [new Date(syncSelection.entries.get(chain.id)!.lastVerifiedAt).toLocaleString(getLanguage())])}</p>}
       </div>}
     </PressRevealSurface>
-  );
+  ); };
 
   const title = type === 'character' ? t('我的自定义角色') : t('我的风格串');
   const createLabel = type === 'character' ? '新建自定义角色' : '新建风格串';
@@ -432,7 +461,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
       <button type="button" aria-pressed={favOnly} onClick={() => setFavOnly(value => !value)} className={`mobile-touch flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold ${favOnly ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300' : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300'}`}><Heart className={`h-4 w-4 ${favOnly ? 'fill-current' : ''}`} />{t("只看收藏")}</button>
     </div>
     <div>
-      <div className="mb-2 flex items-center justify-between gap-2"><span className="text-xs font-semibold text-gray-600 dark:text-gray-300">{t("自定义标签")}</span><div className="flex items-center gap-1">{selectedTags.size > 0 && <button type="button" onClick={() => setSelectedTags(new Set())} className="mobile-touch px-2 text-xs text-gray-500 dark:text-gray-400">{t("清除标签筛选")}</button>}{!isGuest && <button type="button" disabled={syncSelection.busy} onClick={() => void openTagManager()} className="mobile-touch inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-semibold text-gray-500 hover:bg-gray-100 hover:text-gray-800 disabled:opacity-40 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100"><Tags className="h-3.5 w-3.5" />{t('管理标签')}</button>}</div></div>
+      <div className="mb-2 flex items-center justify-between gap-2"><span className="text-xs font-semibold text-gray-600 dark:text-gray-300">{t("自定义标签")}</span><div className="flex items-center gap-1">{selectedTags.size > 0 && <button type="button" onClick={() => setSelectedTags(new Set())} className="mobile-touch px-2 text-xs text-gray-500 dark:text-gray-400">{t("清除标签筛选")}</button>}{!isGuest && !roleMode && <button type="button" disabled={syncSelection.busy} onClick={() => void openTagManager()} className="mobile-touch inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-semibold text-gray-500 hover:bg-gray-100 hover:text-gray-800 disabled:opacity-40 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100"><Tags className="h-3.5 w-3.5" />{t('管理标签')}</button>}</div></div>
       {customTagOptions.length > 12 && <input aria-label={t("搜索自定义标签")} placeholder={t("搜索标签")} value={tagSearch} onChange={event => setTagSearch(event.target.value)} className="mobile-touch mb-2 w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-900 outline-none focus:border-indigo-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100" />}
       {customTagOptions.length === 0 ? <p className="text-xs text-gray-400">{t("暂无自定义标签，可在卡片铅笔中添加")}</p> : <div className="max-h-40 overflow-y-auto"><div className="flex flex-wrap gap-1.5">{visibleTagOptions.map(tag => <button key={tag} type="button" aria-pressed={selectedTags.has(tag)} onClick={() => toggleTag(tag)} className={`mobile-touch max-w-full break-words rounded-full border px-3 py-1.5 text-xs ${selectedTags.has(tag) ? 'border-indigo-300 bg-indigo-50 text-indigo-600 dark:border-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300' : 'border-transparent bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300'}`}>{tag}</button>)}</div>{visibleTagOptions.length === 0 && <p className="py-1 text-xs text-gray-400">{t("没有匹配的标签")}</p>}</div>}
       {selectedTags.size > 1 && <p className="mt-2 text-xs text-gray-400">{t("同时包含所选标签")}</p>}
@@ -468,10 +497,11 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
               <MobileIconButton label={t("筛选与排序")} onClick={event => { mobileFilterTriggerRef.current = event.currentTarget; setShowMobileFilters(true); }} className={`border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900 ${filtersActive ? 'text-indigo-600 dark:text-indigo-300' : 'text-gray-600 dark:text-gray-300'}`}><Filter className="h-5 w-5" /></MobileIconButton>
             {canSync && <MobileIconButton label={t("智慧姬同步（待同步 {0}）", [syncSelection.savedCount])} onClick={syncSelection.open ? syncSelection.cancel : syncSelection.begin} disabled={syncSelection.busy && !syncSelection.open} className="border border-gray-200 bg-white text-gray-600 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300"><Link2 className="h-5 w-5" /></MobileIconButton>}
           </div>
-          {!isGuest && type === 'style' && onBulkDelete && <ToolbarButton aria-label={t('批量选择风格串')} title={t('批量选择风格串')} disabled={syncSelection.busy} onClick={beginSelection}>
+          {!isGuest && type === 'style' && onSelectRoleCopy && <><ToolbarButton aria-label={t('统一角色')} aria-pressed={roleMode} title={t('统一角色')} className={roleMode ? '!border-indigo-300 !bg-indigo-50 !text-indigo-600 dark:!border-indigo-700 dark:!bg-indigo-950/40 dark:!text-indigo-300' : ''} disabled={roleBusy || syncSelection.open || syncSelection.busy} onClick={() => void toggleRoleMode()}><User /><span>{t('统一角色')}</span></ToolbarButton>{roleMode && <ToolbarButton aria-label={t('统一角色设置')} onClick={() => setRoleDialog('config')}><Pencil /></ToolbarButton>}</>}
+          {!roleMode && !isGuest && type === 'style' && onBulkDelete && <ToolbarButton aria-label={t('批量选择风格串')} title={t('批量选择风格串')} disabled={syncSelection.busy} onClick={beginSelection}>
             <ListChecks className="h-4 w-4" /><span className="hidden xl:inline">{t('多选')}</span>
           </ToolbarButton>}
-          {!isGuest && <div className="flex flex-none items-center gap-1 border-l border-gray-200 pl-2 dark:border-gray-700 md:gap-2">
+          {!roleMode && !isGuest && <div className="flex flex-none items-center gap-1 border-l border-gray-200 pl-2 dark:border-gray-700 md:gap-2">
             {type === 'style' && <StyleCollectorControl onSaved={onRefresh} notify={notify} />}
             <div className="hidden items-center gap-2 md:flex">
               {type === 'style' && <ToolbarButton onClick={() => setIsFolderImportOpen(true)} title={t("从本地文件夹批量读取 NovelAI 原图为风格串")} aria-label={t("批量导入")}><FolderUp className="h-4 w-4" /><span className="hidden xl:inline">{t("批量导入")}</span></ToolbarButton>}
@@ -493,13 +523,14 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
           {filteredChains.length === 0 ? (
             <div className="text-center py-20 bg-gray-100 dark:bg-gray-800/50 rounded-2xl border-2 border-dashed border-gray-300 dark:border-gray-700">
               <p className="text-gray-500 text-sm mb-4">{syncSelection.open ? syncSelection.view === 'pending' ? t("没有符合筛选条件的待同步风格串，可在「挑选风格串」中加入。") : syncSelection.view === 'records' ? t("没有符合筛选条件的同步记录，接收确认后会显示在这里。") : t("没有符合筛选条件的风格串。") : t("暂无数据")}</p>
-              {!isGuest && !selecting && !syncSelection.open && <button onClick={() => setIsModalOpen(true)} className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-500 font-medium">{t(createLabel)}</button>}
+              {!roleMode && !isGuest && !selecting && !syncSelection.open && <button onClick={() => setIsModalOpen(true)} className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-500 font-medium">{t(createLabel)}</button>}
             </div>
           ) : (
             /* Grid Layout */
             <>
             {imageDisplay.layout === 'masonry' ? (
               <ShortestColumnMasonry
+                resetKey={resultKey}
                 items={visibleChains}
                 columns={masonryColumns}
                 getItemKey={chain => chain.id}
@@ -562,6 +593,7 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
         onSuccess={onRefresh}
         notify={notify}
       />
+      {roleDialog && listActive && <React.Suspense fallback={null}><ChainRoleModeDialog source={roleDialog === 'config' ? undefined : roleDialog} notify={notify} onClose={() => setRoleDialog(null)} onOpenEditor={source => void openChain(source)} /></React.Suspense>}
     </div>
   );
 };

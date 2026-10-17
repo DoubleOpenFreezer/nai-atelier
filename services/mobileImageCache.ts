@@ -428,7 +428,8 @@ export const ratchetVariantWidth = (floor: number, width: number): number =>
   Math.max(floor, thumbnailVariantWidth(width));
 
 export const buildMediaUrl = (source: string, variant: MediaVariant, previewTransform?: MediaPreviewTransform) => {
-  const preview = variant !== 'original' && source.startsWith('/api/artist-samples/image?') && previewTransform
+  const previewSource = source.startsWith('/api/artist-samples/image?') || /^\/api\/(?:assets\/[^?#]+|inspirations\/[^/?#]+\/image)(?:\?[^#]*)?$/.test(source);
+  const preview = variant !== 'original' && previewSource && previewTransform
     ? `&preview=${previewTransform}` : '';
   return `/api/media?source=${encodeURIComponent(source)}&variant=${variant}${preview}`;
 };

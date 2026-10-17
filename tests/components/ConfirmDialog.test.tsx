@@ -14,7 +14,7 @@ beforeEach(() => {
 afterEach(() => { cleanup(); setLanguage('zh-CN'); vi.restoreAllMocks(); vi.unstubAllGlobals(); window.history.replaceState({}, ''); });
 const setup = (onSave?: () => Promise<boolean>) => {
   const result = vi.fn();
-  const options: ConfirmDialogOptions = { title: '有未保存的修改', message: '是否保存当前修改后离开？', cancelLabel: '继续编辑', confirmLabel: '放弃并离开', tone: 'danger', onSave };
+  const options: ConfirmDialogOptions = { rememberKey: 'editor.leave-test', title: '有未保存的修改', message: '是否保存当前修改后离开？', cancelLabel: '继续编辑', confirmLabel: '放弃并离开', tone: 'danger', onSave };
   const Harness = () => {
     const confirm = useConfirmDialog();
     return <button onClick={() => { void confirm(options).then(result); }}>打开提示</button>;
@@ -30,6 +30,7 @@ it.each(LANGUAGES)('$name 三按钮文案完整，桌面顺序与手机纵排准
   const { dialog, result } = setup(vi.fn(async () => true));
   expect(dialog.textContent).toContain(t('有未保存的修改'));
   expect(dialog.textContent).toContain(t('是否保存当前修改后离开？'));
+  expect(within(dialog).getByRole('checkbox', { name: t('今日内不再显示') })).toBeTruthy();
   const save = within(dialog).getByRole('button', { name: t('保存并离开') });
   const discard = within(dialog).getByRole('button', { name: t('放弃并离开') });
   const cancel = within(dialog).getByRole('button', { name: t('继续编辑') });
@@ -126,4 +127,50 @@ it('手机保存中连续返回保持当前层，完成后才退出并清理该�
   expect(result).toHaveBeenCalledExactlyOnceWith(true);
   expect(screen.queryByRole('alertdialog')).toBeNull();
   expect(window.history.back).toHaveBeenCalledOnce();
+});
+
+it.each(['继续编辑', 'Escape', '遮罩'])('勾选后%s不记授权，下次仍显示且复选框重新取消', async action => {
+  const { dialog, opener, result } = setup();
+  const checkbox = within(dialog).getByRole('checkbox') as HTMLInputElement;
+  expect(checkbox.getAttribute('data-agent-action')).toBe('business');
+  expect(checkbox.checked).toBe(false); fireEvent.click(checkbox);
+  if (action === 'Escape') fireEvent.keyDown(window, { key: 'Escape' });
+  else if (action === '遮罩') fireEvent.click(dialog.parentElement!);
+  else fireEvent.click(screen.getByRole('button', { name: action }));
+  await waitFor(() => expect(result).toHaveBeenCalledExactlyOnceWith(false));
+  fireEvent.click(opener);
+  expect((screen.getByRole('checkbox') as HTMLInputElement).checked).toBe(false);
+});
+
+it('勾选并确认后同类型当日直接返回确认，默认未勾选不记', async () => {
+  const { opener, result } = setup();
+  fireEvent.click(screen.getByRole('button', { name: '放弃并离开' }));
+  await waitFor(() => expect(result).toHaveBeenCalledTimes(1));
+  fireEvent.click(opener); expect(screen.getByRole('alertdialog')).toBeTruthy();
+  fireEvent.click(screen.getByRole('checkbox'));
+  fireEvent.click(screen.getByRole('button', { name: '放弃并离开' }));
+  await waitFor(() => expect(result).toHaveBeenCalledTimes(2));
+  fireEvent.click(opener);
+  await waitFor(() => expect(result).toHaveBeenCalledTimes(3));
+  expect(screen.queryByRole('alertdialog')).toBeNull();
+});
+
+it('记住保存选择后仍逐次真正保存，后续保存失败不能变成放弃离开', async () => {
+  const onSave = vi.fn(async () => true);
+  const { opener, result } = setup(onSave);
+  fireEvent.click(screen.getByRole('checkbox'));
+  fireEvent.click(screen.getByRole('button', { name: '保存并离开' }));
+  await waitFor(() => expect(result).toHaveBeenCalledExactlyOnceWith(true));
+  onSave.mockResolvedValue(false); fireEvent.click(opener);
+  await waitFor(() => expect(onSave).toHaveBeenCalledTimes(2));
+  expect(result).toHaveBeenLastCalledWith(false);
+  expect(screen.queryByRole('alertdialog')).toBeNull();
+});
+
+it('首次勾选保存失败不写授权，再次离开仍需决定', async () => {
+  const { opener, result } = setup(vi.fn(async () => false));
+  fireEvent.click(screen.getByRole('checkbox')); fireEvent.click(screen.getByRole('button', { name: '保存并离开' }));
+  await waitFor(() => expect(result).toHaveBeenCalledExactlyOnceWith(false));
+  fireEvent.click(opener);
+  expect(screen.getByRole('alertdialog')).toBeTruthy();
 });

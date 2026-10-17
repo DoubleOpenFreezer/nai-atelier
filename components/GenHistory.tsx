@@ -718,6 +718,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
     const handleDelete = async (id: string, e?: React.MouseEvent) => {
         e?.stopPropagation();
         if (await confirmAction({
+            rememberKey: 'history.delete',
             title: '删除这张历史图片？',
             message: '图片记录和本地图片文件将被永久删除，此操作无法撤销。',
             confirmLabel: '确认删除',
@@ -734,7 +735,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
 
     const handleBulkDelete = async () => {
         if (!selectedIds.size) return;
-        if (!await confirmAction({ title: `删除选中的 ${selectedIds.size} 张图片？`, message: '这些历史记录和本地图片文件将被永久删除。', confirmLabel: '批量删除', tone: 'danger' })) return;
+        if (!await confirmAction({ rememberKey: 'history.delete-batch', title: `删除选中的 ${selectedIds.size} 张图片？`, message: '这些历史记录和本地图片文件将被永久删除。', confirmLabel: '批量删除', tone: 'danger' })) return;
         try {
             const deleted = new Set<string>();
             try {
@@ -846,6 +847,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
 
     const handleClearAll = async () => {
         if (await confirmAction({
+            rememberKey: 'history.clear-all',
             title: '清空全部生成历史？',
             message: '所有历史记录和本地历史图片都会被永久删除，包括已收藏图片。此操作无法撤销。',
             confirmLabel: '确认清空',
@@ -892,6 +894,13 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
                 notify(cleanMode === 'days' ? '请输入有效天数' : '请输入有效保留数量', 'error');
                 return;
             }
+
+            if (!await confirmAction({
+                rememberKey: `history.clean-${cleanMode}`, rememberScope: normalizedValue,
+                title: '确认清理历史',
+                message: cleanMode === 'days' ? t('将删除 {0} 天前的 {1} 张图片', [normalizedValue, cleanPreviewCount]) : t('按全部生成历史执行，将删除 {0} 张，只保留最近 {1} 张', [cleanPreviewCount, normalizedValue]),
+                confirmLabel: '确认删除', tone: 'danger',
+            })) return;
 
             if (cleanMode === 'days') {
                 await localHistory.deleteOlderThan(normalizedValue);

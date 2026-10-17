@@ -11,8 +11,8 @@ import {
   Dice5,
   FlaskConical,
   FolderOpen,
-  Globe2,
   Heart,
+  Images,
   Layers,
   Palette,
   Settings,
@@ -137,7 +137,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
       { id: 'library', label: '画师库', icon: icons.artist },
       { id: 'characters', label: '角色库', icon: icons.character },
       { id: 'inspiration', label: '收藏库', icon: icons.inspiration },
-      { id: 'external-browse', label: '素材浏览', icon: Globe2 },
+      { id: 'external-browse', label: '素材浏览', icon: Images },
     ] },
     { label: '记录', items: [
       { id: 'history', label: '历史', icon: icons.history },
@@ -419,12 +419,12 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
                       </button>;
                     })}
                   </div>}
-                  {sidebarCollapsed && showExternalBrowsePopover && <ImagePreviewPortal><InteractionPopover id="external-gallery-popover" label="素材浏览" anchorRef={externalBrowseTriggerRef} onClose={() => setShowExternalBrowsePopover(false)} width={240} placement="right" className="p-1.5">
-                    <div className="space-y-1">
+                  {sidebarCollapsed && showExternalBrowsePopover && <ImagePreviewPortal><InteractionPopover id="external-gallery-popover" label="素材浏览" anchorRef={externalBrowseTriggerRef} onClose={() => setShowExternalBrowsePopover(false)} width={176} placement="right" className="p-1">
+                    <div>
                       {externalItems.map(source => {
                         const sourceActive = activeView === source.id;
-                        return <button key={source.id} type="button" aria-current={sourceActive ? 'page' : undefined} onClick={() => navigateFromExternalPopover(source.id)} className={`flex h-11 w-full items-center rounded-lg px-3 text-left text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500 ${sourceActive ? 'bg-indigo-50 font-bold text-indigo-600 dark:bg-indigo-500/15 dark:text-indigo-300' : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800'}`}>
-                          <source.icon aria-hidden="true" className="h-5 w-5 flex-none" strokeWidth={1.8} /><span className="ml-3 min-w-0 truncate">{t(source.label)}</span>
+                        return <button key={source.id} type="button" aria-current={sourceActive ? 'page' : undefined} onClick={() => navigateFromExternalPopover(source.id)} className={`flex h-8 min-h-8 [@media(any-pointer:coarse)]:min-h-11 w-full items-center gap-2 rounded-lg px-2 text-left text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500 ${sourceActive ? 'bg-indigo-50 font-bold text-indigo-600 dark:bg-indigo-500/15 dark:text-indigo-300' : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800'}`}>
+                          <source.icon aria-hidden="true" className="h-4 w-4 flex-none" strokeWidth={1.8} /><span className="min-w-0 truncate">{t(source.label)}</span>
                         </button>;
                       })}
                     </div>

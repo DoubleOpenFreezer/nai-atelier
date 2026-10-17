@@ -51,6 +51,15 @@ it('桌面兜底列数不能覆盖明确偏好，手机列数与横屏始终遵�
   expect(resolveMasonryColumnCount({ ...preferences, desktopColumns: 5 }, 768, true, 6)).toBe(5);
   expect(resolveMasonryColumnCount({ ...preferences, desktopColumns: 2 }, 1600, false, 6)).toBe(2);
 });
+
+it('瀑布流支持显式7列桌面偏好，自适应断点与手机上限保持原值', () => {
+  const preferences: MobileImageDisplayPreferences = { layout: 'masonry', columns: 3, desktopColumns: 7 };
+  expect(resolveMasonryColumnCount(preferences, 768, false)).toBe(7);
+  expect(resolveMasonryColumnCount(preferences, 1600, false)).toBe(7);
+  expect(resolveMasonryColumnCount({ ...preferences, desktopColumns: 'auto', columns: 'auto' }, 390, false)).toBe(2);
+  expect(resolveMasonryColumnCount({ ...preferences, desktopColumns: 'auto', columns: 'auto' }, 700, true)).toBe(3);
+  expect(resolveMasonryColumnCount({ ...preferences, desktopColumns: 'auto', columns: 'auto' }, 1600, false)).toBe(6);
+});
 it('真实瀑布流尺寸更新不重建旧卡片，重新排序按新顺序安排首列', () => {
   vi.stubGlobal('ResizeObserver', class {
     constructor(private callback: ResizeObserverCallback) {}
@@ -103,6 +112,37 @@ it('尺寸返回保留旧卡片所在列，新卡片仍选择当前最短列', (
   const columns = computeShortestColumnAssignment([...items, 'e'], 2, key => key === 'a' ? 1000 : 100, 100, { previous: old, next, key: key => key });
   for (const key of items) expect(next.get(key)).toBe(old.get(key));
   expect(columns[1]).toEqual(['b', 'd', 'e']);
+});
+it('尾部追加优先真实短列，计入间距，迟到尺寸与宽度变化不搬动旧卡片', () => {
+  let resize!: (width: number) => void;
+  vi.stubGlobal('ResizeObserver', class {
+    constructor(callback: ResizeObserverCallback) { resize = width => callback([{ contentRect: { width } }] as ResizeObserverEntry[], this as unknown as ResizeObserver); }
+    observe() { resize(1000); }
+    disconnect() {}
+  });
+  const key = (value: string) => value;
+  const renderItem = (value: string) => <img data-testid={value} src={`/synthetic/${value}.png`} />;
+  const initial = ['a', 'b', 'c', 'd', 'e'];
+  const view = (items: string[], tall = false, resetKey = 'all') => <ShortestColumnMasonry columns={5} items={items} getItemKey={key}
+    renderItem={renderItem} resetKey={resetKey} estimateItemHeight={value => tall && value !== 'e' ? 500 : 100} />;
+  const { container, rerender } = render(view(initial));
+  const columns = Array.from(container.querySelectorAll<HTMLElement>('.chain-masonry-column'));
+  const images = initial.map(value => screen.getByTestId(value));
+  // 标题/磨砂布局与迟到横竖图让实高与估高相反：第五列在屏幕上明显最短。
+  columns.forEach((column, index) => vi.spyOn(column, 'getBoundingClientRect').mockImplementation(() => ({ height: index === 4 ? 100 : 800 } as DOMRect)));
+  rerender(view([...initial, 'f', 'g', 'h']));
+  for (const value of ['f', 'g', 'h']) expect(screen.getByTestId(value).parentElement).toBe(columns[4]);
+  initial.forEach((value, index) => { expect(screen.getByTestId(value)).toBe(images[index]); expect(images[index].parentElement).toBe(columns[index]); });
+  rerender(view([...initial, 'f', 'g', 'h'], true));
+  act(() => resize(760));
+  initial.forEach((value, index) => expect(screen.getByTestId(value)).toBe(images[index]));
+  // 下一批再次读取最新实高，而非沿用上一轮估高；此时第一列更短。
+  vi.mocked(columns[0].getBoundingClientRect).mockReturnValue({ height: 50 } as DOMRect);
+  rerender(view([...initial, 'f', 'g', 'h', 'i'], true));
+  expect(screen.getByTestId('i').parentElement).toBe(columns[0]);
+  // 查询条件变化但结果恰好前缀相同，也必须清掉旧分列。
+  rerender(view([...initial, 'f', 'g', 'h', 'i', 'j'], true, 'new-filter'));
+  expect(screen.getByTestId('g').parentElement).toBe(columns[0]);
 });
 it('每列末尾提供不增加列高或间距的绝对定位分页标记', () => {
   vi.stubGlobal('ResizeObserver', class {

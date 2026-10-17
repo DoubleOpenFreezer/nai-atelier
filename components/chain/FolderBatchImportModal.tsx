@@ -10,6 +10,7 @@ import { ImagePreviewPortal } from '../ImagePreviewPortal';
 import { useModalA11y, isTopmostModal } from '../useModalA11y';
 import { getNaiModelDisplayLabel } from '../../services/naiModels';
 import { NAIParams, PromptChain } from '../../types';
+import { useConfirmDialog } from '../ConfirmDialog';
 
 export interface DetectedChainItem {
   id: string;
@@ -232,6 +233,7 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
   notify,
 }) => {
   useLanguage();
+  const confirmAction = useConfirmDialog();
   const folderInputRef = useRef<HTMLInputElement>(null);
   const filesInputRef = useRef<HTMLInputElement>(null);
   const rootDirectoryHandleRef = useRef<any>(null);
@@ -806,6 +808,12 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
       notify('请至少勾选一个要删除的文件', 'error');
       return;
     }
+
+    if (!await confirmAction({
+      rememberKey: 'folder-import.junk-files.delete',
+      title: '永久删除所选本地文件', message: t('永久删除所选文件，无法从回收站恢复。'),
+      confirmLabel: '确认删除', tone: 'danger',
+    })) return;
 
     setIsDeleting(true);
     setDeleteProgress({ current: 0, total: targets.length });

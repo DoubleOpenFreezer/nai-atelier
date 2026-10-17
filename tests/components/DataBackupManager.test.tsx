@@ -5,8 +5,9 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { DataBackupManager } from '../../components/DataBackupManager';
 
 const mocks = vi.hoisted(() => ({
-  storageStatus: vi.fn(), pickDirectory: vi.fn(), backupStatus: vi.fn(), saveConfig: vi.fn(),
+  storageStatus: vi.fn(), pickDirectory: vi.fn(), backupStatus: vi.fn(), saveConfig: vi.fn(), confirm: vi.fn(), deleteBackup: vi.fn(),
 }));
+vi.mock('../../components/ConfirmDialog', () => ({ useConfirmDialog: () => mocks.confirm }));
 
 vi.mock('../../services/storageLocations', () => ({
   getStorageLocationStatus: mocks.storageStatus,
@@ -16,7 +17,7 @@ vi.mock('../../services/localBackup', () => ({
   getLocalBackupStatus: mocks.backupStatus,
   saveLocalBackupConfig: mocks.saveConfig,
   formatBackupDate: () => 'date', formatBytes: () => '0 B',
-  openLocalBackupFolder: vi.fn(), startLocalBackup: vi.fn(), deleteLocalBackup: vi.fn(),
+  openLocalBackupFolder: vi.fn(), startLocalBackup: vi.fn(), deleteLocalBackup: mocks.deleteBackup,
 }));
 
 const backupStatus = {
@@ -34,6 +35,20 @@ beforeEach(() => {
   mocks.saveConfig.mockResolvedValue(undefined);
 });
 afterEach(() => cleanup());
+
+it('备份删除复用独立类型确认，取消不执行删除，确认后才删除所选存档', async () => {
+  mocks.backupStatus.mockResolvedValue({ ...backupStatus, backups: [{ name: 'synthetic-backup', path: 'D:/synthetic-backup', createdAt: '', totalBytes: 1, fileCount: 1 }] });
+  mocks.confirm.mockResolvedValue(false);
+  render(<DataBackupManager notify={vi.fn()} />);
+  await waitFor(() => expect(mocks.backupStatus).toHaveBeenCalled());
+  fireEvent.click(screen.getByRole('button', { name: /历史备份存档/ }));
+  fireEvent.click(screen.getByRole('button', { name: '删除' }));
+  await waitFor(() => expect(mocks.confirm).toHaveBeenCalledWith(expect.objectContaining({ rememberKey: 'backup.delete', rememberScope: 'C:\\Backups', message: 'synthetic-backup' })));
+  expect(mocks.deleteBackup).not.toHaveBeenCalled();
+  mocks.confirm.mockResolvedValue(true);
+  fireEvent.click(screen.getByRole('button', { name: '删除' }));
+  await waitFor(() => expect(mocks.deleteBackup).toHaveBeenCalledWith('synthetic-backup'));
+});
 
 const openTargetEditor = async () => {
   render(<DataBackupManager notify={vi.fn()} />);

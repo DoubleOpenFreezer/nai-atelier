@@ -97,6 +97,7 @@ export function StorageLocationManager({ notify }: { notify: (message: string, t
     const target = directory.trim();
     if (!target) throw new Error(t('请选择目标文件夹'));
     if (!await confirmAction({
+      rememberKey: `storage.${operation}`, rememberScope: [storage?.dataDir, target],
       title: operation === 'migrate' ? t('迁移现有工坊？') : t('打开另一工坊？'),
       message: operation === 'migrate'
         ? t('将停止当前工坊，复制并核验资料后在新位置重新打开。旧目录保留。\n目标：{0}', [target])
@@ -111,6 +112,7 @@ export function StorageLocationManager({ notify }: { notify: (message: string, t
   });
   const changeCache = (target: string) => void perform('cache', async () => {
     if (!await confirmAction({
+      rememberKey: 'storage.cache-directory', rememberScope: [storage?.cacheDir, target.trim()],
       title: t('更改缓存与下载资源位置？'),
       message: t('将停止当前工坊，把已有缩略图、反推模型和词库复制到新位置后重新打开。原件与旧目录保留。'),
       confirmLabel: t('应用并重启'),

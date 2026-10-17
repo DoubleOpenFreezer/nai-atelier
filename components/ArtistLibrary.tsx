@@ -193,7 +193,6 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
         catch (error) { notify(error instanceof Error ? error.message : t('样张配置导入失败'), 'error'); }
     };
     const selectionAnchor = useGallerySelectionAnchor(scrollContainerRef, scrollContainerRef, cart.some(item => item.name === focusedName) ? focusedName : null, active, selectionFocusEnabled);
-    const onScrollRestore = useKeepAliveScrollRestore(scrollContainerRef, 'library', { skipRestore: selectionAnchor.hasAnchor });
     const [loadedCatalogArtists, setLoadedCatalogArtists] = useState<ArtistDictionaryEntry[]>([]);
     const [catalogSearchResults, setCatalogSearchResults] = useState<ArtistDictionaryEntry[]>([]);
     const [artistCatalogCount, setArtistCatalogCount] = useState(0);
@@ -204,6 +203,8 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
         const saved = localStorage.getItem('nai_artist_sort');
         return saved === 'least' || saved === 'name-asc' || saved === 'name-desc' ? saved : 'popular';
     });
+    const resultKey = JSON.stringify([searchTerm, onlySamples, showFavOnly, artistSort, samplePack]);
+    const onScrollRestore = useKeepAliveScrollRestore(scrollContainerRef, 'library', { skipRestore: selectionAnchor.hasAnchor, resetKey: resultKey, onReset: selectionAnchor.clearAnchor });
     const catalogSearchRequestRef = useRef(0);
     const catalogSentinelRef = useRef<HTMLDivElement>(null);
     const nextCatalogPageRef = useRef(0);
@@ -273,7 +274,6 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
         setHasMoreCatalog(false);
         setIsCatalogLoading(true);
         setIsLoadingMoreCatalog(false);
-        scrollContainerRef.current?.scrollTo({ top: 0 });
         let cancelled = false;
         getArtistDictionaryPage(0, artistSort)
             .then(result => {
@@ -498,6 +498,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
                 {onlySamples && !filteredArtists.length && <div role="status" className="py-12 text-center text-sm text-gray-400">{!currentSampleError && !sampleLoading && currentPackStatus?.phase === 'ready' && (!download || ['missing', 'ready'].includes(download.stage)) ? t('没有匹配的画师样张') : sampleStatusText}{currentSampleError && <button type="button" className="mobile-touch ml-2 rounded border border-gray-300 px-2 py-1 dark:border-gray-700" onClick={() => setSampleRefresh(current => current + 1)}>{t('重试')}</button>}</div>}
                 {imageDisplay.layout === 'masonry' ? (
                     <ShortestColumnMasonry<ArtistDictionaryEntry>
+                        resetKey={resultKey}
                         stableColumns
                         items={filteredArtists}
                         columns={gridCols}

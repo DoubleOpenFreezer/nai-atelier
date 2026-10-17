@@ -5,14 +5,15 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { useKeepAliveScrollRestore } from '../../components/useKeepAliveScrollRestore';
 import { ImageActivityContext } from '../../components/SmartImage';
 
-const InnerView: React.FC<{ viewKey: string; clientHeight: number; scrollHeight: number; trigger?: unknown }> = ({
+const InnerView: React.FC<{ viewKey: string; clientHeight: number; scrollHeight: number; trigger?: unknown; resetKey?: unknown }> = ({
   viewKey,
   clientHeight,
   scrollHeight,
   trigger,
+  resetKey,
 }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const handleScroll = useKeepAliveScrollRestore(scrollRef, viewKey, { trigger });
+  const handleScroll = useKeepAliveScrollRestore(scrollRef, viewKey, { trigger, resetKey });
 
   const setNode = (node: HTMLDivElement | null) => {
     if (node) {
@@ -35,23 +36,48 @@ const InnerView: React.FC<{ viewKey: string; clientHeight: number; scrollHeight:
   }, React.createElement('div', { style: { height: '2000px' } }));
 };
 
-const Harness: React.FC<{ active?: boolean; viewKey?: string; clientHeight?: number; scrollHeight?: number; trigger?: unknown }> = ({
+const Harness: React.FC<{ active?: boolean; viewKey?: string; clientHeight?: number; scrollHeight?: number; trigger?: unknown; resetKey?: unknown }> = ({
   active = true,
   viewKey = 'test-view',
   clientHeight = 500,
   scrollHeight = 2000,
   trigger,
+  resetKey,
 }) => {
   return React.createElement(
     ImageActivityContext.Provider,
     { value: active },
-    React.createElement(InnerView, { viewKey, clientHeight, scrollHeight, trigger })
+    React.createElement(InnerView, { viewKey, clientHeight, scrollHeight, trigger, resetKey })
   );
 };
 
 afterEach(() => cleanup());
 
 describe('useKeepAliveScrollRestore', () => {
+  it('主动改变筛选清空旧缓存与恢复追赶，同条件尺寸变化及保活返回仍保持新位置', () => {
+    vi.useFakeTimers();
+    try {
+      const view = (resetKey: string, active = true, clientHeight = 500, scrollHeight = 3000) => React.createElement(Harness, { viewKey: 'filter-reset-view', resetKey, active, clientHeight, scrollHeight });
+      const { getByTestId, rerender, unmount } = render(view('favorites'));
+      const root = getByTestId('root');
+      root.scrollTop = 1800; root.dispatchEvent(new Event('scroll'));
+      rerender(view('favorites', false, 0, 0));
+      rerender(view('favorites', true, 0, 0));
+      rerender(view('all'));
+      expect(root.scrollTop).toBe(0);
+      vi.advanceTimersByTime(300);
+      expect(root.scrollTop).toBe(0);
+      root.scrollTop = 600; root.dispatchEvent(new Event('scroll'));
+      rerender(view('all', true, 500, 5000));
+      expect(root.scrollTop).toBe(600);
+      rerender(view('all', false, 0, 0)); root.scrollTop = 0;
+      rerender(view('all'));
+      expect(root.scrollTop).toBe(600);
+      unmount();
+      const remounted = render(view('all'));
+      expect(remounted.getByTestId('root').scrollTop).toBe(600);
+    } finally { vi.useRealTimers(); }
+  });
   it('在激活状态下滚动时保存并正确记录位置', () => {
     const { getByTestId, unmount } = render(React.createElement(Harness, { active: true, viewKey: 'active-view' }));
     const root = getByTestId('root');

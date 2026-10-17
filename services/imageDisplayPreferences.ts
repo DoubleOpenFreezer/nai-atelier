@@ -2,7 +2,7 @@ import { CSSProperties, useEffect, useState } from 'react';
 
 export type MobileImageLayout = 'masonry' | 'portrait' | 'square';
 export type MobileImageColumns = 'auto' | 1 | 2 | 3;
-export type DesktopImageColumns = 'auto' | 1 | 2 | 3 | 4 | 5;
+export type DesktopImageColumns = 'auto' | 1 | 2 | 3 | 4 | 5 | 6 | 7;
 
 export interface MobileImageDisplayPreferences {
   layout: MobileImageLayout;
@@ -33,7 +33,7 @@ const normalizePreferences = (value: unknown): MobileImageDisplayPreferences => 
   const saved = value && typeof value === 'object' ? value as Partial<MobileImageDisplayPreferences> : {};
   const layout: MobileImageLayout = ['masonry', 'portrait', 'square'].includes(saved.layout as string) ? saved.layout! : DEFAULTS.layout;
   const columns: MobileImageColumns = saved.columns === 'auto' || [1, 2, 3].includes(saved.columns as number) ? saved.columns! : DEFAULTS.columns;
-  const desktopColumns: DesktopImageColumns = saved.desktopColumns === 'auto' || [1, 2, 3, 4, 5].includes(saved.desktopColumns as number) ? saved.desktopColumns! : DEFAULTS.desktopColumns;
+  const desktopColumns: DesktopImageColumns = saved.desktopColumns === 'auto' || [1, 2, 3, 4, 5, 6, 7].includes(saved.desktopColumns as number) ? saved.desktopColumns! : DEFAULTS.desktopColumns;
   return { layout, columns, desktopColumns };
 };
 

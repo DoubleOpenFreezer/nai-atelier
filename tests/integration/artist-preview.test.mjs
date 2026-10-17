@@ -33,12 +33,18 @@ test('画师图包裁边只用于显式预览，缓存、数组图片和原图�
   const packPaths = Object.fromEntries(['v45', 'v5'].map(pack => [pack, join(process.cwd(), `${pack}-synthetic-pack`)]));
   for (const path of Object.values(packPaths)) await writeFile(path, packJson);
   await updateStoragePreferences({ artistSamplePacks: packPaths });
-  const worker = createServer((_req, res) => { res.setHeader('Content-Type', 'image/jpeg'); res.end(padded); });
+  const savedRequests = [];
+  const worker = createServer((req, res) => {
+    savedRequests.push(req.url);
+    const tag = req.url.match(/\/([^/]+)\/image$/)?.[1] || req.url.split('/').at(-1).replace(/\.jpg$/, '');
+    res.setHeader('Content-Type', tag === 'alpha' ? 'image/png' : 'image/jpeg');
+    res.end(fixtures[tag]?.[0] || padded);
+  });
   await new Promise(resolve => worker.listen(0, '127.0.0.1', resolve));
   let gateway;
   try {
     gateway = await createMediaGateway({ port: 0, workerPort: worker.address().port });
-    const base = `http://127.0.0.1:${gateway.address().port}`;
+    let base = `http://127.0.0.1:${gateway.address().port}`;
     let status;
     for (let i = 0; i < 200; i++) {
       status = await (await fetch(base + '/api/artist-samples/status')).json();
@@ -94,9 +100,37 @@ test('画师图包裁边只用于显式预览，缓存、数组图片和原图�
     const customSource = '/api/assets/self-made.jpg';
     const custom = await dimensions(await fetch(mediaUrl(customSource)));
     assert.deepEqual([custom.width, custom.height], [768, 768]);
-    assert.equal((await fetch(mediaUrl(customSource, 'thumb-960', preview))).status, 400);
     const prewarm = await fetch(base + '/api/media/prewarm', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ sources: status.packs.map(pack => sourceFor(pack)), preview }) });
     assert.equal((await prewarm.json()).queued, 0);
+
+    gateway.closeAllConnections();
+    await new Promise(resolve => gateway.close(resolve));
+    await updateStoragePreferences({ artistSamplePacks: { v45: '', v5: '' } });
+    gateway = await createMediaGateway({ port: 0, workerPort: worker.address().port });
+    base = `http://127.0.0.1:${gateway.address().port}`;
+    const unlinked = await (await fetch(base + '/api/artist-samples/status')).json();
+    assert.deepEqual(unlinked.packs.map(pack => pack.phase), ['unconfigured', 'unconfigured']);
+    for (const savedSource of ['/api/inspirations/padded/image', '/api/assets/inspirations/padded.jpg']) {
+      const regular = await dimensions(await fetch(mediaUrl(savedSource)));
+      assert.deepEqual([regular.width, regular.height], [768, 768]);
+      const croppedResponse = await fetch(mediaUrl(savedSource, 'thumb-960', preview));
+      const previewEtag = croppedResponse.headers.get('etag');
+      const cropped = await dimensions(croppedResponse);
+      assert.deepEqual([cropped.width, cropped.height], [610, 768]);
+      assert.equal((await fetch(mediaUrl(savedSource, 'thumb-960', preview), { headers: { 'if-none-match': previewEtag } })).status, 304);
+      assert.deepEqual((await dimensions(await fetch(mediaUrl(savedSource)))).data, regular.data);
+      for (const url of [base + savedSource, mediaUrl(savedSource, 'original'), mediaUrl(savedSource, 'original', preview)]) {
+        assert.deepEqual(Buffer.from(await (await fetch(url)).arrayBuffer()), padded);
+      }
+    }
+    assert.ok(savedRequests.includes('/api/inspirations/padded/image'));
+    for (const [tag, width] of [['dark', 610], ['noBorder', 768], ['nearBlack', 768], ['oneSide', 768], ['wrongSize', 640], ['black', 768], ['alpha', 768], ['opaquePng', 768]]) {
+      const image = await dimensions(await fetch(mediaUrl(`/api/inspirations/${tag}/image`, 'thumb-960', preview)));
+      assert.deepEqual([image.width, image.height], [width, tag === 'wrongSize' ? 640 : 768], `saved/${tag}`);
+    }
+    for (const source of ['/api/local-history/synthetic/image', '/api/vibes/synthetic/image', '/api/character-references/synthetic/image', 'https://ai-img.10118899.xyz/NAI/123/456.webp']) {
+      assert.equal((await fetch(mediaUrl(source, 'thumb-960', preview))).status, 400);
+    }
   } finally {
     gateway?.closeAllConnections();
     if (gateway) await new Promise(resolve => gateway.close(resolve));

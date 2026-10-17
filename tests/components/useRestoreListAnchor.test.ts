@@ -4,16 +4,31 @@ import { cleanup, render } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { useRestoreListAnchor } from '../../components/useRestoreListAnchor';
 
-const Harness: React.FC<{ targetId?: string; readyKey?: number }> = ({ targetId, readyKey }) => {
+const Harness: React.FC<{ targetId?: string; readyKey?: number; resetKey?: string; showTarget?: boolean }> = ({ targetId, readyKey, resetKey, showTarget = true }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
-  useRestoreListAnchor(scrollRef, targetId, readyKey);
+  useRestoreListAnchor(scrollRef, targetId, readyKey, resetKey);
   return React.createElement('div', { ref: scrollRef, 'data-testid': 'root' },
-    React.createElement('article', { 'data-return-item-id': 'chain-1' }));
+    showTarget && React.createElement('article', { 'data-return-item-id': 'chain-1' }));
 };
 
 afterEach(() => cleanup());
 
 describe('useRestoreListAnchor', () => {
+  it('主动清筛选消费尚未出现的旧目标，异步出现也不拉回；新的详情返回仍定位', () => {
+    const { getByTestId, container, rerender } = render(React.createElement(Harness, { targetId: 'chain-1', resetKey: 'favorites', showTarget: false }));
+    const root = getByTestId('root');
+    root.getBoundingClientRect = () => ({ top: 0, bottom: 500, height: 500 } as DOMRect);
+    const rect = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({ top: 1500, bottom: 1700, height: 200 } as DOMRect);
+    root.scrollTop = 0;
+    rerender(React.createElement(Harness, { targetId: 'chain-1', resetKey: 'all', showTarget: false }));
+    rerender(React.createElement(Harness, { targetId: 'chain-1', resetKey: 'all', readyKey: 1 }));
+    expect(container.querySelector('[data-return-item-id="chain-1"]')).not.toBeNull();
+    expect(root.scrollTop).toBe(0);
+    rerender(React.createElement(Harness, { resetKey: 'all' }));
+    rerender(React.createElement(Harness, { targetId: 'chain-1', resetKey: 'all' }));
+    expect(root.scrollTop).toBe(1350);
+    rect.mockRestore();
+  });
   it('目标仍在原视口内时保持现有滚动位置', () => {
     const { getByTestId, container, rerender } = render(React.createElement(Harness));
     const root = getByTestId('root');

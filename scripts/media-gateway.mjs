@@ -3949,7 +3949,8 @@ const serveDistFile = async (req, res, url) => {
       if (variant !== 'original' && !THUMB_WIDTHS.has(variant)) return sendJson(res, 400, { error: 'Invalid image variant' });
       const validated = getValidatedSource(url.searchParams.get('source'));
       const previewTransform = url.searchParams.get('preview') || '';
-      if (previewTransform && (previewTransform !== 'artist-sample-padding-v1' || validated.type !== 'artist-sample')) {
+      const supportsArtistPreview = validated.type === 'artist-sample' || (validated.type === 'local' && /^\/api\/(?:assets\/[^?#]+|inspirations\/[^/?#]+\/image)(?:\?[^#]*)?$/.test(validated.source));
+      if (previewTransform && (previewTransform !== 'artist-sample-padding-v1' || !supportsArtistPreview)) {
         return sendJson(res, 400, { error: 'Invalid image preview transform' });
       }
       const loadOriginal = () => validated.type === 'local'

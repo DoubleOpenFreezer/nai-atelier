@@ -12,6 +12,7 @@ import { copySharedImage } from '../../services/imageSharing';
 import { api } from '../../services/api';
 import { extractMetadata } from '../../services/metadataService';
 import { NAI_QUALITY_TAGS } from '../../services/promptUtils';
+import { buildMediaUrl } from '../../services/mobileImageCache';
 vi.mock('../../services/api', async original => {
   const actual = await original<typeof import('../../services/api')>();
   return { ...actual, api: { ...actual.api, uploadFile: vi.fn(async () => ({ url: '/api/assets/synthetic.png' })) } };
@@ -39,7 +40,7 @@ vi.mock('../../services/dbService', () => ({
 
 vi.mock('../../components/SmartImage', () => ({
   ImageActivityContext: React.createContext(true),
-  SmartImage: ({ thumbnailVariant: _thumbnailVariant, className = 'h-full w-full object-cover', ...props }: any) => React.createElement('img', { ...props, className }),
+  SmartImage: ({ thumbnailVariant: _thumbnailVariant, previewTransform, className = 'h-full w-full object-cover', ...props }: any) => React.createElement('img', { ...props, className, 'data-preview-transform': previewTransform }),
   OriginalImage: (props: any) => React.createElement('img', props),
 }));
 
@@ -47,10 +48,6 @@ vi.mock('../../components/ConfirmDialog', () => ({
   useConfirmDialog: () => confirmAction,
 }));
 
-
-vi.mock('../../components/useKeepAliveScrollRestore', () => ({
-  useKeepAliveScrollRestore: () => vi.fn(),
-}));
 
 beforeEach(() => {
   document.documentElement.dataset.motion = 'full';
@@ -85,6 +82,36 @@ const mockUser: User = {
   role: 'user',
   createdAt: 1,
 };
+
+it.each(['v45', 'v5'])('%s图包收藏列表与详情预览裁边按实际比例展示，原图查看与复制仍取原件', async pack => {
+  localStorage.setItem('nai_mobile_image_display', JSON.stringify({ layout: 'masonry', columns: 1, desktopColumns: 1 }));
+  const sample = { pack, tag: 'synthetic artist', revision: 'a'.repeat(24), index: 0 };
+  const item: Inspiration = { id: 'pack-favorite', userId: mockUser.id, title: '图包收藏', imageUrl: '/api/inspirations/pack-favorite/image', prompt: '', sourceType: 'artist', sourceId: 'synthetic artist', analysis: { artistSample: sample }, createdAt: 1 };
+  const own: Inspiration = { ...item, id: 'own-favorite', title: '自建收藏', imageUrl: '/api/assets/own.jpg', analysis: { artistSample: { ...sample, ownSampleId: 'own' } } };
+  const legacy: Inspiration = { ...item, id: 'legacy-favorite', title: '旧画师收藏', imageUrl: '/api/assets/old.jpg', analysis: {} };
+  const other: Inspiration = { ...item, id: 'other-favorite', title: '其他来源收藏', sourceType: 'upload', analysis: { artistSample: sample } };
+  const onRefresh = vi.fn(async () => {});
+  const { container } = render(React.createElement(InspirationGallery, { currentUser: mockUser, inspirationsData: [item, own, legacy, other], onRefresh, notify: vi.fn() }));
+  const image = screen.getByRole('img', { name: item.title });
+  expect(image.getAttribute('data-preview-transform')).toBe('artist-sample-padding-v1');
+  for (const title of [own.title, legacy.title, other.title]) expect(screen.getByRole('img', { name: title }).getAttribute('data-preview-transform')).toBeNull();
+  Object.defineProperties(image, { naturalWidth: { value: 254 }, naturalHeight: { value: 320 } });
+  fireEvent.load(image);
+  await waitFor(() => expect(Number((image.closest('.mobile-gallery-frame') as HTMLElement).style.getPropertyValue('--mobile-image-ratio'))).toBeCloseTo(254 / 320));
+  const card = image.closest('article')!;
+  fireEvent.click(within(card).getByRole('button', { name: '复制图片' }));
+  await waitFor(() => expect(copySharedImage).toHaveBeenLastCalledWith(item.imageUrl, false));
+  fireEvent.click(image.closest('button')!);
+  const detail = container.querySelector<HTMLElement>('[data-agent-page-scope="detail"]')!;
+  expect(within(detail).getByRole('img', { name: item.title }).getAttribute('src')).toBe(buildMediaUrl(item.imageUrl, 'thumb-960', 'artist-sample-padding-v1'));
+  fireEvent.click(within(detail).getByRole('button', { name: '复制图片' }));
+  await waitFor(() => expect(copySharedImage).toHaveBeenLastCalledWith(item.imageUrl, false));
+  fireEvent.click(within(detail).getByRole('button', { name: '放大查看：' + item.title }));
+  const lightbox = screen.getByRole('dialog', { name: '图片预览' });
+  expect(within(lightbox).getByRole('img').getAttribute('src')).toBe(item.imageUrl);
+  expect(db.updateInspiration).not.toHaveBeenCalled();
+  expect(onRefresh).not.toHaveBeenCalled();
+});
 
 it.each([390, 1280])('宽度 %s：收藏未读取时显示加载中，读取完成后才显示空状态或作品', width => {
   vi.stubGlobal('innerWidth', width);
@@ -355,6 +382,25 @@ it('收藏搜索不再匹配备注；详情接收文生图排序，调整后即�
 });
 
 describe('InspirationGallery 来源筛选与未整理心智', () => {
+  it('主动切换来源或搜索回到顶部，数据刷新与选择模式变化保留浏览位置', async () => {
+    const props = { currentUser: mockUser, inspirationsData: mockInspirations, onRefresh: vi.fn(), notify: vi.fn() };
+    const view = render(React.createElement(InspirationGallery, props));
+    const root = view.container.querySelector('main')!;
+    Object.defineProperties(root, { clientHeight: { configurable: true, value: 500 }, scrollHeight: { configurable: true, value: 5000 } });
+    root.scrollTop = 2100; fireEvent.scroll(root);
+    fireEvent.click(screen.getByRole('button', { name: /^Danbooru/ }));
+    expect(root.scrollTop).toBe(0);
+    root.scrollTop = 1200; fireEvent.scroll(root);
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: '未整理' } });
+    expect(root.scrollTop).toBe(0);
+    root.scrollTop = 600; fireEvent.scroll(root);
+    view.rerender(React.createElement(InspirationGallery, { ...props, inspirationsData: mockInspirations.map(item => ({ ...item })) }));
+    expect(root.scrollTop).toBe(600);
+    fireEvent.click(screen.getByRole('button', { name: '批量选择图片' }));
+    expect(root.scrollTop).toBe(600);
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 300)); });
+    expect(root.scrollTop).toBe(600);
+  });
   it('未整理分类正确包含未分配收藏夹的卡片（即使有来源标签与备注）', () => {
     render(
       React.createElement(InspirationGallery, {

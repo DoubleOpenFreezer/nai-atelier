@@ -10,6 +10,7 @@ import { isTopmostModal, useModalA11y } from './useModalA11y';
 import { useMobileHistoryLayer } from './MobileUI';
 import type { ImageGenerationData } from '../services/imageClipboardContext';
 import type { CollectionTarget } from '../services/collectionFavorites';
+import { buildMediaUrl, type MediaPreviewTransform } from '../services/mobileImageCache';
 
 export const ImageLightbox:React.FC<React.PropsWithChildren<{
   src:string;alt?:string;filename?:string;generationData?:ImageGenerationData;favorite?:CollectionTarget;
@@ -44,9 +45,10 @@ export const ImageLightbox:React.FC<React.PropsWithChildren<{
 };
 
 /** 详情原图点按进入同一大图查看器，原有详情滚动与分享控件仍留在原位。 */
-export const ViewableImage:React.FC<React.ImgHTMLAttributes<HTMLImageElement>&{src:string;filename?:string;generationData?:ImageGenerationData;favorite?:CollectionTarget;notify?:(message:string,type?:'success'|'error')=>void}>=({filename,generationData,favorite,notify,onClick,...props})=>{
+export const ViewableImage:React.FC<React.ImgHTMLAttributes<HTMLImageElement>&{src:string;filename?:string;generationData?:ImageGenerationData;favorite?:CollectionTarget;previewTransform?:MediaPreviewTransform;notify?:(message:string,type?:'success'|'error')=>void}>=({filename,generationData,favorite,previewTransform,notify,onClick,...props})=>{
   useLanguage();
   const [open,setOpen]=useState(false);
-  return <><button type="button" className="contents [&:focus-visible>img]:outline-2 [&:focus-visible>img]:outline-indigo-500" aria-label={t("放大查看：{0}", [props.alt||'图片'])} onClick={event=>{event.stopPropagation();setOpen(true);}}><OriginalImage {...props} draggable={false} onClick={onClick} /></button>
+  const previewSrc=previewTransform?buildMediaUrl(props.src,'thumb-960',previewTransform):props.src;
+  return <><button type="button" className="contents [&:focus-visible>img]:outline-2 [&:focus-visible>img]:outline-indigo-500" aria-label={t("放大查看：{0}", [props.alt||'图片'])} onClick={event=>{event.stopPropagation();setOpen(true);}}><OriginalImage {...props} src={previewSrc} {...(previewTransform?{"data-agent-original-src":props.src}:{})} draggable={false} onClick={onClick} /></button>
     {open&&<ImageLightbox src={props.src} alt={props.alt} filename={filename} generationData={generationData} favorite={favorite} notify={notify} onClose={()=>setOpen(false)} />}</>;
 };

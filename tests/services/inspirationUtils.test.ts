@@ -7,7 +7,31 @@ import {
   inspirationSimilarity,
   normalizeCollectionTagNames,
   sortCollectionGroups,
+  getCollectionPreviewTransform,
 } from '../../services/inspirationUtils';
+
+describe('收藏图包预览来源', () => {
+  const artistSample = { pack: 'v45', tag: 'synthetic artist', revision: 'a'.repeat(24), index: 0 };
+  const original = `/api/artist-samples/image?pack=v5&tag=synthetic&index=3&revision=${'b'.repeat(24)}`;
+  it.each(['v45', 'v5'])('既有%s图包收藏凭来源快照启用预览，不需要原图包地址仍有效', pack => {
+    expect(getCollectionPreviewTransform({ sourceType: 'artist', analysis: { artistSample: { ...artistSample, pack } } })).toBe('artist-sample-padding-v1');
+    expect(getCollectionPreviewTransform({ sourceType: 'artist', analysis: { collectionOriginalUrl: original } })).toBe('artist-sample-padding-v1');
+  });
+  it('普通画师、其他来源与有自建标记的收藏不裁；自建标记优先于原地址回退', () => {
+    expect(getCollectionPreviewTransform({ sourceType: 'artist' })).toBeUndefined();
+    expect(getCollectionPreviewTransform({ sourceType: 'artist', analysis: { collectionOriginalUrl: '/api/assets/old-cover.jpg' } })).toBeUndefined();
+    expect(getCollectionPreviewTransform({ sourceType: 'history', analysis: { artistSample } })).toBeUndefined();
+    for (const ownSampleId of ['own-v5', '', undefined]) expect(getCollectionPreviewTransform({ sourceType: 'artist', analysis: { artistSample: { ...artistSample, ownSampleId }, collectionOriginalUrl: original } })).toBeUndefined();
+  });
+  it('不把缺失、损坏或不支持的来源信息当作图包', () => {
+    for (const sample of [null, 'v45', {}, { ...artistSample, index: -1 }, { ...artistSample, revision: '' }, { ...artistSample, tag: '' }, { ...artistSample, pack: 'v4' }]) {
+      expect(getCollectionPreviewTransform({ sourceType: 'artist', analysis: { artistSample: sample } })).toBeUndefined();
+    }
+    for (const source of [original + '#fragment', original + '&index=1', original.replace('index=3', 'index='), 'https://other.example' + original, original.replace('pack=v5', 'pack=v3')]) {
+      expect(getCollectionPreviewTransform({ sourceType: 'artist', analysis: { collectionOriginalUrl: source } })).toBeUndefined();
+    }
+  });
+});
 
 describe('normalizeInspirationTags', () => {
   it('去重、去 # 前缀、修剪空白并过滤空串', () => {

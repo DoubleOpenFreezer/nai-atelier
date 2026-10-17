@@ -69,6 +69,7 @@ const ChainTagPanel: React.FC<ChainTagManagerProps> = ({ chains, onClose, onRefr
     try {
       const merging = Boolean(to && tagCounts.some(([tag]) => tag === to));
       if (!await confirmAction({
+        rememberKey: `chain-tag.${to ? merging ? 'merge' : 'rename' : 'remove'}`, rememberScope: chains[0]?.type,
         title: to ? merging ? t('将「{0}」合并到「{1}」？', [from, to]) : t('将「{0}」重命名为「{1}」？', [from, to]) : t('移除标签「{0}」？', [from]),
         message: t('将更新 {0} 条资料的标签，提示词、图片和参数保持原样。', [affected.length]),
         confirmLabel: to ? merging ? t('合并标签') : t('重命名') : t('移除标签'), tone: to ? 'primary' : 'danger',

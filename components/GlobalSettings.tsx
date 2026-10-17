@@ -399,6 +399,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
   const removeKeyEntry = async (entry: NaiKeyEntry) => {
     const active = entry.key === readApiKey();
     if (!await confirmAction({
+      rememberKey: 'key-vault.delete', rememberScope: active,
       title: `删除密钥「${entry.name}」？`,
       message: `仅从本机保管箱移除 ${maskNaiKeyForDisplay(entry.key)}${active ? '（当前正在使用，删除后需要重新选择密钥）' : ''}，不影响 NovelAI 账号本身。`,
       confirmLabel: '删除',
@@ -583,6 +584,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
   const handleDeletePreset = async (preset: AppearancePreset) => {
     if (preset.isBuiltin) return;
     const confirmed = await confirmAction({
+      rememberKey: 'appearance-preset.delete',
       title: '删除外观预设',
       message: `确定要删除外观预设「${preset.isBuiltin ? t(preset.name) : preset.name}」吗？此操作无法撤销。`,
       confirmLabel: '删除预设',
@@ -767,7 +769,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                         <span className="text-xs font-bold text-gray-500 dark:text-gray-400">{t("桌面端列数")}</span>
                         <span className="text-xs font-bold text-gray-600 dark:text-gray-300">{imageDisplay.desktopColumns === 'auto' ? t("自适应") : t("{0} 列", [imageDisplay.desktopColumns])}</span>
                       </div>
-                      <input type="range" min={0} max={5} step={1} value={imageDisplay.desktopColumns === 'auto' ? 0 : imageDisplay.desktopColumns} onChange={event => { const value = Number(event.target.value); updateImageDisplay({ ...imageDisplay, desktopColumns: (value === 0 ? 'auto' : value) as DesktopImageColumns }); }} className="mt-2 block w-full accent-indigo-500" aria-label={t("桌面端列数")} />
+                      <input type="range" min={0} max={7} step={1} value={imageDisplay.desktopColumns === 'auto' ? 0 : imageDisplay.desktopColumns} onChange={event => { const value = Number(event.target.value); updateImageDisplay({ ...imageDisplay, desktopColumns: (value === 0 ? 'auto' : value) as DesktopImageColumns }); }} className="mt-2 block w-full accent-indigo-500" aria-label={t("桌面端列数")} />
                     </div>
                   </div>
                 </fieldset>
@@ -1314,7 +1316,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                   <span className="text-xs font-bold text-gray-500 dark:text-gray-400" title={t("仅统计本机操作，按 Key 累计")}>{t("个人使用统计（当前密钥）")}</span>
                   {anlasBudget.personal && (anlasBudget.personal.anlasSpent > 0 || anlasBudget.personal.opusImages > 0) && (
                     <button type="button" onClick={async () => {
-                      if (!await confirmAction({ title: '重置个人使用统计？', message: '清零当前 Key 的 Anlas／Opus 统计，本地预算保留。', confirmLabel: '重置', tone: 'danger' })) return;
+                      if (!await confirmAction({ rememberKey: 'usage.reset', rememberScope: apiKey, title: '重置个人使用统计？', message: '清零当前 Key 的 Anlas／Opus 统计，本地预算保留。', confirmLabel: '重置', tone: 'danger' })) return;
                       try {
                         const keyHash = await getActiveKeyHash();
                         if (!keyHash) return;
@@ -1461,7 +1463,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
               </div>
 
               {/* 手机图片缓存 */}
-              <div className="border-b border-gray-200 pb-5 dark:border-gray-700"><div className="flex items-start justify-between gap-3"><div><h4 className="font-semibold text-gray-900 dark:text-white">{t("手机图片缓存")}</h4><p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">{t("仅缩略图，不影响原图。")}</p></div><Smartphone className="h-4 w-4 flex-none text-indigo-500" /></div><div className="mt-3 grid grid-cols-4 gap-2">{[0, 25, 50, 100].map(value => <button key={value} type="button" onClick={() => { setMobileCacheLimitMb(value); setMobileCacheStats(getMobileCacheStats()); }} className={`rounded-lg border px-2 py-2 text-xs font-medium transition-colors ${getMobileCacheLimitMb() === value ? 'border-indigo-500 bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-300' : 'border-gray-300 text-gray-600 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800'}`}>{value === 0 ? t("关闭") : `${value} MB`}</button>)}</div><div className="mt-3 flex items-center justify-between gap-3 rounded-lg bg-gray-50 px-3 py-2.5 text-xs dark:bg-gray-800/70"><span className="text-gray-500 dark:text-gray-400">{t("已缓存 {0} 张 · {1} MB / {2} MB", [mobileCacheStats.count, (mobileCacheStats.bytes / 1024 / 1024).toFixed(1), mobileCacheStats.limitMb])}</span><button type="button" onClick={async () => { if (!await confirmAction({ title: '清空手机小图缓存？', message: '只会清除可重新生成的缩略图，不会影响原图、历史或任何本地数据。', confirmLabel: '清空缓存', tone: 'danger' })) return; await clearMobileThumbnailCache(); setMobileCacheStats(getMobileCacheStats()); notify('手机小图缓存已清空'); }} className="flex-shrink-0 font-medium text-red-500 hover:text-red-600">{t("清空缓存")}</button></div></div>
+              <div className="border-b border-gray-200 pb-5 dark:border-gray-700"><div className="flex items-start justify-between gap-3"><div><h4 className="font-semibold text-gray-900 dark:text-white">{t("手机图片缓存")}</h4><p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">{t("仅缩略图，不影响原图。")}</p></div><Smartphone className="h-4 w-4 flex-none text-indigo-500" /></div><div className="mt-3 grid grid-cols-4 gap-2">{[0, 25, 50, 100].map(value => <button key={value} type="button" onClick={() => { setMobileCacheLimitMb(value); setMobileCacheStats(getMobileCacheStats()); }} className={`rounded-lg border px-2 py-2 text-xs font-medium transition-colors ${getMobileCacheLimitMb() === value ? 'border-indigo-500 bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-300' : 'border-gray-300 text-gray-600 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800'}`}>{value === 0 ? t("关闭") : `${value} MB`}</button>)}</div><div className="mt-3 flex items-center justify-between gap-3 rounded-lg bg-gray-50 px-3 py-2.5 text-xs dark:bg-gray-800/70"><span className="text-gray-500 dark:text-gray-400">{t("已缓存 {0} 张 · {1} MB / {2} MB", [mobileCacheStats.count, (mobileCacheStats.bytes / 1024 / 1024).toFixed(1), mobileCacheStats.limitMb])}</span><button type="button" onClick={async () => { if (!await confirmAction({ rememberKey: 'thumbnail-cache.clear', title: '清空手机小图缓存？', message: '只会清除可重新生成的缩略图，不会影响原图、历史或任何本地数据。', confirmLabel: '清空缓存', tone: 'danger' })) return; await clearMobileThumbnailCache(); setMobileCacheStats(getMobileCacheStats()); notify('手机小图缓存已清空'); }} className="flex-shrink-0 font-medium text-red-500 hover:text-red-600">{t("清空缓存")}</button></div></div>
 
               {/* 电脑缩略图缓存 */}
               <div className="border-b border-gray-200 pb-5 dark:border-gray-700"><div className="flex items-start justify-between gap-3"><div><h4 className="font-semibold text-gray-900 dark:text-white">{t("电脑缩略图缓存")}</h4><p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">{t("自动管理缩略图，不影响原图。")}</p></div><Database className="h-4 w-4 flex-none text-indigo-500" /></div><div className="mt-3 rounded-lg bg-gray-50 px-3 py-2.5 text-xs text-gray-500 dark:bg-gray-800/70 dark:text-gray-400">{maintenanceStatus ? <>{t("已缓存 ")}{maintenanceStatus.thumbnailCache.count} {t(" 张 · ")}{(maintenanceStatus.thumbnailCache.bytes / 1024 / 1024).toFixed(1)} MB / {(maintenanceStatus.thumbnailCache.limitBytes / 1024 / 1024).toFixed(0)} MB<br />{t("固定封面 ")}{maintenanceStatus.thumbnailCache.pinnedCount} {t(" 张 · ")}{(maintenanceStatus.thumbnailCache.pinnedBytes / 1024 / 1024).toFixed(1)} MB / {(maintenanceStatus.thumbnailCache.pinnedLimitBytes / 1024 / 1024).toFixed(0)} MB</> : t("等待读取本地缓存状态…")}</div></div>

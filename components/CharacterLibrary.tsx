@@ -1,5 +1,5 @@
 import { useGalleryFrostedCaption } from '../services/appearancePreferences';
-import { collectionSnapshot, subscribeCollection } from '../services/collectionFavorites';
+import { collectionSnapshot, collectionTargetActive, readLegacyFavoriteIds, subscribeCollection } from '../services/collectionFavorites';
 import { t, useLanguage, getLanguage } from '../services/i18n';
 import { PressRevealSurface } from './PressRevealSurface';
 import { ViewableImage } from './ImageLightbox';
@@ -124,7 +124,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
                       <button type="button" aria-label={t('删除这个自定义角色')} title={t('删除')} onClick={event => { event.stopPropagation(); void deleteCustom(card); }} className="mobile-size-locked flex h-11 w-11 items-center justify-center rounded-full bg-red-500 text-white shadow hover:bg-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white md:h-8 md:w-8"><Trash2 className="h-4 w-4" /></button>
                     </div>
                     <div data-card-action="true" className="absolute right-2 top-2 z-20 flex flex-col items-center gap-2">
-                      {card.previewImage && <ImageShareActions variant="card" className="flex-col" imageUrl={getMobileOriginalUrl(card.previewImage)} filename={`character-${card.name}.png`} notify={notify} favorite={{ imageUrl: card.previewImage, sourceType: 'character', sourceId: card.chain?.id || card.key, title: card.name, prompt: card.chain?.basePrompt, negativePrompt: card.chain?.negativePrompt, params: card.chain?.params }} onFavoriteChange={() => toggleFavorite(card, collectionSnapshot().some(item => item.sourceType === 'character' && item.sourceId === (card.chain?.id || card.tagName || card.key) && !item.archived))} />}
+                      {card.previewImage && <ImageShareActions variant="card" className="flex-col" imageUrl={getMobileOriginalUrl(card.previewImage)} filename={`character-${card.name}.png`} notify={notify} favorite={{ imageUrl: card.previewImage, sourceType: 'character', sourceId: card.chain?.id || card.key, title: card.name, prompt: card.chain?.basePrompt, negativePrompt: card.chain?.negativePrompt, params: card.chain?.params }} />}
                       <button type="button" aria-label={t('编辑自定义角色信息')} title={t('编辑信息')} onClick={event => { event.stopPropagation(); setInfoChain(card.chain!); }} className={`hover-reveal-md ${IMAGE_CARD_ACTION_CLASS} inline-flex shrink-0 items-center justify-center transition`}><Pencil className="h-4 w-4" /></button>
                     </div>
                   </>}
@@ -184,8 +184,14 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
   const [nextPage, setNextPage] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const legacyCustomFavorites = useRef(new Set<string>());
   const [favorites, setFavorites] = useState<Set<string>>(() => {
-    try { return new Set(JSON.parse(localStorage.getItem('nai_character_favorites') || '[]')); }
+    try {
+      const next = readLegacyFavoriteIds('nai_character_favorites');
+      readLegacyFavoriteIds('nai_chain_favs').forEach(id => next.add(`custom:${id}`));
+      legacyCustomFavorites.current = new Set([...next].filter(id => id.startsWith('custom:')));
+      return next;
+    }
     catch { return new Set(); }
   });
   // 收藏条目的展示快照（名字/中文名/作品数）：词库是无限分页加载的，"只看收藏"若只在
@@ -426,9 +432,10 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
     if (showFavOnly) cards = cards.filter(card => favorites.has(card.key));
     return cards;
   }, [catalogToCard, customChains, customToCard, favoriteDetails, favorites, gachaCards, loadedCatalog, persistedCatalog, searchResults, searchTerm, showFavOnly, sort, tab]);
-  useRestoreListAnchor(scrollRef, returnTargetId, `${visibleCards.length}:${isLoading ? 1 : 0}`);
+  const resultKey = JSON.stringify([searchTerm, tab, showFavOnly, sort]);
+  useRestoreListAnchor(scrollRef, returnTargetId, `${visibleCards.length}:${isLoading ? 1 : 0}`, resultKey);
   const selectionAnchor = useGallerySelectionAnchor(scrollRef, scrollRef, focusedKey && selectedKeys.has(focusedKey) ? focusedKey : null, React.useContext(ImageActivityContext), selectionFocusEnabled);
-  const onScrollRestore = useKeepAliveScrollRestore(scrollRef, 'characters', { skipRestore: selectionAnchor.hasAnchor });
+  const onScrollRestore = useKeepAliveScrollRestore(scrollRef, 'characters', { skipRestore: selectionAnchor.hasAnchor, resetKey: resultKey, onReset: selectionAnchor.clearAnchor });
 
   useEffect(() => {
     const sync = () => setFavorites(previous => {
@@ -440,6 +447,11 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
         groups.set(id, Boolean(groups.get(id) || !item.archived));
       }
       groups.forEach((active, id) => active ? next.add(id) : next.delete(id));
+      for (const chain of customChains) {
+        const key = `custom:${chain.id}`;
+        const active = chain.previewImage ? collectionTargetActive({ imageUrl: chain.previewImage, sourceType: 'character', sourceId: chain.id }) : legacyCustomFavorites.current.has(key);
+        if (active) next.add(key); else next.delete(key);
+      }
       return next;
     });
     sync(); return subscribeCollection(sync);
@@ -599,6 +611,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
 
   const deleteCustom = async (card: CharacterCard) => {
     if (card.kind !== 'custom' || !card.chain || !await confirmAction({
+      rememberKey: 'character.delete',
       title: `删除“${card.name}”？`,
       message: '该自定义角色还原及其本地预览将被永久删除，此操作无法撤销。',
       confirmLabel: '确认删除',
@@ -661,6 +674,7 @@ export const CharacterLibrary: React.FC<CharacterLibraryProps> = ({
       <div ref={scrollRef} onScroll={() => { selectionAnchor.onScroll(); onScrollRestore(); }} className="relative flex-1 overflow-y-auto p-4 pb-28 md:p-6 md:pb-24">
         {imageDisplay.layout === 'masonry' ? (
           <ShortestColumnMasonry<CharacterCard>
+            resetKey={resultKey}
             stableColumns
             items={visibleCards}
             columns={gridColumns}

@@ -79,6 +79,7 @@ export const CollectionTagManager: React.FC<{
     try {
       const merging = Boolean(to && tagCounts.some(([tag]) => tag === to));
       if (!await confirmAction({
+        rememberKey: `collection-tag.${to ? merging ? 'merge' : 'rename' : 'remove'}`,
         title: to ? merging ? t('将「{0}」合并到「{1}」？', [from, to]) : t('将「{0}」重命名为「{1}」？', [from, to]) : t('移除标签「{0}」？', [from]),
         message: t('将更新收藏库中 {0} 页的标签，图片和收藏夹保持原样。', [affected.length]),
         confirmLabel: to ? merging ? t('合并标签') : t('重命名') : t('移除标签'), tone: to ? 'primary' : 'danger',

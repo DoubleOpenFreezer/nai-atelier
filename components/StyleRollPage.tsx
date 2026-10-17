@@ -1,3 +1,4 @@
+import { confirmationCostScope } from '../services/dailyConfirmation';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowRight, Check, ChevronDown, Columns2, Copy, Dice5, Download, FlaskConical, ImagePlus, ListChecks, LoaderCircle, MoreHorizontal, Pause, Plus, RefreshCw, RotateCcw, Save, Settings2, SlidersHorizontal, Sparkles, Trash2, X } from 'lucide-react';
 import type { LocalGenItem, PromptChain } from '../types';
@@ -183,7 +184,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
     try {
       void subscription.refreshIfStale();
       const eachCost = estimateV45GenerationCost(target.template.params, isActiveOpusSubscription(subscription.info), subscription.info?.usage?.isNegative ?? true), totalCost = eachCost * candidates.length;
-      if (totalCost > 0 && !await confirm({ title: budget.remaining <= 0 ? 'Anlas 预算已用尽' : '确认生成图片',
+      if (totalCost > 0 && !await confirm({ rememberKey: 'roll.generate', rememberScope: confirmationCostScope(key, eachCost, candidates.length, budget.remaining, target.template.params.model), title: budget.remaining <= 0 ? 'Anlas 预算已用尽' : '确认生成图片',
         message: t('本轮生成 {0} 张，预计共消耗 {1} Anlas。本地剩余预算：{2}。', [candidates.length, totalCost, budget.remaining]),
         confirmLabel: t('消耗 {0} 点并生成', [totalCost]), ...(totalCost > budget.remaining ? { tone: 'danger' as const } : {}) })) return;
       const started = await beginRollGeneration(target, candidates.length === 1 ? candidates[0] : candidates, key, eachCost, generationStreamPreview && getRuntimeNaiModelInfo(target.template.params.model, runtime).supportsStreamedResponses);
@@ -206,7 +207,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
     const current = getGenerationSeriesSession(session.scope); if (!current?.awaiting) return;
     const nextCost = current.awaiting.cost;
     const remaining = current.awaiting.requestedCount - current.awaiting.completedCount;
-    if (!await confirm({ title: '后台任务费用已变化', message: t('本轮剩余 {0} 张，当前每张预计 {1} Anlas，共 {2} Anlas。本地剩余预算：{3}。', [remaining, nextCost, nextCost * remaining, budget.remaining]), confirmLabel: t('消耗 {0} 点并生成', [nextCost * remaining]), tone: 'danger' })) { stopGenerationSeriesSession(current); return; }
+    if (!await confirm({ rememberKey: 'roll.cost-increase', rememberScope: confirmationCostScope(current.key, nextCost, remaining, budget.remaining), title: '后台任务费用已变化', message: t('本轮剩余 {0} 张，当前每张预计 {1} Anlas，共 {2} Anlas。本地剩余预算：{3}。', [remaining, nextCost, nextCost * remaining, budget.remaining]), confirmLabel: t('消耗 {0} 点并生成', [nextCost * remaining]), tone: 'danger' })) { stopGenerationSeriesSession(current); return; }
     if (readRollApiKey() !== current.key) throw new Error('NovelAI Key 已变化，请重新发起生成');
     await approveGenerationSeries(current, nextCost);
   });

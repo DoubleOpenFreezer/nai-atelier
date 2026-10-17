@@ -1,4 +1,26 @@
 import { Inspiration, InspirationSourceType } from '../types';
+import type { MediaPreviewTransform } from './mobileImageCache';
+
+/** 收藏已保存原件后仍按来源快照识别图包预览，不依赖图包继续安装。 */
+export const getCollectionPreviewTransform = (item: Pick<Inspiration, 'sourceType' | 'analysis'>): MediaPreviewTransform | undefined => {
+  if (item.sourceType !== 'artist') return undefined;
+  const sample = item.analysis?.artistSample;
+  if (sample && typeof sample === 'object' && 'ownSampleId' in sample) return undefined;
+  const isPackSample = (value: unknown) => {
+    if (!value || typeof value !== 'object') return false;
+    const data = value as Record<string, unknown>;
+    return (data.pack === 'v45' || data.pack === 'v5') && typeof data.tag === 'string' && Boolean(data.tag.trim()) && data.tag.length <= 4096 &&
+      typeof data.revision === 'string' && /^[a-f0-9]{24}$/.test(data.revision) && Number.isSafeInteger(data.index) && Number(data.index) >= 0 && Number(data.index) <= 999999;
+  };
+  if (isPackSample(sample)) return 'artist-sample-padding-v1';
+  const original = item.analysis?.collectionOriginalUrl;
+  if (typeof original !== 'string' || !original.startsWith('/api/artist-samples/image?')) return undefined;
+  const url = new URL(original, 'http://collection.local'), params = url.searchParams;
+  const keys = ['pack', 'tag', 'index', 'revision'];
+  if (url.hash || [...params.keys()].some(key => !keys.includes(key)) || keys.some(key => params.getAll(key).length !== 1)) return undefined;
+  return isPackSample({ pack: params.get('pack'), tag: params.get('tag'), revision: params.get('revision'), index: /^\d+$/.test(params.get('index') || '') ? Number(params.get('index')) : undefined })
+    ? 'artist-sample-padding-v1' : undefined;
+};
 
 const KEYWORDS = [
   'portrait', 'landscape', 'close-up', 'full body', 'dynamic angle', 'cinematic lighting',

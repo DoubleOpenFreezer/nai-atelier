@@ -1,4 +1,4 @@
-import type { Inspiration, InspirationSourceType, LocalGenItem, User } from '../types';
+import type { Inspiration, InspirationSourceType, LocalGenItem, PromptChain, User } from '../types';
 import { api, ApiError } from './api';
 import { localHistory } from './localHistory';
 import { aitagService, buildAitagImageUrl, extractAitagPrompt, getAitagMetadataText, type AitagWorkDetail } from './aitagService';
@@ -9,6 +9,7 @@ import { getCollectionTags } from './inspirationUtils';
 import { externalImageDrafts } from './externalImageTags';
 import { createUuid } from './id';
 import { readCodexImageFile, readCodexImageMetadata } from './codexService';
+import { t } from './i18n';
 
 export interface CollectionImage {
   imageUrl: string;
@@ -41,6 +42,38 @@ export const subscribeCollection = (listener: () => void) => { listeners.add(lis
 export const collectionRevision = () => revision;
 export const collectionSnapshot = () => items;
 const changed = () => { revision++; listeners.forEach(listener => listener()); };
+
+export function readLegacyFavoriteIds(key: 'nai_chain_favs' | 'nai_character_favorites'): Set<string> {
+  try {
+    const raw = localStorage.getItem(key);
+    if (raw === null) return new Set();
+    const value: unknown = JSON.parse(raw);
+    if (!Array.isArray(value) || value.some(id => typeof id !== 'string')) throw new Error();
+    return new Set(value);
+  } catch { throw new Error(t('收藏库加载失败，请稍后重试')); }
+}
+
+/** 只汇总旧标记对应的当前封面；没有图片的标记留在原处，不批量写库或复制原图。 */
+async function loadLegacyChainFavorites(user: User): Promise<Inspiration[]> {
+  if (user.role === 'guest') return [];
+  const legacy = readLegacyFavoriteIds('nai_chain_favs');
+  const characters = readLegacyFavoriteIds('nai_character_favorites');
+  const custom = new Set([...characters].filter(id => id.startsWith('custom:')).map(id => id.slice(7)));
+  if (!legacy.size && !custom.size) return [];
+  const chains: PromptChain[] = await api.get('/chains');
+  if (!Array.isArray(chains)) throw new Error(t('收藏库加载失败，请稍后重试'));
+  return chains.filter(chain => (user.role === 'admin' || chain.userId === user.id) &&
+    (chain.type === 'style' || chain.type === 'character' && !chain.tags?.includes('__character_catalog__')) &&
+    (legacy.has(chain.id) || chain.type === 'character' && custom.has(chain.id)) && chain.previewImage && !chain.previewImage.startsWith('blob:'))
+    .map(chain => ({
+      id: favoriteId(chain.type === 'character' ? 'legacy-character' : 'legacy-chain', user.id, chain.id),
+      userId: user.id, username: user.username, title: chain.name, imageUrl: chain.previewImage!,
+      prompt: chain.basePrompt, negativePrompt: chain.negativePrompt, params: chain.params,
+      sourceType: chain.type === 'character' ? 'character' : 'chain', sourceId: chain.id, tags: [],
+      analysis: { collectionOriginalUrl: chain.previewImage, legacyChainFavorite: true },
+      createdAt: chain.updatedAt || chain.createdAt, updatedAt: chain.updatedAt || chain.createdAt,
+    }));
+}
 
 export function historyFavorite(item: LocalGenItem, user: User): Inspiration {
   return {
@@ -88,6 +121,7 @@ export function matchesCollectionImage(item: Inspiration, image: CollectionImage
 export function mergeCollectionFavorites(stored: Inspiration[], favorites: Inspiration[]): Inspiration[] {
   const activeIds = new Set(favorites.map(item => item.id));
   const result = stored.map(item => ({ ...item, ...(isAutomaticFavorite(item.id) && !activeIds.has(item.id) ? { archived: true } : {}) }));
+  const usedIds = new Set(result.map(item => item.id));
   const byUrl = new Map<string, number>();
   const bySource = new Map<string, number>();
   const sourceKey = (item: Inspiration) => {
@@ -107,14 +141,21 @@ export function mergeCollectionFavorites(stored: Inspiration[], favorites: Inspi
   result.forEach(index);
   for (const favorite of favorites) {
     const existing = result[Math.min(byUrl.get(JSON.stringify([favorite.userId, favorite.imageUrl])) ?? Infinity, bySource.get(sourceKey(favorite)) ?? Infinity)];
-    if (!existing) { result.push(favorite); index(favorite, result.length - 1); }
+    if (!existing) {
+      // 同一旧串换过封面时保留已保存图片，新封面引用不能复用旧行 ID。
+      let id = favorite.id, suffix = 0;
+      while (usedIds.has(id)) id = `${favorite.id}-${++suffix}`;
+      const added = id === favorite.id ? favorite : { ...favorite, id };
+      usedIds.add(id);
+      result.push(added); index(added, result.length - 1);
+    }
     else if (favorite.sourceType === 'history') existing.archived = false;
   }
   return result.map(item => ({ ...item, tags: getCollectionTags(item) }));
 }
 
 async function loadImageFavorites(user: User): Promise<Inspiration[]> {
-  const [history, details] = await Promise.all([
+  const [history, details, legacyChains] = await Promise.all([
     (async () => {
       const result: LocalGenItem[] = [];
       let total = Infinity;
@@ -130,8 +171,9 @@ async function loadImageFavorites(user: User): Promise<Inspiration[]> {
       if (cause instanceof ApiError && cause.status === 404) return [];
       throw cause;
     }) as Promise<AitagWorkDetail[]>,
+    loadLegacyChainFavorites(user),
   ]);
-  return [...history.map(item => historyFavorite(item, user)), ...details.flatMap(detail => aitagFavorites(detail, user))];
+  return [...history.map(item => historyFavorite(item, user)), ...details.flatMap(detail => aitagFavorites(detail, user)), ...legacyChains];
 }
 
 export async function loadCollection(user?: User): Promise<Inspiration[]> {

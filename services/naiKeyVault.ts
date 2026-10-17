@@ -2,6 +2,7 @@ import { api, ApiError } from './api';
 import { createUuid } from './id';
 import { readActiveNaiKey, setActiveNaiKey, getRememberNaiKey } from './naiKeyStorage';
 import { normalizeNaiGatewayUrl, validateNaiApiKey } from '../worker/naiConnection.mjs';
+import { rememberConfirmationConnections } from './dailyConfirmation';
 
 /**
  * NovelAI 多密钥保管箱。
@@ -110,6 +111,7 @@ export const naiKeyVault = {
       const entries = Array.isArray(res?.entries) ? res.entries as NaiKeyEntry[] : [];
       // 浏览器里残留旧 localStorage 库时一次性迁移合流，成功后直接用合流结果刷新整箱。
       const migrated = await migrateLegacyVault(entries);
+      rememberConfirmationConnections(migrated ?? entries);
       return migrated ?? entries;
     } catch {
       // 服务端不可达：整体回退本地保管箱逻辑。
@@ -119,8 +121,10 @@ export const naiKeyVault = {
       if (active && !local.some(entry => entry.key === active)) {
         const migrated = [...local, { id: createUuid(), name: local.length ? '未命名密钥' : '默认密钥', key: active, createdAt: Date.now() }];
         writeLocalVault(migrated);
+        rememberConfirmationConnections(migrated);
         return migrated;
       }
+      rememberConfirmationConnections(local);
       return local;
     }
   },
@@ -137,6 +141,7 @@ export const naiKeyVault = {
     if (!isBrowser()) return { status: 'invalid' };
     try {
       const res = await api.post('/nai-key-vault', { name, key, ...(gatewayUrl ? { gatewayUrl } : {}) });
+      rememberConfirmationConnections([res.entry]);
       return { status: 'added', entry: res.entry as NaiKeyEntry };
     } catch (err) {
       // 服务端把校验失败以 400 返回：err 为 ApiError，剥离回局部判定结果；
@@ -158,6 +163,7 @@ export const naiKeyVault = {
         ...(gatewayUrl ? { gatewayUrl } : {}),
       };
       writeLocalVault([...local, entry]);
+      rememberConfirmationConnections([entry]);
       return { status: 'added', entry };
     }
   },
@@ -193,6 +199,7 @@ export const naiKeyVault = {
 
   /** 当前选择默认记住；显式关闭后仅用于当前会话。 */
   activate(entry: NaiKeyEntry, remember = getRememberNaiKey()) {
+    rememberConfirmationConnections([entry]);
     setActiveNaiKey(entry.key, remember);
   },
 

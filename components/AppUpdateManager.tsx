@@ -22,7 +22,7 @@ export const AppUpdateManager: React.FC = () => {
   const busy = ['checking', 'downloading', 'installing'].includes(state.phase);
   const action = async (kind: 'check' | 'download' | 'install') => {
     try {
-      if (kind === 'install' && !await confirm({ title: '重启并安装更新？', message: '工坊将暂时退出，手机连接会中断。当前任务需先完成；个人数据保留。', confirmLabel: '重启并安装' })) return;
+      if (kind === 'install' && !await confirm({ rememberKey: 'app.install-update', rememberScope: state.version, title: '重启并安装更新？', message: '工坊将暂时退出，手机连接会中断。当前任务需先完成；个人数据保留。', confirmLabel: '重启并安装' })) return;
       if (bridge) {
         if (kind === 'install') preserveUpdateDrafts();
         setState(await bridge[kind]()); return;

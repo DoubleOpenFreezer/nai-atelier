@@ -1,3 +1,4 @@
+import { useConfirmDialog } from './ConfirmDialog';
 import { t, useLanguage, getLanguage } from '../services/i18n';
 import { getStorageLocationStatus, pickStorageDirectory } from '../services/storageLocations';
 import React, { useEffect, useRef, useState, useCallback } from 'react';
@@ -14,7 +15,6 @@ import {
 } from '../services/localBackup';
 import {
   Archive,
-  Check,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
@@ -27,7 +27,6 @@ import {
   Loader2,
   Play,
   Trash2,
-  X,
   AlertCircle,
 } from 'lucide-react';
 
@@ -37,6 +36,7 @@ interface DataBackupManagerProps {
 
 export const DataBackupManager: React.FC<DataBackupManagerProps> = ({ notify }) => {
   useLanguage();
+  const confirmAction = useConfirmDialog();
   const [status, setStatus] = useState<BackupStatus | null>(null);
   const [error, setError] = useState('');
   const [backupLabel, setBackupLabel] = useState('');
@@ -46,7 +46,6 @@ export const DataBackupManager: React.FC<DataBackupManagerProps> = ({ notify }) 
   const [browsing, setBrowsing] = useState(false);
   const [isHistoryExpanded, setIsHistoryExpanded] = useState(false);
   const [deletingName, setDeletingName] = useState<string | null>(null);
-  const [confirmDeleteName, setConfirmDeleteName] = useState<string | null>(null);
   const lastFinishedAtRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -149,11 +148,11 @@ export const DataBackupManager: React.FC<DataBackupManagerProps> = ({ notify }) 
   };
 
   const handleDeleteBackup = async (name: string) => {
+    if (!await confirmAction({ rememberKey: 'backup.delete', rememberScope: status?.targetDir, title: '确认永久删除此备份', message: name, confirmLabel: '确认删除', tone: 'danger' })) return;
     setDeletingName(name);
     try {
       await deleteLocalBackup(name);
       notify(`已删除备份存档：${name}`, 'success');
-      setConfirmDeleteName(null);
       await fetchStatus();
     } catch (err: any) {
       notify(`删除备份失败：${err?.message || '未知错误'}`);
@@ -422,33 +421,6 @@ export const DataBackupManager: React.FC<DataBackupManagerProps> = ({ notify }) 
                       </div>
 
                       <div className="flex flex-none items-center gap-1.5">
-                        {confirmDeleteName === backup.name ? (
-                          <div className="flex items-center gap-1">
-                            <button
-                              type="button"
-                              data-agent-action="business" onClick={() => void handleDeleteBackup(backup.name)}
-                              disabled={deletingName === backup.name}
-                              className="mobile-touch flex items-center gap-1 rounded-lg bg-rose-600 px-2.5 py-1 text-meta font-bold text-white transition hover:bg-rose-500 disabled:opacity-50"
-                              title={t("确认永久删除此备份")}
-                            >
-                              {deletingName === backup.name ? (
-                                <Loader2 className="h-3 w-3 animate-spin" />
-                              ) : (
-                                <Check className="h-3 w-3" />
-                              )}
-                              {t("确认删除")}</button>
-                            <button
-                              type="button"
-                              onClick={() => setConfirmDeleteName(null)}
-                              disabled={deletingName === backup.name}
-                              className="mobile-touch flex items-center gap-1 rounded-lg border border-gray-200 bg-gray-50 px-2 py-1 text-meta font-medium text-gray-600 hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300"
-                              title={t("取消删除")}
-                            >
-                              <X className="h-3 w-3" />
-                              {t("取消")}</button>
-                          </div>
-                        ) : (
-                          <>
                             <button
                               type="button"
                               onClick={() => void handleOpenFolder(backup.path)}
@@ -459,15 +431,13 @@ export const DataBackupManager: React.FC<DataBackupManagerProps> = ({ notify }) 
                               {t("定位")}</button>
                             <button
                               type="button"
-                              onClick={() => setConfirmDeleteName(backup.name)}
+                              onClick={() => void handleDeleteBackup(backup.name)}
                               disabled={Boolean(deletingName) || isRunning}
                               className="mobile-touch flex items-center gap-1 rounded-lg border border-transparent px-2.5 py-1 text-meta font-medium text-gray-400 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 dark:hover:border-rose-900/50 dark:hover:bg-rose-950/30 dark:hover:text-rose-400 disabled:opacity-40"
                               title={t("删除此备份存档（释放 {0}）", [formatBytes(backup.totalBytes)])}
                             >
-                              <Trash2 className="h-3 w-3" />
+                              {deletingName === backup.name ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
                               {t("删除")}</button>
-                          </>
-                        )}
                       </div>
                     </div>
                   );

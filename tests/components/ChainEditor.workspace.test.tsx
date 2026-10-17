@@ -22,7 +22,7 @@ type JobScriptSnapshot = Omit<GenerationJobSnapshot, 'token'>;
 // 后台任务由 services/generationJob 唯一持有：本文件只脚本化它的 snapshot，不再驱动逐张生成。
 const state = vi.hoisted(() => ({
   agent: null as React.ComponentProps<typeof import('../../components/chain/PresetSourceBadges').PromptAgentOverlayController> | null,
-  history: vi.fn(async (): Promise<LocalGenItem[]> => []),
+  history: vi.fn(async (_id: string): Promise<LocalGenItem[]> => []),
   addHistory: vi.fn(async () => { throw new Error('后台任务不得再逐张写入历史'); }),
   notifySaved: vi.fn(),
   saveArtistSample: vi.fn(async () => {}),
@@ -196,14 +196,47 @@ const descriptorFromInput = (input: GenerationJobDescriptorInput): GenerationJob
     ...(input.edit?.mask ? { editMask: input.edit.mask } : {}),
   };
 };
-const setup = (entry: PromptChain = chain, rememberGenerationSettings = true, generationMemory = DEFAULT_GENERATION_MEMORY_PREFERENCES) => {
+const setup = (entry: PromptChain = chain, rememberGenerationSettings = true, generationMemory = DEFAULT_GENERATION_MEMORY_PREFERENCES, initialCharacters?: PromptChain['params']['characters']) => {
   state.scopes.add(entry.id);
-  const props = { chain: entry, allChains: [entry], onUpdateChain: vi.fn(async () => {}), onFork: vi.fn(async () => {}), setIsDirty: vi.fn(), notify: vi.fn(),
+  const props = { chain: entry, initialCharacters, allChains: [entry], onUpdateChain: vi.fn(async () => {}), onFork: vi.fn(async () => {}), setIsDirty: vi.fn(), notify: vi.fn(),
     saveRef: React.createRef<ChainEditorSaveHandle>(),
     tagAssistEnabled: false, onTagAssistEnabledChange: vi.fn(), generationStreamPreview: false, rememberGenerationSettings, generationMemory, labPageLayouts: cloneDefaultLabPageLayouts(), safeMode: false, onBack: vi.fn() };
   return { ...render(<ChainEditor {...props} />), props };
 };
 const textPrompt = () => screen.getByPlaceholderText('输入全局提示词，英文逗号分隔') as HTMLTextAreaElement;
+
+it.each(['text-to-image', 'image-to-image', 'inpaint', 'outpaint'] as const)('统一角色副本 %s 恢复四模式独立草稿并更新公共角色，生成与历史只使用副本身份', async mode => {
+  const characters = [{ id: 'common-role', prompt: 'current shared role', negativePrompt: 'shared negative', x: 0.4, y: 0.6 }];
+  const copy = { ...chain, id: `chain-role:${chain.id}`, previewImage: '/synthetic/copy-cover.png', params: { ...chain.params, characters } };
+  const original = fallback(); original.textToImage.basePrompt = 'original unsaved style'; saveLabWorkspaceSession(chain.id, original);
+  const session = fallback(); session.activeMode = mode; session.textToImage.basePrompt = 'copy unsaved style';
+  for (const draft of [session.textToImage, ...Object.values(session.edits)]) {
+    draft.params.characters = [{ id: 'old-role', prompt: 'old shared role', x: 0.1, y: 0.2 }]; draft.params.seed = 123;
+  }
+  for (const draft of Object.values(session.edits)) { draft.prompt = 'copy edit style'; draft.negativePrompt = 'copy edit negative'; draft.strength = 0.42; }
+  saveLabWorkspaceSession(copy.id, session);
+  sessionStorage.setItem('nai_api_key', 'synthetic-role-key');
+  vi.stubGlobal('fetch', vi.fn(async (input: string) => {
+    if (!String(input).startsWith('data:image/') && !String(input).startsWith('/synthetic/')) throw new Error('测试禁止真实网络请求');
+    return new Response(new Uint8Array([1, 2, 3]), { headers: { 'Content-Type': 'image/png' } });
+  }));
+  vi.stubGlobal('createImageBitmap', vi.fn(async () => ({ width: 832, height: 1216, close: vi.fn() })));
+  scriptJobs([backgroundResult('role-result', 1, { lastSavedItem: savedItem('role-result', { sourceChainId: copy.id, params: copy.params, ...(mode === 'text-to-image' ? {} : { edit: { operation: mode } }) }) })]);
+  setup(copy, true, DEFAULT_GENERATION_MEMORY_PREFERENCES, characters);
+  await waitFor(() => expect(state.history).toHaveBeenCalledWith(copy.id));
+  const restored = loadLabWorkspaceSession(copy.id, fallback());
+  expect(restored.textToImage.basePrompt).toBe('copy unsaved style');
+  for (const draft of [restored.textToImage, ...Object.values(restored.edits)]) {
+    expect(draft.params.characters).toEqual(characters); expect(draft.params.seed).toBe(123);
+  }
+  for (const draft of Object.values(restored.edits)) expect(draft).toMatchObject({ prompt: 'copy edit style', negativePrompt: 'copy edit negative', strength: 0.42 });
+  fireEvent.click(screen.getByRole('button', { name: mode === 'text-to-image' ? '生成合成文生图' : '生成合成编辑' }));
+  await waitFor(() => expect(state.startJob).toHaveBeenCalledOnce());
+  expect(state.buildDescriptor.mock.calls[0][0]).toMatchObject({ operation: mode, params: { characters, seed: 123 }, history: { sourceChainId: copy.id } });
+  expect(state.history.mock.calls.every(([id]) => id === copy.id)).toBe(true);
+  expect(loadLabWorkspaceSession(chain.id, fallback()).textToImage.basePrompt).toBe('original unsaved style');
+  expect(chain.params.characters).toBeUndefined();
+});
 
 it('画师样张取用不自动生成，固定 Seed 不被随机偏好覆盖，保存真实新结果', async () => {
   sessionStorage.setItem('nai_api_key', 'synthetic-key');

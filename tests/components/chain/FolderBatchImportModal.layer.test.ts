@@ -6,6 +6,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { FolderBatchImportModal } from '../../../components/chain/FolderBatchImportModal';
 import { api } from '../../../services/api';
 import { db } from '../../../services/dbService';
+vi.mock('../../../components/ConfirmDialog', () => ({ useConfirmDialog: () => vi.fn(async () => false) }));
 
 vi.mock('../../../services/metadataService', async importOriginal => ({
   ...await importOriginal<typeof import('../../../services/metadataService')>(),
@@ -50,6 +51,7 @@ it('手机可从候选列表移除单项，保留其他勾选项，不上传、�
   fireEvent.change(screen.getByLabelText('批量导入 PNG 图片'), { target: { files } });
   const remove = await screen.findByRole('button', { name: '移除导入候选：first' });
   expect(remove.classList.contains('hover-reveal-md')).toBe(true); expect(remove.className).not.toContain('hidden');
+  await screen.findByRole('checkbox', { name: '导入条目：second' });
   const card = screen.getByRole('checkbox', { name: '导入条目：first' }); longPress(card);
   expect(card.getAttribute('data-press-revealed')).toBe('true'); expect(card.getAttribute('aria-checked')).toBe('true');
   fireEvent.click(remove);

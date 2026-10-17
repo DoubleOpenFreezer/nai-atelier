@@ -13,6 +13,7 @@ import { handleNaiKeyVaultRoute } from './routes/naiKeyVaultRoutes';
 import { handleStyleCollectorRoute } from './routes/styleCollectorRoutes';
 import { handleArtistSampleRoute } from './routes/artistSampleRoutes';
 import { handleStyleRollRoute } from './routes/styleRollRoutes';
+import { handleChainComparisonRoute } from './routes/chainComparisonRoutes';
 import {
   handleLanRoute, handleSettingsRoute, handleMediaRequest,
   isLoopbackHostname, hasValidLanAccess, lanAccessRequired,
@@ -192,6 +193,8 @@ export default {
 
       const styleRollResult = await handleStyleRollRoute(routeContext);
       if (styleRollResult) return styleRollResult;
+      const chainComparisonResult = await handleChainComparisonRoute(routeContext);
+      if (chainComparisonResult) return chainComparisonResult;
 
       const keyVaultResult = await handleNaiKeyVaultRoute(routeContext);
       if (keyVaultResult) return keyVaultResult;

@@ -1,3 +1,4 @@
+import { confirmationCostScope } from '../services/dailyConfirmation';
 import { t, useLanguage, getLanguage } from '../services/i18n';
 import { ImageLightbox } from './ImageLightbox';
 import { agentDraftFingerprint } from '../services/promptAgentCoordinator';
@@ -56,6 +57,8 @@ export interface ChainEditorSaveHandle {
 
 interface ChainEditorProps {
     chain: PromptChain;
+    /** 独立统一角色副本复开时更新角色，保留该副本四模式的其他草稿。 */
+    initialCharacters?: CharacterParams[];
     allChains: PromptChain[]; // 角色卡就地引用角色库。
     onUpdateChain: (id: string, updates: Partial<PromptChain>) => Promise<void> | void;
     onFork: (chain: PromptChain, targetType?: 'style' | 'character') => Promise<void> | void;
@@ -79,7 +82,7 @@ interface ChainEditorProps {
     onBack: () => void | Promise<void>;
 }
 
-export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUpdateChain, onFork, onCreateCharacter, setIsDirty, saveRef, notify, externalImportToken, agentOpenToken, tagAssistEnabled, onTagAssistEnabledChange, generationStreamPreview, forceEmptySeed = false, onForceEmptySeedChange, enforceFreeStepLimit = true, continuousGenerationEnabled = true, rememberGenerationSettings = true, generationMemory = DEFAULT_GENERATION_MEMORY_PREFERENCES, labPageLayouts, safeMode, onBack }) => {
+export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, initialCharacters, allChains, onUpdateChain, onFork, onCreateCharacter, setIsDirty, saveRef, notify, externalImportToken, agentOpenToken, tagAssistEnabled, onTagAssistEnabledChange, generationStreamPreview, forceEmptySeed = false, onForceEmptySeedChange, enforceFreeStepLimit = true, continuousGenerationEnabled = true, rememberGenerationSettings = true, generationMemory = DEFAULT_GENERATION_MEMORY_PREFERENCES, labPageLayouts, safeMode, onBack }) => {
   useLanguage();
     const negativeClearActionSlotRef = useRef<HTMLSpanElement>(null);
     const [keyboardOffset, setKeyboardOffset] = useState(0);
@@ -245,7 +248,14 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     for (const draft of Object.values(workspaceFallback.edits)) {
         draft.prompt = compilePrompt(chain, String(chain.variableValues?.subject || ''));
     }
-    const [workspaceSession, setWorkspaceSession] = useState<LabWorkspaceSession>(() => openLabWorkspaceSession(workspaceKey, workspaceFallback, rememberGenerationSettings, generationMemory));
+    const openWorkspaceSession = () => {
+        const session = openLabWorkspaceSession(workspaceKey, workspaceFallback, rememberGenerationSettings, generationMemory);
+        if (!initialCharacters) return session;
+        const updated = structuredClone(session);
+        for (const draft of [updated.textToImage, ...Object.values(updated.edits)]) draft.params.characters = structuredClone(initialCharacters);
+        return updated;
+    };
+    const [workspaceSession, setWorkspaceSession] = useState<LabWorkspaceSession>(openWorkspaceSession);
     const [imageEditMaskData, setImageEditMaskData] = useState<string | undefined>();
   const imageEditGenerateFnRef = useRef<(() => void) | null>(null);
   const imageEditQueueFnRef = useRef<((placement: GenerationPlacement) => void) | null>(null);
@@ -444,7 +454,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
 
     const handleClearHistoryGroup = async () => {
         if (previewHistory.length === 0) return;
-        if (!await confirmAction({
+        if (!await confirmAction({ rememberKey: 'editor.history-unlink',
             title: '清除当前风格串的历史组？',
             message: `将从当前风格串移除 ${previewHistory.length} 张图片，但不会删除本地历史中的原图。`,
             confirmLabel: '确认清除',
@@ -480,7 +490,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         setGeneratedImage(null);
         clearPresetSources();
 
-        const storedWorkspace = openLabWorkspaceSession(workspaceKey, workspaceFallback, rememberGenerationSettings, generationMemory);
+        const storedWorkspace = openWorkspaceSession();
         workspaceInitializedKeyRef.current = workspaceKey;
         workspaceSyncBlockedRef.current = true;
         setWorkspaceSession(storedWorkspace);
@@ -1377,7 +1387,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         if (isGenerating || modeTransitionRef.current) return;
         if (activeEditOperation) {
             const modeLabel = getLabModeLabel(activeEditOperation);
-            if (!await confirmAction({
+            if (!await confirmAction({ rememberKey: 'editor.reset-edit', rememberScope: activeEditOperation,
                 title: `重置${modeLabel}？`,
                 message: `将清空${modeLabel}的底图、蒙版与提示词。此操作无法撤销。`,
                 confirmLabel: '确认重置',
@@ -1399,7 +1409,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             return;
         }
 
-        if (!await confirmAction({
+        if (!await confirmAction({ rememberKey: 'editor.reset-text', rememberScope: chain.id === 'playground' ? 'playground' : 'preset',
             title: '重置文生图？',
             message: chain.id === 'playground'
                 ? '将恢复文生图的提示词、模块与参数为默认值。此操作无法撤销。'
@@ -1516,7 +1526,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     /** 费用上涨后由用户补充授权；没有确认就不恢复后端任务。 */
     const promptJobApproval = async (session: GenerationSeriesSession, awaiting: { cost: number; completedCount: number; requestedCount: number }) => {
         const remaining = Math.max(0, awaiting.requestedCount - awaiting.completedCount);
-        const approved = await confirmAction({
+        const approved = await confirmAction({ rememberKey: 'generation.cost-increase', rememberScope: confirmationCostScope(session.key, awaiting.cost, remaining, anlasBudget.remaining),
             title: '后台任务费用已变化',
             message: `当前每张预计 ${awaiting.cost} Anlas，剩余 ${remaining} 张预计 ${awaiting.cost * remaining} Anlas。确认后继续生成；取消将停止后续请求，已经提交的图片仍会保存。`,
             confirmLabel: `消耗约 ${awaiting.cost * remaining} 点并继续`,
@@ -1637,7 +1647,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         const cost = estimateV45GenerationCost(draft.params, isActiveOpusSubscription(freshSubscription), freshSubscription?.usage?.isNegative ?? true);
         const totalCost = cost * count;
         if (count > 1 || placement) {
-            if (!await confirmAction({
+            if (!await confirmAction({ rememberKey: 'generation.text-series', rememberScope: confirmationCostScope(apiKey, cost, count, anlasBudget.remaining, [params.model, placement]),
                 title: placement ? placement === 'next' ? '排到下一位' : '加入生成队列' : '确认连续生成',
                 message: `使用本轮固定的提示词与参数，逐张生成并保存 ${count} 张图片。${cost > 0 ? `\n每张预计 ${cost} Anlas，整轮预计 ${totalCost} Anlas。` : '\n当前参数预计使用免费额度；如果转为付费，将停止后续生成。'}\n停止只取消后续请求，正在生成的图片仍会接收并保存。${totalCost > anlasBudget.remaining ? `\n\n⚠ 剩余预算 ${anlasBudget.remaining} 点不足以覆盖整轮消耗。` : ''}${runtimeSyncUnhealthy ? `\n\n⚠ ${runtimeSyncWarning}` : ''}`,
                 confirmLabel: cost > 0 ? `消耗约 ${totalCost} 点，生成 ${count} 张` : `生成 ${count} 张`,
@@ -1645,13 +1655,13 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             })) return false;
         } else if (cost > 0 && anlasBudget.remaining <= 0) {
             // 本地 Anlas 预算已用尽但仍需扣费：红色警告，由用户确认后才继续。
-            if (!await confirmAction({
+            if (!await confirmAction({ rememberKey: 'generation.text-budget', rememberScope: confirmationCostScope(apiKey, cost, 1, anlasBudget.remaining, params.model),
                 title: 'Anlas 预算已用尽',
                 message: `本地预算已扣到 0，本次生成仍需消耗 ${cost} Anlas（共享账号额度），继续将透支你手动设定的预算线。\n\n若预算数字过期，可先到全局设置校准。`,
                 confirmLabel: `仍要消耗 ${cost} 点生成`,
                 tone: 'danger',
             })) return false;
-        } else if (cost > 0 && !await confirmAction({
+        } else if (cost > 0 && !await confirmAction({ rememberKey: 'generation.text', rememberScope: confirmationCostScope(apiKey, cost, 1, anlasBudget.remaining, params.model),
             title: '确认生成图片',
             message: `当前参数预计消耗 ${cost} Anlas${params.characterReferences?.enabled && params.characterReferences.slots.length ? `\n其中角色参考：${params.characterReferences.slots.length} × ${(naiRuntimeConfig || DEFAULT_NAI_RUNTIME).billing.characterReferenceCost} = ${params.characterReferences.slots.length * (naiRuntimeConfig || DEFAULT_NAI_RUNTIME).billing.characterReferenceCost} Anlas` : ''}${cost > anlasBudget.remaining ? `\n\n⚠ 剩余预算 ${anlasBudget.remaining} 点不足以覆盖本次消耗。` : ''}${runtimeSyncUnhealthy ? `\n\n⚠ ${runtimeSyncWarning}` : ''}。`,
             confirmLabel: `消耗 ${cost} 点并生成`,
@@ -1722,15 +1732,15 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         const totalCost = editCost * count;
         // 标准权限只确认一次，完全访问沿用授权；提交后由后端费用状态机继续裁决。
         if (!fullAccess && (count > 1 || options?.placement)) {
-            if (!await confirmAction({
+            if (!await confirmAction({ rememberKey: 'generation.edit-series', rememberScope: confirmationCostScope(apiKey, editCost, count, anlasBudget.remaining, [request.operation, options?.placement]),
                 title: options?.placement ? options.placement === 'next' ? '排到下一位' : '加入生成队列' : '确认连续生成',
                 message: `使用本轮固定的提示词、参数与底图，逐张生成并保存 ${count} 张图片。${editCost > 0 ? `\n每张预计 ${editCost} Anlas，整轮预计 ${totalCost} Anlas。` : '\n当前参数预计使用免费额度；如果转为付费，将停止后续生成。'}\n停止只取消后续请求，正在生成的图片仍会接收并保存。${totalCost > anlasBudget.remaining ? `\n\n⚠ 剩余预算 ${anlasBudget.remaining} 点不足以覆盖整轮消耗。` : ''}${syncWarning}`,
                 confirmLabel: editCost > 0 ? `消耗约 ${totalCost} 点，生成 ${count} 张` : `生成 ${count} 张`,
                 ...(totalCost > anlasBudget.remaining || runtimeSyncUnhealthy ? { tone: 'danger' as const } : {}),
             })) return stop('用户取消了生图请求', 'user_cancelled', 'cancelled');
         } else if (!fullAccess && editCost > 0 && anlasBudget.remaining <= 0) {
-            if (!await confirmAction({ title: 'Anlas 预算已用尽', message: `本次图片编辑预计消耗 ${editCost} Anlas，继续将透支本地预算线。${syncWarning}`, confirmLabel: `仍要消耗 ${editCost} 点`, tone: 'danger' })) return stop('用户取消了生图请求', 'user_cancelled', 'cancelled');
-        } else if (!fullAccess && (editCost > 0 || options?.agent) && !await confirmAction({ title: '确认图片编辑', message: `本次${request.operation === 'image-to-image' ? '图生图' : request.operation === 'inpaint' ? '局部重绘' : '扩图'}本地结算估算消耗 ${editCost} Anlas；生成成功后会刷新当前 Key 的账号额度。${editCost > anlasBudget.remaining ? `\n\n⚠ 剩余预算 ${anlasBudget.remaining} 点不足以覆盖本次消耗。` : ''}${syncWarning}`, confirmLabel: editCost > 0 ? `消耗 ${editCost} 点并生成` : '仍要生成', ...(runtimeSyncUnhealthy ? { tone: 'danger' as const } : {}) })) return stop('用户取消了生图请求', 'user_cancelled', 'cancelled');
+            if (!await confirmAction({ rememberKey: 'generation.edit-budget', rememberScope: confirmationCostScope(apiKey, editCost, 1, anlasBudget.remaining, request.operation), title: 'Anlas 预算已用尽', message: `本次图片编辑预计消耗 ${editCost} Anlas，继续将透支本地预算线。${syncWarning}`, confirmLabel: `仍要消耗 ${editCost} 点`, tone: 'danger' })) return stop('用户取消了生图请求', 'user_cancelled', 'cancelled');
+        } else if (!fullAccess && (editCost > 0 || options?.agent) && !await confirmAction({ rememberKey: 'generation.edit', rememberScope: confirmationCostScope(apiKey, editCost, 1, anlasBudget.remaining, request.operation), title: '确认图片编辑', message: `本次${request.operation === 'image-to-image' ? '图生图' : request.operation === 'inpaint' ? '局部重绘' : '扩图'}本地结算估算消耗 ${editCost} Anlas；生成成功后会刷新当前 Key 的账号额度。${editCost > anlasBudget.remaining ? `\n\n⚠ 剩余预算 ${anlasBudget.remaining} 点不足以覆盖本次消耗。` : ''}${syncWarning}`, confirmLabel: editCost > 0 ? `消耗 ${editCost} 点并生成` : '仍要生成', ...(runtimeSyncUnhealthy ? { tone: 'danger' as const } : {}) })) return stop('用户取消了生图请求', 'user_cancelled', 'cancelled');
         await flushMaskSave(request.operation).catch(error => console.warn('生成前保存编辑蒙版失败:', error));
         generationInFlightRef.current = true;
         if (mountedRef.current) {
@@ -1855,20 +1865,20 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             const fullAccess = permissionMode === 'full';
             // 完全访问已授权生图费用，其他权限仍逐轮确认。
             if (!fullAccess && cost > 0 && anlasBudget.remaining <= 0) {
-                if (!await confirmAction({
+                if (!await confirmAction({ rememberKey: 'agent.generation-budget', rememberScope: confirmationCostScope(apiKey, cost, count, anlasBudget.remaining, draft.params.model),
                     title: 'Anlas 预算已用尽',
                     message: `${reason ? `${reason}\n\n` : ''}本地预算已扣到 0，本次生成仍需消耗 ${cost} Anlas（共享账号额度），继续将透支你手动设定的预算线。`,
                     confirmLabel: `仍要消耗 ${cost} 点生成`,
                     tone: 'danger',
                 })) throw agentOperationError('用户取消了生图请求', 'user_cancelled', 'cancelled');
             } else if (!fullAccess && (count > 1 || placement)) {
-                if (!await confirmAction({
+                if (!await confirmAction({ rememberKey: 'agent.generation-series', rememberScope: confirmationCostScope(apiKey, cost, count, anlasBudget.remaining, [draft.params.model, placement]),
                     title: placement ? placement === 'next' ? '排到下一位' : '加入生成队列' : '确认连续生成',
                     message: `${reason ? `${reason}\n\n` : ''}使用本轮固定的提示词与参数，逐张生成并保存 ${count} 张图片。${cost > 0 ? `\n每张预计 ${cost} Anlas，整轮预计 ${totalCost} Anlas。` : '\n当前参数预计使用免费额度；如果转为付费，将停止后续生成。'}\n停止只取消后续请求，正在生成的图片仍会接收并保存。${totalCost > anlasBudget.remaining ? `\n\n⚠ 剩余预算 ${anlasBudget.remaining} 点不足以覆盖整轮消耗。` : ''}${runtimeSyncUnhealthy ? `\n\n⚠ ${runtimeSyncWarning}` : ''}`,
                     confirmLabel: cost > 0 ? `消耗约 ${totalCost} 点，生成 ${count} 张` : `生成 ${count} 张`,
                     ...(totalCost > anlasBudget.remaining || runtimeSyncUnhealthy ? { tone: 'danger' as const } : {}),
                 })) throw agentOperationError('用户取消了生图请求', 'user_cancelled', 'cancelled');
-            } else if (!fullAccess && !await confirmAction({
+            } else if (!fullAccess && !await confirmAction({ rememberKey: 'agent.generation', rememberScope: confirmationCostScope(apiKey, cost, 1, anlasBudget.remaining, draft.params.model),
                 title: '助手已准备好生图',
                 message: `${reason ? `${reason}\n\n` : ''}预计本次${formatGenerationCostLabel(cost, draft.params.model)}。确认后才会提交给 NovelAI。${cost > anlasBudget.remaining ? `\n\n⚠ 剩余预算 ${anlasBudget.remaining} 点不足以覆盖本次消耗。` : ''}${runtimeSyncUnhealthy ? `\n\n⚠ ${runtimeSyncWarning}` : ''}`,
                 confirmLabel: cost > 0 ? `消耗 ${cost} 点并生成` : '确认生成一张',
@@ -1896,7 +1906,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     const handleSavePreview = async () => {
         const coverImage = displayedPreviewImage;
         if (!coverImage || chain.id === 'playground') return;
-        if (await confirmAction({
+        if (await confirmAction({ rememberKey: 'editor.cover-current',
             title: '将当前图片设为封面并保存？',
             message: '替换原封面，并保存当前提示词与参数。',
             confirmLabel: '更换封面并保存',
@@ -1937,7 +1947,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     const handleUploadCover = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
-        if (await confirmAction({
+        if (await confirmAction({ rememberKey: 'editor.cover-upload',
             title: '上传更换封面并保存？',
             message: `将使用“${file.name}”作为新封面，并自动保存当前所有提示词与参数改动；原有上传封面文件将被替换。`,
             confirmLabel: '上传并保存',

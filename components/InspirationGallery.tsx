@@ -7,7 +7,7 @@ import { ArrowDownUp, FolderPlus, GripVertical, Heart, Library, ListChecks, Penc
 import { db } from '../services/dbService';
 import { Inspiration, InspirationBoard, InspirationSourceType, PromptChain, User } from '../types';
 import { createUuid } from '../services/id';
-import { COLLECTION_SORT_LABELS, CollectionSort, collectionGroupKey, getCollectionTags, groupCollectionItems, normalizeInspirationTags, rememberCollectionFolder, sortCollectionGroups, sourceLabel } from '../services/inspirationUtils';
+import { COLLECTION_SORT_LABELS, CollectionSort, collectionGroupKey, getCollectionPreviewTransform, getCollectionTags, groupCollectionItems, normalizeInspirationTags, rememberCollectionFolder, sortCollectionGroups, sourceLabel } from '../services/inspirationUtils';
 import { useConfirmDialog } from './ConfirmDialog';
 import { EmptyState, IconButton, MediaCardShell, PageSpinner, ToolbarButton, ToolbarSearch, ToolbarSelect, WorkspaceToolbar } from './DesignSystem';
 import { TOOLBAR_FIELD_CLASS, ToolbarPopover } from './ToolbarPopover';
@@ -81,7 +81,8 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [workGroup, setWorkGroup] = useState<string | null>(null);
   const selectionAnchor = useGallerySelectionAnchor(mainScrollRef, galleryContentRef, workGroup, active, selectionFocusEnabled);
-  const onMainScrollRestore = useKeepAliveScrollRestore(mainScrollRef, 'inspiration', { skipRestore: selectionAnchor.hasAnchor });
+  const resultKey = JSON.stringify([collection, boardId, search, sourceFilter, [...tagFilter].sort(), sort]);
+  const onMainScrollRestore = useKeepAliveScrollRestore(mainScrollRef, 'inspiration', { skipRestore: selectionAnchor.hasAnchor, resetKey: resultKey, onReset: selectionAnchor.clearAnchor });
   const closeGroup = useMobileHistoryLayer(Boolean(workGroup), () => { selectionAnchor.preserveOnClose(); setWorkGroup(null); }, 'collection-work');
   const openGroup = (key: string) => { selectionAnchor.prepareSelection(key); setWorkGroup(key); };
   const [importRequest, setImportRequest] = useState<{ files: File[]; boardId: string } | null>(null);
@@ -231,7 +232,7 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
   };
 
   const deleteBoard = async (board: InspirationBoard) => {
-    if (!await confirmAction({ title: `删除“${board.name}”？`, message: '收藏夹内作品不会删除，它们会回到“未整理”。', confirmLabel: '删除收藏夹', tone: 'danger' })) return;
+    if (!await confirmAction({ rememberKey: 'collection-board.delete', title: `删除“${board.name}”？`, message: '收藏夹内作品不会删除，它们会回到“未整理”。', confirmLabel: '删除收藏夹', tone: 'danger' })) return;
     try { await db.deleteInspirationBoard(board.id); if (boardId === board.id) setBoardId(''); await Promise.all([loadBoards(), onRefresh()]); notify('收藏夹已删除'); }
     catch (error: any) { notify(error.message || '删除失败', 'error'); }
   };
@@ -332,7 +333,7 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
     if (!editableIds.length) return;
     deletingRef.current = true;
     try {
-      if (!await confirmAction({ title: '取消 ' + editableIds.length + ' 张图片的收藏？', message: '原图与已有分类信息会保留。', confirmLabel: '取消收藏', tone: 'danger' })) return;
+      if (!await confirmAction({ rememberKey: 'collection.unfavorite-batch', title: '取消 ' + editableIds.length + ' 张图片的收藏？', message: '原图与已有分类信息会保留。', confirmLabel: '取消收藏', tone: 'danger' })) return;
       setBusy('bulk'); await db.bulkDeleteInspirations(editableIds);
       setSelectedIds(previous => new Set([...previous].filter(id => !editableIds.includes(id))));
       await onRefresh(); notify('已取消收藏');
@@ -433,7 +434,7 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
         event.dataTransfer.setData('application/x-nai-collection-items', JSON.stringify(draggedIdsRef.current));
       }} onDragEnd={() => { draggedIdsRef.current = []; setDropTarget(null); }}>
       <div className="mobile-gallery-frame relative overflow-hidden md:aspect-square" style={{ '--mobile-image-ratio': `${ratio}` } as React.CSSProperties}>
-        <button type="button" title={canEditItem(item, currentUser) ? t('拖动到收藏夹') : undefined} disabled={selectionMode && (Boolean(busy) || !canEditItem(item, currentUser))} onClick={() => selectionMode ? toggleSelected(ids) : openGroup(collectionGroupKey(item))} className="absolute inset-0 block h-full w-full text-left"><SmartImage src={item.imageUrl} alt={title} thumbnailVariant="thumb-320" className={imageDisplay.layout === 'masonry' && !imageRatios[item.id] ? 'h-full w-full object-contain' : undefined} onLoad={event => updateImageRatio(item.id, event.currentTarget.naturalWidth, event.currentTarget.naturalHeight)} /></button>
+        <button type="button" title={canEditItem(item, currentUser) ? t('拖动到收藏夹') : undefined} disabled={selectionMode && (Boolean(busy) || !canEditItem(item, currentUser))} onClick={() => selectionMode ? toggleSelected(ids) : openGroup(collectionGroupKey(item))} className="absolute inset-0 block h-full w-full text-left"><SmartImage src={item.imageUrl} previewTransform={getCollectionPreviewTransform(item)} alt={title} thumbnailVariant="thumb-320" className={imageDisplay.layout === 'masonry' && !imageRatios[item.id] ? 'h-full w-full object-contain' : undefined} onLoad={event => updateImageRatio(item.id, event.currentTarget.naturalWidth, event.currentTarget.naturalHeight)} /></button>
         {!frostedCaption && <span className="pointer-events-none absolute bottom-2 right-2 rounded-lg bg-black/65 px-2 py-1 text-xs font-bold text-white">{t('{0}页', [group.length])}</span>}
         {selectionMode && editableIds.has(item.id) && <button data-card-action="true" type="button" aria-pressed={partial ? 'mixed' : selected} title={partial ? t('部分选中') : undefined} disabled={Boolean(busy)} onClick={() => toggleSelected(ids)} className={`mobile-size-locked absolute left-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-full border text-sm font-bold shadow backdrop-blur transition ${selected || partial ? 'border-indigo-500 bg-indigo-600 text-white' : 'border-white/80 bg-black/35 text-transparent'}`} aria-label={t("选择收藏")}>{selected ? '✓' : partial ? '−' : ''}</button>}
         {!selectionMode && canEditItem(item, currentUser) && <button data-card-action="true" type="button" aria-label={t("删除收藏")} title={t("删除")} disabled={Boolean(busy)} onClick={event => { event.stopPropagation(); void deleteCollected(ids); }} className="hover-reveal-md mobile-size-locked absolute left-2 top-2 z-10 flex h-11 w-11 items-center justify-center rounded-full bg-red-500 text-white shadow hover:bg-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white disabled:opacity-40 md:h-8 md:w-8"><Trash2 className="h-4 w-4" /></button>}
@@ -485,6 +486,7 @@ export const InspirationGallery: React.FC<InspirationGalleryProps> = ({ currentU
         {inspirationsData === null ? <PageSpinner className="min-h-[45vh]" /> : filtered.length > 0 ? <>
           {imageDisplay.layout === 'masonry' ? (
             <ShortestColumnMasonry
+              resetKey={resultKey}
               stableColumns
               items={groups}
               columns={masonryColumns}

@@ -42,7 +42,7 @@ export function AndroidStorageManager({ notify }: { notify: (message: string, ty
       {backup&&<div className="mt-3 rounded-lg bg-gray-100 p-3 text-xs dark:bg-gray-800">
         <p>{t("{0} · {1} 个文件 · {2} MB", [new Date(backup.createdAt).toLocaleString(getLanguage()), backup.files, (backup.bytes/1048576).toFixed(1)])}</p>
         <button type="button" disabled={Boolean(busy)} className="mobile-touch mt-2 rounded-lg bg-red-600 px-3 py-2 text-white disabled:opacity-50" onClick={()=>void perform('正在恢复…',async()=>{
-          if(!await confirmAction({title:'恢复手机工坊？',message:'将使用已验证的备份替换当前手机的资料、原图、设置与凭据。建议先导出当前工坊的备份。',confirmLabel:'恢复备份',tone:'danger'}))return;
+          if(!await confirmAction({rememberKey:'android.restore',rememberScope:backup.id,title:'恢复手机工坊？',message:'将使用已验证的备份替换当前手机的资料、原图、设置与凭据。建议先导出当前工坊的备份。',confirmLabel:'恢复备份',tone:'danger'}))return;
           const result=await native.backup({action:'restore',id:backup.id});
           localStorage.clear();for(const [key,value]of Object.entries(result.preferences))if(typeof value==='string')localStorage.setItem(key,value);
           sessionStorage.clear();location.reload();

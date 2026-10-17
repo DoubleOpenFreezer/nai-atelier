@@ -1,3 +1,4 @@
+import { confirmationCostScope } from '../services/dailyConfirmation';
 import { t, useLanguage, getLanguage } from '../services/i18n';
 import './AgentSurface.css';
 import { getLastAgentPageRead, observeAgentPage, readAgentPage, type AgentPageSnapshot } from '../services/agentWorkspace';
@@ -602,7 +603,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
               const isEncoding = patch.action === 'encode_vibe';
               const encodingCost = Number(patch.payload?.estimatedCost);
               const isLocalAccess = patch.action === 'grant_local_image_folder';
-              const accepted = await confirmAction({ title: patch.title, message: patch.consequence, confirmLabel: patch.action === 'clear_history' ? '永久清空' : isEncoding ? Number.isFinite(encodingCost) ? `消耗 ${encodingCost} Anlas 并生成` : '确认费用并生成' : isLocalAccess ? patch.payload?.access === 'write' ? '允许保存' : '允许读取' : '确认执行', ...(isEncoding || isLocalAccess ? {} : { tone: 'danger' as const }) });
+              const accepted = await confirmAction({ rememberKey: `agent.project.${patch.action}`, rememberScope: isEncoding ? confirmationCostScope(approvalKey, encodingCost, 1, Number.POSITIVE_INFINITY, patch.payload?.informationExtracted) : isLocalAccess ? [approvalKey, patch.payload] : patch.payload, title: patch.title, message: patch.consequence, confirmLabel: patch.action === 'clear_history' ? '永久清空' : isEncoding ? Number.isFinite(encodingCost) ? `消耗 ${encodingCost} Anlas 并生成` : '确认费用并生成' : isLocalAccess ? patch.payload?.access === 'write' ? '允许保存' : '允许读取' : '确认执行', ...(isEncoding || isLocalAccess ? {} : { tone: 'danger' as const }) });
               if (!accepted) {
                 await promptAgentService.control(activeSessionId, 'confirm', patch.requestId, { requestId: patch.requestId, accepted: false }).catch(() => {});
                 setMessages(previous => [...previous, { id: crypto.randomUUID(), role: 'agent', text: isLocalAccess ? '未开放该图片目录。' : '已取消该项目操作，没有修改数据。' }]);
@@ -775,7 +776,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
 
   const reset = async () => {
     if (running || !activeSessionId || !activeSession) return;
-    if (!await confirmAction({ title: '清空当前助手对话？', message: '只会删除这条对话的聊天记录，不影响项目资料、图片或设置。', confirmLabel: '清空对话', tone: 'danger' })) return;
+    if (!await confirmAction({ rememberKey: 'agent.conversation.clear', title: '清空当前助手对话？', message: '只会删除这条对话的聊天记录，不影响项目资料、图片或设置。', confirmLabel: '清空对话', tone: 'danger' })) return;
     try { await promptAgentService.resetSession(activeSessionId); setMessages([]); } catch (error) { reportControlError(error); }
   };
 
@@ -800,7 +801,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
 
   const deleteSession = async (session: PromptAgentSession) => {
     if (running || sessions.length <= 1) return;
-    const accepted = await confirmAction({ title: '删除这条助手对话？', message: `“${session.title}”的消息记录会从电脑删除，项目资料不会受到影响。`, confirmLabel: '删除对话', tone: 'danger' });
+    const accepted = await confirmAction({ rememberKey: 'agent.conversation.delete', title: '删除这条助手对话？', message: `“${session.title}”的消息记录会从电脑删除，项目资料不会受到影响。`, confirmLabel: '删除对话', tone: 'danger' });
     if (!accepted) return;
     try {
       await promptAgentService.deleteSession(session.id);

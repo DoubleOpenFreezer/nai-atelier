@@ -116,6 +116,21 @@ describe('历史缩略图就地操作', () => {
         expect(localHistory.keepOnly).not.toHaveBeenCalled();
     });
 
+    it('清理参数表单保留，最终确认按清理类型与实际参数隔离，取消不删除', async () => {
+        await setup();
+        fireEvent.click(screen.getByRole('button', { name: '管理' }));
+        fireEvent.click(screen.getByRole('button', { name: '按时间清理历史…' }));
+        const dialog = screen.getByRole('dialog', { name: '确认清理历史' });
+        fireEvent.change(within(dialog).getByRole('spinbutton'), { target: { value: '7' } });
+        fireEvent.click(within(dialog).getByRole('button', { name: '确认删除' }));
+        await waitFor(() => expect(confirmAction).toHaveBeenCalledWith(expect.objectContaining({ rememberKey: 'history.clean-days', rememberScope: 7 })));
+        expect(localHistory.deleteOlderThan).not.toHaveBeenCalled();
+        expect(screen.getByRole('dialog', { name: '确认清理历史' })).toBe(dialog);
+        confirmAction.mockResolvedValue(true);
+        fireEvent.click(within(dialog).getByRole('button', { name: '确认删除' }));
+        await waitFor(() => expect(localHistory.deleteOlderThan).toHaveBeenCalledWith(7));
+    });
+
     it('历史详情直接用统一爱心，不再二次填写收藏表单或重复保存图片', async () => {
   const { cards } = await setup(); fireEvent.click(cards[0]);
   expect(screen.queryByPlaceholderText('为这张图取个标题...')).toBeNull();

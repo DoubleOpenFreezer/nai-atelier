@@ -540,6 +540,21 @@ describe('GlobalSettings', () => {
     expect(masonryBtn.className).toContain('border-indigo-500');
   });
 
+  it('全局和页面独立设置均可选择桌面7列', async () => {
+    render(React.createElement(SettingsHarness));
+    const desktopColumns = await screen.findByRole('slider', { name: '桌面端列数' }) as HTMLInputElement;
+    expect(desktopColumns.max).toBe('7');
+    fireEvent.change(desktopColumns, { target: { value: '7' } });
+    expect(getMobileImageDisplayPreferences().desktopColumns).toBe(7);
+
+    const scope = screen.getByRole('combobox', { name: '设置范围' }) as HTMLSelectElement;
+    fireEvent.change(scope, { target: { value: 'artists' } });
+    fireEvent.click(screen.getByRole('switch', { name: '跟随全局' }));
+    fireEvent.change(screen.getByRole('slider', { name: '桌面端列数' }), { target: { value: '7' } });
+    expect(getImageDisplayPageOverride('artists')?.desktopColumns).toBe(7);
+    expect(getMobileImageDisplayPreferences('artists').columns).toBe(2);
+  });
+
   it('页面排列默认继承全局，取消继承后独立保存并可恢复继承', async () => {
     render(React.createElement(SettingsHarness));
     const scope = await screen.findByRole('combobox', { name: '设置范围' }) as HTMLSelectElement;

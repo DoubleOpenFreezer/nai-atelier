@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, expect, it, vi } from 'vitest';
-import type { Inspiration, LocalGenItem, User } from '../../types';
+import type { Inspiration, LocalGenItem, PromptChain, User } from '../../types';
 
 const mocks = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), put: vi.fn(), uploadFile: vi.fn(), historyPage: vi.fn(), historyFavorites: vi.fn(), workFavorite: vi.fn(), pixivImport: vi.fn(), danbooruImport: vi.fn(), codexFile: vi.fn(), codexMetadata: vi.fn() }));
 vi.mock('../../services/api', async original => ({ ...await original<typeof import('../../services/api')>(), api: { get: mocks.get, post: mocks.post, put: mocks.put, uploadFile: mocks.uploadFile } }));
@@ -13,9 +13,10 @@ vi.mock('../../services/codexService', () => ({ readCodexImageFile: mocks.codexF
 const user: User = { id: 'test-owner', username: 'test', role: 'admin', createdAt: 1 };
 let stored: Inspiration[];
 let details: any[];
+let chains: PromptChain[];
 beforeEach(() => {
-  vi.resetModules(); vi.clearAllMocks(); stored = []; details = [];
-  mocks.get.mockImplementation(async path => path === '/auth/me' ? user : path === '/inspirations' ? stored.map(item => ({ ...item })) : path === '/aitag/favorites' ? details : []);
+  vi.resetModules(); vi.clearAllMocks(); localStorage.clear(); stored = []; details = []; chains = [];
+  mocks.get.mockImplementation(async path => path === '/auth/me' ? user : path === '/inspirations' ? stored.map(item => ({ ...item })) : path === '/aitag/favorites' ? details : path === '/chains' ? chains : []);
   mocks.post.mockImplementation(async (path, body) => {
     if (path === '/inspirations') { stored.push({ ...body }); return { item: { ...body } }; }
     if (path === '/inspirations/bulk-update') stored = stored.map(item => body.ids.slice(0, 500).includes(item.id) ? { ...item, ...body.updates } : item);
@@ -27,6 +28,117 @@ beforeEach(() => {
   mocks.uploadFile.mockResolvedValue({ url: '/api/assets/inspirations/saved.png' });
   mocks.codexFile.mockReset().mockResolvedValue(new File(['synthetic'], 'source.png', { type: 'image/png' }));
   mocks.codexMetadata.mockReset().mockResolvedValue(null);
+});
+
+const legacyChain = (id: string, type: 'style' | 'character' = 'style', previewImage?: string): PromptChain => ({
+  id, type, userId: user.id, name: id, description: '', tags: [], previewImage,
+  basePrompt: 'original prompt', negativePrompt: 'original negative', modules: [],
+  params: { width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler_ancestral', qualityToggle: false, ucPreset: 4, seed: 123 }, createdAt: 10, updatedAt: 20,
+});
+
+it('旧串与自建角色只读汇总当前封面，无封面、未知ID与blob不造图片，原名单和源串不改写', async () => {
+  chains = [legacyChain('style', 'style', '/api/assets/style.png'), legacyChain('character', 'character', '/api/assets/character.png'), legacyChain('older-character', 'character', '/api/assets/older-character.png'), legacyChain('missing'), legacyChain('blob', 'style', 'blob:expired'), { ...legacyChain('catalog', 'character', '/api/assets/catalog.png'), tags: ['__character_catalog__'] }];
+  const source = structuredClone(chains);
+  const oldIds = JSON.stringify(['style', 'older-character', 'missing', 'unknown', 'blob', 'catalog']);
+  localStorage.setItem('nai_chain_favs', oldIds);
+  const oldCharacters = JSON.stringify(['custom:character', 'custom:unknown', 'catalog:catalog']);
+  localStorage.setItem('nai_character_favorites', oldCharacters);
+  const service = await import('../../services/collectionFavorites');
+  const result = await service.loadCollection(user);
+  expect(result.map(item => [item.sourceType, item.sourceId, item.imageUrl])).toEqual([
+    ['chain', 'style', '/api/assets/style.png'], ['character', 'character', '/api/assets/character.png'], ['character', 'older-character', '/api/assets/older-character.png'],
+  ]);
+  for (const item of result) expect(service.collectionTargetActive(item)).toBe(true);
+  expect(result[0]).toMatchObject({ userId: user.id, prompt: source[0].basePrompt, negativePrompt: source[0].negativePrompt, params: source[0].params });
+  expect(chains).toEqual(source);
+  expect(localStorage.getItem('nai_chain_favs')).toBe(oldIds);
+  expect(localStorage.getItem('nai_character_favorites')).toBe(oldCharacters);
+  expect(mocks.post).not.toHaveBeenCalled(); expect(mocks.put).not.toHaveBeenCalled(); expect(mocks.uploadFile).not.toHaveBeenCalled();
+});
+
+it('只有词库角色或旧画师名册时不扩大兼容范围，也不多读风格串', async () => {
+  localStorage.setItem('nai_character_favorites', JSON.stringify(['catalog:sample']));
+  localStorage.setItem('nai_fav_artists', JSON.stringify(['sample']));
+  const service = await import('../../services/collectionFavorites');
+  expect(await service.loadCollection(user)).toEqual([]);
+  expect(mocks.get).not.toHaveBeenCalledWith('/chains');
+});
+
+it.each([false, true])('当前封面已有新收藏 archived=%s 时不重复，不恢复归档或改写资料', async archived => {
+  chains = [legacyChain('style', 'style', '/api/assets/current.png')];
+  localStorage.setItem('nai_chain_favs', '["style"]');
+  stored = [{ id: 'existing', userId: user.id, title: '保存的快照', prompt: 'saved prompt', imageUrl: '/api/inspirations/existing/image', sourceType: 'chain', sourceId: 'style', archived, boardId: 'folder', tags: [], createdAt: 1, analysis: { collectionOriginalUrl: '/api/assets/current.png' } }];
+  const service = await import('../../services/collectionFavorites');
+  expect(await service.loadCollection(user)).toEqual(stored);
+  expect(service.collectionTargetActive({ imageUrl: chains[0].previewImage!, sourceType: 'chain', sourceId: 'style' })).toBe(!archived);
+  expect(mocks.post).not.toHaveBeenCalled(); expect(mocks.put).not.toHaveBeenCalled();
+});
+
+it.each(['style', 'character'] as const)('旧%s收藏用户主动整理才保存引用，取消后刷新不会从旧名单复活', async type => {
+  chains = [legacyChain('source', type, '/api/assets/current.png')];
+  localStorage.setItem(type === 'style' ? 'nai_chain_favs' : 'nai_character_favorites', JSON.stringify([type === 'style' ? 'source' : 'custom:source']));
+  const service = await import('../../services/collectionFavorites');
+  const [virtual] = await service.loadCollection(user);
+  expect(mocks.post).not.toHaveBeenCalled();
+  await service.updateCollection([virtual.id], { boardId: 'chosen-folder' });
+  expect(mocks.post).toHaveBeenCalledWith('/inspirations', virtual);
+  expect(stored).toEqual([expect.objectContaining({ id: virtual.id, imageUrl: chains[0].previewImage, boardId: 'chosen-folder' })]);
+  await service.toggleCollectionTarget({ imageUrl: chains[0].previewImage!, sourceType: type === 'style' ? 'chain' : 'character', sourceId: 'source' });
+  const refreshed = await service.loadCollection(user);
+  expect(refreshed).toHaveLength(1); expect(refreshed[0].archived).toBe(true);
+  expect(refreshed[0].boardId).toBe('chosen-folder');
+  expect(service.collectionTargetActive({ imageUrl: chains[0].previewImage! })).toBe(false);
+  expect(mocks.uploadFile).not.toHaveBeenCalled();
+});
+
+it('直接取消尚未持久化的旧收藏也保存归档引用，跨刷新不复活', async () => {
+  chains = [legacyChain('source', 'style', '/api/assets/current.png')]; localStorage.setItem('nai_chain_favs', '["source"]');
+  const service = await import('../../services/collectionFavorites');
+  const [virtual] = await service.loadCollection(user);
+  expect(await service.toggleCollectionTarget({ imageUrl: virtual.imageUrl, sourceType: 'chain', sourceId: 'source' })).toBe(false);
+  expect(stored).toEqual([expect.objectContaining({ id: virtual.id, archived: true })]);
+  expect((await service.loadCollection(user)).filter(item => !item.archived)).toHaveLength(0);
+  expect(localStorage.getItem('nai_chain_favs')).toBe('["source"]');
+});
+
+it('同串换封面保留确切图片，不复用已保存旧封面ID，旧归档也不阻止其他新封面', async () => {
+  chains = [legacyChain('source', 'style', '/api/assets/old.png')]; localStorage.setItem('nai_chain_favs', '["source"]');
+  const service = await import('../../services/collectionFavorites');
+  const [old] = await service.loadCollection(user); await service.updateCollection([old.id], { archived: true });
+  chains[0] = { ...chains[0], previewImage: '/api/assets/new.png' };
+  const result = await service.loadCollection(user);
+  expect(result).toHaveLength(2); expect(result[0]).toMatchObject({ id: old.id, imageUrl: '/api/assets/old.png', archived: true });
+  expect(result[1].imageUrl).toBe('/api/assets/new.png'); expect(result[1].id).not.toBe(old.id);
+  expect(service.collectionTargetActive({ imageUrl: '/api/assets/old.png', sourceType: 'chain', sourceId: 'source' })).toBe(false);
+  expect(service.collectionTargetActive({ imageUrl: '/api/assets/new.png', sourceType: 'chain', sourceId: 'source' })).toBe(true);
+  const stable = await service.loadCollection(user); expect(stable[1].id).toBe(result[1].id);
+  await service.updateCollection([stable[1].id], { notes: 'new image' });
+  expect(stored.map(item => item.imageUrl)).toEqual(['/api/assets/old.png', '/api/assets/new.png']);
+});
+
+it('admin保留API可见的旧作者串，普通账号只汇总自身串，访客不接旧名单', async () => {
+  chains = [legacyChain('mine', 'style', '/mine.png'), { ...legacyChain('imported', 'style', '/imported.png'), userId: 'old-author' }];
+  localStorage.setItem('nai_chain_favs', '["mine","imported"]');
+  const service = await import('../../services/collectionFavorites');
+  expect((await service.loadCollection(user)).map(item => item.sourceId)).toEqual(['mine', 'imported']);
+  expect((await service.loadCollection({ ...user, role: 'user' })).map(item => item.sourceId)).toEqual(['mine']);
+  mocks.get.mockClear();
+  expect(await service.loadCollection({ ...user, role: 'guest' })).toEqual([]);
+  expect(mocks.get).not.toHaveBeenCalledWith('/chains'); expect(mocks.post).not.toHaveBeenCalled();
+});
+
+it('旧名单损坏或链读取失败保留上次快照，不伪装空名单也不写回旧数据', async () => {
+  chains = [legacyChain('source', 'style', '/source.png')]; localStorage.setItem('nai_chain_favs', '["source"]');
+  const service = await import('../../services/collectionFavorites');
+  const previous = await service.loadCollection(user), revision = service.collectionRevision();
+  localStorage.setItem('nai_chain_favs', '{broken');
+  await expect(service.loadCollection(user)).rejects.toThrow();
+  expect(service.collectionSnapshot()).toEqual(previous); expect(service.collectionRevision()).toBe(revision);
+  expect(localStorage.getItem('nai_chain_favs')).toBe('{broken');
+  localStorage.setItem('nai_chain_favs', '["source"]');
+  mocks.get.mockImplementation(async path => { if (path === '/chains') throw new Error('chain read failed'); return []; });
+  await expect(service.loadCollection(user)).rejects.toThrow('chain read failed');
+  expect(service.collectionSnapshot()).toEqual(previous); expect(mocks.post).not.toHaveBeenCalled();
 });
 
 it.each(['codex', 'codex-community'] as const)('%s 收藏存原件和真实参数，分组补齐不重复保存已有页', async sourceType => {

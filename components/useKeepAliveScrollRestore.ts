@@ -20,7 +20,7 @@ const scrollCache = new Map<string, number>();
 export const useKeepAliveScrollRestore = (
   scrollRef: RefObject<HTMLElement | null>,
   viewKey: string,
-  options?: { skipRestore?: boolean; trigger?: unknown },
+  options?: { skipRestore?: boolean; trigger?: unknown; resetKey?: unknown; onReset?: () => void },
 ) => {
   const active = useContext(ImageActivityContext);
   const activeRef = useRef(active);
@@ -28,6 +28,25 @@ export const useKeepAliveScrollRestore = (
   const lastActivatedAtRef = useRef(0);
   const isRestoringRef = useRef(false);
   const restoreTimerRef = useRef<number | null>(null);
+  const previousResetKeyRef = useRef(options?.resetKey);
+
+  // 主动查询变化与保活恢复不同：清缓存并停止旧位置追赶，初次挂载仍恢复浏览位置。
+  useLayoutEffect(() => {
+    if (Object.is(previousResetKeyRef.current, options?.resetKey)) return;
+    previousResetKeyRef.current = options?.resetKey;
+    scrollCache.set(viewKey, 0);
+    if (restoreTimerRef.current !== null) window.clearInterval(restoreTimerRef.current);
+    restoreTimerRef.current = null;
+    isRestoringRef.current = false;
+    options?.onReset?.();
+    const root = scrollRef.current;
+    if (root) {
+      const behavior = root.style.scrollBehavior;
+      root.style.scrollBehavior = 'auto';
+      root.scrollTop = 0;
+      root.style.scrollBehavior = behavior;
+    }
+  }, [options?.resetKey, scrollRef, viewKey]);
 
   // 尝试恢复一次；容器隐藏（clientHeight === 0）时无法恢复，返回 false 由调用方决定继续等待
   const restore = (): boolean => {
@@ -49,7 +68,7 @@ export const useKeepAliveScrollRestore = (
     if (!root || !active || options?.skipRestore) return;
     lastActivatedAtRef.current = Date.now();
     restore();
-  }, [active, viewKey, options?.skipRestore, options?.trigger]);
+  }, [active, viewKey, options?.skipRestore, options?.trigger, options?.resetKey]);
 
   // 2. 异步持续追赶（针对图片/卡片等异步渲染未撑开全部高度的场景）
   useEffect(() => {
@@ -124,7 +143,7 @@ export const useKeepAliveScrollRestore = (
       if (chaseTimeoutId !== null) window.clearTimeout(chaseTimeoutId);
       isRestoringRef.current = false;
     };
-  }, [active, viewKey, options?.skipRestore, options?.trigger]);
+  }, [active, viewKey, options?.skipRestore, options?.trigger, options?.resetKey]);
 
   // 滚动时保存位置（仅在视图处于激活状态且非隐藏塌陷时记录，且在恢复期间/刚激活时屏蔽虚假的 0 滚动事件）
   const handleScroll = () => {

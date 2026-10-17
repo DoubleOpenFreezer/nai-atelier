@@ -15,7 +15,7 @@ import { DEFAULT_LAB_MODULE_ORDER, LabPageModuleId } from '../../services/appear
 import { ImageEditOperation, Inspiration, User } from '../../types';
 import { db } from '../../services/dbService';
 import { IMPORT_SESSION_KEY, PendingImportData } from '../../services/metadataService';
-import { getCollectionTags, sourceLabel } from '../../services/inspirationUtils';
+import { getCollectionTags, getCollectionPreviewTransform, sourceLabel } from '../../services/inspirationUtils';
 import { CollectionTagInput } from './CollectionControls';
 import { ToolbarButton } from '../DesignSystem';
 import { copyTagText, readExternalImageTags } from '../../services/externalImageTags';
@@ -296,7 +296,7 @@ export const InspirationDetail: React.FC<Props> = ({
   return (
     <article data-safe-mode-work="true" data-collection-item={item.id} className="overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950">
       <PressRevealSurface as="section" pressResetKey={draft.id} className="group relative bg-gray-100 dark:bg-black/60">
-        <ViewableImage src={draft.imageUrl} alt={draft.title} filename={draft.title + '.png'} favorite={{ imageUrl: draft.imageUrl, collectionId: draft.id }} notify={notify} generationData={draft.params ? { prompt: draft.prompt, negativePrompt: draft.negativePrompt, params: draft.params } : undefined} loading="lazy" className="max-h-[62vh] w-full object-contain" data-safe-mode-ignore="true" />
+        <ViewableImage src={draft.imageUrl} previewTransform={getCollectionPreviewTransform(draft)} alt={draft.title} filename={draft.title + '.png'} favorite={{ imageUrl: draft.imageUrl, collectionId: draft.id }} notify={notify} generationData={draft.params ? { prompt: draft.prompt, negativePrompt: draft.negativePrompt, params: draft.params } : undefined} loading="lazy" className="max-h-[62vh] w-full object-contain" data-safe-mode-ignore="true" />
         <ImageShareOverlay imageUrl={getMobileOriginalUrl(draft.imageUrl)} generationData={draft.params ? { prompt: draft.prompt, negativePrompt: draft.negativePrompt, params: draft.params } : undefined} filename={draft.title + '.png'} favorite={{ imageUrl: draft.imageUrl, collectionId: draft.id }} notify={notify} />
       </PressRevealSurface>
       {/* 每张图片的整理与生成信息 */}

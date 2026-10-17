@@ -62,9 +62,16 @@ describe('getMobileOriginalUrl', () => {
     expect(buildMediaUrl(source, 'thumb-960', 'artist-sample-padding-v1')).toBe(`${plain}&preview=artist-sample-padding-v1`);
     expect(buildMediaUrl(source, 'original', 'artist-sample-padding-v1')).toBe(buildMediaUrl(source, 'original'));
     expect(getMobileOriginalUrl(source)).toBe(source);
-    for (const other of ['/api/assets/self-made.jpg', '/api/local-history/synthetic/image', 'https://ai-img.10118899.xyz/NAI/123/456.webp']) {
+    for (const other of ['/api/local-history/synthetic/image', 'https://ai-img.10118899.xyz/NAI/123/456.webp']) {
       expect(buildMediaUrl(other, 'thumb-960', 'artist-sample-padding-v1')).toBe(buildMediaUrl(other, 'thumb-960'));
     }
+  });
+
+  it.each(['/api/assets/saved-artist.jpg', '/api/inspirations/saved-artist/image'])('已保存本地图包收藏%s的显式预览与原缓存分开，原图请求不带变换', source => {
+    const plain = buildMediaUrl(source, 'thumb-960');
+    expect(buildMediaUrl(source, 'thumb-960', 'artist-sample-padding-v1')).toBe(plain + '&preview=artist-sample-padding-v1');
+    expect(buildMediaUrl(source, 'original', 'artist-sample-padding-v1')).toBe(buildMediaUrl(source, 'original'));
+    expect(getMobileOriginalUrl(source)).toBe(source);
   });
 
   it('对白名单内的远程图片走 /api/media 代理', () => {

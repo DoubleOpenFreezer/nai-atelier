@@ -6,12 +6,25 @@ import {ImageLightbox,ViewableImage} from '../../components/ImageLightbox';
 import {ChainEditorPreview} from '../../components/ChainEditorPreview';
 import {ImageEditPreview} from '../../components/ImageEditPreview';
 import {installPointerEvents,longPress} from '../support/touchEvents';
+import {buildMediaUrl} from '../../services/mobileImageCache';
 beforeEach(()=>{installPointerEvents();vi.stubGlobal('ResizeObserver',class{observe(){}disconnect(){}});vi.stubGlobal('matchMedia',()=>({matches:false,addEventListener(){},removeEventListener(){}}));});
 afterEach(()=>{cleanup();vi.unstubAllGlobals();vi.restoreAllMocks();});
 const setup=()=>{const onClose=vi.fn(),onSwipe=vi.fn();render(<ImageLightbox src="/synthetic.png" onClose={onClose} onSwipe={onSwipe}/>);return{stage:screen.getByLabelText('图片平移与缩放'),image:screen.getByRole('img'),onClose,onSwipe};};
 const down=(stage:HTMLElement,id:number,x:number,y:number)=>fireEvent.pointerDown(stage,{pointerType:'touch',pointerId:id,isPrimary:id===1,clientX:x,clientY:y,button:0});
 const up=(stage:HTMLElement,id:number,x:number,y:number)=>fireEvent.pointerUp(stage,{pointerType:'touch',pointerId:id,isPrimary:id===1,clientX:x,clientY:y,button:0});
 const move=(stage:HTMLElement,id:number,x:number,y:number)=>fireEvent.pointerMove(stage,{pointerType:'touch',pointerId:id,isPrimary:id===1,clientX:x,clientY:y,button:0});
+
+it('详情可显式使用图包裁边预览，大图仍读取原地址；其他调用保持原图',()=>{
+  const source='/api/inspirations/synthetic-artist/image';
+  const view=render(<ViewableImage src={source} alt="图包收藏" previewTransform="artist-sample-padding-v1"/>);
+  expect(screen.getByRole('img').getAttribute('src')).toBe(buildMediaUrl(source,'thumb-960','artist-sample-padding-v1'));
+  expect(screen.getByRole('img').getAttribute('data-agent-original-src')).toBe(source);
+  fireEvent.click(screen.getByRole('button',{name:'放大查看：图包收藏'}));
+  expect(within(screen.getByRole('dialog',{name:'图片预览'})).getByRole('img').getAttribute('src')).toBe(source);
+  fireEvent.click(screen.getByRole('button',{name:'返回图片详情'}));
+  view.rerender(<ViewableImage src={source} alt="普通收藏"/>);
+  expect(screen.getByRole('img').getAttribute('src')).toBe(source);
+});
 
 it('双击按触点放大，再双击复原，小原图也能放大；触屏合成 dblclick 不重复复原',()=>{
   const {stage,image}=setup();
