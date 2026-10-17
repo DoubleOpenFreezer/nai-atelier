@@ -489,3 +489,73 @@ it('手机设置先退出底部面板历史层并归还齿轮焦点，再打开�
   expect(back).toHaveBeenCalledOnce(); expect(screen.queryByRole('dialog', { name: '画师库设置' })).toBeNull();
   expect(document.activeElement).toBe(gear); expect(mocks.prepare).not.toHaveBeenCalled();
 });
+
+it('搜索忽略首尾空格与下划线，粘贴带空格的画师名不会清空结果', async () => {
+  setup(); await screen.findByTestId('cover-alpha artist');
+  fireEvent.change(screen.getByRole('searchbox'), { target: { value: '  alpha_artist  ' } });
+  await waitFor(() => expect(sampleCards()).toHaveLength(1));
+  expect(screen.getByTestId('cover-alpha artist')).toBeTruthy();
+});
+
+it('只看样张搜不到时可直接在全部画师中继续搜索', async () => {
+  setup(); await screen.findByTestId('cover-alpha artist');
+  fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'zzz' } });
+  expect(await screen.findByText('没有匹配的画师样张')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: '在全部画师中搜索' }));
+  expect(await screen.findByText('没有匹配的画师')).toBeTruthy();
+  expect(screen.getByRole('button', { name: '清除搜索' })).toBeTruthy();
+});
+
+it('全目录搜索无结果时给出空态并可直接清除搜索', async () => {
+  setup(); await screen.findByTestId('cover-alpha artist'); disableSampleFilter();
+  fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'zzz' } });
+  expect(await screen.findByText('没有匹配的画师')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: '清除搜索' }));
+  await waitFor(() => expect((screen.getByRole('searchbox') as HTMLInputElement).value).toBe(''));
+  await waitFor(() => expect(sampleCards().length).toBeGreaterThan(0));
+  expect(screen.getByTestId('cover-alpha artist')).toBeTruthy();
+});
+
+it('全目录搜索失败显示错误，重试后恢复真实结果', async () => {
+  mocks.search.mockRejectedValueOnce(new Error('合成搜索失败'));
+  setup(); await screen.findByTestId('cover-alpha artist'); disableSampleFilter();
+  fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'alpha' } });
+  expect(await screen.findByText('搜索画师失败，请稍后重试')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: '重试' }));
+  await waitFor(() => expect(sampleCards().map(card => card.getAttribute('aria-label'))).toEqual(['选择画师：alpha artist']));
+});
+
+it('画师目录首次加载失败显示错误与重试，重试后恢复列表', async () => {
+  mocks.page.mockRejectedValueOnce(new Error('合成目录失败'));
+  setup(); await screen.findByTestId('cover-alpha artist'); disableSampleFilter();
+  expect(await screen.findByText('画师目录不可用，请在全局设置更新 Tag 词库。')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: '重试' }));
+  await waitFor(() => expect(sampleCards().map(card => card.getAttribute('aria-label'))).toContain('选择画师：alpha artist'));
+});
+
+it('加载更多画师失败给出明确提示，重试后继续追加且不重复请求', async () => {
+  const first = { entries: entries.slice(0, 2), page: 0, pageCount: 2, pageSize: 2, total: 3 };
+  const second = { entries: [entries[2]], page: 1, pageCount: 2, pageSize: 2, total: 3 };
+  mocks.page.mockResolvedValueOnce(first).mockRejectedValueOnce(new Error('合成分页失败')).mockResolvedValue(second);
+  setup(); await screen.findByTestId('cover-alpha artist'); disableSampleFilter();
+  await waitFor(() => expect(sampleCards()).toHaveLength(2));
+  fireEvent.click(screen.getByRole('button', { name: '继续向下滚动加载更多' }));
+  expect(await screen.findByText('加载更多画师失败，请重试')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: '重试' }));
+  await waitFor(() => expect(screen.getByTestId('cover-missing artist')).toBeTruthy());
+  expect(sampleCards()).toHaveLength(3);
+});
+
+it('画师卡片名称保留完整 title，长名称可悬浮查看', async () => {
+  setup(); await screen.findByTestId('cover-alpha artist');
+  const card = screen.getByRole('button', { name: '选择画师：alpha artist' });
+  expect(within(card).getByText('alpha artist').getAttribute('title')).toBe('alpha artist');
+});
+
+it('搜索结果超过展示上限时明确提示，不静默截断', async () => {
+  mocks.search.mockResolvedValue(Array.from({ length: 201 }, (_, index) => ({ name: 'bulk artist ' + index, chinese: '', postCount: 1 })));
+  setup(); await screen.findByTestId('cover-alpha artist'); disableSampleFilter();
+  fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'bulk' } });
+  expect(await screen.findByText('仅显示前 200 条结果，请缩小搜索范围')).toBeTruthy();
+  expect(sampleCards()).toHaveLength(200);
+});

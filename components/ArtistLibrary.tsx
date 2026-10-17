@@ -48,6 +48,13 @@ interface ArtistLibraryProps {
 type ArtistGachaMode = 'mixed' | 'uniform' | 'popular';
 type SampleSettingsTarget = { tag?: string; pack: ArtistSamplePack; generateAfterSave: false } | { tag: string; pack: ArtistSamplePack; generateAfterSave: true; regenerate?: boolean };
 const SAMPLE_PACKS = ['v45', 'v5'] as const;
+const SEARCH_RESULT_LIMIT = 200;
+/** 画师名与词库 Tag 使用下划线，输入框里常出现空格；搜索统一按空格形式比较。 */
+const normalizeArtistSearch = (value: string) => {
+    const lower = value.toLowerCase();
+    if (!lower.includes('_') && !lower.includes('  ')) return lower.trim();
+    return lower.replaceAll('_', ' ').replace(/\s+/g, ' ').trim();
+};
 
 export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigateToPlayground, selectionFocusEnabled = true }) => {
   useLanguage();
@@ -157,7 +164,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
                                         )}
                                     </div>
                                     <div className="gallery-card-caption p-2 md:p-3 bg-white dark:bg-gray-800 text-center border-t border-gray-100 dark:border-gray-700">
-                                        <div data-safe-mode-title="true" className={`text-xs md:text-sm font-bold truncate ${isSelected ? 'text-indigo-600' : 'text-gray-700 dark:text-gray-300'}`}>{isSelected && <Check aria-hidden="true" className="mr-1 inline h-3 w-3" strokeWidth={4} />}{artist.name}</div>
+                                        <div data-safe-mode-title="true" title={artist.name} className={`text-xs md:text-sm font-bold truncate ${isSelected ? 'text-indigo-600' : 'text-gray-700 dark:text-gray-300'}`}>{isSelected && <Check aria-hidden="true" className="mr-1 inline h-3 w-3" strokeWidth={4} />}{artist.name}</div>
                                         {artist.chinese && <div data-safe-mode-title="true" className="mt-0.5 truncate text-micro text-gray-400" title={artist.chinese}>{artist.chinese}</div>}
                                         {typeof artist.postCount === 'number' && <div className="gallery-card-meta mt-0.5 text-micro font-mono text-gray-500" title={t("Danbooru 关联作品数")}>{t("作品 {0}", [artist.postCount.toLocaleString(getLanguage())])}</div>}
                                     </div>
@@ -274,6 +281,11 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
     const [isCatalogLoading, setIsCatalogLoading] = useState(true);
     const [isLoadingMoreCatalog, setIsLoadingMoreCatalog] = useState(false);
     const [hasMoreCatalog, setHasMoreCatalog] = useState(false);
+    const [catalogError, setCatalogError] = useState('');
+    const [catalogRetry, setCatalogRetry] = useState(0);
+    const [searchError, setSearchError] = useState('');
+    const [searchRetry, setSearchRetry] = useState(0);
+    const [loadMoreError, setLoadMoreError] = useState('');
     const [artistSort, setArtistSort] = useState<ArtistDictionarySort>(() => {
         const saved = localStorage.getItem('nai_artist_sort');
         return saved === 'least' || saved === 'name-asc' || saved === 'name-desc' ? saved : 'popular';
@@ -322,6 +334,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
         const generation = catalogLoadGenerationRef.current;
         catalogPageLoadingRef.current = true;
         setIsLoadingMoreCatalog(true);
+        setLoadMoreError('');
         try {
             const result = await getArtistDictionaryPage(nextCatalogPageRef.current, artistSortRef.current);
             if (generation !== catalogLoadGenerationRef.current) return;
@@ -330,6 +343,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
             setHasMoreCatalog(nextCatalogPageRef.current < result.pageCount);
         } catch (error) {
             console.warn('Unable to load more artist tags:', error);
+            if (generation === catalogLoadGenerationRef.current) setLoadMoreError(t('加载更多画师失败，请重试'));
         } finally {
             if (generation === catalogLoadGenerationRef.current) {
                 catalogPageLoadingRef.current = false;
@@ -349,6 +363,8 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
         setHasMoreCatalog(false);
         setIsCatalogLoading(true);
         setIsLoadingMoreCatalog(false);
+        setCatalogError('');
+        setLoadMoreError('');
         let cancelled = false;
         getArtistDictionaryPage(0, artistSort)
             .then(result => {
@@ -361,7 +377,10 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
             })
             .catch(error => {
                 console.warn('Artist tag catalog is unavailable:', error);
-                notify('画师目录不可用，请在全局设置更新 Tag 词库。', 'error');
+                if (cancelled || generation !== catalogLoadGenerationRef.current) return;
+                const message = t('画师目录不可用，请在全局设置更新 Tag 词库。');
+                setCatalogError(message);
+                notify(message, 'error');
             })
             .finally(() => {
                 if (!cancelled && generation === catalogLoadGenerationRef.current) {
@@ -370,26 +389,31 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
                 }
             });
         return () => { cancelled = true; };
-    }, [artistSort]);
+    }, [artistSort, catalogRetry]);
 
     useEffect(() => {
         const query = onlySamples || showFavOnly ? '' : searchTerm.trim();
         const requestId = ++catalogSearchRequestRef.current;
         if (!query) {
             setCatalogSearchResults([]);
+            setSearchError('');
             // 清空搜索词时必须复位 loading：在途请求的 finally 会被上面递增的代际守卫拦下，不复位就永久转圈
             setIsCatalogLoading(false);
             return;
         }
 
         setIsCatalogLoading(true);
+        setSearchError('');
         const timer = window.setTimeout(() => {
-            searchArtistDictionary(query, 200, artistSort)
+            searchArtistDictionary(query, SEARCH_RESULT_LIMIT + 1, artistSort)
                 .then(results => {
                     if (requestId === catalogSearchRequestRef.current) setCatalogSearchResults(results);
                 })
                 .catch(error => {
-                    if (requestId === catalogSearchRequestRef.current) setCatalogSearchResults([]);
+                    if (requestId === catalogSearchRequestRef.current) {
+                        setCatalogSearchResults([]);
+                        setSearchError(t('搜索画师失败，请稍后重试'));
+                    }
                     console.warn('Artist tag search failed:', error);
                 })
                 .finally(() => {
@@ -397,12 +421,12 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
                 });
         }, 180);
         return () => window.clearTimeout(timer);
-    }, [artistSort, searchTerm, onlySamples, showFavOnly]);
+    }, [artistSort, searchTerm, onlySamples, showFavOnly, searchRetry]);
 
     const hasMoreSamples = (showFavOnly ? sampledArtists.filter(entry => favorites.has(entry.name)).length : sampledArtists.length) > sampleLimit;
     const hasMoreVisible = onlySamples ? hasMoreSamples : !showFavOnly && hasMoreCatalog;
     const loadMore = () => { if (onlySamples) setSampleLimit(current => current + 100); else void loadNextCatalogPage(); };
-    useGalleryLoadMore(scrollContainerRef, catalogSentinelRef, !searchTerm.trim() && !gachaArtists && hasMoreVisible, loadMore, '800px 0px');
+    useGalleryLoadMore(scrollContainerRef, catalogSentinelRef, !searchTerm.trim() && !gachaArtists && hasMoreVisible && !loadMoreError, loadMore, '800px 0px');
 
     useEffect(() => {
         const sync = () => setFavorites(new Set(collectionSnapshot()
@@ -446,20 +470,24 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
     };
 
     const availableArtists = useMemo(() => {
+        const query = normalizeArtistSearch(searchTerm);
         if (onlySamples) return (gachaArtists || sampledArtists)
-            .filter(entry => (!showFavOnly || favorites.has(entry.name)) && (!searchTerm.trim() || entry.name.toLowerCase().includes(searchTerm.trim().toLowerCase()) || entry.chinese?.toLowerCase().includes(searchTerm.trim().toLowerCase())))
+            .filter(entry => (!showFavOnly || favorites.has(entry.name)) && (!query || normalizeArtistSearch(entry.name).includes(query) || normalizeArtistSearch(entry.chinese || '').includes(query)))
             .slice().sort((left, right) => compareLibraryTags(left, right, artistSort))
-            .slice(0, gachaArtists ? gachaArtists.length : searchTerm.trim() ? 200 : sampleLimit);
+            .slice(0, gachaArtists ? gachaArtists.length : searchTerm.trim() ? SEARCH_RESULT_LIMIT + 1 : sampleLimit);
         // 收藏只筛选真实词库，全目录已读取，不从旧收藏快照补造条目或受已展示分页限制。
         if (showFavOnly) return sampleDictionary.slice().sort((left, right) => compareLibraryTags(left, right, artistSort));
         return searchTerm.trim() ? catalogSearchResults : (gachaArtists || loadedCatalogArtists);
     }, [catalogSearchResults, gachaArtists, loadedCatalogArtists, searchTerm, onlySamples, sampledArtists, sampleDictionary, artistSort, showFavOnly, favorites, sampleLimit]);
 
-    const filteredArtists = useMemo(() => availableArtists.filter(artist => {
+    const matchedArtists = useMemo(() => availableArtists.filter(artist => {
         if (showFavOnly && !favorites.has(artist.name)) return false;
-        const query = searchTerm.toLowerCase();
-        return !query || artist.name.toLowerCase().includes(query) || artist.chinese?.toLowerCase().includes(query);
+        const query = normalizeArtistSearch(searchTerm);
+        return !query || normalizeArtistSearch(artist.name).includes(query) || normalizeArtistSearch(artist.chinese || '').includes(query);
     }), [availableArtists, showFavOnly, favorites, searchTerm]);
+    // 目录搜索与样张搜索都只取前 201 条，足以判断是否还有更多；展示上限保持 200。
+    const filteredArtists = useMemo(() => searchTerm.trim() ? matchedArtists.slice(0, SEARCH_RESULT_LIMIT) : matchedArtists, [matchedArtists, searchTerm]);
+    const searchTruncated = searchTerm.trim() !== '' && matchedArtists.length > filteredArtists.length;
 
     // 抽卡只读取本地 Tag 目录，不触发生图。
 
@@ -570,7 +598,20 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
 
             {/* --- Main Content Area --- */}
             <div ref={scrollContainerRef} onScroll={() => { selectionAnchor.onScroll(); onScrollRestore(); }} className="flex-1 overflow-y-auto p-4 md:p-6 pb-40 bg-gray-50 dark:bg-gray-900 scroll-smooth relative">
-                {onlySamples && !filteredArtists.length && <div role="status" className="py-12 text-center text-sm text-gray-400">{!currentSampleError && !sampleLoading && currentPackStatus?.phase === 'ready' && (!download || ['missing', 'ready'].includes(download.stage)) ? t('没有匹配的画师样张') : sampleStatusText}{currentSampleError && <button type="button" className="mobile-touch ml-2 rounded border border-gray-300 px-2 py-1 dark:border-gray-700" onClick={() => setSampleRefresh(current => current + 1)}>{t('重试')}</button>}</div>}
+                {onlySamples && !filteredArtists.length && <div role="status" className="py-12 text-center text-sm text-gray-400">
+                    {!currentSampleError && !sampleLoading && currentPackStatus?.phase === 'ready' && (!download || ['missing', 'ready'].includes(download.stage)) ? t('没有匹配的画师样张') : sampleStatusText}
+                    {currentSampleError && <button type="button" className="mobile-touch ml-2 rounded border border-gray-300 px-2 py-1 dark:border-gray-700" onClick={() => setSampleRefresh(current => current + 1)}>{t('重试')}</button>}
+                    {searchTerm.trim() && <button type="button" className="mobile-touch ml-2 rounded border border-gray-300 px-2 py-1 dark:border-gray-700" onClick={() => setOnlySamples(false)}>{t('在全部画师中搜索')}</button>}
+                </div>}
+                {!onlySamples && !showFavOnly && !filteredArtists.length && !isCatalogLoading && <div role="status" className="py-12 text-center text-sm text-gray-400">
+                    {searchError || catalogError ? <>
+                        {searchError || catalogError}
+                        <button type="button" className="mobile-touch ml-2 rounded border border-gray-300 px-2 py-1 dark:border-gray-700" onClick={() => searchError ? setSearchRetry(current => current + 1) : setCatalogRetry(current => current + 1)}>{t('重试')}</button>
+                    </> : searchTerm.trim() ? <>
+                        {t('没有匹配的画师')}
+                        <button type="button" className="mobile-touch ml-2 rounded border border-gray-300 px-2 py-1 dark:border-gray-700" onClick={() => setSearchTerm('')}>{t('清除搜索')}</button>
+                    </> : t('画师目录不可用，请在全局设置更新 Tag 词库。')}
+                </div>}
                 {imageDisplay.layout === 'masonry' ? (
                     <ShortestColumnMasonry<ArtistDictionaryEntry>
                         resetKey={resultKey}
@@ -590,10 +631,14 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
                     </div>
                 )}
 
+                {searchTruncated && <p role="status" className="py-4 text-center text-xs text-gray-400">{t('仅显示前 200 条结果，请缩小搜索范围')}</p>}
+
                 {!searchTerm.trim() && !gachaArtists && (
                     <div ref={catalogSentinelRef} className="flex min-h-20 items-center justify-center py-6 text-sm text-gray-400">
                         {isLoadingMoreCatalog ? (
                             <span className="flex items-center gap-2"><span className="h-4 w-4 animate-spin rounded-full border-2 border-indigo-400 border-t-transparent" />{t("正在加载更多画师…")}</span>
+                        ) : loadMoreError ? (
+                            <span role="alert" className="flex items-center gap-2">{loadMoreError}<button type="button" onClick={loadMore} className="rounded-full border border-gray-300 px-3 py-1 hover:border-indigo-400 hover:text-indigo-500 dark:border-gray-700">{t('重试')}</button></span>
                         ) : hasMoreVisible ? (
                             <button type="button" onClick={loadMore} className="rounded-full border border-gray-300 px-4 py-2 hover:border-indigo-400 hover:text-indigo-500 dark:border-gray-700">{t("继续向下滚动加载更多")}</button>
                         ) : (onlySamples ? sampledArtists.length : artistCatalogCount) > 0 ? (

@@ -335,7 +335,8 @@ export const searchArtistDictionary = async (rawQuery: string, limit = 200, sort
     : queryEntries;
 
   const matchingEntries = entries
-    .filter(entry => entry[2] === 1 && (isChineseQuery ? entry[1] : entry[0]).toLowerCase().startsWith(query));
+    // 查询已把下划线归一成空格，词条名也要按同一形式比较，否则复制完整 Tag 搜索会失败。
+    .filter(entry => entry[2] === 1 && normalizeTagQuery(isChineseQuery ? entry[1] : entry[0]).startsWith(query));
   matchingEntries.sort((a, b) => {
     if (sort === 'least') return a[3] - b[3] || a[0].localeCompare(b[0]);
     if (sort === 'name-asc') return a[0].localeCompare(b[0]);
