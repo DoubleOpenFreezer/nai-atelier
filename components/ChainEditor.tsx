@@ -57,8 +57,6 @@ export interface ChainEditorSaveHandle {
 
 interface ChainEditorProps {
     chain: PromptChain;
-    /** 独立统一角色副本复开时更新角色，保留该副本四模式的其他草稿。 */
-    initialCharacters?: CharacterParams[];
     allChains: PromptChain[]; // 角色卡就地引用角色库。
     onUpdateChain: (id: string, updates: Partial<PromptChain>) => Promise<void> | void;
     onFork: (chain: PromptChain, targetType?: 'style' | 'character') => Promise<void> | void;
@@ -82,7 +80,7 @@ interface ChainEditorProps {
     onBack: () => void | Promise<void>;
 }
 
-export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, initialCharacters, allChains, onUpdateChain, onFork, onCreateCharacter, setIsDirty, saveRef, notify, externalImportToken, agentOpenToken, tagAssistEnabled, onTagAssistEnabledChange, generationStreamPreview, forceEmptySeed = false, onForceEmptySeedChange, enforceFreeStepLimit = true, continuousGenerationEnabled = true, rememberGenerationSettings = true, generationMemory = DEFAULT_GENERATION_MEMORY_PREFERENCES, labPageLayouts, safeMode, onBack }) => {
+export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUpdateChain, onFork, onCreateCharacter, setIsDirty, saveRef, notify, externalImportToken, agentOpenToken, tagAssistEnabled, onTagAssistEnabledChange, generationStreamPreview, forceEmptySeed = false, onForceEmptySeedChange, enforceFreeStepLimit = true, continuousGenerationEnabled = true, rememberGenerationSettings = true, generationMemory = DEFAULT_GENERATION_MEMORY_PREFERENCES, labPageLayouts, safeMode, onBack }) => {
   useLanguage();
     const negativeClearActionSlotRef = useRef<HTMLSpanElement>(null);
     const [keyboardOffset, setKeyboardOffset] = useState(0);
@@ -248,14 +246,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, initialCharacte
     for (const draft of Object.values(workspaceFallback.edits)) {
         draft.prompt = compilePrompt(chain, String(chain.variableValues?.subject || ''));
     }
-    const openWorkspaceSession = () => {
-        const session = openLabWorkspaceSession(workspaceKey, workspaceFallback, rememberGenerationSettings, generationMemory);
-        if (!initialCharacters) return session;
-        const updated = structuredClone(session);
-        for (const draft of [updated.textToImage, ...Object.values(updated.edits)]) draft.params.characters = structuredClone(initialCharacters);
-        return updated;
-    };
-    const [workspaceSession, setWorkspaceSession] = useState<LabWorkspaceSession>(openWorkspaceSession);
+    const [workspaceSession, setWorkspaceSession] = useState<LabWorkspaceSession>(() => openLabWorkspaceSession(workspaceKey, workspaceFallback, rememberGenerationSettings, generationMemory));
     const [imageEditMaskData, setImageEditMaskData] = useState<string | undefined>();
   const imageEditGenerateFnRef = useRef<(() => void) | null>(null);
   const imageEditQueueFnRef = useRef<((placement: GenerationPlacement) => void) | null>(null);
@@ -490,7 +481,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, initialCharacte
         setGeneratedImage(null);
         clearPresetSources();
 
-        const storedWorkspace = openWorkspaceSession();
+        const storedWorkspace = openLabWorkspaceSession(workspaceKey, workspaceFallback, rememberGenerationSettings, generationMemory);
         workspaceInitializedKeyRef.current = workspaceKey;
         workspaceSyncBlockedRef.current = true;
         setWorkspaceSession(storedWorkspace);

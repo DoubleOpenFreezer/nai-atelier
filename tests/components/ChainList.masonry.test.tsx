@@ -4,7 +4,6 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PromptChain } from '../../types';
 import { ChainList } from '../../components/ChainList';
-import { ImageActivityContext } from '../../components/SmartImage';
 
 const { confirmAction, syncSelection } = vi.hoisted(() => ({
   confirmAction: vi.fn(async () => false),
@@ -14,12 +13,6 @@ const { confirmAction, syncSelection } = vi.hoisted(() => ({
     accepts: vi.fn(() => true), begin: vi.fn(), cancel: vi.fn(), toggle: vi.fn(), actOnEntries: vi.fn(),
   },
 }));
-const role = vi.hoisted(() => ({ state: { config: { revision: 1, characters: [{ id: 'common', prompt: 'shared character', negativePrompt: '', x: 0.5, y: 0.5 }] }, copies: [] as any[] }, ensure: vi.fn(), load: vi.fn() }));
-vi.mock('../../services/chainRoleMode', () => ({
-  roleModeSnapshot: () => role.state, subscribeRoleMode: () => () => {}, loadRoleModeState: role.load,
-  materializeRoleModeCopy: (copy: any) => copy.chain, ensureRoleModeCopy: role.ensure,
-}));
-
 vi.mock('../../components/ConfirmDialog', () => ({ useConfirmDialog: () => confirmAction }));
 vi.mock('../../services/collectionFavorites', () => ({
   collectionTargetActive: () => false, readLegacyFavoriteIds: (key: string) => new Set(JSON.parse(localStorage.getItem(key) || '[]')), subscribeCollection: () => () => {},
@@ -105,9 +98,6 @@ beforeEach(() => {
   localStorage.clear();
   GalleryIntersectionObserver.instances = [];
   confirmAction.mockReset(); confirmAction.mockResolvedValue(false);
-  role.state.config = { revision: 1, characters: [{ id: 'common', prompt: 'shared character', negativePrompt: '', x: 0.5, y: 0.5 }] };
-  role.state.copies = []; role.ensure.mockReset().mockImplementation(async (source: PromptChain) => ({ ...source, id: `chain-role:${source.id}`, previewImage: '', params: { ...source.params, characters: role.state.config.characters } }));
-  role.load.mockReset().mockImplementation(async () => role.state);
   vi.stubGlobal('ResizeObserver', FixedResizeObserver);
   vi.stubGlobal('IntersectionObserver', GalleryIntersectionObserver);
   vi.stubGlobal('matchMedia', () => ({ matches: true, addEventListener() {}, removeEventListener() {} }));
@@ -117,70 +107,16 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 describe('ChainList 最短列筛选与加载', () => {
-  it('统一角色保持原图片卡片/筛选/滚动，全部串可按需打开独立副本', async () => {
-    const items = Array.from({ length: 80 }, (_, index) => chain(index, { image: true }));
-    const viewProps = props(items), onSelectRoleCopy = vi.fn();
-    const { container } = render(<ChainList {...viewProps} onSelectRoleCopy={onSelectRoleCopy} />);
-    await waitFor(() => expect(columnIds(container).flat()).toHaveLength(60));
-    const original = container.querySelector('[data-return-item-id="chain-0"]');
-    const root = container.querySelector<HTMLElement>('.min-h-0.flex-1.overflow-y-auto')!;
-    Object.defineProperties(root, { clientHeight: { configurable: true, value: 500 }, scrollHeight: { configurable: true, value: 3000 } });
-    root.scrollTop = 900; fireEvent.scroll(root);
-    fireEvent.click(screen.getByRole('button', { name: '统一角色' }));
-    await waitFor(() => expect(screen.getByRole('button', { name: '统一角色' }).getAttribute('aria-pressed')).toBe('true'));
-    expect(container.querySelector('[data-return-item-id="chain-0"]')).toBe(original);
-    expect(screen.queryByTestId('preview-风格 0')).toBeNull(); expect(screen.queryByText('原封面参考')).toBeNull();
-    expect(role.ensure).not.toHaveBeenCalled(); expect(screen.queryByRole('button', { name: '生成本轮' })).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: '加载更多（20）' }));
-    fireEvent.click(container.querySelector('[data-return-item-id="chain-79"]')!);
-    await waitFor(() => expect(onSelectRoleCopy).toHaveBeenCalledWith(expect.objectContaining({ id: 'chain-role:chain-79', previewImage: '' })));
-    expect(role.ensure).toHaveBeenCalledTimes(1); expect(viewProps.onSelect).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button', { name: '统一角色' }));
-    expect(container.querySelector('[data-return-item-id="chain-0"]')).toBe(original); expect(root.scrollTop).toBe(900);
-    fireEvent.click(original!); expect(viewProps.onSelect).toHaveBeenCalledWith('chain-0');
-  });
-  it('模式只展示已有模式图片，未持久化卡即时留空并区分可替换角色/待处理文本', async () => {
-    const commonParams = { ...chain(0).params, characters: [{ id: 'old', prompt: 'old role', negativePrompt: '', x: 0.5, y: 0.5 }] };
-    const items = [{ ...chain(0, { image: true }), basePrompt: 'artist style', params: commonParams }, { ...chain(1, { image: true }), basePrompt: 'style, old character' }, chain(2, { image: true })];
-    role.state.copies = [{ sourceId: 'chain-2', fields: [], chain: { ...chain(2), id: 'chain-role:chain-2', previewImage: '/role-result.png' } }];
-    const { container } = render(<ChainList {...props(items)} onSelectRoleCopy={vi.fn()} />);
-    fireEvent.click(screen.getByRole('button', { name: '统一角色' })); await waitFor(() => expect(screen.getByRole('button', { name: '统一角色' }).getAttribute('aria-pressed')).toBe('true'));
-    const card = (id: number) => container.querySelector<HTMLElement>(`[data-return-item-id="chain-${id}"]`)!;
-    expect(card(0).querySelector('img')).toBeNull(); expect(within(card(0)).queryByText('混合词待审查')).toBeNull();
-    expect(card(1).querySelector('img')).toBeNull(); expect(within(card(1)).getByText('混合词待审查')).toBeTruthy();
-    expect(card(2).querySelector('img')?.getAttribute('src')).toBe('/role-result.png'); expect(role.ensure).not.toHaveBeenCalled();
-  });
-  it('等待创建副本时离开前景不会迟到跳回工作台', async () => {
-    const viewProps = props([chain(0)]), onSelectRoleCopy = vi.fn();
-    let finish!: (value: PromptChain) => void; role.ensure.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
-    const view = (active: boolean) => <ImageActivityContext.Provider value={active}><ChainList {...viewProps} onSelectRoleCopy={onSelectRoleCopy} /></ImageActivityContext.Provider>;
-    const { container, rerender } = render(view(true));
-    fireEvent.click(screen.getByRole('button', { name: '统一角色' })); await waitFor(() => expect(screen.getByRole('button', { name: '统一角色' }).getAttribute('aria-pressed')).toBe('true'));
-    fireEvent.click(container.querySelector('[data-return-item-id="chain-0"]')!); await waitFor(() => expect(role.ensure).toHaveBeenCalled());
-    rerender(view(false)); await act(async () => finish({ ...chain(0), id: 'chain-role:chain-0' }));
-    expect(onSelectRoleCopy).not.toHaveBeenCalled();
-  });
-  it('等待加载公共角色时离开前景不会迟到启用模式或弹设置', async () => {
-    let finish!: (value: typeof role.state) => void; role.load.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
-    const viewProps = props([chain(0)]), view = (active: boolean) => <ImageActivityContext.Provider value={active}><ChainList {...viewProps} onSelectRoleCopy={vi.fn()} /></ImageActivityContext.Provider>;
-    const { rerender } = render(view(true)); fireEvent.click(screen.getByRole('button', { name: '统一角色' }));
-    rerender(view(false)); await act(async () => finish(role.state)); rerender(view(true));
-    expect(screen.getByRole('button', { name: '统一角色' }).getAttribute('aria-pressed')).toBe('false'); expect(screen.queryByRole('dialog', { name: '统一角色设置' })).toBeNull();
-  });
-  it('公共角色词为空也能浏览已有模式卡片，手动打开设置后取消仍留在模式', async () => {
-    role.state.config = { revision: 1, characters: [{ id: 'common', prompt: '', negativePrompt: '', x: 0.5, y: 0.5 }] };
-    role.state.copies = [{ sourceId: 'chain-0', fields: [], chain: { ...chain(0), id: 'chain-role:chain-0', previewImage: '/role-result.png' } }];
-    const source = chain(0, { image: true }), { container } = render(<ChainList {...props([source])} onSelectRoleCopy={vi.fn()} />);
-    fireEvent.click(screen.getByRole('button', { name: '统一角色' }));
-    await waitFor(() => expect(screen.getByRole('button', { name: '统一角色' }).getAttribute('aria-pressed')).toBe('true'));
-    expect(screen.queryByRole('dialog', { name: '统一角色设置' })).toBeNull();
-    expect(container.querySelector('[data-return-item-id="chain-0"] img')?.getAttribute('src')).toBe('/role-result.png');
-    expect(role.ensure).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button', { name: '统一角色设置' }));
-    const dialog = await screen.findByRole('dialog', { name: '统一角色设置' });
-    fireEvent.click(within(dialog).getByRole('button', { name: '取消' }));
-    expect(screen.getByRole('button', { name: '统一角色' }).getAttribute('aria-pressed')).toBe('true');
-    expect(screen.queryByRole('dialog', { name: '统一角色设置' })).toBeNull();
+  it('普通图片卡片直接打开原串，保留原封面及维护入口且没有模式入口', async () => {
+    const viewProps = props([chain(0, { image: true })]);
+    const { container } = render(<ChainList {...viewProps} />);
+    const card = container.querySelector('[data-return-item-id="chain-0"]')!;
+    expect(card.querySelector('img')?.getAttribute('src')).toBe('/synthetic/cover-0.png');
+    expect(screen.queryByRole('button', { name: '统一角色' })).toBeNull();
+    expect(screen.getByRole('button', { name: '编辑风格串信息：风格 0' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '删除：风格 0' })).toBeTruthy();
+    fireEvent.click(card); expect(viewProps.onSelect).toHaveBeenCalledWith('chain-0');
+    fireEvent.keyDown(card, { key: 'Enter' }); expect(viewProps.onSelect).toHaveBeenCalledTimes(2);
   });
   it('取消筛选不会被此前未找到的旧返回目标拉到第60项以后，新的编辑返回仍展开目标', async () => {
     const items = Array.from({ length: 130 }, (_, index) => chain(index));

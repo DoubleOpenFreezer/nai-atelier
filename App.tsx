@@ -7,7 +7,6 @@ import { useConfirmDialog } from './components/ConfirmDialog';
 import { ImageActivityProvider } from './components/SmartImage';
 import { db } from './services/dbService';
 import { collectionRevision, collectionSnapshot, subscribeCollection } from './services/collectionFavorites';
-import { getRoleModeCopy, isRoleModeChain, loadRoleModeChain, roleModeSourceId, saveRoleModeChain } from './services/chainRoleMode';
 import { NAI_ACCOUNTING_ERROR_EVENT } from './services/api';
 import { useCollectorAppearance } from './services/collectorAppearance';
 import { deleteLabWorkspaceSession, getLabWorkspaceSessionKey, markEditorSessionDiscarded } from './services/labWorkspace';
@@ -57,7 +56,6 @@ const App = () => {
   useEffect(() => { window.dispatchEvent(new Event('nai-workspace-changed')); }, [view]);
   const [mountedViews, setMountedViews] = useState<KeepAliveView[]>(['list']);
   const [selectedId, setSelectedId] = useState<string | undefined>(undefined);
-  const [roleModeChain, setRoleModeChain] = useState<PromptChain | null>(null);
   const [chains, setChains] = useState<PromptChain[]>([]);
   const [loading, setLoading] = useState(true);
   const [dbConfigError, setDbConfigError] = useState(false);
@@ -486,17 +484,6 @@ const App = () => {
       }
     }
 
-    if (newView === 'edit' && id && isRoleModeChain(id)) {
-      try {
-        const copy = getRoleModeCopy(id) || await loadRoleModeChain(id);
-        if (!copy) throw new Error(t('统一角色副本无效'));
-        setRoleModeChain(copy);
-      } catch (error) {
-        notify(error instanceof Error ? error.message : t('统一角色副本无效'), 'error');
-        return;
-      }
-    }
-
     // 记录进入实验室前的内容页，供手机端返回箭头使用；实验室内部切换不覆盖该记录。
     if (newView === 'playground' && LAB_ENTRY_VIEWS.includes(view)) lastLabEntryViewRef.current = view;
     setSelectedId(id);
@@ -541,7 +528,6 @@ const App = () => {
       await refreshData(true);
       // Return to appropriate list based on type
       const targetView = finalType === 'character' ? 'characters' : 'list';
-      if (isRoleModeChain(chain)) setSelectedId(roleModeSourceId(chain.id));
       setView(targetView);
       keepViewMounted(targetView);
     } catch (e) {
@@ -560,13 +546,6 @@ const App = () => {
 
   const handleUpdateChain = async (id: string, updates: Partial<PromptChain>) => {
     try {
-      if (isRoleModeChain(id)) {
-        const copy = getRoleModeCopy(id) || await loadRoleModeChain(id);
-        if (!copy) throw new Error(t('统一角色副本无效'));
-        const saved = await saveRoleModeChain({ ...copy, ...updates, id });
-        setRoleModeChain(current => current?.id === id ? saved : current);
-        return;
-      }
       await db.updateChain(id, updates);
       await refreshData(true);
     } catch (e) {
@@ -614,15 +593,14 @@ const App = () => {
     return { remainingIds: ids.filter(id => existing.has(id)), errorCount };
   };
 
-  const getSelectedChain = () => roleModeChain?.id === selectedId ? roleModeChain : chains.find(c => c.id === selectedId);
+  const getSelectedChain = () => chains.find(c => c.id === selectedId);
   const handleReturnFromEditor = () => {
     const selectedChain = getSelectedChain();
     // 传 id 作为 returnTargetId：
     // 1. 确保列表渲染批次（visibleCount）包含该卡片及之前的所有卡片，保证容器拥有足够的高度恢复原滚动位置；
     // 2. useKeepAliveScrollRestore 精确恢复离开前的像素级滚动位置；
     // 3. 若目标卡片仍在视口内则不强制居中，若因排序变动离开视口则由 useRestoreListAnchor 兜底滚回可见范围。
-    const returnId = selectedChain && isRoleModeChain(selectedChain) ? roleModeSourceId(selectedChain.id) : selectedChain?.id || selectedId;
-    void handleNavigate(selectedChain?.type === 'character' ? 'characters' : 'list', returnId, { refreshData: false });
+    void handleNavigate(selectedChain?.type === 'character' ? 'characters' : 'list', selectedChain?.id || selectedId, { refreshData: false });
   };
 
   if (!currentUser && !dbConfigError) {
@@ -652,7 +630,6 @@ const App = () => {
           type="style"
           onCreate={handleCreateChain}
           onSelect={(id) => handleNavigate('edit', id)}
-          onSelectRoleCopy={copy => { void handleNavigate('edit', copy.id); }}
           onDelete={handleDelete}
           onBulkDelete={handleBulkDelete}
           onUpdateChain={handleUpdateChain}
@@ -683,7 +660,6 @@ const App = () => {
         return <ChainEditor
           key={editChain.id}
           chain={editChain}
-          initialCharacters={isRoleModeChain(editChain) ? editChain.params.characters : undefined}
           allChains={chains}
           onUpdateChain={handleUpdateChain}
           onFork={handleForkChain}

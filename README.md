@@ -7,7 +7,7 @@
 
   **[简体中文](./README.md) · [繁體中文](./README.zh-TW.md) · [English](./README.en.md) · [日本語](./README.ja.md) · [한국어](./README.ko.md)**
 
-  [![Version](https://img.shields.io/badge/version-1.79.0-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.79.1-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4%20%7C%20V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据主权与备份)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网创作体验)
@@ -178,7 +178,6 @@ flowchart LR
 - **模块化解耦分层**：全局提示词、可独立开关的风格模块与全局负面词清晰分层，避免反复手动拼词；
 - **多角色独立图层**：每个角色拥有独立正负面词，文生图与编辑模式均支持直观的 X/Y 构图定位（V4/V4.5 格点吸附，V5 自由定位）；
 - **参数全套封存**：画面比例、尺寸、Steps、CFG、Variety+、采样器与 Seed 一并封存；
-- **统一角色模式**：在原风格串图片页直接切换，卡片、搜索、筛选和排列保持原样；设置公共角色正负词后自动作用于全部风格串，无需选择哪些串建立副本。未设置角色词也可切换和浏览，设置由你主动打开。已有结构化角色自动替换，无法确定拆分的混合词自动标记，可就近处理或请助手整理；点卡片仍进入原工作台。卡片只显示该模式生成的图片，没有则留空。编辑、生成、封面与历史独立，关闭模式回到原串。
 - **今日确认记忆**：确认框可勾选「今日内不再显示」，再明确确认后，当前设备当天复用该类型及范围的选择。各类删除、付费和迁移分别记住；取消不记，跨日或 Key／费用／目标等范围变化恢复提示。选择「保存并离开」后，之后仍会实际保存成功才离开。
 - **离开前保存**：风格串或自定义角色有未保存修改时，可选择「保存并离开」「放弃并离开」或「继续编辑」。保存成功才跳转，失败保留草稿；目前无法完整入库的编辑模式仍只提供继续／放弃；
 - **风格串批量删除**：从顶栏「多选」直接进入，在当前筛选结果中全选、反选或逐条勾选，再确认删除。操作栏在原顶栏切换，清空选择仍保留多选模式；处理结果按实际列表核对，未删除项保留选择。历史与收藏记录保留，仍被其他资料引用的封面不会清理。

@@ -12,15 +12,10 @@ import type { ConfirmDialogOptions } from '../../components/ConfirmDialog';
 const mocks = vi.hoisted(() => ({
   getMe: vi.fn(), getAllChains: vi.fn(), getAllInspirations: vi.fn(),
   createChain: vi.fn(), createChainWithData: vi.fn(), deleteChain: vi.fn(),
-  updateChain: vi.fn(), getRoleCopy: vi.fn(), loadRoleCopy: vi.fn(), saveRoleCopy: vi.fn(),
+  updateChain: vi.fn(),
   confirm: vi.fn(), save: vi.fn(), canSave: true, bulkProgress: vi.fn(), bulkResult: vi.fn(),
 }));
 vi.mock('../../services/dbService', () => ({ db: mocks }));
-vi.mock('../../services/chainRoleMode', () => ({
-  getRoleModeCopy: mocks.getRoleCopy, loadRoleModeChain: mocks.loadRoleCopy, saveRoleModeChain: mocks.saveRoleCopy,
-  isRoleModeChain: (value: PromptChain | string) => (typeof value === 'string' ? value : value.id).startsWith('chain-role:'),
-  roleModeSourceId: (id: string) => id.replace(/^chain-role:/, ''),
-}));
 vi.mock('../../services/collectorAppearance', () => ({ useCollectorAppearance: () => {} }));
 vi.mock('../../components/ConfirmDialog', () => ({ useConfirmDialog: () => mocks.confirm }));
 vi.mock('../../components/Layout', () => ({ Layout: ({ children, onNavigate, currentView, toast }: any) => <>
@@ -28,7 +23,7 @@ vi.mock('../../components/Layout', () => ({ Layout: ({ children, onNavigate, cur
   {['aitag', 'inspiration', 'list', 'roll', 'library'].map(view => <button key={view} onClick={() => onNavigate(view)}>{view}</button>)}
   {toast && <div role="status" data-type={toast.type}>{toast.message}</div>}{children}
 </> }));
-vi.mock('../../components/ChainList', () => ({ ChainList: ({ chains, onDelete, onBulkDelete, onReloadTags, onSelect, onSelectRoleCopy, returnTargetId, notify }: { chains: PromptChain[]; onDelete: (id: string) => Promise<void>; onBulkDelete?: (ids: string[], onProgress: (completed: number) => void) => Promise<unknown>; onReloadTags?: () => Promise<void>; onSelect: (id: string) => void; onSelectRoleCopy?: (chain: PromptChain) => void; returnTargetId?: string; notify: (message: string, type?: string) => void }) => <div data-testid="list" data-return-target={returnTargetId}>{chains.map(chain => chain.id).join(',')}{onSelectRoleCopy && chains[0] && <button onClick={() => onSelectRoleCopy({ ...chains[0], id: `chain-role:${chains[0].id}` })}>编辑统一角色副本</button>}{onReloadTags && <button onClick={async () => {
+vi.mock('../../components/ChainList', () => ({ ChainList: ({ chains, onDelete, onBulkDelete, onReloadTags, onSelect, returnTargetId, notify }: { chains: PromptChain[]; onDelete: (id: string) => Promise<void>; onBulkDelete?: (ids: string[], onProgress: (completed: number) => void) => Promise<unknown>; onReloadTags?: () => Promise<void>; onSelect: (id: string) => void; returnTargetId?: string; notify: (message: string, type?: string) => void }) => <div data-testid="list" data-return-target={returnTargetId}>{chains.map(chain => chain.id).join(',')}{onReloadTags && <button onClick={async () => {
   try { await onReloadTags(); notify('合成标签已回读'); }
   catch (error: any) { notify(error.message, 'error'); }
 }}>回读合成分类标签</button>}{onBulkDelete && <button onClick={async () => {
@@ -38,9 +33,9 @@ vi.mock('../../components/ChainList', () => ({ ChainList: ({ chains, onDelete, o
   try { await onDelete(chains[0].id); notify('合成删除成功'); }
   catch { notify('合成删除失败', 'error'); }
 }}>删除合成风格串</button><button onClick={() => onSelect(chains[0].id)}>编辑合成风格串</button></>}</div> }));
-vi.mock('../../components/ChainEditor', () => ({ ChainEditor: ({ chain, initialCharacters, onUpdateChain, onBack, onFork, saveRef, setIsDirty }: any) => {
+vi.mock('../../components/ChainEditor', () => ({ ChainEditor: ({ chain, onUpdateChain, onBack, onFork, saveRef, setIsDirty }: any) => {
   React.useImperativeHandle(saveRef, () => ({ canSave: mocks.canSave, save: mocks.save }));
-  return <div data-testid="editor" data-initial-characters={JSON.stringify(initialCharacters)}>{chain.id}|{chain.basePrompt}|{chain.previewImage}<button onClick={onBack}>返回资料库</button><button onClick={() => { void Promise.resolve(onUpdateChain(chain.id, { basePrompt: 'edited copy', previewImage: '/api/assets/covers/copy.png', tags: [] })).catch(() => {}); }}>保存合成内容及封面</button><button onClick={() => setIsDirty(true)}>修改合成草稿</button><button onClick={() => void onFork(chain, 'style')}>另存为新串</button><button onClick={() => void onFork(chain, 'character')}>另存为角色</button></div>;
+  return <div data-testid="editor">{chain.id}|{chain.basePrompt}|{chain.previewImage}<button onClick={onBack}>返回资料库</button><button onClick={() => { void Promise.resolve(onUpdateChain(chain.id, { basePrompt: 'edited style', previewImage: '/api/assets/covers/edited.png', tags: [] })).catch(() => {}); }}>保存合成内容及封面</button><button onClick={() => setIsDirty(true)}>修改合成草稿</button><button onClick={() => void onFork(chain, 'style')}>另存为新串</button><button onClick={() => void onFork(chain, 'character')}>另存为角色</button></div>;
 } }));
 // 这里验证 App 的共享保存回调；AITag 实际按钮的元数据与连点行为在图库组件测试中覆盖。
 const source: PromptChain = {
@@ -68,8 +63,7 @@ beforeEach(() => {
   mocks.getAllChains.mockResolvedValue([]); mocks.getAllInspirations.mockResolvedValue([]);
   mocks.createChain.mockResolvedValue(saved.id); mocks.createChainWithData.mockResolvedValue(saved);
   mocks.deleteChain.mockResolvedValue(undefined);
-  mocks.updateChain.mockResolvedValue(undefined); mocks.getRoleCopy.mockReturnValue(null); mocks.loadRoleCopy.mockResolvedValue(null);
-  mocks.saveRoleCopy.mockImplementation(async (chain: PromptChain) => { mocks.getRoleCopy.mockReturnValue(chain); return chain; });
+  mocks.updateChain.mockResolvedValue(undefined);
   mocks.canSave = true;
   mocks.confirm.mockReset(); mocks.confirm.mockResolvedValue(true);
   mocks.save.mockReset(); mocks.save.mockResolvedValue(true);
@@ -86,60 +80,19 @@ const setup = async (entry = 'aitag') => {
   await screen.findByRole('button', { name: '保存合成作品' });
 };
 
-it('统一角色仍进入原编辑器，内容与封面只保存独立副本，返回原图卡并可正常打开原串', async () => {
-  const original = { ...source, id: 'original-style', tags: ['待实测'] };
-  const characters = [{ id: 'common', prompt: 'shared role', negativePrompt: '', x: 0.5, y: 0.5 }];
-  const copy = { ...original, id: `chain-role:${original.id}`, previewImage: '', params: { ...original.params, characters } };
-  mocks.getAllChains.mockResolvedValue([original]); mocks.getRoleCopy.mockReturnValue(copy);
+it('普通风格串从原列表进入原编辑器，内容与封面仍保存原db并返回同一张卡', async () => {
+  const original = { ...source, id: 'ordinary-style' };
+  mocks.getAllChains.mockResolvedValue([original]);
+  mocks.updateChain.mockImplementationOnce(async (_id: string, updates: Partial<PromptChain>) => { mocks.getAllChains.mockResolvedValue([{ ...original, ...updates }]); });
   await setup(); fireEvent.click(screen.getByRole('button', { name: 'list' }));
-  fireEvent.click(screen.getByRole('button', { name: '编辑统一角色副本' }));
-  const editor = await screen.findByTestId('editor');
-  expect(editor.textContent).toContain(copy.id); expect(editor.getAttribute('data-initial-characters')).toBe(JSON.stringify(characters));
-  fireEvent.click(screen.getByRole('button', { name: '保存合成内容及封面' }));
-  await waitFor(() => expect(mocks.saveRoleCopy).toHaveBeenCalledWith(expect.objectContaining({ id: copy.id, basePrompt: 'edited copy', previewImage: '/api/assets/covers/copy.png', tags: [] })));
-  expect(mocks.updateChain).not.toHaveBeenCalled(); expect(mocks.getAllChains).toHaveBeenCalledOnce();
-  expect(original.basePrompt).toBe(source.basePrompt); expect(original.tags).toEqual(['待实测']); expect(original.previewImage).toBe(source.previewImage);
-  fireEvent.click(screen.getByRole('button', { name: '返回资料库' }));
-  await waitFor(() => expect(screen.getByTestId('view').textContent).toBe('list'));
-  expect(screen.getByTestId('list').getAttribute('data-return-target')).toBe(original.id);
   fireEvent.click(screen.getByRole('button', { name: '编辑合成风格串' }));
-  expect((await screen.findByTestId('editor')).textContent).toContain(`${original.id}|${original.basePrompt}|${original.previewImage}`);
-  expect(screen.getByTestId('editor').getAttribute('data-initial-characters')).toBeNull();
-});
-
-it('统一角色副本保存失败不会回退写原串，缺失副本不能进入原件编辑', async () => {
-  const original = { ...source, id: 'source-copy-failure' }, copy = { ...original, id: 'chain-role:source-copy-failure' };
-  mocks.getAllChains.mockResolvedValue([original]); mocks.getRoleCopy.mockReturnValue(copy);
-  mocks.saveRoleCopy.mockRejectedValueOnce(new Error('synthetic copy conflict'));
-  const log = vi.spyOn(console, 'error').mockImplementation(() => {});
-  await setup(); fireEvent.click(screen.getByRole('button', { name: 'list' }));
-  fireEvent.click(screen.getByRole('button', { name: '编辑统一角色副本' }));
-  await screen.findByTestId('editor');
+  expect((await screen.findByTestId('editor')).textContent).toContain(original.id);
   fireEvent.click(screen.getByRole('button', { name: '保存合成内容及封面' }));
-  await waitFor(() => expect(mocks.saveRoleCopy).toHaveBeenCalledOnce());
-  expect(screen.getByTestId('view').textContent).toBe('edit');
-  expect(mocks.updateChain).not.toHaveBeenCalled();
+  await waitFor(() => expect(mocks.updateChain).toHaveBeenCalledWith(original.id, { basePrompt: 'edited style', previewImage: '/api/assets/covers/edited.png', tags: [] }));
+  await waitFor(() => expect(screen.getByTestId('editor').textContent).toContain('edited style'));
   fireEvent.click(screen.getByRole('button', { name: '返回资料库' }));
   await waitFor(() => expect(screen.getByTestId('view').textContent).toBe('list'));
-  mocks.getRoleCopy.mockReturnValue(null);
-  fireEvent.click(screen.getByRole('button', { name: '编辑统一角色副本' }));
-  await waitFor(() => expect(mocks.loadRoleCopy).toHaveBeenCalledWith(copy.id));
-  expect(screen.getByTestId('view').textContent).toBe('list'); expect(screen.queryByTestId('editor')).toBeNull();
-  expect(mocks.updateChain).not.toHaveBeenCalled(); expect(mocks.saveRoleCopy).toHaveBeenCalledOnce();
-  log.mockRestore();
-});
-
-it('统一角色副本显式另存为仍新建独立风格串，返回原卡定位且不更新原件', async () => {
-  const original = { ...source, id: 'fork-original' }, copy = { ...original, id: 'chain-role:fork-original', basePrompt: 'copy-only prompt', previewImage: '/api/assets/covers/copy.png' };
-  mocks.getAllChains.mockResolvedValue([original]); mocks.getRoleCopy.mockReturnValue(copy);
-  await setup(); fireEvent.click(screen.getByRole('button', { name: 'list' }));
-  fireEvent.click(screen.getByRole('button', { name: '编辑统一角色副本' }));
-  await screen.findByTestId('editor'); fireEvent.click(screen.getByRole('button', { name: '另存为新串' }));
-  await waitFor(() => expect(mocks.createChain).toHaveBeenCalledWith(`${copy.name} (Fork)`, copy.description, copy, 'style'));
-  expect(mocks.updateChain).not.toHaveBeenCalled(); expect(mocks.saveRoleCopy).not.toHaveBeenCalled();
-  await waitFor(() => expect(screen.getByTestId('view').textContent).toBe('list'));
   expect(screen.getByTestId('list').getAttribute('data-return-target')).toBe(original.id);
-  expect(original.basePrompt).toBe(source.basePrompt); expect(original.previewImage).toBe(source.previewImage);
 });
 
 it('进入画师库和资料变更刷新不读取旧artists表，也不向页面传入旧画师资料', async () => {
