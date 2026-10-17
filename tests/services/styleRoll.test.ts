@@ -80,6 +80,43 @@ describe('Roll 抽取', () => {
   });
 });
 
+describe('抽取方式', () => {
+  it('固定权重时每个画师都用同一权重', () => {
+    const e = rollFixture(); e.rules = { ...e.rules, minWeight: 1.1, maxWeight: 1.1 };
+    const result = rollCandidates(e, 4, { plan: { mode: 'fixedWeight' } });
+    expect(result).toHaveLength(4);
+    expect(result.every(candidate => candidate.tags.every(tag => tag.weight === 1.1))).toBe(true);
+    expect(() => validateRollExperiment({ ...e, drawPlan: { mode: 'fixedWeight' } })).not.toThrow();
+  });
+  it('固定画师时集合不变，只随机权重', () => {
+    const e = rollFixture(); e.rules = { ...e.rules, minArtists: 2, maxArtists: 2 };
+    const plan = { mode: 'pinnedArtists' as const, pinnedArtists: ['alpha', 'beta'] };
+    const result = rollCandidates(e, 4, { plan, random: seededRandom() });
+    expect(result).toHaveLength(4);
+    for (const candidate of result) expect(candidate.tags.map(tag => tag.tag).sort()).toEqual(['alpha', 'beta']);
+    expect(new Set(result.map(candidate => JSON.stringify(candidate.tags))).size).toBe(4);
+  });
+  it('固定画师必须包含锁定画师，且不能是被排除或屏蔽的画师', () => {
+    const e = rollFixture(); e.artists[0].locked = true;
+    expect(() => rollCandidates(e, 1, { plan: { mode: 'pinnedArtists', pinnedArtists: ['beta'] } })).toThrow('需要包含已锁定的画师');
+    expect(() => rollCandidates(e, 1, { plan: { mode: 'pinnedArtists', pinnedArtists: ['alpha', 'missing'] } })).toThrow('固定画师不可用');
+    expect(() => rollCandidates(e, 1, { plan: { mode: 'pinnedArtists', pinnedArtists: ['alpha'] }, blockedTags: ['alpha'] })).toThrow('固定画师不可用');
+  });
+  it('全局屏蔽从随机池移除画师，屏蔽后不足最少人数时明确失败', () => {
+    const e = rollFixture(); e.rules = { ...e.rules, minArtists: 1, maxArtists: 8, minWeight: 1, maxWeight: 1 };
+    const blocked = e.artists.slice(1).map(artist => artist.tag);
+    expect(rollCandidates(e, 1, { blockedTags: blocked })[0].tags.map(tag => tag.tag)).toEqual(['alpha']);
+    e.rules = { ...e.rules, minArtists: 3 };
+    expect(() => rollCandidates(e, 1, { blockedTags: blocked })).toThrow('可用画师不足');
+  });
+  it('固定权重要求最低与最高权重相同，固定画师要求 1～16 个不重复 Tag', () => {
+    const e = rollFixture();
+    expect(() => rollCandidates(e, 1, { plan: { mode: 'fixedWeight' } })).toThrow('固定权重需要最低与最高权重相同');
+    expect(() => rollCandidates(e, 1, { plan: { mode: 'pinnedArtists', pinnedArtists: [] } })).toThrow('固定画师需要 1～16 个不重复的画师 Tag');
+    expect(() => rollCandidates(e, 1, { plan: { mode: 'pinnedArtists', pinnedArtists: ['alpha', 'alpha'] } })).toThrow('固定画师需要 1～16 个不重复的画师 Tag');
+  });
+});
+
 describe('风格串保存', () => {
   it('风格串保存保留完整配置和真实 Seed，独立深拷贝角色参数', () => {
     const e = rollFixture(); e.template.params.characters = [{ id: 'role', prompt: 'subject', negativePrompt: 'negative role', x: 0.5, y: 0.5 }];

@@ -6,6 +6,19 @@ export interface RollArtist { tag: string; weight: number; locked: boolean; excl
 export interface RollTag { tag: string; weight: number }
 export interface RollRules { minArtists: number; maxArtists: number; minWeight: number; maxWeight: number }
 export interface RollTemplate { prompt: string; negativePrompt: string; params: NAIParams }
+/** 本轮随机哪些维度；固定权重用 rules.minWeight === maxWeight 表达，不另存数值。 */
+export type RollDrawMode = 'random' | 'pinnedArtists' | 'fixedWeight';
+export interface RollDrawPlan {
+  mode: RollDrawMode;
+  /** 仅固定画师模式：这组 Tag 每轮必用，权重仍按范围随机。 */
+  pinnedArtists?: string[];
+}
+export interface RollRoundSnapshot {
+  rules: RollRules;
+  mode: RollDrawMode;
+  pinnedArtists?: string[];
+  sampledOnly?: boolean;
+}
 export interface RollCandidate {
   id: string;
   tags: RollTag[];
@@ -15,6 +28,8 @@ export interface RollCandidate {
 }
 export interface RollRound {
   id: string; candidateIds: string[]; createdAt: number; closedAt?: number;
+  /** 这一轮实际使用的抽取条件，用于回看与复现。 */
+  snapshot?: RollRoundSnapshot;
 }
 export interface RollExperiment {
   version: 1;
@@ -26,6 +41,9 @@ export interface RollExperiment {
   template: RollTemplate;
   artists: RollArtist[];
   rules: RollRules;
+  drawPlan?: RollDrawPlan;
+  /** 只从有样张的画师中抽取；不影响已锁定的覆盖项。 */
+  sampledOnly?: boolean;
   candidates: RollCandidate[];
   rounds: RollRound[];
   archived?: boolean;
@@ -97,6 +115,22 @@ export function validateRollRules(artists: RollArtist[], rules: RollRules): void
   if (locked.length > rules.maxArtists) throw new Error('锁定画师数量超过每串上限');
 }
 
+export function validateRollDrawPlan(plan: RollDrawPlan | undefined, rules: RollRules): void {
+  if (plan === undefined) return;
+  if (!plan || !['random', 'pinnedArtists', 'fixedWeight'].includes(plan.mode)) throw new Error('抽取方式无效');
+  if (plan.mode === 'pinnedArtists') {
+    if (!Array.isArray(plan.pinnedArtists) || !plan.pinnedArtists.length || plan.pinnedArtists.length > 16 ||
+      plan.pinnedArtists.some(tag => !validTag(tag)) ||
+      new Set(plan.pinnedArtists.map(tagKey)).size !== plan.pinnedArtists.length) throw new Error('固定画师需要 1～16 个不重复的画师 Tag');
+  } else if (plan.pinnedArtists !== undefined) throw new Error('当前抽取方式不接受固定画师');
+  if (plan.mode === 'fixedWeight' && rules.minWeight !== rules.maxWeight) throw new Error('固定权重需要最低与最高权重相同');
+}
+
+/** 全局屏蔽名单：所有记录抽取时都不会抽到这些画师。 */
+export function validateRollBlocklist(value: unknown): asserts value is string[] {
+  if (!Array.isArray(value) || value.length > 1000 || value.some(tag => !validTag(tag))) throw new Error('屏蔽画师列表无效');
+}
+
 /** 保存／导入是信任边界，资料读坏时停止，不能用空数据覆盖。 */
 export function validateRollExperiment(value: unknown): asserts value is RollExperiment {
   const e = value as RollExperiment;
@@ -104,7 +138,7 @@ export function validateRollExperiment(value: unknown): asserts value is RollExp
   if (!e || e.version !== 1 || !validId(e.id) || typeof e.name !== 'string' || !e.name.trim() || e.name.length > 120 ||
     !Number.isSafeInteger(e.revision) || e.revision < 0 || ![e.createdAt, e.updatedAt].every(Number.isFinite) ||
     !Array.isArray(e.artists) || e.artists.length > 1000 || !Array.isArray(e.candidates) || e.candidates.length > ROLL_CANDIDATE_LIMIT ||
-    (e.archived !== undefined && typeof e.archived !== 'boolean')) throw new Error('Roll 串实验资料无效');
+    (e.archived !== undefined && typeof e.archived !== 'boolean') || (e.sampledOnly !== undefined && typeof e.sampledOnly !== 'boolean')) throw new Error('Roll 串实验资料无效');
   validateRollTemplate(e.template);
   const keys = new Set<string>();
   for (const artist of e.artists) {
@@ -114,6 +148,7 @@ export function validateRollExperiment(value: unknown): asserts value is RollExp
   }
   // 未指定覆盖项时直接使用画师库；实际组串时再检查可用数量。
   validateRuleRanges(e.rules);
+  validateRollDrawPlan(e.drawPlan, e.rules);
   const ids = new Set<string>();
   for (const candidate of e.candidates) {
     if (!candidate || !validId(candidate.id) || ids.has(candidate.id) || !Array.isArray(candidate.tags) || !candidate.tags.length || candidate.tags.length > 16 ||
@@ -128,24 +163,54 @@ export function validateRollExperiment(value: unknown): asserts value is RollExp
     if (!round || !validId(round.id) || rounds.has(round.id) ||
       !Number.isFinite(round.createdAt) || (round.closedAt !== undefined && !Number.isFinite(round.closedAt)) ||
       !Array.isArray(round.candidateIds) || !round.candidateIds.length || round.candidateIds.length > 24 || new Set(round.candidateIds).size !== round.candidateIds.length || round.candidateIds.some(id => !ids.has(id))) throw new Error('画风轮次资料无效');
+    if (round.snapshot !== undefined) {
+      const snapshot = round.snapshot as RollRoundSnapshot;
+      if (!snapshot || typeof snapshot !== 'object') throw new Error('画风轮次资料无效');
+      validateRuleRanges(snapshot.rules);
+      validateRollDrawPlan({ mode: snapshot.mode, pinnedArtists: snapshot.pinnedArtists }, snapshot.rules);
+      if (snapshot.sampledOnly !== undefined && typeof snapshot.sampledOnly !== 'boolean') throw new Error('画风轮次资料无效');
+    }
     rounds.add(round.id);
   }
 }
 
-export function rollCandidates(experiment: RollExperiment, count: number, options: { random?: () => number } = {}): RollCandidate[] {
+export function rollCandidates(experiment: RollExperiment, count: number, options: { random?: () => number; plan?: RollDrawPlan; blockedTags?: string[] } = {}): RollCandidate[] {
   validateRollRules(experiment.artists, experiment.rules);
+  const plan = options.plan;
+  validateRollDrawPlan(plan, experiment.rules);
   if (!Number.isSafeInteger(count) || count < 1 || count > 24 || experiment.candidates.length + count > ROLL_CANDIDATE_LIMIT) throw new Error('每次可 Roll 1～24 串，每个实验最多 240 串');
   const random = options.random || Math.random, rules = experiment.rules;
-  const pool = experiment.artists.filter(artist => !artist.excluded), locked = pool.filter(artist => artist.locked);
+  const blocked = new Set((options.blockedTags || []).map(tagKey));
+  const pool = experiment.artists.filter(artist => !artist.excluded && !blocked.has(tagKey(artist.tag)));
+  const locked = pool.filter(artist => artist.locked);
+  const pinnedTags = plan?.mode === 'pinnedArtists' ? plan.pinnedArtists! : null;
+  if (!pinnedTags && pool.length < rules.minArtists) throw new Error('可用画师不足（已扣除屏蔽项），请调整屏蔽名单或降低最少画师数');
+  if (pinnedTags) {
+    const pinned = pinnedTags.map(tag => {
+      const artist = pool.find(item => tagKey(item.tag) === tagKey(tag));
+      if (!artist) throw new Error(`固定画师不可用：${tag}（可能被排除或屏蔽）`);
+      return artist;
+    });
+    const missingLocked = locked.find(artist => !pinned.some(item => tagKey(item.tag) === tagKey(artist.tag)));
+    if (missingLocked) throw new Error(`固定画师需要包含已锁定的画师：${missingLocked.tag}`);
+  }
   const choose = <T,>(items: T[]): T => items[Math.min(items.length - 1, Math.floor(random() * items.length))];
   const integer = (min: number, max: number) => min + Math.min(max - min, Math.floor(random() * (max - min + 1)));
-  const weight = () => integer(Math.round(rules.minWeight * 10), Math.round(rules.maxWeight * 10)) / 10;
+  const weight = () => plan?.mode === 'fixedWeight' ? rules.minWeight : integer(Math.round(rules.minWeight * 10), Math.round(rules.maxWeight * 10)) / 10;
   const signatures = new Set(experiment.candidates.map(candidate => rollSignature(candidate.tags))), result: RollCandidate[] = [];
   for (let attempts = 0; result.length < count && attempts < count * 100; attempts++) {
-    const tags = locked.map(({ tag, weight: lockedWeight }) => ({ tag, weight: lockedWeight }));
-    const target = integer(Math.max(rules.minArtists, locked.length), Math.min(rules.maxArtists, pool.length));
-    const unused = pool.filter(artist => !tags.some(item => tagKey(item.tag) === tagKey(artist.tag)));
-    while (tags.length < target && unused.length) { const artist = choose(unused); tags.push({ tag: artist.tag, weight: weight() }); unused.splice(unused.indexOf(artist), 1); }
+    let tags: RollTag[];
+    if (pinnedTags) {
+      tags = pinnedTags.map(tag => {
+        const artist = pool.find(item => tagKey(item.tag) === tagKey(tag))!;
+        return { tag: artist.tag, weight: artist.locked ? artist.weight : weight() };
+      });
+    } else {
+      tags = locked.map(({ tag, weight: lockedWeight }) => ({ tag, weight: lockedWeight }));
+      const target = integer(Math.max(rules.minArtists, locked.length), Math.min(rules.maxArtists, pool.length));
+      const unused = pool.filter(artist => !tags.some(item => tagKey(item.tag) === tagKey(artist.tag)));
+      while (tags.length < target && unused.length) { const artist = choose(unused); tags.push({ tag: artist.tag, weight: weight() }); unused.splice(unused.indexOf(artist), 1); }
+    }
     const signature = rollSignature(tags);
     if (signatures.has(signature)) continue;
     signatures.add(signature);
