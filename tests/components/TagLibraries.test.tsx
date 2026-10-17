@@ -19,6 +19,9 @@ import {
   getCharacterDictionaryEntriesAt, getCharacterDictionaryPage,
 } from '../../services/tagDictionary';
 
+vi.mock('../../services/anlasBudget', async original => ({ ...await original<typeof import('../../services/anlasBudget')>(), useAnlasBudget: () => ({ remaining: 100 }), estimateV45GenerationCost: () => 3 }));
+vi.mock('../../services/naiUsage', async original => ({ ...await original<typeof import('../../services/naiUsage')>(), useNovelaiUsage: () => ({ info: null, refreshIfStale: async () => {} }) }));
+vi.mock('../../services/naiRuntime', async original => ({ ...await original<typeof import('../../services/naiRuntime')>(), useNaiRuntime: () => undefined }));
 const fixtures = vi.hoisted(() => ({
   favorites: new Map<string, any>(), revision: 0, listeners: new Set<() => void>(),
   artists: [

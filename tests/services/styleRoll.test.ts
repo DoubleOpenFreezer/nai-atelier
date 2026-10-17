@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { candidateFixture, rollFixture, seededRandom } from '../fixtures/styleRoll';
-import { formatRollStyle, manualRollVariant, mergeRollArtists, nextRollPair, parseRollArtists, rankRollCandidates, resolveRollArtists, rollCandidates, rollCandidateToChain, rollPairKey, rollSignature, scoreRollCandidates, validateRollExperiment, validateRollRules, validateRollTemplate } from '../../services/styleRoll';
+import { formatRollStyle, manualRollVariant, mergeRollArtists, parseRollArtists, resolveRollArtists, rollCandidates, rollCandidateToChain, rollSignature, validateRollExperiment, validateRollRules, validateRollTemplate } from '../../services/styleRoll';
 
 describe('Roll 串画师与规则', () => {
   it('完整词库不受手填1000项限制，覆盖项按名称去重且锁定／排除优先', () => {
@@ -40,8 +40,8 @@ describe('Roll 串画师与规则', () => {
   });
 });
 
-describe('Roll、进化和精修', () => {
-  it('保存替代PK作为偏好信号，优先保留原组合画师并留四分之一全新探索，锁定／排除和去重仍生效', () => {
+describe('Roll 和手动调整', () => {
+  it('保存作为偏好信号，优先保留原组合画师并留四分之一全新探索，锁定／排除和去重仍生效', () => {
     const e = rollFixture(); e.rules = { ...e.rules, minArtists: 4, maxArtists: 4 };
     e.candidates = [{ ...candidateFixture('saved'), savedChainId: 'chain', genes: ['alpha', 'beta', 'gamma', 'delta'].map(tag => ({ tag, weight: 1 })) }, { ...candidateFixture('archived', 'theta'), savedChainId: 'old-chain', archived: true }];
     e.artists[1].excluded = true; e.artists[4].locked = true; e.artists[4].weight = 1.3;
@@ -56,6 +56,14 @@ describe('Roll、进化和精修', () => {
   it('未保存、已归档或已不在可用词库内的组合不冒充偏好，自动退回完整词库随机抽取', () => {
     const e = rollFixture(); e.candidates = [candidateFixture('not-kept', 'alpha'), { ...candidateFixture('missing', 'removed'), savedChainId: 'gone' }];
     const result = rollCandidates(e, 4, { mode: 'saved', random: seededRandom() }); expect(result.every(candidate => candidate.method === 'random' && !candidate.parents.length)).toBe(true);
+  });
+  it('旧投票不影响保存偏好，抽取后旧票和原图绑定保持不变', () => {
+    const e = rollFixture(); e.candidates = [{ ...candidateFixture('saved', 'alpha'), savedChainId: 'kept-chain' }, candidateFixture('other', 'beta')];
+    const withoutVotes = rollCandidates(e, 4, { mode: 'saved', random: seededRandom() });
+    e.votes = [{ id: 'old-vote', left: 'saved', right: 'other', leftImage: 'original-saved', rightImage: 'original-other', result: 'right', createdAt: 1 }];
+    const before = structuredClone(e.votes), withVotes = rollCandidates(e, 4, { mode: 'saved', random: seededRandom() });
+    const recipes = (candidates: typeof withoutVotes) => candidates.map(({ genes, method, parents, generation }) => ({ genes, method, parents, generation }));
+    expect(recipes(withVotes)).toEqual(recipes(withoutVotes)); expect(e.votes).toEqual(before);
   });
   it('精确调整生成独立新变体并遵守锁定、排除及范围，原串保持不变', () => {
     const e = rollFixture(); const parent = { ...candidateFixture('manual-parent', 'alpha'), genes: [{ tag: 'alpha', weight: 1 }, { tag: 'beta', weight: 1 }] }; e.candidates = [parent];
@@ -84,50 +92,9 @@ describe('Roll、进化和精修', () => {
     e.candidates = rollCandidates(e, 24); expect(e.candidates).toHaveLength(1);
     expect(() => rollCandidates(e, 1)).toThrow('没有新的组合');
   });
-  it('进化只从已评价的非归档高分候选取父母，保留三种探索方式与谱系', () => {
-    const e = rollFixture(), random = seededRandom(); e.candidates = rollCandidates(e, 10, { random });
-    e.votes = e.candidates.slice(1).map((candidate, index) => ({ id: `vote-${index}`, left: e.candidates[0].id, right: candidate.id, leftImage: 'image-parent', rightImage: `image-${index}`, result: 'left' as const, createdAt: index }));
-    e.candidates[1].archived = true;
-    const children = rollCandidates(e, 24, { mode: 'evolve', random });
-    expect(new Set(children.map(candidate => candidate.method))).toEqual(new Set(['random', 'mutate', 'crossover']));
-    const top = rankRollCandidates(e).filter(candidate => !candidate.archived).slice(0, 3).map(candidate => candidate.id);
-    for (const candidate of children) for (const parent of candidate.parents) expect(top).toContain(parent);
-    expect(() => validateRollExperiment({ ...e, candidates: [...e.candidates, ...children] })).not.toThrow();
-  });
-  it('精修保持画师集合与锁定值，至少一处变化；排除父代画师后要求先变异', () => {
-    const e = rollFixture(), random = seededRandom(); e.artists[0].locked = true;
-    e.candidates = rollCandidates(e, 1, { random }); const parent = e.candidates[0];
-    const children = rollCandidates(e, 5, { mode: 'refine', parentId: parent.id, jitter: 0.1, random });
-    for (const child of children) {
-      expect(child.genes.map(gene => gene.tag)).toEqual(parent.genes.map(gene => gene.tag));
-      expect(child.genes[0]).toEqual(parent.genes[0]); expect(rollSignature(child.genes)).not.toBe(rollSignature(parent.genes));
-      child.genes.forEach((gene, index) => expect(Math.abs(gene.weight - parent.genes[index].weight)).toBeLessThanOrEqual(0.100001));
-      expect(child.parents).toEqual([parent.id]); expect(child.generation).toBe(1);
-    }
-    e.artists.find(artist => artist.tag === parent.genes[1].tag)!.excluded = true;
-    expect(() => rollCandidates(e, 1, { mode: 'refine', parentId: parent.id })).toThrow('抽取条件已变化');
-  });
 });
 
-describe('相对评分、配对与保存', () => {
-  it('胜负守恒、平局正确、撤销重放还原分数', () => {
-    const e = rollFixture(); e.candidates = [candidateFixture('a'), candidateFixture('b')];
-    const original = scoreRollCandidates(e);
-    e.votes.push({ id: 'v1', left: 'a', right: 'b', leftImage: 'image-a', rightImage: 'image-b', result: 'left', createdAt: 1 });
-    expect(scoreRollCandidates(e).get('a')).toEqual({ rating: 1016, matches: 1, wins: 1, draws: 0 });
-    e.votes.push({ id: 'v2', left: 'a', right: 'b', leftImage: 'image-a', rightImage: 'image-b', result: 'draw', createdAt: 2 });
-    const scores = scoreRollCandidates(e); expect(scores.get('a')!.rating + scores.get('b')!.rating).toBe(2000); expect(scores.get('a')!.draws).toBe(1);
-    e.votes = []; expect(scoreRollCandidates(e)).toEqual(original);
-  });
-  it('只配已生成、未归档候选；跳过不改变分数，下一对优先未比较', () => {
-    const e = rollFixture(); e.candidates = ['a', 'b', 'c', 'd'].map(id => candidateFixture(id)); e.candidates[3].archived = true;
-    expect(nextRollPair(e, new Set(['a']))).toBeNull();
-    const pair = nextRollPair(e, new Set(['a', 'b', 'c', 'd']))!; expect(pair).not.toContain('d');
-    const skipped = new Set([rollPairKey(...pair)]); expect(rollPairKey(...nextRollPair(e, new Set(['a', 'b', 'c']), skipped)!)).not.toBe(rollPairKey(...pair));
-    expect(e.votes).toEqual([]);
-    e.votes.push({ id: 'v', left: pair[0], right: pair[1], leftImage: `image-${pair[0]}`, rightImage: `image-${pair[1]}`, result: 'left', createdAt: 1 });
-    expect(nextRollPair(e, new Set(['a', 'b', 'c']))).toContain('c');
-  });
+describe('风格串保存', () => {
   it('风格串保存保留完整配置和真实 Seed，独立深拷贝角色参数', () => {
     const e = rollFixture(); e.template.params.characters = [{ id: 'role', prompt: 'subject', negativePrompt: 'negative role', x: 0.5, y: 0.5 }];
     e.candidates = [candidateFixture('alpha')]; const saved = rollCandidateToChain(e, e.candidates[0], '/api/assets/synthetic.png');

@@ -4,17 +4,24 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { ArtistLibrary } from '../../components/ArtistLibrary';
 import { ARTIST_SAMPLES_CHANGED } from '../../services/artistSamples';
+import { ImageActivityContext } from '../../components/SmartImage';
 import { clearImageDisplayPageOverride, getMobileImageDisplayPreferences, setMobileImageDisplayPreferences } from '../../services/imageDisplayPreferences';
-const mocks = vi.hoisted(() => ({ status: vi.fn(), catalog: vi.fn(), dictionary: vi.fn(), data: vi.fn(), prepare: vi.fn(), page: vi.fn(), search: vi.fn(), focus: vi.fn(), control: vi.fn(), collection: [] as { sourceType: string; sourceId: string; archived?: boolean }[], collectionListeners: new Set<() => void>() }));
+const mocks = vi.hoisted(() => ({ status: vi.fn(), catalog: vi.fn(), dictionary: vi.fn(), data: vi.fn(), prepare: vi.fn(), begin: vi.fn(), key: 'synthetic-key', confirm: vi.fn(), states: new Map<string, any>(), generationListeners: new Set<() => void>(), generationRevision: 0, generatedSamples: [] as any[], retry: vi.fn(), page: vi.fn(), search: vi.fn(), focus: vi.fn(), control: vi.fn(), collection: [] as { sourceType: string; sourceId: string; archived?: boolean }[], collectionListeners: new Set<() => void>() }));
+vi.mock('../../services/anlasBudget', async original => ({ ...await original<typeof import('../../services/anlasBudget')>(), useAnlasBudget: () => ({ remaining: 100 }), estimateV45GenerationCost: () => 3 }));
+vi.mock('../../services/naiUsage', async original => ({ ...await original<typeof import('../../services/naiUsage')>(), useNovelaiUsage: () => ({ info: null, refreshIfStale: async () => {} }) }));
+vi.mock('../../services/naiRuntime', async original => ({ ...await original<typeof import('../../services/naiRuntime')>(), useNaiRuntime: () => undefined }));
+vi.mock('../../components/ConfirmDialog', () => ({ useConfirmDialog: () => mocks.confirm }));
+vi.mock('../../services/artistSampleGeneration', async original => ({ ...await original<typeof import('../../services/artistSampleGeneration')>(), beginArtistSampleGeneration: mocks.begin, readArtistSampleApiKey: () => mocks.key, getGeneratedArtistSamples: () => mocks.generatedSamples, getArtistSampleGeneration: (tag: string, pack: string) => mocks.states.get(pack + ':' + tag), artistSampleGenerationRevision: () => mocks.generationRevision, subscribeArtistSampleGeneration: (listener: () => void) => { mocks.generationListeners.add(listener); return () => { mocks.generationListeners.delete(listener); }; }, retryArtistSampleSave: mocks.retry }));
 const originalScrollTo = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollTo');
 vi.mock('../../services/artistSamples', async original => ({ ...await original<typeof import('../../services/artistSamples')>(), getArtistSampleStatus: mocks.status, getArtistSampleCatalog: mocks.catalog, getArtistSampleDictionary: mocks.dictionary, controlArtistSamplePack: mocks.control }));
 vi.mock('../../services/artistSampleDrafts', async original => ({ ...await original<typeof import('../../services/artistSampleDrafts')>(), getArtistSampleData: mocks.data, prepareArtistSampleImport: mocks.prepare }));
-vi.mock('../../components/ArtistSampleSettingsDialog', () => ({ ArtistSampleSettingsDialog: ({ tag, pack, enterAfterSave, onSaved, onClose }: any) => <div role="dialog" aria-label="补图生成设置"><span>{tag} {pack}</span><button onClick={() => onSaved({ prompt: 'artist:{artist}', negativePrompt: '', params: { model: pack === 'v45' ? 'nai-diffusion-4-5-full' : 'nai-diffusion-5-full', seed: 1 } })}>{enterAfterSave ? '保存并进入实验室' : '保存配置'}</button><button onClick={onClose}>取消</button></div> }));
+vi.mock('../../components/ArtistSampleSettingsDialog', () => ({ ArtistSampleSettingsDialog: ({ tag, pack, generateAfterSave, onSaved, onClose }: any) => <div role="dialog" aria-label="补图生成设置"><span>{tag} {pack}</span><button onClick={() => onSaved({ prompt: 'artist:{artist}', negativePrompt: '', params: { model: pack === 'v45' ? 'nai-diffusion-4-5-full' : 'nai-diffusion-5-full', seed: 1 } })}>{generateAfterSave ? '保存并生成样张' : '保存配置'}</button><button onClick={onClose}>取消</button></div> }));
 vi.mock('../../services/tagDictionary', async original => ({ ...await original<typeof import('../../services/tagDictionary')>(), getArtistDictionaryPage: mocks.page, searchArtistDictionary: mocks.search }));
 vi.mock('../../services/collectionFavorites', () => ({ collectionSnapshot: () => mocks.collection, subscribeCollection: (listener: () => void) => { mocks.collectionListeners.add(listener); return () => { mocks.collectionListeners.delete(listener); }; } }));
-vi.mock('../../components/ArtistSampleCover', () => ({ ArtistSampleCover: ({ tag, pack, onPackChange, revision, hasPackSample, ownSamples, sampleStatusText, onSupplement, onImageLoad, imageClassName }: any) => <div data-testid={'cover-' + tag} data-pack={pack} data-revision={revision} data-packed={hasPackSample} data-own={ownSamples.length} data-own-ids={ownSamples.map((sample: any) => sample.id).join(',')} data-image-class={imageClassName}>
+vi.mock('../../components/ArtistSampleCover', () => ({ ArtistSampleCover: ({ tag, pack, onPackChange, revision, hasPackSample, ownSamples, sampleStatusText, onSupplement, onGenerate, onImageLoad, imageClassName }: any) => <div data-testid={'cover-' + tag} data-pack={pack} data-revision={revision} data-packed={hasPackSample} data-own={ownSamples.length} data-own-ids={ownSamples.map((sample: any) => sample.id).join(',')} data-image-class={imageClassName}>
   <div data-card-action="true" onClick={event => event.stopPropagation()}>{['v45', 'v5'].map(value => <button key={value} aria-label={'卡片 ' + value} aria-pressed={pack === value} onClick={() => onPackChange(value)}>{value}</button>)}</div>
   {(hasPackSample || ownSamples.length > 0) ? <><img alt={tag} src={'/synthetic-' + pack + '.png'} onLoad={event => onImageLoad?.(event.currentTarget.naturalWidth, event.currentTarget.naturalHeight)} /><div data-card-action="true" onClick={event => event.stopPropagation()}><button aria-label="收藏">收藏</button></div></> : sampleStatusText && <span>{sampleStatusText}</span>}
+  {(hasPackSample || ownSamples.length > 0) && <button data-agent-action="business" onClick={event => { event.stopPropagation(); onGenerate(); }}>{ownSamples.length ? '重新生成样张' : '生成样张'}</button>}
   {!hasPackSample && !ownSamples.length && <button data-card-action="true" onClick={event => { event.stopPropagation(); onSupplement(); }}>补充样张</button>}
 </div> }));
 vi.mock('../../components/ShortestColumnMasonry', async original => ({ ...await original<typeof import('../../components/ShortestColumnMasonry')>(), ShortestColumnMasonry: ({ items, columns, renderItem }: any) => <div data-testid="masonry" data-columns={columns}>{items.map(renderItem)}</div> }));
@@ -29,6 +36,7 @@ const template = { prompt: 'artist:{artist}', negativePrompt: '', params: { mode
 const status = (phase = 'ready', error?: string) => ({ available: true, canManage: true, packs: ['v45', 'v5'].map(id => ({ id, label: id, filename: id + '.tar', phase, progress: 25, count: 2, revision: id + '-one', error })) });
 beforeEach(() => {
   vi.resetAllMocks(); localStorage.clear(); sessionStorage.clear();
+  mocks.key = 'synthetic-key'; mocks.begin.mockResolvedValue(undefined); mocks.confirm.mockResolvedValue(true); mocks.states.clear(); mocks.generationListeners.clear(); mocks.generationRevision = 0; mocks.generatedSamples = [];
   mocks.collection = []; mocks.collectionListeners.clear();
   mocks.status.mockResolvedValue(status());
   mocks.catalog.mockImplementation(async (pack: string) => ({ pack, revision: pack + '-one', tags: pack === 'v45' ? ['alpha_artist', 'unknown archive key'] : ['alpha_artist', 'beta artist'] }));
@@ -42,7 +50,59 @@ beforeEach(() => {
   Object.defineProperty(HTMLElement.prototype, 'scrollTo', { configurable: true, value: vi.fn() });
 });
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); if (originalScrollTo) Object.defineProperty(HTMLElement.prototype, 'scrollTo', originalScrollTo); else delete (HTMLElement.prototype as Partial<HTMLElement>).scrollTo; });
+const publishGeneration = () => act(() => { mocks.generationRevision++; mocks.generationListeners.forEach(listener => listener()); });
 const setup = () => { const notify = vi.fn(), navigate = vi.fn(); const view = render(<ArtistLibrary notify={notify} onNavigateToPlayground={navigate} />); return { ...view, notify, navigate }; };
+
+it('确认一张费用后固定目标版本/模板，取消不投递，自己的样张才有封面重新生成入口', async () => {
+  mocks.data.mockResolvedValue({ templates: { v45: template }, samples: [{ ...template, id: 'old', tag: 'alpha artist', pack: 'v45', imageUrl: '/api/assets/old.png', createdAt: 1 }] });
+  const { navigate } = setup();
+  await screen.findByTestId('cover-alpha artist');
+  const card = screen.getByRole('button', { name: '选择画师：alpha artist' });
+  const regenerate = within(card).getByRole('button', { name: '重新生成样张' });
+  expect(regenerate.closest('.mobile-gallery-frame')).not.toBeNull(); expect(regenerate.getAttribute('data-agent-action')).toBe('business');
+  mocks.confirm.mockResolvedValueOnce(false); await act(async () => fireEvent.click(regenerate));
+  await waitFor(() => expect(mocks.confirm).toHaveBeenCalledOnce()); expect(mocks.begin).not.toHaveBeenCalled();
+  fireEvent.click(within(card).getByRole('button', { name: '重新生成样张' }));
+  await waitFor(() => expect(mocks.begin).toHaveBeenCalledWith('alpha artist', 'v45', template, 'synthetic-key', 3, true, true, expect.any(Function)));
+  expect(mocks.confirm).toHaveBeenLastCalledWith(expect.objectContaining({ rememberKey: 'artist-sample.generate', message: expect.stringContaining('1 张') }));
+  expect(card.getAttribute('aria-pressed')).toBe('false'); expect(navigate).not.toHaveBeenCalled();
+});
+
+it('后台完成新样张即时加入对应卡片，切版/刷新保留原样张；归档失败重试不重新收费', async () => {
+  const { navigate } = setup(); await screen.findByTestId('cover-alpha artist');
+  mocks.states.set('v45:alpha artist', { target: { tag: 'alpha artist', pack: 'v45' }, phase: 'saved', sample: { ...template, id: 'sample-v45-new', tag: 'alpha artist', pack: 'v45', imageUrl: '/api/assets/new.png', createdAt: 10 } });
+  mocks.generatedSamples = [mocks.states.get('v45:alpha artist').sample]; publishGeneration();
+  expect(screen.getByTestId('cover-alpha artist').getAttribute('data-own-ids')).toBe('sample-v45-new');
+  switchCard('alpha artist', 'v5'); expect(screen.getByTestId('cover-alpha artist').getAttribute('data-own')).toBe('0');
+  switchCard('alpha artist', 'v45'); expect(screen.getByTestId('cover-alpha artist').getAttribute('data-own')).toBe('1');
+  mocks.states.set('v45:alpha artist', { target: { tag: 'alpha artist', pack: 'v45' }, phase: 'save_failed', item: { id: 'history-real' }, error: '合成保存失败' }); publishGeneration();
+  fireEvent.click(screen.getByRole('button', { name: '重试保存样张' }));
+  expect(mocks.retry).toHaveBeenCalledWith('alpha artist', 'v45'); expect(mocks.begin).not.toHaveBeenCalled(); expect(mocks.confirm).not.toHaveBeenCalled(); expect(navigate).not.toHaveBeenCalled();
+});
+
+it('已有图包也能以本次新Seed生成独立样张，不触发缺图入口或跳实验室', async () => {
+  mocks.data.mockResolvedValue({ templates: { v45: template }, samples: [] });
+  const { navigate } = setup(); const cover = await screen.findByTestId('cover-alpha artist');
+  expect(within(cover).queryByRole('button', { name: '补充样张' })).toBeNull();
+  fireEvent.click(within(cover).getByRole('button', { name: '生成样张' }));
+  await waitFor(() => expect(mocks.begin).toHaveBeenCalledWith('alpha artist', 'v45', template, 'synthetic-key', 3, true, true, expect.any(Function)));
+  expect(navigate).not.toHaveBeenCalled();
+});
+
+it.each(['hidden', 'key-change'])('费用确认期间%s不迟到提交，已确认任务状态不由页面卸载取消', async change => {
+  let approve!: (value: boolean) => void;
+  mocks.confirm.mockReturnValue(new Promise(resolve => { approve = resolve; }));
+  mocks.data.mockResolvedValue({ templates: { v45: template }, samples: [] });
+  const notify = vi.fn();
+  const view = render(<ImageActivityContext.Provider value><ArtistLibrary notify={notify} /></ImageActivityContext.Provider>);
+  await screen.findByTestId('cover-alpha artist'); disableSampleFilter();
+  fireEvent.click(within(await screen.findByTestId('cover-missing artist')).getByRole('button', { name: '补充样张' }));
+  await waitFor(() => expect(mocks.confirm).toHaveBeenCalledOnce());
+  if (change === 'key-change') mocks.key = 'different-key';
+  else view.rerender(<ImageActivityContext.Provider value={false}><ArtistLibrary notify={notify} /></ImageActivityContext.Provider>);
+  await act(async () => approve(true));
+  expect(mocks.begin).not.toHaveBeenCalled();
+});
 const sampleCards = () => screen.queryAllByRole('button', { name: /^选择画师：/ });
 const disableSampleFilter = () => { fireEvent.click(screen.getByRole('button', { name: /^筛选/ })); fireEvent.click(screen.getByRole('checkbox', { name: '只看有样张' })); fireEvent.keyDown(window, { key: 'Escape' }); };
 const switchCard = (tag: string, pack: 'v45' | 'v5') => fireEvent.click(within(screen.getByTestId('cover-' + tag)).getByRole('button', { name: '卡片 ' + pack }));
@@ -104,9 +164,9 @@ it('单卡缺模板配置固定该卡画师与版本，后续全页切换不会�
   expect(screen.getByRole('dialog').textContent).toContain('missing artist v5');
   expect(mocks.prepare).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('button', { name: 'V5' }));
-  fireEvent.click(screen.getByRole('button', { name: '保存并进入实验室' }));
-  expect(mocks.prepare).toHaveBeenLastCalledWith('missing artist', 'v5', expect.objectContaining({ params: expect.objectContaining({ model: 'nai-diffusion-5-full' }) }));
-  expect(navigate).toHaveBeenCalledOnce();
+  fireEvent.click(screen.getByRole('button', { name: '保存并生成样张' }));
+  await waitFor(() => expect(mocks.begin).toHaveBeenLastCalledWith('missing artist', 'v5', expect.objectContaining({ params: expect.objectContaining({ model: 'nai-diffusion-5-full' }) }), 'synthetic-key', 3, true, false, expect.any(Function)));
+  expect(navigate).not.toHaveBeenCalled();
 });
 
 it('另一版本目录等待期间切卡不伪造图片，迟到旧读取不能覆盖新revision', async () => {
@@ -274,11 +334,11 @@ it.each([390, 1280])('宽度%s时图包样张和自建样张点击都选择画�
   expect(container.querySelectorAll('[data-testid^="cover-"]').length).toBeGreaterThan(0);
 });
 
-it('关闭只看样张可以发现缺图Tag，补充只导入用户已保存的当前模板，不提交生图', async () => {
+it('关闭只看样张可以发现缺图Tag，补充按已保存模板确认一张费用后在原卡生成，不跳实验室', async () => {
   mocks.data.mockResolvedValue({ templates: { v45: template }, samples: [] });
   const { navigate } = setup(); await screen.findByTestId('cover-alpha artist'); disableSampleFilter();
   fireEvent.click(within(await screen.findByTestId('cover-missing artist')).getByRole('button', { name: '补充样张' }));
-  expect(mocks.prepare).toHaveBeenCalledWith('missing artist', 'v45', template); expect(navigate).toHaveBeenCalledOnce();
+  await waitFor(() => expect(mocks.begin).toHaveBeenCalledWith('missing artist', 'v45', template, 'synthetic-key', 3, true, false, expect.any(Function))); expect(navigate).not.toHaveBeenCalled();
   expect(screen.getByRole('button', { name: '选择画师：missing artist' }).getAttribute('aria-pressed')).toBe('false');
 });
 
@@ -288,9 +348,9 @@ it('没有模板首次配置后带入准确目标，打开和取消不自动生�
   expect(screen.getByRole('dialog', { name: '补图生成设置' })).toBeTruthy();
   expect(notify).not.toHaveBeenCalled(); expect(mocks.prepare).not.toHaveBeenCalled(); expect(navigate).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('button', { name: 'V5' }));
-  fireEvent.click(screen.getByRole('button', { name: '保存并进入实验室' }));
-  expect(mocks.prepare).toHaveBeenCalledWith('missing artist', 'v45', expect.objectContaining({ params: expect.objectContaining({ model: 'nai-diffusion-4-5-full' }) }));
-  expect(navigate).toHaveBeenCalledOnce();
+  fireEvent.click(screen.getByRole('button', { name: '保存并生成样张' }));
+  await waitFor(() => expect(mocks.begin).toHaveBeenCalledWith('missing artist', 'v45', expect.objectContaining({ params: expect.objectContaining({ model: 'nai-diffusion-4-5-full' }) }), 'synthetic-key', 3, true, false, expect.any(Function)));
+  expect(navigate).not.toHaveBeenCalled();
 });
 
 it('未配置图包仍可显示当前pack自建样张，变更事件重新读取而不清搜索', async () => {
@@ -401,18 +461,18 @@ it.each([390, 1280])('宽度%s顶栏仅一个画师库设置齿轮，两版模�
     expect(screen.queryByRole('dialog', { name: '画师库设置' })).toBeNull();
     expect(document.activeElement).toBe(gear);
     expect(dialog.textContent).toContain(version === 'V5' ? 'v5' : 'v45'); expect(dialog.textContent).not.toContain('alpha artist');
-    expect(screen.queryByRole('button', { name: '保存并进入实验室' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '保存并生成样张' })).toBeNull();
     fireEvent.click(within(dialog).getByRole('button', { name: '保存配置' }));
     expect(screen.queryByRole('dialog', { name: '补图生成设置' })).toBeNull();
   }
   expect(navigate).not.toHaveBeenCalled(); expect(mocks.prepare).not.toHaveBeenCalled();
   disableSampleFilter();
   fireEvent.click(within(screen.getByTestId('cover-missing artist')).getByRole('button', { name: '补充样张' }));
-  expect(mocks.prepare).toHaveBeenLastCalledWith('missing artist', 'v45', expect.objectContaining({ params: expect.objectContaining({ model: 'nai-diffusion-4-5-full' }) }));
-  expect(navigate).toHaveBeenCalledOnce(); expect(card.getAttribute('aria-pressed')).toBe('false');
+  await waitFor(() => expect(mocks.begin).toHaveBeenLastCalledWith('missing artist', 'v45', expect.objectContaining({ params: expect.objectContaining({ model: 'nai-diffusion-4-5-full' }) }), 'synthetic-key', 3, true, false, expect.any(Function)));
+  expect(navigate).not.toHaveBeenCalled(); expect(card.getAttribute('aria-pressed')).toBe('false');
   switchCard('missing artist', 'v5');
   fireEvent.click(within(screen.getByTestId('cover-missing artist')).getByRole('button', { name: '补充样张' }));
-  expect(mocks.prepare).toHaveBeenLastCalledWith('missing artist', 'v5', expect.objectContaining({ params: expect.objectContaining({ model: 'nai-diffusion-5-full' }) }));
+  await waitFor(() => expect(mocks.begin).toHaveBeenLastCalledWith('missing artist', 'v5', expect.objectContaining({ params: expect.objectContaining({ model: 'nai-diffusion-5-full' }) }), 'synthetic-key', 3, true, false, expect.any(Function)));
 });
 
 it('手机设置先退出底部面板历史层并归还齿轮焦点，再打开版本模板，不叠弹层', async () => {

@@ -55,8 +55,6 @@ const pending = () => filterBy('待生成');
 const configure = (name: string, value: string) => { fireEvent.click(screen.getByRole('button', { name: '本轮设置' })); fireEvent.change(screen.getByRole('spinbutton', { name }), { target: { value } }); fireEvent.keyDown(window, { key: 'Escape' }); };
 const reloadRecords = () => { fireEvent.click(screen.getByRole('button', { name: '管理记录' })); fireEvent.click(screen.getByRole('button', { name: '重新加载实验' })); };
 const details = () => fireEvent.click(screen.getByText('更多操作', { exact: true }));
-const duel = () => { fireEvent.click(screen.getByRole('button', { name: '可选工具' })); fireEvent.click(screen.getByRole('button', { name: '画风对比' })); };
-const loadPair = () => { fireEvent.load(screen.getByAltText('左侧候选')); fireEvent.load(screen.getByAltText('右侧候选')); };
 
 it('手机390px工具栏在内部横向滚动，主操作保持触控尺寸，菜单通过Portal显示且预览不单独放大', async () => {
   mocks.mobile = true; vi.stubGlobal('innerWidth', 390);
@@ -113,10 +111,9 @@ it('整轮按总费用确认，拒绝不提交，随后仅生成本轮原配方�
   fireEvent.click(await screen.findByRole('button', { name: '补齐剩余 2 张' })); await waitFor(() => expect(mocks.generate).toHaveBeenCalledOnce());
   expect(mocks.generate.mock.calls[0][1]).toHaveLength(2); expect(mocks.save).toHaveBeenCalledOnce();
 });
-it.each(['batch', 'refine'] as const)('%s轮次第六张失败后仅手动补缺图，保留五张成品和投票，不显示无效刷新操作', async kind => {
+it('普通轮次第六张失败后仅手动补缺图，保留五张成品和旧投票，不显示无效刷新操作', async () => {
   experiment.candidates = ['a', 'b', 'c', 'd', 'e', 'f'].map(id => candidateFixture(id));
-  experiment.rounds = [{ id: 'partial-round', kind, candidateIds: ['a', 'b', 'c', 'd', 'e', 'f'], opponents: [], createdAt: 1,
-    ...(kind === 'refine' ? { parentId: 'a', baseId: 'a', jitter: 0.3 } : {}) }];
+  experiment.rounds = [{ id: 'partial-round', kind: 'batch', candidateIds: ['a', 'b', 'c', 'd', 'e', 'f'], opponents: [], createdAt: 1 }];
   experiment.votes = [{ id: 'kept-vote', left: 'a', right: 'b', leftImage: 'history-a', rightImage: 'history-b', result: 'left', createdAt: 1 }];
   const before = structuredClone(experiment);
   mocks.history.mockResolvedValue(rows(experiment).slice(0, 5));
@@ -159,7 +156,7 @@ it('连续生成关闭时仍可按一张开始一轮，不强制开启连续请�
 });
 it('切换语言后单张费用同步翻译，固定参数生成入口保留', async () => {
   mocks.history.mockResolvedValue([]); await setup(); pending(); act(() => setLanguage('en'));
-  fireEvent.click(screen.getByRole('button', { name: 'View candidate 1' })); expect(screen.getByRole('button', { name: 'Generate test image · Free' })).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'View candidate 1' })); expect(screen.getByRole('button', { name: 'Generate image · Free' })).toBeTruthy();
 });
 it.each([true, false])('后台费用上涨确认=%s，取消停止任务，授权按原Key补充', async approved => {
   mocks.session = { scope: 'style-roll:synthetic-experiment', key: 'synthetic-key', state: 'awaiting_confirmation', awaiting: { cost: 9, requestedCount: 6, completedCount: 1 }, progress: { current: 1, total: 6 } };
@@ -174,69 +171,32 @@ it('确认期间切Key不授权旧任务；暂停后只在主动继续时恢复'
   cleanup(); mocks.key = 'synthetic-key'; mocks.session = { ...mocks.session, state: 'paused', awaiting: undefined }; await setup(); expect(mocks.pause).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('button', { name: '继续' })); await waitFor(() => expect(mocks.pause).toHaveBeenCalledWith('synthetic-key', false));
 });
-it('双图就绪才接受投票，连按只记一次，盲选不泄露画师，撤销恢复记录', async () => {
-  await setup(); fireEvent.click(screen.getByRole('button', { name: '可选工具' }));
-  const compare = screen.getByRole('button', { name: '画风对比' });
-  expect(document.getElementById(compare.getAttribute('aria-describedby')!)?.textContent).toBe('对比已有图片，选出偏好的画风；不会生成新图。');
-  fireEvent.click(compare); expect(mocks.generate).not.toHaveBeenCalled();
-  const left = screen.getByRole('button', { name: /更喜欢左边/ }) as HTMLButtonElement; expect(left.disabled).toBe(true);
-  fireEvent.load(screen.getByAltText('左侧候选')); expect(left.disabled).toBe(true); fireEvent.load(screen.getByAltText('右侧候选')); expect(left.disabled).toBe(false); expect(screen.queryByText(/artist:alpha/)).toBeNull();
-  let resolve!: () => void; mocks.save.mockImplementationOnce(value => new Promise(done => { resolve = () => done({ ...value, revision: value.revision + 1 }); }));
-  fireEvent.click(left); fireEvent.click(left); expect(mocks.save).toHaveBeenCalledOnce(); await act(async () => resolve());
-  expect(screen.getByText('已对比 1 次')).toBeTruthy(); expect(mocks.save.mock.calls[0][0].votes[0]).toEqual(expect.objectContaining({ leftImage: expect.stringMatching(/^history-/), rightImage: expect.stringMatching(/^history-/) }));
-  fireEvent.click(screen.getByRole('button', { name: '撤销上次对比' })); await screen.findByText('已对比 0 次');
-});
-it('开始下一轮后不能撤销上一轮已确认的投票', async () => {
-  experiment.rounds = [{ id: 'old', kind: 'random', candidateIds: ['a', 'b'], opponents: [], createdAt: 1, closedAt: 2 }, { id: 'new', kind: 'random', candidateIds: ['c'], opponents: ['a', 'b'], createdAt: 3 }];
-  experiment.candidates.push(candidateFixture('c', 'gamma'));
-  experiment.votes = [{ id: 'vote', roundId: 'old', left: 'a', right: 'b', leftImage: 'history-a', rightImage: 'history-b', result: 'left', createdAt: 1 }];
-  mocks.history.mockResolvedValue(rows(experiment)); await setup(); duel(); loadPair();
-  expect((screen.getByRole('button', { name: '撤销上次对比' }) as HTMLButtonElement).disabled).toBe(true); fireEvent.keyDown(window, { key: 'Backspace' }); expect(mocks.save).not.toHaveBeenCalled();
-});
-it('对照图失败只读重试，隐藏页不响应快捷键', async () => {
-  const view = await setup(); duel(); fireEvent.error(screen.getByAltText('左侧候选')); expect(screen.getByText('对照图加载失败')).toBeTruthy();
-  fireEvent.click(screen.getByRole('button', { name: '重试' })); loadPair(); view.rerender(<StyleRollPage {...view.props} active={false} />); fireEvent.keyDown(window, { key: 'ArrowLeft' }); expect(mocks.save).not.toHaveBeenCalled(); expect(mocks.generate).not.toHaveBeenCalled();
-});
 it('画风库按范围浏览，待生成可筛选；全局选择聚焦和关闭详情仍有效', async () => {
   const view = await setup(); fireEvent.click(screen.getByRole('button', { name: '查看候选 1' })); expect(screen.getByRole('button', { name: '查看候选 2' }).className).toContain('brightness-[.7]');
   view.rerender(<StyleRollPage {...view.props} selectionFocusEnabled={false} />); expect(screen.getByRole('button', { name: '查看候选 2' }).className).not.toContain('brightness-[.7]');
   pending(); expect(screen.queryByRole('button', { name: '关闭候选详情' })).toBeNull(); expect(screen.queryByRole('button', { name: '查看候选 1' })).toBeNull();
 });
-it('精确权重变体放在更多操作中，保存新候选，原图及评分不变', async () => {
+it('精确权重变体放在更多操作中，旧投票不影响保存及主动生成新配方', async () => {
+  experiment.votes = [{ id: 'legacy-vote', left: 'a', right: 'b', leftImage: 'history-a', rightImage: 'history-b', result: 'left', createdAt: 1 }];
   await setup(); fireEvent.click(screen.getByRole('button', { name: '查看候选 1' })); details(); fireEvent.click(screen.getByRole('button', { name: '手动调整权重' }));
   fireEvent.change(screen.getByRole('spinbutton', { name: '候选权重：alpha' }), { target: { value: '1.2' } }); fireEvent.click(screen.getByRole('button', { name: '保存为新变体' }));
-  await waitFor(() => expect(mocks.save).toHaveBeenCalledOnce()); const saved = mocks.save.mock.calls[0][0]; expect(saved.candidates[0]).toEqual(experiment.candidates[0]); expect(saved.candidates[2].genes).toEqual([{ tag: 'alpha', weight: 1.2 }]); expect(mocks.generate).not.toHaveBeenCalled();
-});
-it('权重测试保持画师不变，出图后由用户选择，胜出的变体显示在本轮结果，并衔接换Seed验证', async () => {
-  mocks.generate.mockImplementation(async (e: RollExperiment) => { mocks.history.mockResolvedValue(rows(e)); return { session: {}, settle: Promise.resolve({ success: true }) }; });
-  await setup(); configure('本轮生成张数', '1');
-  fireEvent.click(screen.getByRole('button', { name: '查看候选 1' })); details();
-  const testWeights = screen.getByRole('button', { name: '权重测试' });
-  expect(document.getElementById(testWeights.getAttribute('aria-describedby')!)?.textContent).toBe('保持画师不变，自动生成不同权重的图片，再由你选择。');
-  fireEvent.click(testWeights);
-  await screen.findByAltText('左侧候选'); expect(screen.getByText('权重测试 · ±0.3 · 剩余 1 套')).toBeTruthy();
-  const [source, candidate] = mocks.generate.mock.calls[0];
-  expect(candidate.genes.map((gene: any) => gene.tag)).toEqual(source.candidates[0].genes.map((gene: any) => gene.tag));
-  expect(candidate.genes).not.toEqual(source.candidates[0].genes);
-  loadPair(); fireEvent.click(screen.getByRole('button', { name: /更喜欢右边/ }));
-  await screen.findByText('本轮评价完成'); expect(screen.getByAltText('当前最佳画风')).toBeTruthy();
-  expect(screen.getByRole('button', { name: '继续测试权重' })).toBeTruthy();
-  fireEvent.click(screen.getAllByRole('button', { name: '换 Seed 验证' })[0]); await waitFor(() => expect(mocks.generate).toHaveBeenCalledTimes(2)); expect(mocks.generate.mock.calls[1][1]).toHaveLength(6);
-  const last = mocks.save.mock.calls.at(-1)![0] as RollExperiment; expect(last.rounds!.at(-1)!.kind).toBe('verify');
+  await waitFor(() => expect(mocks.save).toHaveBeenCalledOnce()); const saved = mocks.save.mock.calls[0][0]; expect(saved.candidates[0]).toEqual(experiment.candidates[0]); expect(saved.candidates[2].genes).toEqual([{ tag: 'alpha', weight: 1.2 }]); expect(saved.votes).toEqual(experiment.votes); expect(mocks.generate).not.toHaveBeenCalled();
+  fireEvent.click(await screen.findByRole('button', { name: '生成图片 · 免费' })); await waitFor(() => expect(mocks.generate).toHaveBeenCalledOnce());
+  expect(mocks.generate.mock.calls[0][1].genes).toEqual([{ tag: 'alpha', weight: 1.2 }]);
 });
 it('手机详情置于工作区之外，返回保留画风库', async () => {
   mocks.mobile = true; await setup(); fireEvent.click(screen.getByRole('button', { name: '查看候选 1' })); const dialog = await screen.findByRole('dialog', { name: '候选 1' }); expect(dialog.closest('[data-roll-page]')).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: '返回' })); await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull()); expect(screen.getByRole('button', { name: '查看候选 1' })).toBeTruthy();
 });
-it('原评价图缺失保留记录并禁止重画替代，无图仍可撤销旧票', async () => {
+it('旧投票原图缺失保留记录并禁止重画替代', async () => {
   experiment.votes = [{ id: 'v', left: 'a', right: 'b', leftImage: 'missing-a', rightImage: 'missing-b', result: 'left', createdAt: 1 }]; mocks.history.mockResolvedValue([]);
-  await setup(); pending(); fireEvent.click(screen.getByRole('button', { name: '查看候选 1' })); expect(screen.getByText('已评价的对照图在历史中不可用，请恢复原历史或新建复测实验。')).toBeTruthy(); expect(screen.queryByRole('button', { name: /生成对照图/ })).toBeNull();
-  duel(); fireEvent.click(screen.getByRole('button', { name: '撤销上次对比' })); await screen.findByText('已对比 0 次'); expect(mocks.generate).not.toHaveBeenCalled();
+  await setup(); pending(); fireEvent.click(screen.getByRole('button', { name: '查看候选 1' })); expect(screen.getByText('原图暂不可用，请恢复原历史。')).toBeTruthy(); expect(screen.queryByRole('button', { name: /生成图片/ })).toBeNull();
+  expect(screen.queryByRole('button', { name: '撤销上次对比' })).toBeNull(); expect(mocks.save).not.toHaveBeenCalled(); expect(mocks.generate).not.toHaveBeenCalled();
 });
 it('历史读取失败阻止未知状态重复消费，任务保存回执仍保留', async () => {
   mocks.history.mockRejectedValue(new Error('合成历史读取失败')); await setup(); pending(); fireEvent.click(screen.getByRole('button', { name: '查看候选 1' }));
   expect(screen.getAllByText('历史暂不可用')).toHaveLength(2);
-  expect((screen.getByRole('button', { name: /生成对照图/ }) as HTMLButtonElement).disabled).toBe(true); expect(mocks.generate).not.toHaveBeenCalled();
+  expect((screen.getByRole('button', { name: /生成图片/ }) as HTMLButtonElement).disabled).toBe(true); expect(mocks.generate).not.toHaveBeenCalled();
 });
 it('存为风格串保留实际参数，关联失败后重试不重复创建链或封面', async () => {
   const item = rollImageFixture(experiment, experiment.candidates[0]); item.params.steps = 23; mocks.history.mockResolvedValue([item]); const { props } = await setup(); fireEvent.click(screen.getByRole('button', { name: '查看候选 1' }));
@@ -260,7 +220,7 @@ it('卡片直接保存、不进入PK；下一轮优先围绕本记录保存的�
   expect(candidates.filter((candidate: any) => candidate.parents.length === 0)).toHaveLength(1); expect(screen.queryByAltText('左侧候选')).toBeNull();
 });
 
-it.each(['random', 'refine'] as const)('未完成的%s流程也可直接再Roll，不强制完成PK，不归档原图', async kind => {
+it.each(['random', 'refine'] as const)('旧%s轮次可直接再Roll，不归档原图', async kind => {
   experiment.rounds = [kind === 'random' ? { id: 'unfinished', kind, candidateIds: ['a', 'b'], opponents: [], createdAt: 1 } : { id: 'unfinished', kind, candidateIds: ['b'], opponents: [], parentId: 'a', baseId: 'a', jitter: 0.3, createdAt: 1 }];
   await setup(); fireEvent.click(screen.getByRole('button', { name: '再 Roll 一轮' })); await waitFor(() => expect(mocks.generate).toHaveBeenCalledOnce());
   const e = mocks.generate.mock.calls[0][0]; expect(e.rounds[0].closedAt).toBeGreaterThan(0); expect(e.rounds.at(-1).kind).toBe('batch'); expect(e.candidates.slice(0, 2)).toEqual(experiment.candidates); expect(e.votes).toEqual([]);
@@ -336,4 +296,49 @@ it.each([false, true])('多选补图显示实际提交张数，遵循连续生�
   await waitFor(() => expect(mocks.generate).toHaveBeenCalledOnce());
   expect(continuous ? mocks.generate.mock.calls[0][1].length : 1).toBe(continuous ? 24 : 1);
   expect(mocks.generate.mock.calls[0][0].rounds.at(-1).candidateIds).toHaveLength(continuous ? 24 : 1);
+});
+
+it.each(['random', 'evolve', 'refine'] as const)('旧%s轮次及投票只保留资料，页面无对比入口和投票快捷键，仍可保存及Roll', async kind => {
+  experiment.rounds = [{ id: 'legacy', kind, candidateIds: ['b'], opponents: ['a'], createdAt: 1,
+    ...(kind === 'refine' ? { baseId: 'a', parentId: 'a', jitter: 0.3 } : {}) }];
+  experiment.votes = [{ id: 'legacy-vote', left: 'a', right: 'b', leftImage: 'history-a', rightImage: 'history-b', result: 'left', createdAt: 1 }];
+  const originalVotes = structuredClone(experiment.votes), originalRound = structuredClone(experiment.rounds[0]);
+  const { props } = await setup();
+  expect(screen.queryByRole('button', { name: /画风对比|可选工具|进化下一轮|换 Seed 验证/ })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: /^筛选/ }));
+  expect(screen.queryByRole('option', { name: /Elo/ })).toBeNull(); fireEvent.keyDown(window, { key: 'Escape' });
+  fireEvent.click(screen.getByRole('button', { name: '查看候选 1' })); details();
+  expect(screen.queryByRole('button', { name: '权重测试' })).toBeNull(); expect(screen.queryByText(/Elo/)).toBeNull();
+  for (const key of ['ArrowLeft', 'ArrowRight', 'Enter', 'Backspace', ' ']) fireEvent.keyDown(window, { key });
+  expect(mocks.save).not.toHaveBeenCalled(); expect(mocks.generate).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: '存为风格串' }));
+  await waitFor(() => expect(props.onSaveChain).toHaveBeenCalledOnce());
+  expect(mocks.save.mock.calls.at(-1)![0].votes).toEqual(originalVotes);
+  expect(mocks.save.mock.calls.at(-1)![0].rounds[0]).toEqual(originalRound);
+  fireEvent.click(screen.getByRole('button', { name: '再 Roll 一轮' }));
+  await waitFor(() => expect(mocks.generate).toHaveBeenCalledOnce());
+  const next = mocks.generate.mock.calls[0][0]; expect(next.votes).toEqual(originalVotes); expect(next.rounds.at(-1).kind).toBe('batch');
+  expect(next.candidates.slice(0, 2)).toEqual(expect.arrayContaining(experiment.candidates.map(candidate => expect.objectContaining({ id: candidate.id, genes: candidate.genes }))));
+});
+
+it('旧验证轮次只保留资料，不补发验证图或开启对比', async () => {
+  experiment.candidates.push(...['v1', 'v2', 'v3'].map(id => ({ ...candidateFixture(id, 'alpha'), parents: ['a'] })));
+  experiment.rounds = [{ id: 'legacy-verification', kind: 'verify', candidateIds: ['v1', 'v2', 'v3'], opponents: [], parentId: 'a', baseId: 'a', createdAt: 1 }];
+  mocks.history.mockResolvedValue(rows(experiment).slice(0, 2)); await setup();
+  expect(screen.queryByRole('button', { name: /补齐剩余|画风对比|换 Seed 验证/ })).toBeNull();
+  expect(screen.getAllByRole('button', { name: /^查看候选/ })).toHaveLength(2);
+  expect(mocks.generate).not.toHaveBeenCalled(); expect(mocks.save).not.toHaveBeenCalled();
+});
+
+it.each(['random', 'evolve', 'refine'] as const)('旧%s轮次缺图不自动续做，仍可手选生成原配方', async kind => {
+  experiment.rounds = [{ id: 'legacy-pending', kind, candidateIds: ['b'], opponents: ['a'], createdAt: 1,
+    ...(kind === 'refine' ? { baseId: 'a', parentId: 'a', jitter: 0.3 } : {}) }];
+  mocks.history.mockResolvedValue(rows(experiment).slice(0, 1)); await setup();
+  expect(screen.queryByRole('button', { name: /补齐剩余/ })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '批量选择画风' }));
+  fireEvent.click(screen.getByRole('checkbox', { name: '选择画风 2' }));
+  fireEvent.click(screen.getByRole('button', { name: '生成所选 · 1' }));
+  await waitFor(() => expect(mocks.generate).toHaveBeenCalledOnce());
+  expect(mocks.generate.mock.calls[0][1]).toEqual(experiment.candidates[1]);
+  expect(mocks.save.mock.calls[0][0].rounds.at(-1).kind).toBe('batch');
 });

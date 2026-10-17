@@ -2,7 +2,8 @@ import { DatabaseSync } from 'node:sqlite';
 import { afterEach, expect, it } from 'vitest';
 import { handleStyleRollRoute } from '../../worker/routes/styleRollRoutes';
 import { INIT_SQL, type D1Database, type RouteContext } from '../../worker/routes/types';
-import { candidateFixture, rollFixture } from '../fixtures/styleRoll';
+import { candidateFixture, legacyRollFixture, rollFixture } from '../fixtures/styleRoll';
+import { beginRollRound } from '../../services/styleRollWorkflow';
 
 const databases: DatabaseSync[] = [];
 afterEach(() => { databases.splice(0).forEach(db => db.close()); });
@@ -70,11 +71,22 @@ it('换Seed候选和轮次对手不可被旧页面改写，已确认的轮次不
   expect((await f.invoke({ ...closed, rounds: [{ ...closed.rounds[0], closedAt: 3 }] }))!.status).toBe(400);
 });
 
-it('无需PK的出图批次沿用原私人存储，可保存偏好并完整回读，不要求投票', async () => {
+it('普通出图批次沿用原私人存储，可保存偏好并完整回读，不要求投票', async () => {
   const f = fixture(), e = { ...rollFixture(), revision: 0, candidates: [candidateFixture('a')], rounds: [{ id: 'batch', kind: 'batch', candidateIds: ['a'], opponents: [], createdAt: 1 }] };
   const { experiment: saved } = await (await f.invoke(e))!.json() as any;
   expect((await f.invoke({ ...saved, candidates: [{ ...saved.candidates[0], savedChainId: 'kept-chain' }] }))!.status).toBe(200);
   const { experiments } = await (await f.invoke())!.json() as any; expect(experiments[0].candidates[0].savedChainId).toBe('kept-chain'); expect(experiments[0].rounds[0].kind).toBe('batch'); expect(experiments[0].votes).toEqual([]);
+});
+
+it('旧比较存档可继续追加普通批次，旧票、轮次、原图绑定和谱系原样保存', async () => {
+  const f = fixture(), e = { ...legacyRollFixture(), revision: 0 };
+  const { experiment: saved } = await (await f.invoke(e))!.json() as any;
+  const next = beginRollRound(saved, e.artists.map(artist => artist.tag), 4);
+  expect((await f.invoke(next))!.status).toBe(200);
+  const { experiments } = await (await f.invoke())!.json() as any, restored = experiments[0];
+  expect(restored.candidates.slice(0, e.candidates.length)).toEqual(e.candidates);
+  expect(restored.rounds.slice(0, e.rounds!.length)).toEqual(e.rounds); expect(restored.votes).toEqual(e.votes);
+  expect(restored.finalCandidateId).toBe(e.finalCandidateId); expect(restored.rounds.at(-1).kind).toBe('batch');
 });
 
 it('整条记录可移入和恢复回收站，候选、轮次和原存储键完整保留，坏标记拒绝写入', async () => {

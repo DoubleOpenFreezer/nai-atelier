@@ -7,6 +7,7 @@ import { deleteR2File, processImageUpload } from './settingsRoutes';
 import { normalizeChainTags } from '../../services/chainTags';
 import { shuffleHistoryIds } from '../../services/historyBrowse';
 import { normalizeCollectionTagNames } from '../../services/inspirationUtils';
+import { archiveArtistSampleHistory } from './artistSampleRoutes';
 
 // 进程内标记：DDL 幂等但昂贵（1 CREATE TABLE + 16 ALTER + 3 INDEX），
 // 同一实例只在首个请求跑一次，不再每个灵感请求都重复约 20 条语句。
@@ -313,10 +314,7 @@ export async function handleHistoryRoute(ctx: RouteContext): Promise<Response | 
       for (const row of rows) {
         await db.prepare('DELETE FROM local_generation_history WHERE id = ? AND user_id = ?')
           .bind(row.id, currentUser.id).run();
-        if (row.image_key) {
-          const reference = await db.prepare('SELECT COUNT(*) AS count FROM inspirations WHERE image_key = ?').bind(row.image_key).first<{count: number}>();
-          if (Number(reference?.count || 0) === 0) await env.BUCKET!.delete(row.image_key);
-        }
+        if (row.image_key) await deleteR2File(env, `/api/assets/${encodeURIComponent(row.image_key)}`, db);
         await env.BUCKET!.delete(localHistoryEditMaskKey(currentUser.id, row.id));
       }
       return rows.length;
@@ -611,16 +609,20 @@ export async function handleHistoryRoute(ctx: RouteContext): Promise<Response | 
         body.externalSource || existing?.external_source || null,
         body.externalId || existing?.external_id || null
       ).run();
-      if (existing?.image_key && existing.image_key !== imageKey) await env.BUCKET.delete(existing.image_key);
+      if (existing?.image_key && existing.image_key !== imageKey) await deleteR2File(env, `/api/assets/${encodeURIComponent(existing.image_key)}`, db);
       if (!editMask) await env.BUCKET.delete(editMaskKey);
-      return json({ item: mapLocalHistoryRow({
+      const item = mapLocalHistoryRow({
         id, image_key: imageKey, prompt: body.prompt, negative_prompt: body.negativePrompt,
         params: JSON.stringify(normalizedParams), base_prompt: body.basePrompt, subject_prompt: body.subjectPrompt,
         modules: JSON.stringify(body.modules || []), structure_version: hasStructuredInput ? 1 : 0, source_chain_id: body.sourceChainId,
         source_chain_name: body.sourceChainName, source_chain_type: body.sourceChainType,
         is_favorite: isFavorite ? 1 : 0, favorite_at: favoriteAt,
         created_at: createdAt
-      }) });
+      });
+      try { await archiveArtistSampleHistory(ctx, item, imageKey); }
+      // 样张失败仍交付已保存的历史，前端仅重试入库，不能再次消费生成。
+      catch (cause) { console.error('画师样张自动保存失败，生成历史已保留', cause); }
+      return json({ item });
     }
 
     if (path === '/api/local-history' && method === 'DELETE') {
@@ -766,11 +768,7 @@ export async function handleHistoryRoute(ctx: RouteContext): Promise<Response | 
 
   const deleteInspirationAsset = async (item: any) => {
     if (item.image_key) {
-      const references = await db.prepare(`SELECT
-        (SELECT COUNT(*) FROM local_generation_history WHERE image_key = ?) +
-        (SELECT COUNT(*) FROM inspirations WHERE image_key = ? AND id != ?) AS count`)
-        .bind(item.image_key, item.image_key, item.id).first<{count: number}>();
-      if (Number(references?.count || 0) === 0 && env.BUCKET) await env.BUCKET.delete(item.image_key);
+      await deleteR2File(env, `/api/assets/${encodeURIComponent(item.image_key)}`, db);
     } else if (item.image_url) {
       await deleteR2File(env, item.image_url, db);
     }

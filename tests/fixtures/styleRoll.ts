@@ -7,6 +7,25 @@ export const rollFixture = (): RollExperiment => ({
   artists: parseRollArtists('alpha, beta, gamma, delta, epsilon, zeta, eta, theta'), rules: { ...DEFAULT_ROLL_RULES }, candidates: [], votes: [],
 });
 export const candidateFixture = (id: string, tag = id): RollCandidate => ({ id, genes: [{ tag, weight: 1 }], method: 'random', parents: [], generation: 0, createdAt: 1, archived: false });
+export const legacyRollFixture = (): RollExperiment => {
+  const e = rollFixture();
+  e.candidates = [candidateFixture('base', 'alpha'),
+    { ...candidateFixture('mutated', 'beta'), method: 'mutate', parents: ['base'], generation: 1 },
+    { ...candidateFixture('crossed', 'gamma'), method: 'crossover', parents: ['base', 'mutated'], generation: 2 },
+    { ...candidateFixture('refined', 'delta'), method: 'refine', parents: ['mutated'], generation: 2 },
+    { ...candidateFixture('manual', 'epsilon'), method: 'manual', parents: ['base'], generation: 1 },
+    ...[1, 2, 3].map(seed => ({ ...candidateFixture(`verify-${seed}`, 'alpha'), method: 'manual' as const, parents: ['base'], seed }))];
+  e.rounds = [
+    { id: 'random', kind: 'random', candidateIds: ['base'], opponents: ['mutated'], createdAt: 1 },
+    { id: 'evolve', kind: 'evolve', candidateIds: ['crossed'], opponents: ['base'], createdAt: 2 },
+    { id: 'refine', kind: 'refine', candidateIds: ['refined'], opponents: [], baseId: 'base', parentId: 'mutated', jitter: 0.2, createdAt: 3 },
+    { id: 'batch', kind: 'batch', candidateIds: ['manual'], opponents: [], createdAt: 4 },
+    { id: 'verify', kind: 'verify', candidateIds: ['verify-1', 'verify-2', 'verify-3'], opponents: [], baseId: 'base', parentId: 'base', createdAt: 5 },
+  ];
+  e.votes = [{ id: 'old-vote', roundId: 'random', left: 'base', right: 'mutated', leftImage: 'original-base', rightImage: 'original-mutated', result: 'left', createdAt: 1 }];
+  e.finalCandidateId = 'refined';
+  return e;
+};
 export const rollImageFixture = (experiment: RollExperiment, candidate: RollCandidate, id = `history-${candidate.id}`): LocalGenItem => ({
   id, imageUrl: `/api/local-history/${id}/image`, prompt: rollPrompt(experiment.template, candidate.genes), negativePrompt: experiment.template.negativePrompt,
   params: { ...structuredClone(experiment.template.params), ...(candidate.seed === undefined ? {} : { seed: candidate.seed }) }, createdAt: 1, sourceChainId: rollSourceId(experiment.id), sourceChainName: experiment.name, sourceChainType: 'style',

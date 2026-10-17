@@ -38,15 +38,10 @@ describe('界面语言', () => {
       expect(cardMenu).toContain('V4.5'); expect(cardMenu).not.toContain('{0}'); expect(cardMenu).not.toContain('样张版本与补图');
     }
   });
-  it('Roll 串的操作、数量、错误与画风占位符具备四种译文，切语言不改原 Tag', () => {
+  it('Roll 串的生成与保存操作、手动调权重和状态提示具备四种译文，切语言不改原 Tag', () => {
     for (const language of LANGUAGES.filter(item => item.code !== 'zh-CN')) {
-      for (const key of ['生成对照图', '新建实验', '撤销上次对比', '已评价候选的对照图不可替换', '从风格串提取画师', '权重测试', '继续测试权重', '保存微调后的画风', '手动调整权重', '保持画师不变，自动生成不同权重的图片，再由你选择。', '对比已有图片，选出偏好的画风；不会生成新图。', '画师基因配方', '画风对决', '盲选已遮盖画师信息', '纯新探索', '微调变体', '随机', '变异', '双亲', '微调', '手动', '已筛选', '候选 A', '候选 B']) expect(translate(language.code, key)).not.toBe(key);
-      expect(translate(language.code, '左')).toBe(({ 'zh-TW': '左', en: 'Left', ja: '左', ko: '왼쪽' } as Record<string, string>)[language.code]);
-      expect(translate(language.code, '右')).toBe(({ 'zh-TW': '右', en: 'Right', ja: '右', ko: '오른쪽' } as Record<string, string>)[language.code]);
-      expect(translate(language.code, '画风对比')).toBe(({ 'zh-TW': '畫風比較', en: 'Style comparison', ja: '画風比較', ko: '화풍 비교' } as Record<string, string>)[language.code]);
+      for (const key of ['生成图片', '生成配置', '载入生成配置', '原图暂不可用，请恢复原历史。', '历史暂不可用，请重新加载后再生成。', '新建实验', '对比记录无效', '已评价候选的对照图不可替换', '从风格串提取画师', '画师基因配方', '保存为新变体', '手动调整权重', '纯新探索', '微调变体', '随机', '变异', '双亲', '微调', '手动', '已筛选']) expect(translate(language.code, key)).not.toBe(key);
       expect(translate(language.code, '公共提示词（{style} 为画风位置）')).toContain('{style}');
-      expect(translate(language.code, '{0} 次对比', [12])).toContain('12');
-      expect(translate(language.code, '权重测试 · ±{0} · 剩余 {1} 套', [0.3, 2])).toContain('0.3');
       expect(translate(language.code, '锁定画师：{0}', ['alpha_artist (style)'])).toContain('alpha_artist (style)');
     }
   });

@@ -1,9 +1,8 @@
-import React, { useMemo, useState } from 'react';
+import React, { useState } from 'react';
 import { Check, Compass, Dice5, Flame, Layers, RotateCcw, Save, Sparkles, Trash2 } from 'lucide-react';
 import type { LocalGenItem } from '../../types';
 import { t } from '../../services/i18n';
-import { scoreRollCandidates, type RollCandidate, type RollExperiment } from '../../services/styleRoll';
-import { rollTier } from '../../services/styleRollWorkflow';
+import { type RollCandidate, type RollExperiment } from '../../services/styleRoll';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../../services/imageDisplayPreferences';
 import { useGalleryFrostedCaption } from '../../services/appearancePreferences';
 import { ShortestColumnMasonry, useMasonryColumnCount } from '../ShortestColumnMasonry';
@@ -15,7 +14,7 @@ import { EmptyState } from '../DesignSystem';
 interface Props {
   experiment: RollExperiment; candidates: RollCandidate[]; images: Map<string, LocalGenItem>; selectedId: string; selectionFocusEnabled: boolean;
   historyReady: boolean; historyLoading: boolean;
-  selecting: boolean; selectedIds: Set<string>; sort: string; onSelect: (id: string) => void; onToggle: (id: string) => void;
+  selecting: boolean; selectedIds: Set<string>; onSelect: (id: string) => void; onToggle: (id: string) => void;
   onSave: (id: string) => void; onArchive: (id: string) => void; busy: boolean;
   scrollRef: React.RefObject<HTMLDivElement | null>; onScroll: () => void;
   notify: (message: string, type?: 'success' | 'error') => void;
@@ -38,20 +37,18 @@ const GENE_COLORS = [
   'bg-cyan-500 text-cyan-700 dark:text-cyan-300',
 ];
 
-export const StyleRollGallery: React.FC<Props> = ({ experiment, candidates, images, selectedId, selectionFocusEnabled, historyReady, historyLoading, selecting, selectedIds, sort, onSelect, onToggle, onSave, onArchive, busy, scrollRef, onScroll, notify }) => {
+export const StyleRollGallery: React.FC<Props> = ({ experiment, candidates, images, selectedId, selectionFocusEnabled, historyReady, historyLoading, selecting, selectedIds, onSelect, onToggle, onSave, onArchive, busy, scrollRef, onScroll, notify }) => {
   const display = useMobileImageDisplayPreferences('roll');
   const requestedColumns = useMasonryColumnCount(display, undefined, scrollRef, 220);
   const columns = display.desktopColumns === 'auto' ? Math.min(4, requestedColumns) : requestedColumns;
   const frosted = useGalleryFrostedCaption();
   const [ratios, setRatios] = useState<Record<string, number>>({});
-  const scores = useMemo(() => scoreRollCandidates(experiment), [experiment]);
-  const ratings = useMemo(() => [...scores.values()].filter(score => score.matches).map(score => score.rating), [scores]);
   const ratio = (candidate: RollCandidate) => ratios[candidate.id] || (images.get(candidate.id)?.params.width ?? experiment.template.params.width) / (images.get(candidate.id)?.params.height ?? experiment.template.params.height);
 
   const renderCard = (candidate: RollCandidate) => {
     const item = images.get(candidate.id), index = experiment.candidates.indexOf(candidate) + 1;
     const selected = selecting ? selectedIds.has(candidate.id) : selectedId === candidate.id;
-    const score = scores.get(candidate.id)!;
+    const hasOriginal = experiment.votes.some(vote => vote.left === candidate.id || vote.right === candidate.id);
     const method = methodMeta[candidate.method] || methodMeta.random;
     const activate = () => { if (selecting) { if (!busy) onToggle(candidate.id); } else onSelect(selectedId === candidate.id ? '' : candidate.id); };
 
@@ -83,7 +80,7 @@ export const StyleRollGallery: React.FC<Props> = ({ experiment, candidates, imag
               <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gray-100 dark:bg-gray-900 text-gray-400">
                 <Dice5 className="h-6 w-6 animate-pulse" />
               </div>
-              <span className="text-xs font-medium">{t(historyReady ? score.matches ? '原图暂不可用' : '待生成' : historyLoading ? '加载中…' : '历史暂不可用')}</span>
+              <span className="text-xs font-medium">{t(historyReady ? hasOriginal ? '原图暂不可用' : '待生成' : historyLoading ? '加载中…' : '历史暂不可用')}</span>
             </div>}
 
         {selecting ? (
@@ -157,11 +154,6 @@ export const StyleRollGallery: React.FC<Props> = ({ experiment, candidates, imag
             </span>
           )}
           <span className="gallery-card-meta font-mono text-xs text-gray-400">#{index}</span>
-          {sort === 'rating' && (
-            <span className="gallery-card-badge shrink-0 rounded-md bg-indigo-50 border border-indigo-100 px-1.5 py-0.5 text-xs font-semibold text-indigo-600 dark:bg-indigo-950/50 dark:border-indigo-800 dark:text-indigo-300">
-              {rollTier(score.rating, score.matches, ratings).tier} · {Math.round(score.rating)}
-            </span>
-          )}
         </div>
       </div>
     </PressRevealSurface>;

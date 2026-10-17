@@ -73,7 +73,7 @@ const SetupForm: React.FC<Props> = ({ initial, chains, libraryCount = 0, library
       </header>
       <div className="flex flex-none gap-2 border-b border-gray-200 px-4 py-2 dark:border-gray-800">
         <ToolbarButton active={section === 'pool'} onClick={() => setSection('pool')}>{t('抽取设置')}</ToolbarButton>
-        <ToolbarButton active={section === 'template'} onClick={() => setSection('template')}>{t('对照配置')}</ToolbarButton>
+        <ToolbarButton active={section === 'template'} onClick={() => setSection('template')}>{t('生成配置')}</ToolbarButton>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
         {section === 'pool' ? <div className="space-y-4">
@@ -99,7 +99,7 @@ const SetupForm: React.FC<Props> = ({ initial, chains, libraryCount = 0, library
           </div></details>
         </div> : <div className="space-y-4">
           {frozen && <p className="flex items-center gap-2 text-xs text-gray-500"><LockKeyhole className="h-4 w-4" />{t('配置已随候选固定；修改模型、提示词或 Seed 请新建实验。')}</p>}
-          {!frozen && <label className="block text-xs font-semibold">{t('载入风格串')}<select aria-label={t('载入对照配置')} className={`${field} mt-1`} value="" onChange={event => importChain(event.target.value)}><option value="">{t('选择已有风格串')}</option>{chains.filter(chain => chain.type === 'style').map(chain => <option key={chain.id} value={chain.id}>{chain.name}</option>)}</select></label>}
+          {!frozen && <label className="block text-xs font-semibold">{t('载入风格串')}<select aria-label={t('载入生成配置')} className={`${field} mt-1`} value="" onChange={event => importChain(event.target.value)}><option value="">{t('选择已有风格串')}</option>{chains.filter(chain => chain.type === 'style').map(chain => <option key={chain.id} value={chain.id}>{chain.name}</option>)}</select></label>}
           <label className="block text-xs font-semibold">{t('公共提示词（{style} 为画风位置）')}<textarea className={`${field} mt-1 min-h-28 resize-y font-mono`} value={draft.template.prompt} disabled={busy || frozen} onChange={event => setDraft({ ...draft, template: { ...draft.template, prompt: event.target.value } })} /></label>
           <label className="block text-xs font-semibold">{t('负面提示词')}<textarea className={`${field} mt-1 min-h-20 resize-y font-mono`} value={draft.template.negativePrompt} disabled={busy || frozen} onChange={event => setDraft({ ...draft, template: { ...draft.template, negativePrompt: event.target.value } })} /></label>
           <ChainEditorParams params={draft.template.params} prompt={draft.template.prompt} setParams={params => setDraft({ ...draft, template: { ...draft.template, params } })} canEdit={!busy && !frozen} markChange={() => {}} enforceFreeStepLimit={enforceFreeStepLimit} />

@@ -38,7 +38,6 @@ export interface RollExperiment {
   finalCandidateId?: string;
   archived?: boolean;
 }
-export interface RollScore { rating: number; matches: number; wins: number; draws: number }
 
 export const DEFAULT_ROLL_RULES: RollRules = { minArtists: 3, maxArtists: 6, minWeight: 0.7, maxWeight: 1.4 };
 export const ROLL_CANDIDATE_LIMIT = 240;
@@ -161,47 +160,7 @@ export function validateRollExperiment(value: unknown): asserts value is RollExp
   }
 }
 
-/** Elo 只表达这个实验内的相对偏好，分数由投票重放，撤销不积累舍入误差。 */
-export function scoreRollCandidates(experiment: Pick<RollExperiment, 'candidates' | 'votes'>): Map<string, RollScore> {
-  const scores = new Map(experiment.candidates.map(candidate => [candidate.id, { rating: 1000, matches: 0, wins: 0, draws: 0 }]));
-  for (const vote of experiment.votes) {
-    const left = scores.get(vote.left), right = scores.get(vote.right);
-    if (!left || !right) continue;
-    const result = vote.result === 'draw' ? 0.5 : vote.result === 'left' ? 1 : 0;
-    const delta = 32 * (result - 1 / (1 + 10 ** ((right.rating - left.rating) / 400)));
-    left.rating += delta; right.rating -= delta;
-    left.matches++; right.matches++;
-    if (result === 1) left.wins++; else if (result === 0) right.wins++; else { left.draws++; right.draws++; }
-  }
-  return scores;
-}
-
-export function rankRollCandidates(experiment: Pick<RollExperiment, 'candidates' | 'votes'>): RollCandidate[] {
-  const scores = scoreRollCandidates(experiment);
-  return [...experiment.candidates].sort((a, b) => Number(scores.get(b.id)!.matches > 0) - Number(scores.get(a.id)!.matches > 0) || scores.get(b.id)!.rating - scores.get(a.id)!.rating || scores.get(b.id)!.matches - scores.get(a.id)!.matches || a.createdAt - b.createdAt || a.id.localeCompare(b.id));
-}
-
-export const rollPairKey = (left: string, right: string) => [left, right].sort().join(':');
-
-/** 优先补足未评候选，再选择接近分数的少见组合；跳过不被算成平局。 */
-export function nextRollPair(experiment: RollExperiment, ready: Set<string>, skipped = new Set<string>()): [string, string] | null {
-  const scores = scoreRollCandidates(experiment), eligible = experiment.candidates.filter(candidate => !candidate.archived && ready.has(candidate.id));
-  const counts = new Map<string, number>();
-  for (const vote of experiment.votes) { const key = rollPairKey(vote.left, vote.right); counts.set(key, (counts.get(key) || 0) + 1); }
-  const last = experiment.votes.at(-1);
-  let best: [string, string] | null = null, cost = Infinity;
-  for (let i = 0; i < eligible.length; i++) for (let j = i + 1; j < eligible.length; j++) {
-    const a = eligible[i].id, b = eligible[j].id, key = rollPairKey(a, b);
-    if (skipped.has(key)) continue;
-    const left = scores.get(a)!, right = scores.get(b)!;
-    const candidateCost = (counts.get(key) || 0) * 10000 + Math.min(left.matches, right.matches) * 1000 + Math.max(left.matches, right.matches) * 20 +
-      Math.abs(left.rating - right.rating) + (last && rollPairKey(last.left, last.right) === key ? 5000 : 0);
-    if (candidateCost < cost) { cost = candidateCost; best = (experiment.votes.length + i + j) % 2 ? [a, b] : [b, a]; }
-  }
-  return best;
-}
-
-export function rollCandidates(experiment: RollExperiment, count: number, options: { mode?: 'random' | 'saved' | 'evolve' | 'mutate' | 'refine'; parentId?: string; jitter?: number; random?: () => number } = {}): RollCandidate[] {
+export function rollCandidates(experiment: RollExperiment, count: number, options: { mode?: 'random' | 'saved'; random?: () => number } = {}): RollCandidate[] {
   validateRollRules(experiment.artists, experiment.rules);
   if (!Number.isSafeInteger(count) || count < 1 || count > 24 || experiment.candidates.length + count > ROLL_CANDIDATE_LIMIT) throw new Error('每次可 Roll 1～24 串，每个实验最多 240 串');
   const random = options.random || Math.random, rules = experiment.rules;
@@ -211,59 +170,26 @@ export function rollCandidates(experiment: RollExperiment, count: number, option
   const integer = (min: number, max: number) => min + Math.min(max - min, Math.floor(random() * (max - min + 1)));
   const weight = () => integer(Math.round(rules.minWeight * 10), Math.round(rules.maxWeight * 10)) / 10;
   const clamp = (value: number) => tenth(Math.max(rules.minWeight, Math.min(rules.maxWeight, value)));
-  const scores = scoreRollCandidates(experiment);
-  const rated = rankRollCandidates(experiment).filter(candidate => !candidate.archived && scores.get(candidate.id)!.matches > 0);
-  const parents = options.mode === 'saved' ? experiment.candidates.filter(candidate => candidate.savedChainId && !candidate.archived && candidate.genes.some(gene => poolKeys.has(tagKey(gene.tag))))
-    : options.parentId ? experiment.candidates.filter(candidate => candidate.id === options.parentId && !candidate.archived) : rated.slice(0, Math.max(1, Math.ceil(rated.length * 0.3)));
-  if (options.mode !== undefined && !['random', 'saved'].includes(options.mode) && !parents.length) throw new Error('请先选择一个候选，或完成对比后使用排名靠前的候选');
+  const parents = options.mode === 'saved' ? experiment.candidates.filter(candidate => candidate.savedChainId && !candidate.archived && candidate.genes.some(gene => poolKeys.has(tagKey(gene.tag)))) : [];
   const signatures = new Set(experiment.candidates.map(candidate => rollSignature(candidate.genes))), result: RollCandidate[] = [];
   for (let attempts = 0; result.length < count && attempts < count * 100; attempts++) {
-    let method: RollMethod = 'random', lineage: RollCandidate[] = [], inherited: RollGene[] = [];
-    if (options.mode === 'refine') {
-      const parent = parents[0], jitter = options.jitter ?? 0.3;
-      if (![0.1, 0.2, 0.3].includes(jitter)) throw new Error('权重微调幅度需要为 ±0.1、±0.2 或 ±0.3');
-      method = 'refine'; lineage = [parent];
-      // 权重微调保留全部画师；排除／锁定变化由用户先通过变异建立新候选。
-      if (parent.genes.some(gene => !poolKeys.has(tagKey(gene.tag))) || locked.some(artist => !parent.genes.some(gene => tagKey(gene.tag) === tagKey(artist.tag)))) throw new Error('抽取条件已变化，请先变异候选，再微调权重');
-      inherited = parent.genes.map(gene => ({ ...gene, weight: lockedKeys.has(tagKey(gene.tag)) ? locked.find(artist => tagKey(artist.tag) === tagKey(gene.tag))!.weight : clamp(gene.weight + integer(-Math.round(jitter * 10), Math.round(jitter * 10)) / 10) }));
-    } else if (options.mode === 'evolve' || options.mode === 'mutate' || options.mode === 'saved') {
-      // 保存就是偏好信号；每四套留一套全新探索，不要求先投票。
-      method = options.mode === 'saved' ? parents.length && result.length % 4 !== 3 ? 'mutate' : 'random'
-        : options.mode === 'mutate' ? 'mutate' : choose<RollMethod>(['mutate', 'crossover', 'random']);
-      if (method !== 'random') {
-        const first = choose(parents); lineage = [first]; inherited = first.genes.map(gene => ({ ...gene }));
-        const others = parents.filter(candidate => candidate.id !== first.id);
-        if (method === 'crossover' && others.length) {
-          const second = choose(others); lineage.push(second);
-          const byTag = new Map(inherited.map(gene => [tagKey(gene.tag), gene]));
-          second.genes.forEach(gene => { if (!byTag.has(tagKey(gene.tag)) || random() < 0.5) byTag.set(tagKey(gene.tag), { ...gene }); });
-          inherited = [...byTag.values()];
-        } else if (options.mode === 'saved') {
-          const available = inherited.filter(gene => poolKeys.has(tagKey(gene.tag)) && !lockedKeys.has(tagKey(gene.tag)));
-          const keep = Math.ceil(available.length * 0.65); inherited = [];
-          while (inherited.length < keep) { const gene = choose(available); inherited.push({ ...gene, weight: clamp(gene.weight + integer(-3, 3) / 10) }); available.splice(available.indexOf(gene), 1); }
-        } else {
-          method = 'mutate';
-          inherited = inherited.filter(gene => lockedKeys.has(tagKey(gene.tag)) || random() >= 0.35)
-            .map(gene => ({ ...gene, weight: clamp(gene.weight + integer(-3, 3) / 10) }));
-        }
-      }
+    // 保存就是偏好信号；每四套留一套全新探索。
+    const parent = parents.length && result.length % 4 !== 3 ? choose(parents) : undefined;
+    const inherited: RollGene[] = [];
+    if (parent) {
+      const available = parent.genes.filter(gene => poolKeys.has(tagKey(gene.tag)) && !lockedKeys.has(tagKey(gene.tag)));
+      const keep = Math.ceil(available.length * 0.65);
+      while (inherited.length < keep) { const gene = choose(available); inherited.push({ ...gene, weight: clamp(gene.weight + integer(-3, 3) / 10) }); available.splice(available.indexOf(gene), 1); }
     }
-    let genes: RollGene[];
-    if (method === 'refine') genes = inherited;
-    else {
-      genes = locked.map(({ tag, weight: lockedWeight }) => ({ tag, weight: lockedWeight }));
-      const target = integer(Math.max(rules.minArtists, locked.length), Math.min(rules.maxArtists, pool.length));
-      const available = inherited.filter(gene => poolKeys.has(tagKey(gene.tag)) && !lockedKeys.has(tagKey(gene.tag)));
-      while (available.length && genes.length < target) { const selected = choose(available); genes.push({ ...selected, weight: clamp(selected.weight) }); available.splice(available.indexOf(selected), 1); }
-      const unused = pool.filter(artist => !genes.some(gene => tagKey(gene.tag) === tagKey(artist.tag)));
-      while (genes.length < target && unused.length) { const artist = choose(unused); genes.push({ tag: artist.tag, weight: weight() }); unused.splice(unused.indexOf(artist), 1); }
-    }
+    const genes = locked.map(({ tag, weight: lockedWeight }) => ({ tag, weight: lockedWeight }));
+    const target = integer(Math.max(rules.minArtists, locked.length), Math.min(rules.maxArtists, pool.length));
+    while (inherited.length && genes.length < target) { const selected = choose(inherited); genes.push({ ...selected, weight: clamp(selected.weight) }); inherited.splice(inherited.indexOf(selected), 1); }
+    const unused = pool.filter(artist => !genes.some(gene => tagKey(gene.tag) === tagKey(artist.tag)));
+    while (genes.length < target && unused.length) { const artist = choose(unused); genes.push({ tag: artist.tag, weight: weight() }); unused.splice(unused.indexOf(artist), 1); }
     const signature = rollSignature(genes);
     if (signatures.has(signature)) continue;
     signatures.add(signature);
-    const generation = options.mode === 'evolve' ? Math.max(0, ...experiment.candidates.map(candidate => candidate.generation)) + 1 : lineage.length ? Math.max(...lineage.map(parent => parent.generation)) + 1 : 0;
-    result.push({ id: createUuid(), genes, method, parents: lineage.map(parent => parent.id), generation, createdAt: Date.now() + result.length, archived: false });
+    result.push({ id: createUuid(), genes, method: parent ? 'mutate' : 'random', parents: parent ? [parent.id] : [], generation: parent ? parent.generation + 1 : 0, createdAt: Date.now() + result.length, archived: false });
   }
   if (!result.length) throw new Error('当前规则下没有新的组合，请调整画师数量、锁定项或权重范围');
   return result;
@@ -278,19 +204,19 @@ export function rollCandidateToChain(experiment: RollExperiment, candidate: Roll
   };
 }
 
-/** 精确改权重也建立新候选，不能让旧图和旧评分跟着文字发生变化。 */
+/** 精确改权重也建立新候选，不能让旧图的配方跟着文字发生变化。 */
 export function manualRollVariant(experiment: RollExperiment, parent: RollCandidate, weights: number[]): RollCandidate {
   if (!experiment.candidates.some(candidate => candidate.id === parent.id) || parent.archived || weights.length !== parent.genes.length) throw new Error('请先选择一个有效候选');
   if (experiment.candidates.length >= ROLL_CANDIDATE_LIMIT) throw new Error('每次可 Roll 1～24 串，每个实验最多 240 串');
   const genes = parent.genes.map((gene, index) => {
     const artist = experiment.artists.find(item => tagKey(item.tag) === tagKey(gene.tag));
-    if (!artist || artist.excluded) throw new Error('抽取条件已变化，请先变异候选，再微调权重');
+    if (!artist || artist.excluded) throw new Error('抽取条件已变化，请重新抽取后调整权重');
     const weight = artist.locked ? artist.weight : weights[index];
     if (!validWeight(weight) || (!artist.locked && (weight < experiment.rules.minWeight || weight > experiment.rules.maxWeight))) throw new Error('手动权重需要在当前范围内，并使用一位小数');
     return { tag: gene.tag, weight };
   });
   const missingLocked = experiment.artists.some(artist => artist.locked && !artist.excluded && !genes.some(gene => tagKey(gene.tag) === tagKey(artist.tag)));
-  if (missingLocked) throw new Error('抽取条件已变化，请先变异候选，再微调权重');
+  if (missingLocked) throw new Error('抽取条件已变化，请重新抽取后调整权重');
   if (experiment.candidates.some(candidate => rollSignature(candidate.genes) === rollSignature(genes))) throw new Error('该画师与权重组合已经存在');
   return { id: createUuid(), genes, parents: [parent.id], method: 'manual', generation: parent.generation + 1, createdAt: Date.now(), archived: false };
 }

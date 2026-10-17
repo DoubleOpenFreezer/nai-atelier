@@ -1,9 +1,9 @@
 import { beforeEach, expect, it, vi } from 'vitest';
-import { candidateFixture, rollFixture, rollImageFixture } from '../fixtures/styleRoll';
+import { candidateFixture, legacyRollFixture, rollFixture, rollImageFixture } from '../fixtures/styleRoll';
 const mocks = vi.hoisted(() => ({ get: vi.fn(), put: vi.fn(), getBrowseOrder: vi.fn(), getPage: vi.fn() }));
 vi.mock('../../services/api', () => ({ api: { get: mocks.get, put: mocks.put } }));
 vi.mock('../../services/localHistory', () => ({ localHistory: mocks }));
-import { comparableRollImages, loadRollExperiments, loadRollHistory, rollCandidateImages, saveRollExperiment } from '../../services/styleRollApi';
+import { loadRollExperiments, loadRollHistory, rollCandidateImages, saveRollExperiment } from '../../services/styleRollApi';
 beforeEach(() => vi.clearAllMocks());
 
 it('只从匹配实验、候选、提示词和 Seed 的历史读取图片，固定首次结果不让重画改写投票依据', () => {
@@ -14,18 +14,11 @@ it('只从匹配实验、候选、提示词和 Seed 的历史读取图片，固�
   expect([...rollCandidateImages(e, [late, wrongSeed, wrongPrompt, first]).values()]).toEqual([first]);
   expect(rollCandidateImages(e, [{ ...first, sourceChainId: 'other' }]).size).toBe(0);
 });
-it('同 Seed 但实际模型或参数不同仍不可对比，参数键顺序不影响匹配', () => {
-  const e = rollFixture(); e.candidates = ['a', 'b', 'c'].map(id => candidateFixture(id));
-  const history = e.candidates.map(candidate => rollImageFixture(e, candidate));
-  history[1].params = Object.fromEntries(Object.entries(history[1].params).reverse()) as typeof history[1]['params'];
-  history[2].params.model = 'nai-diffusion-5-full';
-  expect(comparableRollImages(rollCandidateImages(e, history))).toEqual(new Set(['a', 'b']));
-});
-it('已投票原图被删除时不替换成后来图片，不用新条件继续旧排名', () => {
+it('已投票原图被删除时不替换成后来图片，旧图绑定保留', () => {
   const e = rollFixture(); e.candidates = [candidateFixture('a'), candidateFixture('b')];
   e.votes = [{ id: 'v', left: 'a', right: 'b', leftImage: 'original-a', rightImage: 'original-b', result: 'left', createdAt: 1 }];
   const images = rollCandidateImages(e, [rollImageFixture(e, e.candidates[0], 'replacement-a'), rollImageFixture(e, e.candidates[1], 'original-b')]);
-  expect(images.has('a')).toBe(false); expect(comparableRollImages(images, 'a').size).toBe(0);
+  expect(images.has('a')).toBe(false); expect(images.get('b')?.id).toBe('original-b');
 });
 it('读取全部候选历史时复用轻量索引分页，超过旧入口 200 张上限仍能完整恢复', async () => {
   const ids = Array.from({ length: 240 }, (_, index) => `image-${index}`); mocks.getBrowseOrder.mockResolvedValue({ ids });
@@ -43,5 +36,14 @@ it('验证图按各自的Seed回读，不误用实验固定Seed的原图', () =>
   const images = e.candidates.map(candidate => rollImageFixture(e, candidate));
   expect(rollCandidateImages(e, images).size).toBe(2);
   expect(rollCandidateImages(e, [{ ...images[0], params: { ...images[0].params, seed: e.template.params.seed } }]).size).toBe(0);
-  expect(comparableRollImages(rollCandidateImages(e, images)).size).toBe(1);
+});
+
+it('旧方法、轮次、票据和谱系读取保存时完整保留', async () => {
+  const legacy = legacyRollFixture();
+  mocks.get.mockResolvedValue({ experiments: [legacy] });
+  expect(await loadRollExperiments()).toEqual([legacy]);
+  mocks.put.mockResolvedValue({ experiment: { ...legacy, revision: legacy.revision + 1 } });
+  const saved = await saveRollExperiment(legacy);
+  expect(mocks.put).toHaveBeenCalledWith('/style-roll', legacy);
+  expect(saved.candidates).toEqual(legacy.candidates); expect(saved.votes).toEqual(legacy.votes); expect(saved.rounds).toEqual(legacy.rounds);
 });

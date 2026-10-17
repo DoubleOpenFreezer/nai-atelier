@@ -1,13 +1,13 @@
 import { confirmationCostScope } from '../services/dailyConfirmation';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowRight, Check, ChevronDown, Columns2, Copy, Dice5, Download, FlaskConical, ImagePlus, ListChecks, LoaderCircle, MoreHorizontal, Pause, Plus, RefreshCw, RotateCcw, Save, Settings2, SlidersHorizontal, Sparkles, Trash2, X } from 'lucide-react';
+import { ChevronDown, Copy, Dice5, Download, FlaskConical, ImagePlus, ListChecks, LoaderCircle, MoreHorizontal, Pause, Plus, RefreshCw, RotateCcw, Save, Settings2, SlidersHorizontal, Trash2, X } from 'lucide-react';
 import type { LocalGenItem, PromptChain } from '../types';
 import { t, useLanguage } from '../services/i18n';
-import { DEFAULT_ROLL_RULES, formatRollStyle, manualRollVariant, nextRollPair, rankRollCandidates, resolveRollArtists, rollCandidateToChain, rollPairKey, rollSourceId, scoreRollCandidates, type RollCandidate, type RollExperiment, type RollVote } from '../services/styleRoll';
-import { beginRollRound, currentRollRound, finishRollRound, rollRoundProgress, rollVerificationIds } from '../services/styleRollWorkflow';
+import { DEFAULT_ROLL_RULES, formatRollStyle, manualRollVariant, resolveRollArtists, rollCandidateToChain, rollSourceId, type RollCandidate, type RollExperiment } from '../services/styleRoll';
+import { beginRollRound, currentRollRound, rollVerificationIds } from '../services/styleRollWorkflow';
 import { rollPendingCandidates, rollWorkspaceCandidates } from '../services/styleRollWorkspace';
 import { getArtistSampleDictionary } from '../services/artistSamples';
-import { comparableRollImages, loadRollExperiments, loadRollHistory, rollCandidateImages, rollHistoryContext, saveRollExperiment } from '../services/styleRollApi';
+import { loadRollExperiments, loadRollHistory, rollCandidateImages, saveRollExperiment } from '../services/styleRollApi';
 import { beginRollGeneration, readRollApiKey } from '../services/styleRollGeneration';
 import { api, notifyLanAccessRequired, parseErrorResponse } from '../services/api';
 import { parseHttpError } from '../services/httpErrors.mjs';
@@ -31,7 +31,6 @@ import { ImageShareActions } from './ImageShareActions';
 import { PressRevealSurface } from './PressRevealSurface';
 import { MobileDetailView } from './MobileUI';
 import { StyleRollSetup } from './roll/StyleRollSetup';
-import { StyleRollCompare } from './roll/StyleRollCompare';
 import { StyleRollGallery } from './roll/StyleRollGallery';
 import { useGallerySelectionAnchor } from './useGallerySelectionAnchor';
 import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
@@ -44,7 +43,7 @@ interface Props {
   onOpenChain: (id: string) => void;
   onNavigateToPlayground: () => void;
 }
-const methodLabels = { random: '随机组合', mutate: '参考保留组合', crossover: '双亲交叉', refine: '权重测试', manual: '手动变体' };
+const methodLabels = { random: '随机组合', mutate: '参考保留组合', crossover: '双亲交叉', refine: '微调变体', manual: '手动变体' };
 const selectClass = 'mobile-touch h-10 min-w-0 rounded-xl border border-gray-200 bg-white px-2 text-sm dark:border-gray-700 dark:bg-gray-900';
 const GENE_ACCENTS = ['bg-indigo-500', 'bg-emerald-500', 'bg-purple-500', 'bg-amber-500', 'bg-rose-500', 'bg-sky-500'];
 
@@ -60,14 +59,13 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
   const [library, setLibrary] = useState<string[]>([]), [libraryLoading, setLibraryLoading] = useState(true), [libraryError, setLibraryError] = useState('');
   const [history, setHistory] = useState<LocalGenItem[]>([]), [historyLoading, setHistoryLoading] = useState(false);
   const [historyReadyId, setHistoryReadyId] = useState('');
-  const [selectedId, setSelectedId] = useState(''), [tab, setTab] = useState<'candidates' | 'compare'>('candidates');
+  const [selectedId, setSelectedId] = useState('');
   const [filter, setFilter] = useState('all'), [count, setCount] = useState(6), [artistsPerMix, setArtistsPerMix] = useState(4);
   const [query, setQuery] = useState(''), [sort, setSort] = useState('new'), [roundId, setRoundId] = useState('');
   const [selecting, setSelecting] = useState(false), [selectedIds, setSelectedIds] = useState(new Set<string>());
   const [savingProgress, setSavingProgress] = useState<{ completed: number; total: number } | null>(null);
   const [recordName, setRecordName] = useState('');
   const [setup, setSetup] = useState<RollExperiment | null>(null), [lightbox, setLightbox] = useState<LocalGenItem | null>(null);
-  const [skipped, setSkipped] = useState(new Set<string>());
   const [manualWeights, setManualWeights] = useState<number[] | null>(null);
   const [session, setSession] = useState<GenerationSeriesSession | null>(null), [preparing, setPreparing] = useState(false);
   const [isMobile, setIsMobile] = useState(() => window.matchMedia('(max-width: 767px)').matches);
@@ -75,20 +73,13 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
   const loadingRef = useRef(true), loadSequence = useRef(0);
   const savedChains = useRef(new Map<string, PromptChain>()), mounted = useRef(true);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const selectionAnchor = useGallerySelectionAnchor(scrollRef, scrollRef, selectedId || null, active && tab === 'candidates', selectionFocusEnabled);
-  const rememberScroll = useKeepAliveScrollRestore(scrollRef, `roll:${experimentId}:${filter}`, { skipRestore: selectionAnchor.hasAnchor, trigger: tab });
+  const selectionAnchor = useGallerySelectionAnchor(scrollRef, scrollRef, selectedId || null, active, selectionFocusEnabled);
+  const rememberScroll = useKeepAliveScrollRestore(scrollRef, `roll:${experimentId}:${filter}`, { skipRestore: selectionAnchor.hasAnchor });
   selectedExperimentRef.current = experimentId;
   const experiment = experiments.find(item => item.id === experimentId && !item.archived);
   const selected = experiment?.candidates.find(item => item.id === selectedId);
   const images = useMemo(() => experiment ? rollCandidateImages(experiment, history) : new Map<string, LocalGenItem>(), [experiment, history]);
-  const scores = useMemo(() => experiment ? scoreRollCandidates(experiment) : new Map(), [experiment]);
-  const comparable = useMemo(() => comparableRollImages(images, experiment?.votes[0]?.left), [images, experiment?.votes]);
   const round = experiment && currentRollRound(experiment);
-  const ready = round?.kind === 'verify' || round?.kind === 'batch' ? new Set(images.keys()) : comparable;
-  const progress = experiment && round ? rollRoundProgress(experiment, round, ready, skipped) : null;
-  const proposedPair = experiment ? round && round.kind !== 'batch' && !round.closedAt ? progress!.pair : nextRollPair(experiment, comparable, skipped) : null;
-  const contextMismatch = Boolean(proposedPair && rollHistoryContext(images.get(proposedPair[0])!) !== rollHistoryContext(images.get(proposedPair[1])!));
-  const pair = contextMismatch ? null : proposedPair;
   const selectedImage = selected && images.get(selected.id);
   const historyReady = Boolean(experiment && historyReadyId === experiment.id);
   const cost = experiment ? estimateV45GenerationCost(experiment.template.params, isActiveOpusSubscription(subscription.info), subscription.info?.usage?.isNegative ?? true) : 0;
@@ -123,7 +114,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
     catch (cause) { if (mounted.current && selectedExperimentRef.current === id && sequence === historySequence.current) setError((cause as Error).message); }
     finally { if (mounted.current && sequence === historySequence.current) setHistoryLoading(false); }
   }, []);
-  useEffect(() => { setHistory([]); setSelectedId(''); setSkipped(new Set()); setSelectedIds(new Set()); setSelecting(false); setRoundId(''); setQuery(''); setFilter('all'); setTab('candidates'); }, [experimentId]);
+  useEffect(() => { setHistory([]); setSelectedId(''); setSelectedIds(new Set()); setSelecting(false); setRoundId(''); setQuery(''); setFilter('all'); }, [experimentId]);
   useEffect(() => { setRecordName(experiment?.name || ''); }, [experiment?.id, experiment?.name]);
   useEffect(() => { setManualWeights(null); }, [selectedId, experimentId]);
   useEffect(() => { if (experiment) setArtistsPerMix(experiment.rules.minArtists === experiment.rules.maxArtists ? experiment.rules.minArtists : 4); }, [experimentId]);
@@ -160,16 +151,6 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
     };
     return next;
   };
-  const vote = (result: RollVote['result']) => void perform(async () => {
-    if (!experiment || !pair) return;
-    const leftImage = images.get(pair[0]), rightImage = images.get(pair[1]); if (!leftImage || !rightImage) return;
-    if (!historyReady) return;
-    const record: RollVote = { id: createUuid(), left: pair[0], right: pair[1], leftImage: leftImage.id, rightImage: rightImage.id, result, createdAt: Date.now(), ...(round && round.kind !== 'batch' && !round.closedAt ? { roundId: round.id } : {}) };
-    await store({ ...experiment, votes: [...experiment.votes, record] });
-  });
-  const lastVote = experiment?.votes.at(-1);
-  const undoAllowed = Boolean(lastVote && (!lastVote.roundId || lastVote.roundId === round?.id && !round.closedAt));
-  const undoVote = () => void perform(async () => { if (experiment?.votes.length && undoAllowed) { await store({ ...experiment, votes: experiment.votes.slice(0, -1) }); setSkipped(new Set()); } });
   const generate = async (candidates: RollCandidate[] = selected ? [selected] : [], target = experiment) => {
     if (!target || target.archived || !candidates.length || manualWeights || candidates.some(candidate => candidate.archived || images.has(candidate.id) || target.votes.some(vote => vote.left === candidate.id || vote.right === candidate.id)) || loadingRef.current || generatingRef.current || session || (target.id === experiment?.id && (historyLoading || !historyReady))) return;
     if (!continuousGenerationEnabled && candidates.length > 1) { setError(t('连续生成已关闭，请开启后生成本轮')); return; }
@@ -211,28 +192,27 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
     if (readRollApiKey() !== current.key) throw new Error('NovelAI Key 已变化，请重新发起生成');
     await approveGenerationSeries(current, nextCost);
   });
-  const runRound = (kind: 'batch' | 'random' | 'evolve' | 'refine' | 'verify', parentId?: string) => void perform(async () => {
+  const runRound = () => void perform(async () => {
     if (session || generatingRef.current) return;
-    if (experiment && (!historyReady || historyLoading)) throw new Error('历史暂不可用，请重新加载后再生成或对比。');
-    if (!continuousGenerationEnabled && (count > 1 || kind === 'verify')) throw new Error('连续生成已关闭，请开启后生成本轮');
-    if (['batch', 'random', 'evolve'].includes(kind) && (libraryLoading || libraryError || !library.length)) throw new Error(libraryError || '画师词库尚未就绪，请重新加载');
+    if (experiment && (!historyReady || historyLoading)) throw new Error('历史暂不可用，请重新加载后再生成。');
+    if (!continuousGenerationEnabled && count > 1) throw new Error('连续生成已关闭，请开启后生成本轮');
+    if (libraryLoading || libraryError || !library.length) throw new Error(libraryError || '画师词库尚未就绪，请重新加载');
     let source = experiment || makeExperiment();
     if (round && !round.closedAt) source = { ...source, rounds: source.rounds!.map(item => item.id === round.id ? { ...item, closedAt: Date.now() } : item) };
-    if (['batch', 'random', 'evolve'].includes(kind)) source = { ...source, rules: { ...source.rules, minArtists: artistsPerMix, maxArtists: artistsPerMix } };
-    const next = beginRollRound(source, library, kind, count, parentId, comparable);
+    source = { ...source, rules: { ...source.rules, minArtists: artistsPerMix, maxArtists: artistsPerMix } };
+    const next = beginRollRound(source, library, count);
     const saved = await store(next), created = currentRollRound(saved)!;
-    selectedExperimentRef.current = saved.id; setExperimentId(saved.id); setSelectedId(''); setSelectedIds(new Set()); setSelecting(false); setSkipped(new Set()); setFilter('all'); setQuery(''); setRoundId(created.id); setTab(kind === 'batch' ? 'candidates' : 'compare');
+    selectedExperimentRef.current = saved.id; setExperimentId(saved.id); setSelectedId(''); setSelectedIds(new Set()); setSelecting(false); setFilter('all'); setQuery(''); setRoundId(created.id);
     void generate(saved.candidates.filter(candidate => created.candidateIds.includes(candidate.id)), saved);
   });
   const generatePending = (ids?: string[]) => void perform(async () => {
     if (!experiment || !historyReady || historyLoading || session || generatingRef.current) return;
     let source = experiment;
     const pending = rollPendingCandidates(experiment, images, ids).slice(0, continuousGenerationEnabled ? 24 : 1);
-    if (!pending.length) throw new Error('已评价的对照图在历史中不可用，请恢复原历史或新建复测实验。');
+    if (!pending.length) throw new Error('原图暂不可用，请恢复原历史。');
     if (ids || !round || round.closedAt) source = await store({ ...experiment, rounds: [...(experiment.rounds || []).map(item => item.id === round?.id && !item.closedAt ? { ...item, closedAt: Date.now() } : item), { id: createUuid(), kind: 'batch', candidateIds: pending.map(candidate => candidate.id), opponents: [], createdAt: Date.now() }] });
-    setTab(currentRollRound(source)?.kind === 'batch' ? 'candidates' : 'compare'); setSelectedId(''); setSkipped(new Set()); setSelecting(false); setSelectedIds(new Set()); setRoundId(currentRollRound(source)?.id || ''); setFilter('all'); void generate(pending, source);
+    setSelectedId(''); setSelecting(false); setSelectedIds(new Set()); setRoundId(currentRollRound(source)?.id || ''); setFilter('all'); void generate(pending, source);
   });
-  const finishRound = () => void perform(async () => { if (experiment) { await store(finishRollRound(experiment, ready)); setTab('candidates'); } });
   const resume = () => void perform(async () => {
     if (!session || session.state !== 'paused') return;
     if (readRollApiKey() !== session.key) throw new Error('NovelAI Key 已变化，请重新发起生成');
@@ -256,10 +236,9 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
     }
     return store({ ...target, candidates: target.candidates.map(item => item.id === id ? { ...item, savedChainId: saved!.id } : item) });
   };
-  const saveCandidate = (id = selectedId, final = false) => void perform(async () => {
+  const saveCandidate = (id = selectedId) => void perform(async () => {
     if (!experiment) return;
-    const next = final && round && !round.closedAt ? finishRollRound(experiment, ready) : experiment;
-    await persistCandidate({ ...next, ...(final ? { finalCandidateId: id } : {}) }, id);
+    await persistCandidate(experiment, id);
     notify('已保存到风格串');
   });
   const saveChosen = () => void perform(async () => {
@@ -308,7 +287,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
       <button className="block w-full" type="button" aria-label={t('放大图片')} onClick={() => setLightbox(selectedImage)}><SmartImage src={selectedImage.imageUrl} alt={t('候选 {0}', [experiment.candidates.indexOf(selected) + 1])} eager className="max-h-[45vh] w-full object-contain" containerClassName="w-full" /></button>
       <ImageShareActions imageUrl={selectedImage.imageUrl} filename={`roll-${selectedImage.id}.png`} generationData={selectedImage} favorite={{ imageUrl: selectedImage.imageUrl, sourceType: 'history', sourceId: selectedImage.id }} notify={notify} variant="card" className="absolute right-2 top-2 flex-col" />
     </PressRevealSurface> : <div className="flex min-h-36 items-center justify-center rounded-xl border border-dashed border-gray-300 text-gray-400 dark:border-gray-700"><ImagePlus className="h-8 w-8" /></div>}
-    <div className="flex flex-wrap gap-2 text-xs text-gray-500"><span className="rounded-lg bg-gray-100 px-2 py-1 dark:bg-gray-800">{t(methodLabels[selected.method])}</span>{scores.get(selected.id)?.matches > 0 && <span className="rounded-lg bg-gray-100 px-2 py-1 dark:bg-gray-800">Elo {Math.round(scores.get(selected.id)?.rating || 1000)} · {t('{0} 次对比', [scores.get(selected.id)?.matches || 0])}</span>}</div>
+    <div className="flex flex-wrap gap-2 text-xs text-gray-500"><span className="rounded-lg bg-gray-100 px-2 py-1 dark:bg-gray-800">{t(methodLabels[selected.method])}</span></div>
     {!!selected.parents.length && <div className="flex flex-wrap items-center gap-1 text-xs text-gray-500">{t('来源候选')}{selected.parents.map(id => <button key={id} type="button" className="mobile-touch rounded-md px-2 text-indigo-500 hover:underline" onClick={() => { setFilter('all'); setRoundId(''); setQuery(''); setSelectedId(id); }}>#{experiment.candidates.findIndex(candidate => candidate.id === id) + 1}</button>)}</div>}
     <div className="rounded-2xl border border-gray-100 bg-gray-50/70 p-3.5 space-y-2.5 dark:border-gray-800/80 dark:bg-gray-900/40 shadow-inner">
       <div className="flex items-center justify-between text-xs font-semibold text-gray-500 dark:text-gray-400">
@@ -326,8 +305,8 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
       })}</div>
     </div>
     {manualWeights && <div className="flex flex-wrap gap-2"><ToolbarButton className="!border-emerald-600 !bg-emerald-600 !text-white" disabled={busy || loading} onClick={saveManualWeights}>{t('保存为新变体')}</ToolbarButton><ToolbarButton disabled={busy} onClick={() => setManualWeights(null)}>{t('取消')}</ToolbarButton></div>}
-    {!selectedImage && (scores.get(selected.id)?.matches > 0 ? <p className="text-xs text-amber-600 dark:text-amber-400">{t('已评价的对照图在历史中不可用，请恢复原历史或新建复测实验。')}</p> : <ToolbarButton data-agent-action="business" tone="primary" className="!h-11 w-full" disabled={busy || loading || preparing || Boolean(session) || Boolean(manualWeights) || historyLoading || !historyReady || selected.archived} onClick={() => void generate()}>{preparing ? <LoaderCircle className="animate-spin" /> : <ImagePlus />}{t('生成对照图')} · {costLabel}</ToolbarButton>)}
-    {!historyLoading && !historyReady && <p className="text-xs text-amber-600 dark:text-amber-400">{t('历史暂不可用，请重新加载后再生成或对比。')}</p>}
+    {!selectedImage && (experiment.votes.some(vote => vote.left === selected.id || vote.right === selected.id) ? <p className="text-xs text-amber-600 dark:text-amber-400">{t('原图暂不可用，请恢复原历史。')}</p> : <ToolbarButton data-agent-action="business" tone="primary" className="!h-11 w-full" disabled={busy || loading || preparing || Boolean(session) || Boolean(manualWeights) || historyLoading || !historyReady || selected.archived} onClick={() => void generate()}>{preparing ? <LoaderCircle className="animate-spin" /> : <ImagePlus />}{t('生成图片')} · {costLabel}</ToolbarButton>)}
+    {!historyLoading && !historyReady && <p className="text-xs text-amber-600 dark:text-amber-400">{t('历史暂不可用，请重新加载后再生成。')}</p>}
     <div className="grid grid-cols-2 gap-2">
       <ToolbarButton disabled={busy || loading || Boolean(manualWeights)} tone="primary" className="!h-10 rounded-xl font-bold shadow-sm" onClick={selected.savedChainId && chains.some(chain => chain.id === selected.savedChainId) ? () => onOpenChain(selected.savedChainId!) : () => saveCandidate()}><Save />{t(selected.savedChainId && chains.some(chain => chain.id === selected.savedChainId) ? '打开风格串' : '存为风格串')}</ToolbarButton>
       <ToolbarButton disabled={busy || Boolean(manualWeights)} className="!h-10 rounded-xl border-purple-200 bg-purple-50 text-purple-700 hover:bg-purple-100 dark:border-purple-800 dark:bg-purple-950/40 dark:text-purple-300 font-bold shadow-sm" onClick={() => { try { sendToLab(); } catch (cause) { setError((cause as Error).message); } }}><FlaskConical />{t('送往实验室')}</ToolbarButton>
@@ -335,11 +314,9 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
     <details className="rounded-2xl border border-gray-100 bg-gray-50/50 p-3 transition-all dark:border-gray-800/80 dark:bg-gray-900/40">
       <summary className="mobile-touch cursor-pointer text-xs font-semibold text-gray-500 hover:text-indigo-600 dark:text-gray-400 dark:hover:text-indigo-400">{t('更多操作')}</summary>
       <div className="mt-2.5 grid grid-cols-2 gap-2">
-        <ToolbarButton data-agent-action="business" aria-describedby="roll-weight-test-description" disabled={busy || loading || Boolean(manualWeights) || Boolean(session) || !selectedImage} onClick={() => runRound('refine', selected.id)}><Sparkles />{t('权重测试')}</ToolbarButton>
         <ToolbarButton disabled={busy || loading || Boolean(manualWeights)} onClick={() => void perform(async () => { if (!navigator.clipboard?.writeText) throw new Error('当前环境无法直接复制，请从完整提示词中手动复制'); await navigator.clipboard.writeText(formatRollStyle(selected.genes)); notify('已复制提示词'); })}><Copy />{t('复制画风')}</ToolbarButton>
         <ToolbarButton disabled={busy || loading || Boolean(manualWeights)} onClick={() => archiveCandidates([selected.id], !selected.archived)}>{selected.archived ? <RotateCcw /> : <Trash2 />}{t(selected.archived ? '恢复候选' : '丢弃')}</ToolbarButton>
         <ToolbarButton disabled={busy || loading || selected.archived || Boolean(manualWeights)} onClick={() => setManualWeights(selected.genes.map(gene => gene.weight))}><SlidersHorizontal />{t('手动调整权重')}</ToolbarButton>
-        <p id="roll-weight-test-description" className="col-span-2 text-xs leading-relaxed text-gray-400 dark:text-gray-500">{t('保持画师不变，自动生成不同权重的图片，再由你选择。')}</p>
       </div>
     </details>
     <details className="rounded-2xl border border-gray-100 bg-gray-50/50 p-3 transition-all dark:border-gray-800/80 dark:bg-gray-900/40 text-xs text-gray-500">
@@ -349,30 +326,14 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
   </div> : null;
 
   const verificationIds = experiment ? rollVerificationIds(experiment) : new Set<string>();
-  const ranked = experiment ? rankRollCandidates(experiment).filter(candidate => !candidate.archived && !verificationIds.has(candidate.id)) : [];
-  const best = ranked.find(candidate => images.has(candidate.id));
+  const candidates = experiment ? experiment.candidates.filter(candidate => !candidate.archived && !verificationIds.has(candidate.id)) : [];
   const roundPending = experiment ? rollPendingCandidates(experiment, images) : [];
   const scopedRound = experiment?.rounds?.find(item => item.id === roundId);
   const selectedPending = experiment ? rollPendingCandidates(experiment, images, chosen.map(candidate => candidate.id)) : [];
   const saveable = chosen.filter(candidate => images.has(candidate.id) && !candidate.archived && !candidate.savedChainId);
   const working = Boolean(session || preparing), frozen = busy || loading;
   const canStart = !frozen && !working && !libraryLoading && !libraryError && library.length > 0 && (!experiment || historyReady);
-  const savedCount = ranked.filter(candidate => candidate.savedChainId).length;
-  const roundContext = round && round.kind !== 'batch' ? round.kind === 'refine' ? t('权重测试 · ±{0} · 剩余 {1} 套', [round.jitter, progress!.total - progress!.settled])
-    : round.kind === 'verify' ? t('换 Seed 验证 · 已完成 {0}/3 组', [progress!.settled / (round.candidateIds.length / 3)])
-    : t(round.kind === 'evolve' ? '进化评选 · 已完成 {0}/{1} 套' : '新画风排位 · 已完成 {0}/{1} 套', [progress!.settled, progress!.total]) : t('自动配对比较');
-  const roundResult = experiment && round && round.kind !== 'batch' && progress?.complete && !round.closedAt ? <div className="min-h-0 flex-1 overflow-y-auto p-4 md:p-6"><div className="mx-auto max-w-4xl space-y-4">
-    <h2 className="flex items-center gap-2 text-xl font-bold"><Check className="text-emerald-500" />{t('本轮评价完成')}</h2>
-    {round.kind === 'evolve' && <p className="text-sm text-gray-500">{t('本代 {0} 套胜出，{1} 套未胜出；确认后归档低位画风，原图保留。', [progress.accepted.length, progress.rejected.length])}</p>}
-    {round.kind === 'verify' ? <>
-      <p className="text-sm text-gray-500">{round.candidateIds.length === 3 ? t('原版保持最佳，仅生成三张验证图，不重复生成相同配方。') : t('三组 Seed 中，微调后画风获选 {0} 次。', [progress.accepted.length])}</p>
-      <div className="flex flex-wrap gap-2"><ToolbarButton tone="primary" disabled={frozen} onClick={() => saveCandidate(round.parentId, true)}><Save />{t(round.candidateIds.length === 3 ? '保存原版画风' : '保存微调后的画风')}</ToolbarButton>{round.candidateIds.length === 6 && <ToolbarButton disabled={frozen} onClick={() => saveCandidate(round.baseId, true)}>{t('保留原版')}</ToolbarButton>}</div>
-      <div className="grid gap-4 sm:grid-cols-3">{[0, 1, 2].map(group => { const width = round.candidateIds.length / 3, index = group * width; return <div key={index} className="space-y-2"><p className="text-xs text-gray-500">Seed {experiment.candidates.find(candidate => candidate.id === round.candidateIds[index])?.seed}</p><div className={`grid gap-2 ${width === 2 ? 'grid-cols-2' : 'grid-cols-1'}`}>{round.candidateIds.slice(index, index + width).map((id, side) => { const image = images.get(id); return image ? <button type="button" key={id} onClick={() => setLightbox(image)} className="overflow-hidden rounded-xl"><SmartImage src={image.imageUrl} alt={t(side ? '微调后画风' : '原版画风')} /><span className="block py-1 text-xs text-gray-500">{t(side ? '微调后画风' : '原版画风')}</span></button> : null; })}</div></div>; })}</div>
-    </> : round.kind === 'refine' ? <>
-      {images.get(progress.champion) && <div className="flex flex-col gap-4 sm:flex-row"><button type="button" className="w-full max-w-64 overflow-hidden rounded-2xl" onClick={() => setLightbox(images.get(progress.champion)!)}><SmartImage src={images.get(progress.champion)!.imageUrl} alt={t('当前最佳画风')} /></button><div className="flex flex-col items-start justify-center gap-3"><strong>{t('当前最佳画风')}</strong><ToolbarButton data-agent-action="business" tone="primary" disabled={frozen || working} onClick={() => runRound('verify', progress.champion)}>{t('换 Seed 验证')}<ArrowRight /></ToolbarButton><ToolbarButton data-agent-action="business" disabled={frozen || working} onClick={() => runRound('refine', progress.champion)}>{t('继续测试权重')}</ToolbarButton><ToolbarButton disabled={frozen} onClick={() => saveCandidate(progress.champion, true)}><Save />{t('完成并保存')}</ToolbarButton></div></div>}
-    </> : <div className="flex flex-wrap gap-2"><ToolbarButton tone="primary" disabled={frozen || working} onClick={finishRound}>{t('完成本轮')}<ArrowRight /></ToolbarButton>{best && <ToolbarButton data-agent-action="business" disabled={frozen || working} onClick={() => runRound('refine', best.id)}>{t('测试最佳组合权重')}</ToolbarButton>}</div>}
-    {undoAllowed && <ToolbarButton disabled={frozen} onClick={undoVote}>{t('撤销上次对比')}</ToolbarButton>}
-  </div></div> : null;
+  const savedCount = candidates.filter(candidate => candidate.savedChainId).length;
   return <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-gray-50 text-gray-900 dark:bg-gray-900 dark:text-gray-100" data-roll-page="true">
     <WorkspaceToolbar>
       {selecting ? <>
@@ -409,55 +370,40 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
           </ToolbarPopover>
         </div>
 
-        {/* 当处于盲选对比模式时，顶栏左侧显眼提供返回画风库按钮 */}
-        {tab === 'compare' && (
-          <ToolbarButton tone="primary" className="!rounded-xl shadow-sm" onClick={() => { setSelectedId(''); setTab('candidates'); }}>
-            <Columns2 className="h-4 w-4" />
-            <span>{t('返回画风库')}</span>
-          </ToolbarButton>
-        )}
-
         {/* 中间：自适应搜索框铺满可用宽度 */}
-        <ToolbarSearch value={query} onChange={event => { setQuery(event.target.value); setSelectedId(''); selectionAnchor.clearAnchor(); }} aria-label={t('搜索画师或编号')} placeholder={t('搜索画师或编号')} containerClassName="flex-1 !max-w-none md:!max-w-none min-w-[160px] mx-1 md:mx-2" disabled={!experiment || tab !== 'candidates'} />
+        <ToolbarSearch value={query} onChange={event => { setQuery(event.target.value); setSelectedId(''); selectionAnchor.clearAnchor(); }} aria-label={t('搜索画师或编号')} placeholder={t('搜索画师或编号')} containerClassName="flex-1 !max-w-none md:!max-w-none min-w-[160px] mx-1 md:mx-2" disabled={!experiment} />
 
         {/* 右侧集群：紧密贴紧屏幕最右端，彻底消除右侧空白 */}
         <div className="ml-auto flex shrink-0 items-center gap-1.5 md:gap-2">
           {/* 筛选与排序 */}
-          <ToolbarPopover title={t('筛选与排序')} label={t('筛选')} count={Number(filter !== 'all') + Number(Boolean(roundId)) + Number(sort !== 'new')} disabled={!experiment || tab !== 'candidates'}>
+          <ToolbarPopover title={t('筛选与排序')} label={t('筛选')} count={Number(filter !== 'all') + Number(Boolean(roundId)) + Number(sort !== 'new')} disabled={!experiment}>
             {close => <div className="space-y-4">
               <div role="group" aria-label={t('画风筛选')} className="grid grid-cols-2 gap-2">
                 {(['all', 'originals', 'variants', 'saved', 'pending', 'archived'] as const).map(value => <ToolbarButton key={value} aria-label={t(value === 'all' ? '全部' : value === 'originals' ? '纯新探索' : value === 'variants' ? '微调变体' : value === 'saved' ? '已保存' : value === 'pending' ? '待生成' : '回收站')} active={filter === value} onClick={() => { setFilter(value); setSelectedId(''); selectionAnchor.clearAnchor(); close(); }}>{t(value === 'all' ? '全部' : value === 'originals' ? '纯新探索' : value === 'variants' ? '微调变体' : value === 'saved' ? '已保存' : value === 'pending' ? '待生成' : '回收站')}<span className="ml-auto text-xs opacity-60">{experiment ? rollWorkspaceCandidates(experiment, images, { filter: value, roundId, query: '', sort }).length : 0}</span></ToolbarButton>)}
               </div>
               <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300">{t('查看轮次')}<select aria-label={t('查看轮次')} value={roundId} onChange={event => { setRoundId(event.target.value); setSelectedId(''); }} className={TOOLBAR_FIELD_CLASS}><option value="">{t('全部轮次')}</option>{[...(experiment?.rounds || [])].reverse().map(item => <option key={item.id} value={item.id}>{t('第 {0} 轮', [(experiment?.rounds?.indexOf(item) ?? 0) + 1])} · {item.candidateIds.length}</option>)}</select></label>
-              <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300">{t('排序')}<select aria-label={t('画风排序')} value={sort} onChange={event => setSort(event.target.value)} className={TOOLBAR_FIELD_CLASS}><option value="new">{t('最新生成')}</option><option value="old">{t('最早优先')}</option><option value="rating">{t('Elo 从高到低')}</option></select></label>
+              <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300">{t('排序')}<select aria-label={t('画风排序')} value={sort} onChange={event => setSort(event.target.value)} className={TOOLBAR_FIELD_CLASS}><option value="new">{t('最新生成')}</option><option value="old">{t('最早优先')}</option></select></label>
               <button type="button" className="mobile-touch text-xs font-semibold text-indigo-600 dark:text-indigo-300" onClick={() => { setFilter('all'); setRoundId(''); setSort('new'); setQuery(''); close(); }}>{t('重置筛选')}</button>
             </div>}
           </ToolbarPopover>
 
           {/* 快速清除筛选标记 */}
-          {(query || roundId || filter !== 'all') && tab === 'candidates' && (
+          {(query || roundId || filter !== 'all') && (
             <button type="button" aria-label={t('清除筛选')} className="mobile-touch hidden sm:flex shrink-0 items-center gap-1 rounded-lg bg-gray-100 px-2 py-1 text-xs text-gray-600 dark:bg-gray-800 dark:text-gray-300 hover:text-red-500" onClick={() => { setFilter('all'); setRoundId(''); setQuery(''); }}>
               {t(filter === 'saved' ? '已保存' : filter === 'pending' ? '待生成' : filter === 'archived' ? '回收站' : '已筛选')}<X className="h-3 w-3" />
             </button>
           )}
 
           {/* 批量多选 */}
-          <ToolbarButton aria-label={t('批量选择画风')} title={t('多选')} disabled={frozen || !experiment || tab !== 'candidates'} onClick={() => { setSelectedId(''); setSelecting(true); setSelectedIds(new Set()); }}><ListChecks /><span className="hidden xl:inline">{t('多选')}</span></ToolbarButton>
+          <ToolbarButton aria-label={t('批量选择画风')} title={t('多选')} disabled={frozen || !experiment} onClick={() => { setSelectedId(''); setSelecting(true); setSelectedIds(new Set()); }}><ListChecks /><span className="hidden xl:inline">{t('多选')}</span></ToolbarButton>
 
           {experiment && <span className="hidden xl:inline text-xs text-gray-400 dark:text-gray-500 whitespace-nowrap">
-            {tab === 'compare' ? t('画风对比') : `${scopedRound ? t('第 {0} 轮', [(experiment.rounds?.indexOf(scopedRound) ?? 0) + 1]) : t('全部轮次')} · ${t('显示 {0} 套', [visible.length])}`}
+            {`${scopedRound ? t('第 {0} 轮', [(experiment.rounds?.indexOf(scopedRound) ?? 0) + 1]) : t('全部轮次')} · ${t('显示 {0} 套', [visible.length])}`}
           </span>}
-
-          {/* 可选工具（对决对比 / 进化下一轮） */}
-          {experiment && <ToolbarPopover title={t('可选工具')} label={t('可选工具')} icon={<SlidersHorizontal />} iconOnly disabled={selecting} width={240}>{close => <div className="space-y-1">
-            <button type="button" aria-describedby={tab === 'compare' ? undefined : 'roll-comparison-description'} className={TOOLBAR_MENU_CLASS} onClick={() => { setSelectedId(''); setTab(tab === 'compare' ? 'candidates' : 'compare'); close(); }}><Columns2 />{t(tab === 'compare' ? '返回画风库' : '画风对比')}</button>
-            {tab !== 'compare' && <p id="roll-comparison-description" className="px-3 pb-2 text-xs leading-relaxed text-gray-500">{t('对比已有图片，选出偏好的画风；不会生成新图。')}</p>}
-            {experiment.votes.length > 0 && <button type="button" data-agent-action="business" className={TOOLBAR_MENU_CLASS} disabled={!canStart} onClick={() => { runRound('evolve'); close(); }}><Sparkles />{t('进化下一轮')}</button>}
-          </div>}</ToolbarPopover>}
 
           {/* 最右侧主 CTA 组合：开始 Roll + 本轮设置 */}
           <div className="flex shrink-0 items-center">
-            <ToolbarButton aria-label={t(experiment ? '再 Roll 一轮' : '开始 Roll')} data-agent-action="business" tone="primary" disabled={!canStart} className="!rounded-r-none !border-r-0 font-bold shadow-sm transition-transform active:scale-95" onClick={() => runRound('batch')}><Dice5 className="h-4 w-4" /><span className="sm:hidden">Roll</span><span className="hidden sm:inline">{t(experiment ? '再 Roll 一轮' : '开始 Roll')}</span></ToolbarButton>
+            <ToolbarButton aria-label={t(experiment ? '再 Roll 一轮' : '开始 Roll')} data-agent-action="business" tone="primary" disabled={!canStart} className="!rounded-r-none !border-r-0 font-bold shadow-sm transition-transform active:scale-95" onClick={() => runRound()}><Dice5 className="h-4 w-4" /><span className="sm:hidden">Roll</span><span className="hidden sm:inline">{t(experiment ? '再 Roll 一轮' : '开始 Roll')}</span></ToolbarButton>
             <ToolbarPopover label={t('本轮设置')} title={t('本轮设置')} icon={<ChevronDown />} disabled={frozen || working} width={320} className="[&_button[aria-haspopup]]:rounded-l-none [&_button[aria-haspopup]>span]:hidden">
               {close => <div className="space-y-4">
                 <div className="grid grid-cols-2 gap-3">
@@ -474,16 +420,14 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
     </WorkspaceToolbar>
     {error && <div role="alert" className="flex flex-none items-center gap-2 border-b border-red-200 bg-red-50 px-4 py-2 text-xs text-red-600 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300"><span className="min-w-0 flex-1 break-words">{t(error)}</span>{errorSource !== 'generation' && <button type="button" className="mobile-touch shrink-0 px-2 underline" onClick={() => { void reload(); if (experimentId) void refreshHistory(experimentId); }}>{t('重新加载')}</button>}<IconButton label="关闭错误提示" className="!h-8 !w-8 !border-transparent !bg-transparent !text-current" onClick={() => setError('')}><X /></IconButton></div>}
     {libraryError && <div role="alert" className="flex flex-none items-center gap-2 border-b border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-700 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300"><span className="flex-1">{t(libraryError)}</span><button type="button" className="mobile-touch px-2 underline" onClick={() => void reloadLibrary()}>{t('重新加载')}</button></div>}
-    {tab === 'compare' && contextMismatch && <p role="alert" className="px-4 py-2 text-xs text-amber-600">{t('这两张图片的实际生成条件不同，不能放在一起比较。')}</p>}
     {working && <div role="status" className="flex flex-none flex-wrap items-center gap-2 border-b border-indigo-200 bg-indigo-50 px-4 py-2 text-xs text-indigo-600 dark:border-indigo-900 dark:bg-indigo-950/30 dark:text-indigo-300"><LoaderCircle className="h-4 w-4 animate-spin" /><span className="min-w-0 flex-1">{t(session?.connectionError || (session?.awaiting ? '等待费用确认' : session?.state === 'paused' ? '任务已暂停' : '正在逐张出图…'))}{session ? ` ${session.progress.current}/${session.progress.total}` : ''}</span>{session?.awaiting && <ToolbarButton data-agent-action="business" disabled={busy} onClick={approve}>{t('确认费用')}</ToolbarButton>}{session?.state === 'paused' ? <ToolbarButton data-agent-action="business" disabled={busy} onClick={resume}>{t('继续')}</ToolbarButton> : session && continuousGenerationEnabled && <ToolbarButton disabled={busy} onClick={() => void perform(async () => { if (readRollApiKey() !== session.key) throw new Error('NovelAI Key 已变化，请重新发起生成'); await setGenerationQueuePaused(session.key, true); })}><Pause />{t('暂停')}</ToolbarButton>}{session && <button type="button" disabled={session.stopped} className="mobile-touch px-2 underline" onClick={() => { const current = getGenerationSeriesSession(session.scope); if (current) stopGenerationSeriesSession(current); }}>{t(session.stopped ? '取消中…' : '取消')}</button>}</div>}
     {!working && historyReady && experiment && roundPending.length > 0 && <div className="flex flex-none items-center gap-2 border-b border-gray-200 px-3 py-2 text-xs text-gray-500 dark:border-gray-800 md:px-5"><span className="min-w-0 flex-1">{t('本轮已出图 {0}/{1}', [round!.candidateIds.filter(id => images.has(id)).length, round!.candidateIds.length])}</span><ToolbarButton data-agent-action="business" disabled={frozen || !historyReady} onClick={() => generatePending()}><ImagePlus />{t('补齐剩余 {0} 张', [continuousGenerationEnabled ? roundPending.length : 1])}</ToolbarButton></div>}
     {loading && !experiment ? <PageSpinner className="flex-1" /> : !experiment ? <EmptyState className="flex-1 p-6" icon={<Dice5 className="h-8 w-8" />} title={t('Roll 出你的画风')} hint="一键出图，只保存喜欢的画风。" />
-      : tab === 'compare' ? roundResult || <StyleRollCompare experiment={experiment} pair={pair} images={images} active={active && !setup && !lightbox} busy={frozen} historyReady={historyReady && !historyLoading} hasSkipped={skipped.size > 0} context={roundContext} undoAllowed={undoAllowed} onVote={vote} onUndo={undoVote} onSkip={() => setSkipped(current => pair ? new Set([...current, rollPairKey(...pair)]) : new Set())} />
       : <div className="relative flex min-h-0 flex-1">
-        <StyleRollGallery experiment={experiment} candidates={visible} images={images} historyReady={historyReady} historyLoading={historyLoading} selectedId={selectedId} selectionFocusEnabled={selectionFocusEnabled} selecting={selecting} selectedIds={selectedIds} sort={sort} onSelect={setSelectedId} onToggle={id => setSelectedIds(current => { const next = new Set(current); next.has(id) ? next.delete(id) : next.add(id); return next; })} onSave={id => saveCandidate(id)} onArchive={id => archiveCandidates([id], !experiment.candidates.find(candidate => candidate.id === id)!.archived)} busy={frozen} scrollRef={scrollRef} onScroll={() => { selectionAnchor.onScroll(); rememberScroll(); }} notify={notify} />
+        <StyleRollGallery experiment={experiment} candidates={visible} images={images} historyReady={historyReady} historyLoading={historyLoading} selectedId={selectedId} selectionFocusEnabled={selectionFocusEnabled} selecting={selecting} selectedIds={selectedIds} onSelect={setSelectedId} onToggle={id => setSelectedIds(current => { const next = new Set(current); next.has(id) ? next.delete(id) : next.add(id); return next; })} onSave={id => saveCandidate(id)} onArchive={id => archiveCandidates([id], !experiment.candidates.find(candidate => candidate.id === id)!.archived)} busy={frozen} scrollRef={scrollRef} onScroll={() => { selectionAnchor.onScroll(); rememberScroll(); }} notify={notify} />
         {!isMobile && selected && <aside className="flex w-84 max-w-[40%] flex-none flex-col border-l border-gray-200/80 bg-white/95 backdrop-blur-md dark:border-gray-800/80 dark:bg-gray-900/95 xl:w-92 shadow-sm"><div className="flex items-center justify-between border-b border-gray-200 px-4 py-2 dark:border-gray-800"><strong className="text-sm">{t('候选 {0}', [experiment.candidates.indexOf(selected) + 1])}</strong><IconButton label="关闭候选详情" onClick={() => setSelectedId('')}><X /></IconButton></div><div className="min-h-0 flex-1 overflow-y-auto">{detail}</div></aside>}
       </div>}
-    {experiment && isMobile && <ImagePreviewPortal><MobileDetailView open={Boolean(selected) && tab === 'candidates' && !setup} title={t('候选 {0}', [experiment.candidates.findIndex(candidate => candidate.id === selectedId) + 1])} onClose={() => setSelectedId('')}>{detail}</MobileDetailView></ImagePreviewPortal>}
+    {experiment && isMobile && <ImagePreviewPortal><MobileDetailView open={Boolean(selected) && !setup} title={t('候选 {0}', [experiment.candidates.findIndex(candidate => candidate.id === selectedId) + 1])} onClose={() => setSelectedId('')}>{detail}</MobileDetailView></ImagePreviewPortal>}
     {setup && <StyleRollSetup initial={setup} chains={chains} libraryCount={library.length} libraryLoading={libraryLoading} enforceFreeStepLimit={enforceFreeStepLimit} onClose={() => setSetup(null)} onSave={async value => { await store(value); if (!experiments.some(item => item.id === value.id)) setExperimentId(value.id); }} />}
     {lightbox && <ImageLightbox src={lightbox.imageUrl} generationData={lightbox} favorite={{ imageUrl: lightbox.imageUrl, sourceType: 'history', sourceId: lightbox.id }} notify={notify} onClose={() => setLightbox(null)} />}
   </div>;

@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 import type { RollCandidate } from '../../services/styleRoll';
-import { candidateFixture, rollFixture, rollImageFixture } from '../fixtures/styleRoll';
+import { candidateFixture, legacyRollFixture, rollFixture, rollImageFixture } from '../fixtures/styleRoll';
 import { rollPendingCandidates, rollWorkspaceCandidates } from '../../services/styleRollWorkspace';
 
 const fixture = () => {
@@ -53,4 +53,24 @@ it('手选补图仍排除已出图、已评价原图丢失及回收站项', () =
   const { e, images } = fixture();
   e.votes = [{ id: 'vote', left: 'old', right: 'saved', leftImage: 'missing', rightImage: 'history-saved', result: 'left', createdAt: 1 }];
   expect(rollPendingCandidates(e, images, e.candidates.map(item => item.id)).map(item => item.id)).toEqual(['pending']);
+});
+
+it('旧进阶轮次不自动补齐，未评价原配方可主动选中普通生成，验证副本始终排除', () => {
+  const e = legacyRollFixture(), images = new Map();
+  expect(rollPendingCandidates(e, images)).toEqual([]);
+  expect(rollPendingCandidates(e, images, e.candidates.map(candidate => candidate.id)).map(candidate => candidate.id)).toEqual(['crossed', 'refined', 'manual']);
+  e.votes = [];
+  for (const kind of ['random', 'evolve', 'refine']) {
+    const round = e.rounds!.find(item => item.kind === kind)!;
+    e.rounds = [...e.rounds!.filter(item => item.id !== round.id), round];
+    expect(rollPendingCandidates(e, images)).toEqual([]);
+    expect(rollPendingCandidates(e, images, round.candidateIds).map(candidate => candidate.id)).toEqual(round.candidateIds);
+  }
+});
+
+it('旧评分排序值退回正常新旧顺序，不再由投票改变结果顺序', () => {
+  const { e, images } = fixture();
+  e.votes = [{ id: 'vote', left: 'old', right: 'saved', leftImage: 'old-image', rightImage: 'saved-image', result: 'left', createdAt: 1 }];
+  expect(rollWorkspaceCandidates(e, images, { ...view, sort: 'rating' }).map(candidate => candidate.id)).toEqual(['pending', 'saved', 'old']);
+  expect(rollWorkspaceCandidates(e, images, { ...view, sort: 'old' }).map(candidate => candidate.id)).toEqual(['old', 'saved', 'pending']);
 });

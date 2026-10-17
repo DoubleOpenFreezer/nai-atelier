@@ -34,16 +34,16 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
-it.each(['v45', 'v5'] as const)('补图配置按%s加载、保存，提交后由调用方进入实验室', async pack => {
+it.each(['v45', 'v5'] as const)('补图配置按%s加载、保存，提交后由调用方原位生成', async pack => {
   const model = pack === 'v45' ? 'nai-diffusion-4-5-full' : 'nai-diffusion-5-full';
   mocks.data.mockResolvedValue({ templates: {}, samples: [] });
   mocks.defaults.mockReturnValue({ ...template, params: { ...template.params, model } });
   const saved = vi.fn(), close = vi.fn();
-  render(<ArtistSampleSettingsDialog tag="synthetic artist" pack={pack} enterAfterSave onSaved={saved} onClose={close} />);
+  render(<ArtistSampleSettingsDialog tag="synthetic artist" pack={pack} generateAfterSave onSaved={saved} onClose={close} />);
   await screen.findByLabelText('正向提示词');
-  await waitFor(() => expect((screen.getByRole('button', { name: '保存并进入实验室' }) as HTMLButtonElement).disabled).toBe(false));
+  await waitFor(() => expect((screen.getByRole('button', { name: '保存并生成样张' }) as HTMLButtonElement).disabled).toBe(false));
   expect(saved).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole('button', { name: '保存并进入实验室' }));
+  fireEvent.click(screen.getByRole('button', { name: '保存并生成样张' }));
   await waitFor(() => expect(saved).toHaveBeenCalledWith(expect.objectContaining({ params: expect.objectContaining({ model }) })));
   expect(mocks.save).toHaveBeenCalledWith(pack, expect.objectContaining({ params: expect.objectContaining({ model }) }));
   expect(close).not.toHaveBeenCalled();
@@ -52,7 +52,7 @@ it.each(['v45', 'v5'] as const)('补图配置按%s加载、保存，提交后由
 it('读取失败留窗重试，保存失败保留编辑并可取消', async () => {
   mocks.data.mockRejectedValueOnce(new Error('读取失败'));
   const saved = vi.fn(), close = vi.fn();
-  render(<ArtistSampleSettingsDialog tag="artist" pack="v45" enterAfterSave={false} onSaved={saved} onClose={close} />);
+  render(<ArtistSampleSettingsDialog tag="artist" pack="v45" generateAfterSave={false} onSaved={saved} onClose={close} />);
   await screen.findByText('读取失败');
   expect(mocks.defaults).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('button', { name: '重试读取配置' }));
@@ -70,18 +70,18 @@ it('读取失败留窗重试，保存失败保留编辑并可取消', async () =
 
 it('已有模板修改仅保存，字段布局适配窄屏，不提交生图', async () => {
   const saved = vi.fn();
-  const view = render(<ArtistSampleSettingsDialog tag="artist" pack="v45" enterAfterSave={false} onSaved={saved} onClose={vi.fn()} />);
+  const view = render(<ArtistSampleSettingsDialog tag="artist" pack="v45" generateAfterSave={false} onSaved={saved} onClose={vi.fn()} />);
   await screen.findByLabelText('正向提示词');
   await waitFor(() => expect((screen.getByRole('button', { name: '保存配置' }) as HTMLButtonElement).disabled).toBe(false));
   expect(view.container.ownerDocument.querySelector('.grid-cols-2')).toBeTruthy();
-  expect(screen.queryByRole('button', { name: '保存并进入实验室' })).toBeNull();
+  expect(screen.queryByRole('button', { name: '保存并生成样张' })).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
   await waitFor(() => expect(saved).toHaveBeenCalledWith(template));
 });
 
 it.each(['v45', 'v5'] as const)('顶栏打开%s模板不绑定画师，副标题仅版本，保存只写该版本', async pack => {
   const saved = vi.fn();
-  render(<ArtistSampleSettingsDialog pack={pack} enterAfterSave={false} onSaved={saved} onClose={vi.fn()} />);
+  render(<ArtistSampleSettingsDialog pack={pack} generateAfterSave={false} onSaved={saved} onClose={vi.fn()} />);
   const version = pack === 'v45' ? 'V4.5' : 'V5';
   expect(screen.getByText(`NovelAI ${version}`).textContent).toBe(`NovelAI ${version}`);
   await screen.findByLabelText('正向提示词');
@@ -89,5 +89,5 @@ it.each(['v45', 'v5'] as const)('顶栏打开%s模板不绑定画师，副标题
   fireEvent.change(screen.getByLabelText('正向提示词'), { target: { value: `portrait ${version}, {artist}` } });
   fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
   await waitFor(() => expect(mocks.save).toHaveBeenCalledWith(pack, expect.objectContaining({ prompt: `portrait ${version}, {artist}`, params: expect.objectContaining({ model: pack === 'v45' ? 'nai-diffusion-4-5-full' : 'nai-diffusion-5-full' }) })));
-  expect(saved).toHaveBeenCalledOnce(); expect(screen.queryByRole('button', { name: '保存并进入实验室' })).toBeNull();
+  expect(saved).toHaveBeenCalledOnce(); expect(screen.queryByRole('button', { name: '保存并生成样张' })).toBeNull();
 });

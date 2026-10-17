@@ -8,7 +8,7 @@ import type { ArtistOwnSample } from '../../services/artistSamples';
 const mocks = vi.hoisted(() => ({ lookup: vi.fn(), share: vi.fn(), observers: [] as IntersectionObserverCallback[] }));
 vi.mock('../../services/artistSamples', async original => ({ ...await original<typeof import('../../services/artistSamples')>(), getArtistSampleLookup: mocks.lookup }));
 vi.mock('../../components/SmartImage', () => ({ ImageActivityContext: React.createContext(true), SmartImage: ({ eager, previewTransform, ...props }: any) => <img {...props} data-eager={String(eager)} data-preview-transform={previewTransform} /> }));
-vi.mock('../../components/ImageShareActions', () => ({ ImageShareOverlay: (props: any) => { mocks.share(props); return <div data-testid="share" data-card-action="true" data-url={props.imageUrl} onClick={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()}><button aria-label="收藏" onClick={() => props.onFavoriteChange?.(true)}>收藏</button><button aria-label="下载图片">下载</button><button aria-label="复制图片">复制</button></div>; } }));
+vi.mock('../../components/ImageShareActions', () => ({ IMAGE_CARD_ACTION_CLASS: 'h-11 w-11 rounded-full md:h-8 md:w-8', ImageShareOverlay: (props: any) => { mocks.share(props); return <div data-testid="share" data-card-action="true" data-url={props.imageUrl} onClick={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()}><button aria-label="收藏" onClick={() => props.onFavoriteChange?.(true)}>收藏</button><button aria-label="下载图片">下载</button><button aria-label="复制图片">复制</button></div>; } }));
 beforeEach(() => {
   vi.clearAllMocks(); mocks.observers.length = 0;
   mocks.lookup.mockResolvedValue({ pack: 'v45', tag: 'synthetic artist', revision: 'one', imageCount: 2, sourceUrl: 'https://synthetic.invalid/pack' });
@@ -112,4 +112,49 @@ it('已有图包样张的读取中、错误与加载完成均不显示补图按�
   expect(screen.queryByRole('button', { name: '补充样张' })).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: '重试' })); await screen.findByRole('img');
   expect(screen.queryByRole('button', { name: '补充样张' })).toBeNull(); expect(onSupplement).not.toHaveBeenCalled(); expect(select).not.toHaveBeenCalled();
+});
+
+it('实时预览仅覆盖图片区，旧成功样张保留；切版本后不残留旧预览或生成入口', () => {
+  const own: ArtistOwnSample = { id: 'old', tag: 'synthetic artist', pack: 'v45', imageUrl: '/api/assets/old.png', prompt: 'old', negativePrompt: '', params: { model: 'nai-diffusion-4-5-full', width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler_ancestral' }, createdAt: 1 };
+  const { props, rerender } = setup([own], false);
+  const generation: any = { target: { tag: own.tag, pack: own.pack }, phase: 'generating', session: { preview: { image: 'data:image/png;base64,c3ludGhldGlj' } } };
+  rerender(<ArtistSampleCover {...props} generation={generation} pending />);
+  expect(screen.getByRole('img', { name: '合成画师' }).getAttribute('src')).toBe(own.imageUrl);
+  expect(screen.getByRole('img', { name: '样张生成预览' }).getAttribute('src')).toBe(generation.session.preview.image);
+  expect(screen.queryByTestId('share')).toBeNull();
+  expect(screen.queryByRole('button', { name: '补充样张' })).toBeNull();
+  rerender(<ArtistSampleCover {...props} generation={{ ...generation, phase: 'failed', session: undefined }} />);
+  expect(screen.getByRole('img', { name: '合成画师' }).getAttribute('src')).toBe(own.imageUrl);
+  expect(screen.queryByRole('img', { name: '样张生成预览' })).toBeNull();
+  rerender(<ArtistSampleCover {...props} pack="v5" ownSamples={[]} />);
+  expect(screen.queryByRole('img')).toBeNull(); expect(screen.getByRole('button', { name: '补充样张' })).toBeTruthy();
+});
+
+it('缺图任务进行中不提供第二次生成；归档失败展示真实历史且只留保存重试给外层固定区', () => {
+  const { props, rerender } = setup([], false);
+  rerender(<ArtistSampleCover {...props} pending generation={{ target: { id: 'target', tag: props.tag, pack: props.pack, historyIds: [] }, phase: 'preparing' }} />);
+  expect(screen.queryByRole('button', { name: '补充样张' })).toBeNull();
+  rerender(<ArtistSampleCover {...props} generation={{ target: { id: 'target', tag: props.tag, pack: props.pack, historyIds: ['history'] }, phase: 'save_failed', item: { id: 'history', imageUrl: '/api/assets/history.png' } as any }} />);
+  expect(screen.getByRole('img', { name: '样张生成预览' }).getAttribute('src')).toBe('/api/assets/history.png');
+  expect(screen.queryByRole('button', { name: '补充样张' })).toBeNull();
+});
+
+it('有图的生成入口共用右侧小圆形操作样式，图包和自建区别文案，点击不会选卡；缺图仅固定入口', async () => {
+  const select = vi.fn(), generate = vi.fn();
+  const props = { tag: 'artist', pack: 'v45' as const, revision: 'one', hasPackSample: true, ownSamples: [] as ArtistOwnSample[], alt: 'artist', onPackChange: vi.fn(), onSupplement: vi.fn(), onGenerate: generate, notify: vi.fn() };
+  const view = render(<div onClick={select}><ArtistSampleCover {...props} /></div>); visible();
+  const button = await screen.findByRole('button', { name: '生成样张' });
+  expect(button.title).toBe('生成样张'); expect(button.textContent).toBe('');
+  expect(button.className).toContain('h-11'); expect(button.className).toContain('rounded-full'); expect(button.className).toContain('hover-reveal-md');
+  expect(button.className).not.toMatch(/absolute|bottom-|right-/);
+  expect(button.parentElement?.className).toContain('right-2'); expect(button.parentElement?.className).toContain('top-2'); expect(button.parentElement?.className).toContain('flex-col');
+  expect(Array.from(button.parentElement?.querySelectorAll('button') || [], action => action.getAttribute('aria-label'))).toEqual(['收藏', '下载图片', '复制图片', '生成样张']);
+  fireEvent.click(button); expect(generate).toHaveBeenCalledOnce(); expect(select).not.toHaveBeenCalled();
+  const own: ArtistOwnSample = { id: 'new', tag: 'artist', pack: 'v45', imageUrl: '/api/assets/new.png', prompt: '', negativePrompt: '', params: { model: 'nai-diffusion-4-5-full' } as any, createdAt: 1 };
+  view.rerender(<div onClick={select}><ArtistSampleCover {...props} ownSamples={[own]} /></div>);
+  expect(screen.getByRole('button', { name: '重新生成样张' }).textContent).toBe('');
+  expect(screen.queryByRole('button', { name: '生成样张' })).toBeNull();
+  view.rerender(<div onClick={select}><ArtistSampleCover {...props} hasPackSample={false} /></div>);
+  expect(screen.queryByRole('button', { name: '生成样张' })).toBeNull();
+  expect(screen.getAllByRole('button', { name: '补充样张' })).toHaveLength(1);
 });

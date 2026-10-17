@@ -18,21 +18,21 @@ it('加权风格串提取使用既有解析器，保留剩余权重组和完整�
     basePrompt: '1.2::artist:alpha, flowers ::, artist:beta, landscape', negativePrompt: 'negative', params: { ...initial.template.params, characters: [{ id: 'r', prompt: 'person', negativePrompt: 'sad', x: 0.2, y: 0.7 }] } };
   const save = vi.fn(async (_value: RollExperiment) => {});
   render(<StyleRollSetup initial={initial} chains={[chain]} enforceFreeStepLimit onSave={save} onClose={vi.fn()} />);
-  fireEvent.click(screen.getByRole('button', { name: '对照配置' }));
-  fireEvent.change(await screen.findByRole('combobox', { name: '载入对照配置' }), { target: { value: 'source' } });
+  fireEvent.click(screen.getByRole('button', { name: '生成配置' }));
+  fireEvent.change(await screen.findByRole('combobox', { name: '载入生成配置' }), { target: { value: 'source' } });
   fireEvent.click(screen.getByRole('button', { name: '保存配置' })); await waitFor(() => expect(save).toHaveBeenCalledOnce());
   const value = save.mock.calls[0][0]; expect(value.artists.map(artist => artist.tag)).toEqual(['alpha', 'beta']);
   expect(value.template.prompt).toContain('1.2::flowers ::'); expect(value.template.prompt).not.toContain('artist:'); expect(value.template.prompt.match(/\{style\}/g)).toHaveLength(1);
   expect(value.template.params.characters).toEqual(chain.params.characters); expect(value.template.negativePrompt).toBe('negative');
 });
-it('已有候选冻结对照配置，画师锁定及排除仍可保存且不改旧候选', async () => {
+it('已有候选冻结生成配置，画师锁定及排除仍可保存且不改旧候选', async () => {
   const initial = rollFixture(); initial.candidates = [candidateFixture('a')]; const save = vi.fn(async (_value: RollExperiment) => {});
   render(<StyleRollSetup initial={initial} chains={[]} enforceFreeStepLimit onSave={save} onClose={vi.fn()} />);
   fireEvent.click(screen.getByText('锁定／排除画师（可选）'));
   fireEvent.click(await screen.findByRole('checkbox', { name: '锁定画师：alpha' }));
   fireEvent.change(screen.getByRole('spinbutton', { name: '锁定权重：alpha' }), { target: { value: '1.7' } });
   fireEvent.click(screen.getByRole('checkbox', { name: '排除画师：beta' }));
-  fireEvent.click(screen.getByRole('button', { name: '对照配置' }));
+  fireEvent.click(screen.getByRole('button', { name: '生成配置' }));
   expect((screen.getByLabelText('公共提示词（{style} 为画风位置）') as HTMLTextAreaElement).disabled).toBe(true);
   fireEvent.click(screen.getByRole('button', { name: '保存配置' })); await waitFor(() => expect(save).toHaveBeenCalledOnce());
   const value = save.mock.calls[0][0]; expect(value.artists[0]).toEqual(expect.objectContaining({ locked: true, weight: 1.7 })); expect(value.artists[1].excluded).toBe(true);

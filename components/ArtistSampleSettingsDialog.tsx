@@ -70,9 +70,9 @@ const TemplateEditor: React.FC<{ pack: ArtistSamplePack; value: ArtistSampleTemp
 };
 
 export const ArtistSampleSettingsDialog: React.FC<{
-  tag?: string; pack: ArtistSamplePack; enterAfterSave: boolean;
+  tag?: string; pack: ArtistSamplePack; generateAfterSave: boolean;
   onSaved: (template: ArtistSampleTemplate) => void; onClose: () => void;
-}> = ({ tag, pack, enterAfterSave, onSaved, onClose }) => {
+}> = ({ tag, pack, generateAfterSave, onSaved, onClose }) => {
   useLanguage();
   const [template, setTemplate] = useState<ArtistSampleTemplate>();
   const [valid, setValid] = useState(false);
@@ -111,7 +111,7 @@ export const ArtistSampleSettingsDialog: React.FC<{
         {loading ? <p className="text-sm text-gray-500">{t('正在读取配置…')}</p> : template && <fieldset disabled={saving}><TemplateEditor pack={pack} value={template} onChange={setTemplate} onModelValidChange={setValid} /></fieldset>}
         {error && <p role="alert" className="mt-2 break-words text-xs text-red-600 dark:text-red-300">{error}{!template && <button type="button" className="mobile-touch ml-2 underline" onClick={() => setRetry(value => value + 1)}>{t('重试读取配置')}</button>}</p>}
       </div>
-      <footer className="flex flex-none justify-end gap-2 border-t border-gray-200 px-4 py-3 dark:border-gray-700"><button type="button" disabled={saving} onClick={close} className="mobile-touch rounded-lg border border-gray-300 px-3 text-sm dark:border-gray-700 dark:text-gray-300">{t('取消')}</button><button type="button" disabled={loading || saving || !valid || !template?.prompt.includes('{artist}') || !Number.isSafeInteger(template?.params.seed) || template!.params.seed! < 0} onClick={() => void save()} className="mobile-touch rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">{saving ? t('保存中…') : enterAfterSave ? t('保存并进入实验室') : t('保存配置')}</button></footer>
+      <footer className="flex flex-none justify-end gap-2 border-t border-gray-200 px-4 py-3 dark:border-gray-700"><button type="button" disabled={saving} onClick={close} className="mobile-touch rounded-lg border border-gray-300 px-3 text-sm dark:border-gray-700 dark:text-gray-300">{t('取消')}</button><button type="button" disabled={loading || saving || !valid || !template?.prompt.includes('{artist}') || !Number.isSafeInteger(template?.params.seed) || template!.params.seed! < 0} data-agent-action={generateAfterSave ? "business" : undefined} onClick={() => void save()} className="mobile-touch rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">{saving ? t('保存中…') : generateAfterSave ? t('保存并生成样张') : t('保存配置')}</button></footer>
     </div>
   </div></ImagePreviewPortal>;
 };

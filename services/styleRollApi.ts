@@ -24,17 +24,6 @@ export async function loadRollHistory(experimentId: string): Promise<LocalGenIte
   return result;
 }
 
-const canonical = (value: unknown): string => {
-  if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
-  if (value && typeof value === 'object') return `{${Object.entries(value).filter(([, item]) => item !== undefined).sort(([a], [b]) => a.localeCompare(b)).map(([key, item]) => `${JSON.stringify(key)}:${canonical(item)}`).join(',')}}`;
-  return JSON.stringify(value) ?? 'null';
-};
-
-/** 以真实历史参数分组，官方规范化变化也不能让两张不同条件的图片参与同一票。 */
-export function rollHistoryContext(item: LocalGenItem): string {
-  return canonical({ params: item.params, negativePrompt: item.negativePrompt });
-}
-
 export function rollCandidateImages(experiment: RollExperiment, history: LocalGenItem[]): Map<string, LocalGenItem> {
   const images = new Map<string, LocalGenItem>();
   const votedImages = new Map(experiment.votes.flatMap(vote => [[vote.left, vote.leftImage], [vote.right, vote.rightImage]] as [string, string][]));
@@ -45,9 +34,4 @@ export function rollCandidateImages(experiment: RollExperiment, history: LocalGe
       item.prompt === rollPrompt(experiment.template, candidate.genes) && item.params.seed === (candidate.seed ?? experiment.template.params.seed)) images.set(candidate.id, item);
   }
   return images;
-}
-
-export function comparableRollImages(images: Map<string, LocalGenItem>, anchorId?: string): Set<string> {
-  const anchor = anchorId ? images.get(anchorId) : images.values().next().value;
-  return new Set([...images].filter(([, item]) => anchor && rollHistoryContext(item) === rollHistoryContext(anchor)).map(([id]) => id));
 }
