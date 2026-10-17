@@ -31,9 +31,7 @@ export async function handleStyleRollRoute({ path, method, request, db, currentU
     if (JSON.stringify(previous.template) !== JSON.stringify(experiment.template)) return error('已有候选的实验配置不可修改，请新建实验', 400);
     for (const candidate of previous.candidates) {
       const next = experiment.candidates.find(item => item.id === candidate.id);
-      if (!next || JSON.stringify([candidate.genes, candidate.parents, candidate.method, candidate.generation]) !== JSON.stringify([next.genes, next.parents, next.method, next.generation])) {
-        return error('已有候选不可覆盖或删除，请创建变体或归档', 400);
-      }
+      if (!next || JSON.stringify(candidate.tags) !== JSON.stringify(next.tags)) return error('已有候选不可覆盖或删除，请丢弃后重新抽取', 400);
     }
   }
   for (const round of previous?.rounds ?? []) {

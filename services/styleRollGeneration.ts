@@ -12,12 +12,12 @@ export async function beginRollGeneration(experiment: RollExperiment, candidate:
   if (!candidates.length || candidates.length > 24) throw new Error('每轮可生成 1～24 张图片');
   const descriptors = [];
   for (const item of candidates) {
-    const prompt = rollPrompt(experiment.template, item.genes);
+    const prompt = rollPrompt(experiment.template, item.tags);
     const descriptor = await buildGenerationJobDescriptor({
       operation: 'text-to-image', prompt, negative: experiment.template.negativePrompt,
       params: structuredClone(experiment.template.params), forceEmptySeed: false, stream, approvedCost,
       history: { basePrompt: prompt, subjectPrompt: '',
-        modules: [{ id: rollCandidateModuleId(item.id), name: 'Roll 串', content: formatRollStyle(item.genes), isActive: false }],
+        modules: [{ id: rollCandidateModuleId(item.id), name: 'Roll 串', content: formatRollStyle(item.tags), isActive: false }],
         sourceChainId: rollSourceId(experiment.id), sourceChainName: experiment.name, sourceChainType: 'style' },
     });
     descriptors.push(descriptor);

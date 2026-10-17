@@ -38,9 +38,9 @@ describe('界面语言', () => {
       expect(cardMenu).toContain('V4.5'); expect(cardMenu).not.toContain('{0}'); expect(cardMenu).not.toContain('样张版本与补图');
     }
   });
-  it('Roll 串的生成与保存操作、手动调权重和状态提示具备四种译文，切语言不改原 Tag', () => {
+  it('Roll 串的生成、保存与图库筛选具备四种译文，切语言不改原 Tag', () => {
     for (const language of LANGUAGES.filter(item => item.code !== 'zh-CN')) {
-      for (const key of ['生成图片', '生成配置', '载入生成配置', '历史暂不可用，请重新加载后再生成。', '新建实验', '从风格串提取画师', '画师基因配方', '保存为新变体', '手动调整权重', '纯新探索', '微调变体', '随机', '变异', '手动', '已筛选']) expect(translate(language.code, key)).not.toBe(key);
+      for (const key of ['生成图片', '生成配置', '载入生成配置', '历史暂不可用，请重新加载后再生成。', '新建实验', '从风格串提取画师', '画师与权重', '位画师']) expect(translate(language.code, key)).not.toBe(key);
       expect(translate(language.code, '公共提示词（{style} 为画风位置）')).toContain('{style}');
       expect(translate(language.code, '锁定画师：{0}', ['alpha_artist (style)'])).toContain('alpha_artist (style)');
     }

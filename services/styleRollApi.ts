@@ -6,12 +6,11 @@ import { rollCandidateModuleId, rollPrompt, rollSourceId, validateRollExperiment
 export async function loadRollExperiments(): Promise<RollExperiment[]> {
   const result = await api.get('/style-roll', { cache: 'no-store' });
   if (!Array.isArray(result.experiments)) throw new Error('Roll 串资料读取失败');
-  result.experiments.forEach(validateRollExperiment);
+  for (const experiment of result.experiments) validateRollExperiment(experiment);
   return result.experiments;
 }
 
 export async function saveRollExperiment(experiment: RollExperiment): Promise<RollExperiment> {
-  validateRollExperiment(experiment);
   const result = await api.put('/style-roll', experiment);
   validateRollExperiment(result.experiment);
   return result.experiment;
@@ -30,7 +29,7 @@ export function rollCandidateImages(experiment: RollExperiment, history: LocalGe
     if (item.sourceChainId !== rollSourceId(experiment.id) || item.edit) continue;
     const candidate = experiment.candidates.find(candidate => item.modules?.some(module => module.id === rollCandidateModuleId(candidate.id)));
     if (candidate && !images.has(candidate.id) &&
-      item.prompt === rollPrompt(experiment.template, candidate.genes) && item.params.seed === experiment.template.params.seed) images.set(candidate.id, item);
+      item.prompt === rollPrompt(experiment.template, candidate.tags) && item.params.seed === experiment.template.params.seed) images.set(candidate.id, item);
   }
   return images;
 }

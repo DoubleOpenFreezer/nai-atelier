@@ -11,9 +11,7 @@ export function rollWorkspaceCandidates(experiment: RollExperiment, images: Map<
     if (view.roundId && !round?.candidateIds.includes(candidate.id)) return false;
     if (view.filter === 'archived' ? !candidate.archived : candidate.archived) return false;
     if (view.filter === 'saved' && !candidate.savedChainId || view.filter === 'pending' && images.has(candidate.id)) return false;
-    if (view.filter === 'originals' && candidate.parents.length > 0) return false;
-    if (view.filter === 'variants' && candidate.parents.length === 0) return false;
-    return !query || String(index + 1) === query || `#${index + 1}` === query || candidate.genes.some(gene => gene.tag.toLowerCase().replaceAll('_', ' ').includes(query));
+    return !query || String(index + 1) === query || `#${index + 1}` === query || candidate.tags.some(tag => tag.tag.toLowerCase().replaceAll('_', ' ').includes(query));
   }).sort((a, b) => view.sort === 'old' ? a.createdAt - b.createdAt : b.createdAt - a.createdAt || experiment.candidates.indexOf(b) - experiment.candidates.indexOf(a));
 }
 

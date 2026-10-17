@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Check, Compass, Dice5, RotateCcw, Save, Sparkles, Trash2 } from 'lucide-react';
+import { Check, Dice5, RotateCcw, Save, Trash2 } from 'lucide-react';
 import type { LocalGenItem } from '../../types';
 import { t } from '../../services/i18n';
 import { type RollCandidate, type RollExperiment } from '../../services/styleRoll';
@@ -20,13 +20,7 @@ interface Props {
   notify: (message: string, type?: 'success' | 'error') => void;
 }
 
-const methodMeta: Record<string, { label: string; icon: React.ReactNode; color: string }> = {
-  random: { label: '随机', icon: <Dice5 className="h-3 w-3" />, color: 'text-sky-500 bg-sky-50 dark:bg-sky-950/40 border-sky-200 dark:border-sky-800' },
-  mutate: { label: '变异', icon: <Sparkles className="h-3 w-3" />, color: 'text-amber-500 bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-800' },
-  manual: { label: '手动', icon: <Compass className="h-3 w-3" />, color: 'text-emerald-500 bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800' },
-};
-
-const GENE_COLORS = [
+const ACCENT_COLORS = [
   'bg-indigo-500 text-indigo-700 dark:text-indigo-300',
   'bg-emerald-500 text-emerald-700 dark:text-emerald-300',
   'bg-purple-500 text-purple-700 dark:text-purple-300',
@@ -46,11 +40,10 @@ export const StyleRollGallery: React.FC<Props> = ({ experiment, candidates, imag
   const renderCard = (candidate: RollCandidate) => {
     const item = images.get(candidate.id), index = experiment.candidates.indexOf(candidate) + 1;
     const selected = selecting ? selectedIds.has(candidate.id) : selectedId === candidate.id;
-    const method = methodMeta[candidate.method] || methodMeta.random;
     const activate = () => { if (selecting) { if (!busy) onToggle(candidate.id); } else onSelect(selectedId === candidate.id ? '' : candidate.id); };
 
     // 计算总权重以便展示多彩权重条
-    const totalWeight = candidate.genes.reduce((sum, g) => sum + Math.max(0.1, g.weight), 0) || 1;
+    const totalWeight = candidate.tags.reduce((sum, tag) => sum + Math.max(0.1, tag.weight), 0) || 1;
 
     return <PressRevealSurface key={candidate.id} pressDisabled={selecting} role={selecting ? 'checkbox' : 'button'} tabIndex={0}
       data-agent-action="select" data-gallery-work-id={candidate.id} data-safe-mode-work="true"
@@ -63,12 +56,6 @@ export const StyleRollGallery: React.FC<Props> = ({ experiment, candidates, imag
         <span className="flex items-center gap-1 rounded-full border border-black/10 bg-black/40 px-2 py-0.5 text-xs font-mono font-medium text-white shadow-sm backdrop-blur-md dark:border-white/10 dark:bg-black/60">
           #{index}
         </span>
-        {candidate.method && (
-          <span className={`hidden sm:inline-flex items-center gap-0.5 rounded-full border px-1.5 py-0.5 text-xs font-semibold backdrop-blur-md shadow-sm ${method.color}`}>
-            {method.icon}
-            <span>{t(method.label)}</span>
-          </span>
-        )}
       </div>
 
       <div className="mobile-gallery-frame relative w-full overflow-hidden border-b border-gray-100 bg-gray-50 dark:border-gray-800 dark:bg-gray-950" style={{ '--mobile-image-ratio': String(ratio(candidate)) } as React.CSSProperties}>
@@ -111,13 +98,13 @@ export const StyleRollGallery: React.FC<Props> = ({ experiment, candidates, imag
         )}
 
         {/* 底部微型画师权重渐变色带 */}
-        {candidate.genes.length > 0 && (
+        {candidate.tags.length > 0 && (
           <div className="absolute inset-x-0 bottom-0 z-10 flex h-1 w-full overflow-hidden opacity-80 group-hover:opacity-100 transition-opacity">
-            {candidate.genes.map((gene, gIdx) => {
-              const pct = (Math.max(0.1, gene.weight) / totalWeight) * 100;
-              const colorClass = GENE_COLORS[gIdx % GENE_COLORS.length].split(' ')[0];
+            {candidate.tags.map((entry, entryIndex) => {
+              const pct = (Math.max(0.1, entry.weight) / totalWeight) * 100;
+              const colorClass = ACCENT_COLORS[entryIndex % ACCENT_COLORS.length].split(' ')[0];
               return (
-                <div key={gene.tag} className={`${colorClass} h-full transition-all`} style={{ width: `${pct}%` }} title={`${gene.tag}: ${gene.weight.toFixed(1)}`} />
+                <div key={entry.tag} className={`${colorClass} h-full transition-all`} style={{ width: `${pct}%` }} title={`${entry.tag}: ${entry.weight.toFixed(1)}`} />
               );
             })}
           </div>
@@ -128,17 +115,17 @@ export const StyleRollGallery: React.FC<Props> = ({ experiment, candidates, imag
 
       {/* 卡片底栏信息：精炼高颜值，只保留一组精致画师标签，消除文本重复 */}
       <div className="gallery-card-caption flex items-center justify-between px-3 py-2 gap-2 bg-white/95 dark:bg-gray-850/95 border-t border-gray-100 dark:border-gray-800">
-        <div className="flex flex-wrap items-center gap-1.5 overflow-hidden min-w-0 flex-1" title={candidate.genes.map(gene => `${gene.tag} (${gene.weight.toFixed(1)})`).join(', ')}>
-          {candidate.genes.slice(0, 3).map((gene, gIdx) => (
-            <span key={gene.tag} className="inline-flex items-center gap-1 rounded-md bg-gray-100 dark:bg-gray-800 px-2 py-0.5 text-xs font-medium text-gray-700 dark:text-gray-200 truncate max-w-[130px] border border-gray-200/50 dark:border-gray-700/50">
-              <span className={`inline-block h-1.5 w-1.5 rounded-full ${GENE_COLORS[gIdx % GENE_COLORS.length].split(' ')[0]}`} />
-              <span className="truncate">{gene.tag}</span>
-              <span className="font-mono text-xs opacity-60 font-semibold">{gene.weight.toFixed(1)}</span>
+        <div className="flex flex-wrap items-center gap-1.5 overflow-hidden min-w-0 flex-1" title={candidate.tags.map(entry => `${entry.tag} (${entry.weight.toFixed(1)})`).join(', ')}>
+          {candidate.tags.slice(0, 3).map((entry, entryIndex) => (
+            <span key={entry.tag} className="inline-flex items-center gap-1 rounded-md bg-gray-100 dark:bg-gray-800 px-2 py-0.5 text-xs font-medium text-gray-700 dark:text-gray-200 truncate max-w-[130px] border border-gray-200/50 dark:border-gray-700/50">
+              <span className={`inline-block h-1.5 w-1.5 rounded-full ${ACCENT_COLORS[entryIndex % ACCENT_COLORS.length].split(' ')[0]}`} />
+              <span className="truncate">{entry.tag}</span>
+              <span className="font-mono text-xs opacity-60 font-semibold">{entry.weight.toFixed(1)}</span>
             </span>
           ))}
-          {candidate.genes.length > 3 && (
+          {candidate.tags.length > 3 && (
             <span className="rounded-md bg-gray-100 px-1.5 py-0.5 text-xs font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400">
-              +{candidate.genes.length - 3}
+              +{candidate.tags.length - 3}
             </span>
           )}
         </div>

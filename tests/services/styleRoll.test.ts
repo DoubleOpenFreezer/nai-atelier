@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { candidateFixture, rollFixture, seededRandom } from '../fixtures/styleRoll';
-import { formatRollStyle, manualRollVariant, mergeRollArtists, parseRollArtists, resolveRollArtists, rollCandidates, rollCandidateToChain, rollSignature, validateRollExperiment, validateRollRules, validateRollTemplate } from '../../services/styleRoll';
+import { formatRollStyle, mergeRollArtists, parseRollArtists, resolveRollArtists, rollCandidates, rollCandidateToChain, rollSignature, validateRollExperiment, validateRollRules, validateRollTemplate } from '../../services/styleRoll';
 
 describe('Roll 串画师与规则', () => {
   it('完整词库不受手填1000项限制，覆盖项按名称去重且锁定／排除优先', () => {
@@ -10,14 +10,8 @@ describe('Roll 串画师与规则', () => {
     expect(artists).toHaveLength(1205); expect(artists[0]).toEqual(overrides[0]); expect(artists[1]).toEqual(overrides[1]); expect(artists[2].tag).toBe('catalog_2');
     const e = rollFixture(); e.artists = artists;
     const candidate = rollCandidates(e, 1, { random: () => 0.999999 })[0];
-    expect(candidate.genes[0]).toEqual({ tag: 'CATALOG 0', weight: 2 }); expect(candidate.genes.some(gene => gene.tag === 'catalog_1204')).toBe(true);
-    expect(candidate.genes.some(gene => gene.tag === 'catalog_1')).toBe(false); expect(overrides).toHaveLength(2);
-  });
-  it('已有候选即使从词库移除也可保留画师调整，排除项仍生效', () => {
-    const e = rollFixture(); e.artists = []; e.candidates = [candidateFixture('old', 'old-artist')];
-    e.artists = resolveRollArtists([], [], e.candidates[0].genes);
-    expect(manualRollVariant(e, e.candidates[0], [1.1]).genes).toEqual([{ tag: 'old-artist', weight: 1.1 }]);
-    e.artists[0].excluded = true; expect(() => manualRollVariant(e, e.candidates[0], [1.2])).toThrow('抽取条件已变化');
+    expect(candidate.tags[0]).toEqual({ tag: 'CATALOG 0', weight: 2 }); expect(candidate.tags.some(tag => tag.tag === 'catalog_1204')).toBe(true);
+    expect(candidate.tags.some(tag => tag.tag === 'catalog_1')).toBe(false); expect(overrides).toHaveLength(2);
   });
   it('支持裸 Tag、artist 前缀和数值权重，归一化去重但保留第一份名字', () => {
     expect(parseRollArtists('artist:alpha_name, 1.2::artist:beta ::\nALPHA NAME')).toEqual([
@@ -38,58 +32,44 @@ describe('Roll 串画师与规则', () => {
     e.artists = parseRollArtists('alpha, beta, gamma').map(artist => ({ ...artist, locked: true }));
     expect(() => validateRollRules(e.artists, { ...e.rules, minArtists: 1, maxArtists: 2 })).toThrow('锁定画师');
   });
-  it('当前衍生配方只关联一个已有父代，引用无效或多个父代时拒绝保存', () => {
-    const e = rollFixture(); e.candidates = [candidateFixture('a'), candidateFixture('b'), { ...candidateFixture('derived'), method: 'manual', parents: ['a'], generation: 1 }];
+  it('候选只保存画师与权重，不再接受来源、方法或代数字段', () => {
+    const e = rollFixture(); e.candidates = [candidateFixture('a')];
     expect(() => validateRollExperiment(e)).not.toThrow();
-    e.candidates[2].parents = ['missing']; expect(() => validateRollExperiment(e)).toThrow('谱系资料无效');
-    e.candidates[2].parents = ['a', 'b']; expect(() => validateRollExperiment(e)).toThrow('谱系资料无效');
+    expect(() => validateRollExperiment({ ...e, candidates: [{ ...candidateFixture('a'), tags: [] }] })).toThrow('候选串资料无效');
+    expect(() => validateRollExperiment({ ...e, candidates: [{ ...candidateFixture('a'), tags: [{ tag: 'a', weight: 1 }, { tag: 'A', weight: 1 }] }] })).toThrow('候选串资料无效');
+  });
+  it('旧记录字段不再兼容：带来源、方法或代数的候选直接判为无效', () => {
+    const e = rollFixture();
+    const legacy = { ...e, candidates: [{ id: 'old', genes: [{ tag: 'alpha', weight: 1.2 }], parents: ['x'], method: 'mutate', generation: 2, createdAt: 1, archived: false }] };
+    expect(() => validateRollExperiment(legacy)).toThrow('候选串资料无效');
   });
 });
 
-describe('Roll 和手动调整', () => {
+describe('Roll 抽取', () => {
   it('自定义范围包含上下界，范围相等时使用固定权重', () => {
     const e = rollFixture(); e.rules = { ...e.rules, minWeight: 1.8, maxWeight: 2.2 };
-    expect(rollCandidates(e, 1, { random: () => 0 })[0].genes.every(gene => gene.weight === 1.8)).toBe(true);
-    expect(rollCandidates(e, 1, { random: () => 0.999999 })[0].genes.every(gene => gene.weight === 2.2)).toBe(true);
+    expect(rollCandidates(e, 1, { random: () => 0 })[0].tags.every(tag => tag.weight === 1.8)).toBe(true);
+    expect(rollCandidates(e, 1, { random: () => 0.999999 })[0].tags.every(tag => tag.weight === 2.2)).toBe(true);
     e.rules.minWeight = e.rules.maxWeight = 0.1;
-    expect(rollCandidates(e, 1)[0].genes.every(gene => gene.weight === 0.1)).toBe(true);
+    expect(rollCandidates(e, 1)[0].tags.every(tag => tag.weight === 0.1)).toBe(true);
   });
-  it('保存作为偏好信号，优先保留原组合画师并留四分之一全新探索，锁定／排除和去重仍生效', () => {
-    const e = rollFixture(); e.rules = { ...e.rules, minArtists: 4, maxArtists: 4, minWeight: 1.8, maxWeight: 2.2 };
-    e.candidates = [{ ...candidateFixture('saved'), savedChainId: 'chain', genes: ['alpha', 'beta', 'gamma', 'delta'].map(tag => ({ tag, weight: 1 })) }, { ...candidateFixture('archived', 'theta'), savedChainId: 'old-chain', archived: true }];
-    e.artists[1].excluded = true; e.artists[4].locked = true; e.artists[4].weight = 1.3;
-    const result = rollCandidates(e, 8, { mode: 'saved', random: seededRandom() });
-    expect(result).toHaveLength(8); expect(result.filter(candidate => candidate.parents.includes('saved'))).toHaveLength(6); expect(result.filter(candidate => candidate.method === 'random')).toHaveLength(2);
-    for (const candidate of result) {
-      expect(candidate.genes).toHaveLength(4); expect(candidate.genes).toContainEqual({ tag: 'epsilon', weight: 1.3 }); expect(candidate.genes.some(gene => gene.tag === 'beta')).toBe(false);
-      expect(candidate.parents).not.toContain('archived'); if (candidate.parents.length) expect(candidate.genes.some(gene => ['alpha', 'gamma', 'delta'].includes(gene.tag))).toBe(true);
-      expect(candidate.genes.filter(gene => gene.tag !== 'epsilon').every(gene => gene.weight >= 1.8 && gene.weight <= 2.2)).toBe(true);
-    }
-    expect(new Set(result.map(candidate => rollSignature(candidate.genes))).size).toBe(8);
-  });
-  it('未保存、已归档或已不在可用词库内的组合不冒充偏好，自动退回完整词库随机抽取', () => {
-    const e = rollFixture(); e.candidates = [candidateFixture('not-kept', 'alpha'), { ...candidateFixture('missing', 'removed'), savedChainId: 'gone' }];
-    const result = rollCandidates(e, 4, { mode: 'saved', random: seededRandom() }); expect(result.every(candidate => candidate.method === 'random' && !candidate.parents.length)).toBe(true);
-  });
-  it('精确调整生成独立新变体并遵守锁定、排除及范围，原串保持不变', () => {
-    const e = rollFixture(); const parent = { ...candidateFixture('manual-parent', 'alpha'), genes: [{ tag: 'alpha', weight: 1 }, { tag: 'beta', weight: 1 }] }; e.candidates = [parent];
-    e.artists[0].locked = true; e.artists[0].weight = 1.2;
-    const variant = manualRollVariant(e, parent, [0.1, 0.9]);
-    expect(variant.genes).toEqual([{ tag: 'alpha', weight: 1.2 }, { tag: 'beta', weight: 0.9 }]); expect(variant.parents).toEqual([parent.id]);
-    expect(parent.genes).toEqual([{ tag: 'alpha', weight: 1 }, { tag: 'beta', weight: 1 }]);
-    expect(() => manualRollVariant(e, parent, [1, 1.41])).toThrow('一位小数');
-    e.candidates.push(variant); expect(() => manualRollVariant(e, parent, [1.2, 0.9])).toThrow('已经存在');
-    e.artists[1].excluded = true; expect(() => manualRollVariant(e, parent, [1.2, 1.1])).toThrow('抽取条件已变化');
+  it('每轮都是纯随机组合，不受已保存候选影响', () => {
+    const e = rollFixture(); e.rules = { ...e.rules, minArtists: 4, maxArtists: 4 };
+    e.candidates = [{ ...candidateFixture('saved'), savedChainId: 'chain', tags: ['alpha', 'beta', 'gamma', 'delta'].map(tag => ({ tag, weight: 1 })) }];
+    const result = rollCandidates(e, 8, { random: seededRandom() });
+    expect(result).toHaveLength(8);
+    expect(result.every(candidate => !('parents' in candidate) && !('method' in candidate))).toBe(true);
+    expect(new Set(result.map(candidate => rollSignature(candidate.tags))).size).toBe(8);
   });
   it('批次去重、锁定原权重、排除生效，并满足全部数量和权重边界', () => {
     const e = rollFixture(); e.artists[0] = { ...e.artists[0], locked: true, weight: 2 }; e.artists[1].excluded = true;
     const random = seededRandom(); e.candidates = rollCandidates(e, 24, { random });
     e.candidates.push(...rollCandidates(e, 24, { random }));
-    expect(new Set(e.candidates.map(candidate => rollSignature(candidate.genes))).size).toBe(48);
+    expect(new Set(e.candidates.map(candidate => rollSignature(candidate.tags))).size).toBe(48);
     for (const candidate of e.candidates) {
-      expect(candidate.genes.length).toBeGreaterThanOrEqual(3); expect(candidate.genes.length).toBeLessThanOrEqual(6);
-      expect(candidate.genes[0]).toEqual({ tag: 'alpha', weight: 2 }); expect(candidate.genes.some(gene => gene.tag === 'beta')).toBe(false);
-      for (const gene of candidate.genes.slice(1)) { expect(gene.weight).toBeGreaterThanOrEqual(0.7); expect(gene.weight).toBeLessThanOrEqual(1.4); }
+      expect(candidate.tags.length).toBeGreaterThanOrEqual(3); expect(candidate.tags.length).toBeLessThanOrEqual(6);
+      expect(candidate.tags[0]).toEqual({ tag: 'alpha', weight: 2 }); expect(candidate.tags.some(tag => tag.tag === 'beta')).toBe(false);
+      for (const tag of candidate.tags.slice(1)) { expect(tag.weight).toBeGreaterThanOrEqual(0.7); expect(tag.weight).toBeLessThanOrEqual(1.4); }
     }
     expect(() => validateRollExperiment(e)).not.toThrow();
   });
@@ -104,7 +84,7 @@ describe('风格串保存', () => {
   it('风格串保存保留完整配置和真实 Seed，独立深拷贝角色参数', () => {
     const e = rollFixture(); e.template.params.characters = [{ id: 'role', prompt: 'subject', negativePrompt: 'negative role', x: 0.5, y: 0.5 }];
     e.candidates = [candidateFixture('alpha')]; const saved = rollCandidateToChain(e, e.candidates[0], '/api/assets/synthetic.png');
-    expect(saved.basePrompt).toBe(`${formatRollStyle(e.candidates[0].genes)}, synthetic subject`); expect(saved.params.seed).toBe(0);
+    expect(saved.basePrompt).toBe(`${formatRollStyle(e.candidates[0].tags)}, synthetic subject`); expect(saved.params.seed).toBe(0);
     expect(saved.params.characters).toEqual(e.template.params.characters); expect(saved.params.characters).not.toBe(e.template.params.characters);
     expect(saved.modules).toEqual([]); expect(saved.variableValues).toEqual({ subject: '' }); expect(saved.tags).toEqual([]);
   });

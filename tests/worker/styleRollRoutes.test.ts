@@ -38,12 +38,12 @@ it('旧版本写入和重复创建返回冲突，不覆盖已保存的记录或�
   expect(list.experiments[0].name).toBe(experiment.name);
 });
 
-it('已有候选配置和谱系不可改写，归档可逆且不删除其他资料', async () => {
+it('已有候选配置和画师权重不可改写，归档可逆且不删除其他资料', async () => {
   const f = fixture(), experiment = { ...rollFixture(), revision: 0, candidates: [candidateFixture('one')] };
   const { experiment: saved } = await (await f.invoke(experiment))!.json() as any;
   expect((await f.invoke({ ...saved, template: { ...saved.template, prompt: '{style}, different' } }))!.status).toBe(400);
   expect((await f.invoke({ ...saved, candidates: [] }))!.status).toBe(400);
-  expect((await f.invoke({ ...saved, candidates: [{ ...saved.candidates[0], genes: [{ tag: 'changed', weight: 1 }] }] }))!.status).toBe(400);
+  expect((await f.invoke({ ...saved, candidates: [{ ...saved.candidates[0], tags: [{ tag: 'changed', weight: 1 }] }] }))!.status).toBe(400);
   expect((await f.invoke({ ...saved, candidates: [{ ...saved.candidates[0], archived: true }] }))!.status).toBe(200);
 });
 
