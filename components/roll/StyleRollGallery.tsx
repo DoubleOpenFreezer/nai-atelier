@@ -16,6 +16,8 @@ interface Props {
   historyReady: boolean; historyLoading: boolean;
   selecting: boolean; selectedIds: Set<string>; onSelect: (id: string) => void; onToggle: (id: string) => void;
   onSave: (id: string) => void; onArchive: (id: string) => void; busy: boolean;
+  /** 正在生成的候选与其流式预览图。 */
+  preview?: { id: string; image: string } | null;
   scrollRef: React.RefObject<HTMLDivElement | null>; onScroll: () => void;
   notify: (message: string, type?: 'success' | 'error') => void;
 }
@@ -29,7 +31,7 @@ const ACCENT_COLORS = [
   'bg-cyan-500 text-cyan-700 dark:text-cyan-300',
 ];
 
-export const StyleRollGallery: React.FC<Props> = ({ experiment, candidates, images, selectedId, selectionFocusEnabled, historyReady, historyLoading, selecting, selectedIds, onSelect, onToggle, onSave, onArchive, busy, scrollRef, onScroll, notify }) => {
+export const StyleRollGallery: React.FC<Props> = ({ experiment, candidates, images, selectedId, selectionFocusEnabled, historyReady, historyLoading, selecting, selectedIds, onSelect, onToggle, onSave, onArchive, busy, preview, scrollRef, onScroll, notify }) => {
   const display = useMobileImageDisplayPreferences('roll');
   const requestedColumns = useMasonryColumnCount(display, undefined, scrollRef, 220);
   const columns = display.desktopColumns === 'auto' ? Math.min(4, requestedColumns) : requestedColumns;
@@ -65,7 +67,8 @@ export const StyleRollGallery: React.FC<Props> = ({ experiment, candidates, imag
 
       <div className="mobile-gallery-frame relative w-full overflow-hidden border-b border-gray-100 bg-gray-50 dark:border-gray-800 dark:bg-gray-950" style={{ '--mobile-image-ratio': String(ratio(candidate)) } as React.CSSProperties}>
         {item ? <SmartImage src={item.imageUrl} alt={t('候选 {0}', [index])} className="h-full w-full object-contain" onLoad={event => { const image = event.currentTarget, next = image.naturalWidth / Math.max(1, image.naturalHeight); if (next > 0 && next !== ratios[candidate.id]) setRatios(current => ({ ...current, [candidate.id]: next })); }} />
-          : <div className="flex h-full min-h-48 flex-col items-center justify-center gap-3 px-4 text-gray-400 dark:text-gray-500">
+          : preview?.id === candidate.id ? <img src={preview.image} alt={t('生成预览')} className="h-full w-full object-contain" />
+            : <div className="flex h-full min-h-48 flex-col items-center justify-center gap-3 px-4 text-gray-400 dark:text-gray-500">
               <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gray-100 dark:bg-gray-900 text-gray-400">
                 <Dice5 className="h-6 w-6 animate-pulse" />
               </div>
@@ -111,18 +114,18 @@ export const StyleRollGallery: React.FC<Props> = ({ experiment, candidates, imag
 
 
 
-      {/* 卡片底栏信息：精炼高颜值，只保留一组精致画师标签，消除文本重复 */}
+      {/* 卡片底栏信息：小号磨砂标签，磨砂偏好下叠在图片底部 */}
       <div className="gallery-card-caption flex items-center justify-between px-3 py-2 gap-2 bg-white/95 dark:bg-gray-850/95 border-t border-gray-100 dark:border-gray-800">
-        <div className="flex flex-wrap items-center gap-1.5 overflow-hidden min-w-0 flex-1" title={candidate.tags.map(entry => `${entry.tag} (${entry.weight.toFixed(1)})`).join(', ')}>
+        <div className="flex flex-wrap items-center gap-1 overflow-hidden min-w-0 flex-1" title={candidate.tags.map(entry => `${entry.tag} (${entry.weight.toFixed(1)})`).join(', ')}>
           {candidate.tags.slice(0, 3).map((entry, entryIndex) => (
-            <span key={entry.tag} className="inline-flex items-center gap-1 rounded-md bg-gray-100 dark:bg-gray-800 px-2 py-0.5 text-xs font-medium text-gray-700 dark:text-gray-200 truncate max-w-[130px] border border-gray-200/50 dark:border-gray-700/50">
-              <span className={`inline-block h-1.5 w-1.5 rounded-full ${ACCENT_COLORS[entryIndex % ACCENT_COLORS.length].split(' ')[0]}`} />
+            <span key={entry.tag} className="gallery-card-badge inline-flex items-center gap-1 rounded-md bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 text-micro font-medium text-gray-700 dark:text-gray-200 truncate max-w-[112px] border border-gray-200/50 dark:border-gray-700/50">
+              <span className={`inline-block h-1 w-1 shrink-0 rounded-full ${ACCENT_COLORS[entryIndex % ACCENT_COLORS.length].split(' ')[0]}`} />
               <span className="truncate">{entry.tag}</span>
-              <span className="font-mono text-xs opacity-60 font-semibold">{entry.weight.toFixed(1)}</span>
+              <span className="font-mono text-micro opacity-60 font-semibold">{entry.weight.toFixed(1)}</span>
             </span>
           ))}
           {candidate.tags.length > 3 && (
-            <span className="rounded-md bg-gray-100 px-1.5 py-0.5 text-xs font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400">
+            <span className="gallery-card-badge rounded-md bg-gray-100 px-1.5 py-0.5 text-micro font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400">
               +{candidate.tags.length - 3}
             </span>
           )}
@@ -130,12 +133,12 @@ export const StyleRollGallery: React.FC<Props> = ({ experiment, candidates, imag
 
         <div className="flex shrink-0 items-center gap-1.5">
           {candidate.savedChainId && (
-            <span aria-label={t('已保存画风 {0}', [index])} title={t('已保存到风格串')} className="flex items-center gap-0.5 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-600 dark:bg-emerald-950/50 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
-              <Check className="h-3 w-3" />
+            <span aria-label={t('已保存画风 {0}', [index])} title={t('已保存到风格串')} className="gallery-card-badge flex items-center gap-0.5 rounded-full bg-emerald-50 px-1.5 py-0.5 text-micro font-semibold text-emerald-600 dark:bg-emerald-950/50 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
+              <Check className="h-2.5 w-2.5" />
               <span>{t('已保存')}</span>
             </span>
           )}
-          <span className="gallery-card-meta font-mono text-xs text-gray-400">#{index}</span>
+          <span className="gallery-card-meta font-mono text-micro text-gray-400">#{index}</span>
         </div>
       </div>
     </PressRevealSurface>;

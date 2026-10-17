@@ -3,7 +3,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronDown, Copy, Dice5, FlaskConical, ImagePlus, ListChecks, LoaderCircle, MoreHorizontal, Pause, Plus, RefreshCw, RotateCcw, Save, Settings2, Trash2, Users, X } from 'lucide-react';
 import type { LocalGenItem, PromptChain } from '../types';
 import { t, useLanguage } from '../services/i18n';
-import { DEFAULT_ROLL_RULES, formatRollStyle, rollCandidateToChain, rollSourceId, type RollCandidate, type RollDrawMode, type RollDrawPlan, type RollExperiment } from '../services/styleRoll';
+import { DEFAULT_ROLL_NEGATIVE, DEFAULT_ROLL_PROMPT, DEFAULT_ROLL_RULES, formatRollStyle, rollCandidateToChain, rollSourceId, type RollCandidate, type RollDrawMode, type RollDrawPlan, type RollExperiment } from '../services/styleRoll';
 import { beginRollRound, currentRollRound } from '../services/styleRollWorkflow';
 import { rollPendingCandidates, rollWorkspaceCandidates } from '../services/styleRollWorkspace';
 import { getArtistSampleDictionary, normalizeArtistSampleTag } from '../services/artistSamples';
@@ -156,7 +156,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
     const next: RollExperiment = {
       version: 1, id: createUuid(), name: t('画风记录 {0}', [experiments.length + 1]), revision: 0, createdAt: now, updatedAt: now,
       artists: experiment ? structuredClone(experiment.artists) : [], rules: roundRules,
-      template: experiment ? structuredClone(experiment.template) : { prompt: '{style}, 1girl, solo, upper body, simple background, looking at viewer', negativePrompt: '',
+      template: experiment ? structuredClone(experiment.template) : { prompt: DEFAULT_ROLL_PROMPT, negativePrompt: DEFAULT_ROLL_NEGATIVE,
         params: applyNaiModelSettings({ model: DEFAULT_NAI_MODEL, width: 832, height: 1216, steps: runtime.freeMaxSteps, scale: 5, sampler: 'k_euler_ancestral', qualityToggle: false, ucPreset: 4, seed: 0, characters: [] }, runtime) },
       candidates: [], rounds: [],
     };
@@ -179,8 +179,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
       if (totalCost > 0 && !await confirm({ rememberKey: 'roll.generate', rememberScope: confirmationCostScope(key, eachCost, candidates.length, budget.remaining, target.template.params.model), title: budget.remaining <= 0 ? 'Anlas 预算已用尽' : '确认生成图片',
         message: t('本轮生成 {0} 张，预计共消耗 {1} Anlas。本地剩余预算：{2}。', [candidates.length, totalCost, budget.remaining]),
         confirmLabel: t('消耗 {0} 点并生成', [totalCost]), ...(totalCost > budget.remaining ? { tone: 'danger' as const } : {}) })) return;
-      const started = await beginRollGeneration(target, candidates.length === 1 ? candidates[0] : candidates, key, eachCost, generationStreamPreview && getRuntimeNaiModelInfo(target.template.params.model, runtime).supportsStreamedResponses);
-      const receipt = await started.settle;
+      const started = await beginRollGeneration(target, candidates.length === 1 ? candidates[0] : candidates, key, eachCost, generationStreamPreview && getRuntimeNaiModelInfo(target.template.params.model, runtime).supportsStreamedResponses);      const receipt = await started.settle;
       if (mounted.current) {
         if (started.session.accountingFailed) reportError(t('图片已保存，但本地记账异常，请核对额度后再继续'));
         else if (started.session.cleanupError) reportError(t('后台任务清理异常：{0}', [started.session.cleanupError]));
@@ -330,6 +329,11 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
   </div> : null;
 
   const roundPending = experiment ? rollPendingCandidates(experiment, images) : [];
+  // 流式预览跟随本轮第一张还没出图的候选；保存后自然移到下一张。
+  const previewCandidateId = round && !round.closedAt ? round.candidateIds.find(id => !images.has(id)) : undefined;
+  const livePreview = generationStreamPreview && experiment && session && session.scope === rollSourceId(experiment.id) && session.preview?.image && previewCandidateId
+    ? { id: previewCandidateId, image: session.preview.image }
+    : null;
   const scopedRound = experiment?.rounds.find(item => item.id === roundId);
   const selectedPending = experiment ? rollPendingCandidates(experiment, images, chosen.map(candidate => candidate.id)) : [];
   const saveable = chosen.filter(candidate => images.has(candidate.id) && !candidate.archived && !candidate.savedChainId);
@@ -445,7 +449,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
     {!working && historyReady && experiment && roundPending.length > 0 && <div className="flex flex-none items-center gap-2 border-b border-gray-200 px-3 py-2 text-xs text-gray-500 dark:border-gray-800 md:px-5"><span className="min-w-0 flex-1">{t('本轮已出图 {0}/{1}', [round!.candidateIds.filter(id => images.has(id)).length, round!.candidateIds.length])}</span><ToolbarButton data-agent-action="business" disabled={frozen || !historyReady} onClick={() => generatePending()}><ImagePlus />{t('补齐剩余 {0} 张', [continuousGenerationEnabled ? roundPending.length : 1])}</ToolbarButton></div>}
     {loading && !experiment ? <PageSpinner className="flex-1" /> : !experiment ? <EmptyState className="flex-1 p-6" icon={<Dice5 className="h-8 w-8" />} title={t('Roll 出你的画风')} hint="一键出图，只保存喜欢的画风。" />
       : <div className="relative flex min-h-0 flex-1">
-        <StyleRollGallery experiment={experiment} candidates={visible} images={images} historyReady={historyReady} historyLoading={historyLoading} selectedId={selectedId} selectionFocusEnabled={selectionFocusEnabled} selecting={selecting} selectedIds={selectedIds} onSelect={setSelectedId} onToggle={id => setSelectedIds(current => { const next = new Set(current); next.has(id) ? next.delete(id) : next.add(id); return next; })} onSave={id => saveCandidate(id)} onArchive={id => archiveCandidates([id], !experiment.candidates.find(candidate => candidate.id === id)!.archived)} busy={frozen} scrollRef={scrollRef} onScroll={() => { selectionAnchor.onScroll(); rememberScroll(); }} notify={notify} />
+        <StyleRollGallery experiment={experiment} candidates={visible} images={images} preview={livePreview} historyReady={historyReady} historyLoading={historyLoading} selectedId={selectedId} selectionFocusEnabled={selectionFocusEnabled} selecting={selecting} selectedIds={selectedIds} onSelect={setSelectedId} onToggle={id => setSelectedIds(current => { const next = new Set(current); next.has(id) ? next.delete(id) : next.add(id); return next; })} onSave={id => saveCandidate(id)} onArchive={id => archiveCandidates([id], !experiment.candidates.find(candidate => candidate.id === id)!.archived)} busy={frozen} scrollRef={scrollRef} onScroll={() => { selectionAnchor.onScroll(); rememberScroll(); }} notify={notify} />
         {!isMobile && selected && <aside className="flex w-84 max-w-[40%] flex-none flex-col border-l border-gray-200/80 bg-white/95 backdrop-blur-md dark:border-gray-800/80 dark:bg-gray-900/95 xl:w-92 shadow-sm"><div className="flex items-center justify-between border-b border-gray-200 px-4 py-2 dark:border-gray-800"><strong className="text-sm">{t('候选 {0}', [experiment.candidates.indexOf(selected) + 1])}</strong><IconButton label="关闭候选详情" onClick={() => setSelectedId('')}><X /></IconButton></div><div className="min-h-0 flex-1 overflow-y-auto">{detail}</div></aside>}
       </div>}
     {experiment && isMobile && <ImagePreviewPortal><MobileDetailView open={Boolean(selected) && !setup} title={t('候选 {0}', [experiment.candidates.findIndex(candidate => candidate.id === selectedId) + 1])} onClose={() => setSelectedId('')}>{detail}</MobileDetailView></ImagePreviewPortal>}

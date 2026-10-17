@@ -388,6 +388,25 @@ it('页面只提供Roll和配方操作，不包含对比入口、评分或投票
   expect(mocks.generate.mock.calls[0][0].rounds.at(-1).candidateIds).toHaveLength(6);
 });
 
+it('卡片画师标签使用小号磨砂徽章', async () => {
+  await setup();
+  const chip = screen.getByText('alpha').closest('.gallery-card-badge');
+  expect(chip).toBeTruthy();
+  expect(chip!.className).toContain('text-micro');
+  expect(chip!.className).toContain('max-w-[112px]');
+});
+
+it('流式预览显示在本轮第一张未出图的封面，关闭预览设置后不显示', async () => {
+  experiment.rounds = [{ id: 'live', candidateIds: ['a', 'b'], createdAt: 1 }];
+  mocks.history.mockResolvedValue([]);
+  mocks.session = { scope: 'style-roll:synthetic-experiment', key: 'synthetic-key', state: 'generating', progress: { current: 0, total: 2 }, preview: { image: 'data:image/png;base64,c3ludGhldGlj' } };
+  const view = await setup();
+  expect(screen.getByAltText('生成预览')).toBeTruthy();
+  view.unmount();
+  await setup({ generationStreamPreview: false });
+  expect(screen.queryByAltText('生成预览')).toBeNull();
+});
+
 it('已有图片的候选详情不再提供生成入口，查看保存不重复提交图片', async () => {
   const { props } = await setup(); fireEvent.click(screen.getByRole('button', { name: '查看候选 1' }));
   expect(screen.queryByRole('button', { name: /生成图片/ })).toBeNull();

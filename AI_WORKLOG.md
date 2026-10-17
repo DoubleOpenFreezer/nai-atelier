@@ -6,6 +6,7 @@
 
 ## 2026-10-18
 
+- **DeepSeek Harness（deepseek-flash）**：按现场反馈补 Roll 串的生成与文案体验：生成时在本轮第一张未出图封面显示流式步骤预览（受既有「生成过程预览」设置控制）；统计本地 898 条风格串后，把新建记录的默认提示词换成常用的质量词 + 标准负面组合，并在「提示词与生成设置」加「套用常用质量词」；卡片画师标签缩小为 text-micro 并接入现有磨砂徽章样式。同步译文、CHANGELOG 与定向测试（feat: add roll streaming preview, quality defaults and compact frosted badges）。
 - **DeepSeek Harness（deepseek-flash）**：按用户要求给 Roll 串补上系统化的抽取控制：三种抽取方式（全随机／固定画师／固定权重）、组队弹层（抽卡、重抽、踢出、补抽、从画师库添加、手填）、全局屏蔽名单（独立私人设置，跨记录生效）、轮次条件快照与「沿用这轮条件」、记录概览；同步抽取逻辑、Worker 校验、五语文案与文档，补服务／Worker／组件定向测试；随后按反馈给组队弹层补上图包样张封面，并新增「只抽有样张的画师」开关（图包与自建样张都算，显式锁定项保留），同步记录字段、轮次条件与文案；再按现场反馈把抽卡池统一到「实际可显示样张」并接上画师库的保守裁边预览，卡片改为竖版大图（feat: add draw modes, artist party and global blocklist to style roll）。
 - **DeepSeek Harness（deepseek-flash）**：按界面反馈把 Roll 串卡片的丢弃／恢复按钮从图片左下角移到左上角编号下方，避免遮挡底部画师与权重标签；补位置断言并重建前端产物（style: move roll discard action under the card number）。
 - **DeepSeek Harness（deepseek-flash）**：按用户要求把 Roll 串收敛为基本抽取与出图并清理照抄上游带来的育种设定：候选字段 `genes／parents／generation／method` 改为 `tags`，删除手动调权新变体、「纯新探索／微调变体」筛选、记录导出与参考已保存组合的抽取偏置，抽取改为每轮纯随机；界面「画师基因配方」「来源候选」「变异」徽章全部移除，顶栏去掉重复的轮次／数量摘要与清除筛选胶囊。随后按用户确认清空本地 Roll 数据：删除唯一一条记录（18 个候选）与它生成的 50 张历史图片（经本地服务逐张删除，同时清理 R2 原图），删除旧字段兼容代码与迁移说明，不保留恢复逻辑。同步产品宪法、模块决策、Roll 说明、五语 README、CHANGELOG 与译文词条。

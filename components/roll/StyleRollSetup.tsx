@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { Dice5, LockKeyhole, Plus, Search, X } from 'lucide-react';
+import { Dice5, LockKeyhole, Plus, Search, Sparkles, X } from 'lucide-react';
 import type { PromptChain } from '../../types';
 import { t, useLanguage } from '../../services/i18n';
-import { mergeRollArtists, parseRollArtists, validateRollExperiment, type RollExperiment } from '../../services/styleRoll';
+import { mergeRollArtists, parseRollArtists, validateRollExperiment, DEFAULT_ROLL_NEGATIVE, DEFAULT_ROLL_PROMPT, type RollExperiment } from '../../services/styleRoll';
 import { compilePrompt } from '../../services/promptUtils';
 import { parsePromptTags, removePromptTagTokens } from '../../services/tagTranslations';
 import { searchArtistDictionary, type ArtistDictionaryEntry } from '../../services/tagDictionary';
@@ -103,7 +103,10 @@ const SetupForm: React.FC<Props> = ({ initial, chains, libraryCount = 0, library
           <label className="block text-xs font-semibold">{t('公共提示词（{style} 为画风位置）')}<textarea className={`${field} mt-1 min-h-28 resize-y font-mono`} value={draft.template.prompt} disabled={busy || frozen} onChange={event => setDraft({ ...draft, template: { ...draft.template, prompt: event.target.value } })} /></label>
           <label className="block text-xs font-semibold">{t('负面提示词')}<textarea className={`${field} mt-1 min-h-20 resize-y font-mono`} value={draft.template.negativePrompt} disabled={busy || frozen} onChange={event => setDraft({ ...draft, template: { ...draft.template, negativePrompt: event.target.value } })} /></label>
           <ChainEditorParams params={draft.template.params} prompt={draft.template.prompt} setParams={params => setDraft({ ...draft, template: { ...draft.template, params } })} canEdit={!busy && !frozen} markChange={() => {}} enforceFreeStepLimit={enforceFreeStepLimit} />
-          {!frozen && <ToolbarButton disabled={busy} onClick={() => setDraft({ ...draft, template: { ...draft.template, params: { ...draft.template.params, seed: crypto.getRandomValues(new Uint32Array(1))[0] } } })}><Dice5 />{t('换一个固定 Seed')}</ToolbarButton>}
+          {!frozen && <div className="flex flex-wrap gap-2">
+            <ToolbarButton disabled={busy} onClick={() => setDraft({ ...draft, template: { ...draft.template, params: { ...draft.template.params, seed: crypto.getRandomValues(new Uint32Array(1))[0] } } })}><Dice5 />{t('换一个固定 Seed')}</ToolbarButton>
+            <ToolbarButton disabled={busy} onClick={() => setDraft({ ...draft, template: { ...draft.template, prompt: DEFAULT_ROLL_PROMPT, negativePrompt: DEFAULT_ROLL_NEGATIVE } })}><Sparkles />{t('套用常用质量词')}</ToolbarButton>
+          </div>}
           {!!draft.template.params.characters?.length && <p className="text-xs text-gray-500">{t('保留 {0} 个角色的完整提示词与位置', [draft.template.params.characters.length])}</p>}
         </div>}
       </div>

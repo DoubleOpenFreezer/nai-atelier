@@ -50,6 +50,9 @@ export interface RollExperiment {
 }
 
 export const DEFAULT_ROLL_RULES: RollRules = { minArtists: 3, maxArtists: 6, minWeight: 0.7, maxWeight: 1.4 };
+/** 新建记录的公共提示词：质量词在前、画师串居中、构图与年份收尾。 */
+export const DEFAULT_ROLL_PROMPT = 'masterpiece, very aesthetic, best quality, absurdres, highres, no text, {style}, 1girl, solo, upper body, simple background, looking at viewer, year 2025';
+export const DEFAULT_ROLL_NEGATIVE = 'worst quality, lowres, bad quality, jpeg artifacts, very displeasing, logo, chromatic aberration, scan artifacts, film grain, artistic error, multiple views, dithering, halftone, too many watermarks, blank page, screentone, negative space, watermark, signature, bad anatomy, bad hands, blurry';
 export const ROLL_CANDIDATE_LIMIT = 240;
 const tenth = (value: number) => Math.round(value * 10) / 10;
 const tagKey = (tag: string) => tag.trim().replaceAll('_', ' ').replace(/\s+/g, ' ').toLowerCase();
