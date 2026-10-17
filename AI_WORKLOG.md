@@ -6,6 +6,7 @@
 
 ## 2026-10-18
 
+- **DeepSeek Harness（deepseek-flash）**：按产品／UI 体验审视结论重整 Roll 串与画师库：Roll 顶栏记录名、主操作固定、张数／人数／费用摘要、本轮设置分组、容量与轮次角标、未出图禁存、永久清理已归档候选、中文名搜索、详情样张与画师库互跳；画师库无样张回退全目录、样张筛选记忆、收藏画师标记、图包入口、随机选画师与窄屏工具栏滚动；统一「画风记录／候选／选择固定画师／随机选择」命名并补齐五语文案、决策文档、README、CHANGELOG 与定向测试。
 - **DeepSeek Harness（deepseek-flash）**：按反馈把抽取方式分成两层：新建/编辑记录的配置弹层里设「默认抽取方式」，本轮设置里改的是临时覆盖，只写入轮次快照、不再改写记录默认；同时让「本轮设置」按钮显示文字（原来只有一个箭头，找不到入口）（feat: separate default and per-round draw modes）。
 - **DeepSeek Harness（deepseek-flash）**：按需求给 Roll 候选加「新建记录 · 只抽权重」：复制当前模板、固定 Seed、画师覆盖项与权重范围，新记录的抽取方式设为固定该候选的画师集合，后续每轮只随机权重；补译文与页面断言（feat: create a weights-only record from a roll candidate）。
 - **DeepSeek Harness（deepseek-flash）**：按反馈把 Roll 模板的角色描述拆成独立「角色提示词」字段，自动接在画师串之后并支持 `{character}` 占位，避免在公共提示词里手动找位置；补校验、译文与定向测试（feat: add a dedicated character prompt to roll templates）。

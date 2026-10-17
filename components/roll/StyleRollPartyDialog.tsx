@@ -2,8 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { Ban, Plus, RotateCcw, Search, Shuffle, X } from 'lucide-react';
 import { t, useLanguage } from '../../services/i18n';
 import { searchArtistDictionary, type ArtistDictionaryEntry } from '../../services/tagDictionary';
-import { buildArtistSampleImageUrl, getArtistSampleCatalog, getArtistSampleStatus, normalizeArtistSampleTag, type ArtistSamplePack } from '../../services/artistSamples';
-import { getArtistSampleData } from '../../services/artistSampleDrafts';
+import { normalizeArtistSampleTag } from '../../services/artistSamples';
+import { loadArtistSampleUrls } from '../../services/artistSampleUrls';
 import { ImagePreviewPortal } from '../ImagePreviewPortal';
 import { IconButton, ToolbarButton } from '../DesignSystem';
 import { SmartImage } from '../SmartImage';
@@ -16,7 +16,7 @@ const field = 'mobile-touch min-w-0 w-full rounded-xl border border-gray-200 bg-
 
 interface Props {
   library: string[]; count: number; initial: string[]; blocked: string[];
-  /** 只从有样张的画师中抽卡；手动添加与搜索不受限制。 */
+  /** 只从有样张的画师中选择；手动添加与搜索不受限制。 */
   sampledOnly?: boolean;
   onBlock: (tags: string[]) => Promise<void>;
   onSave: (tags: string[]) => void;
@@ -34,6 +34,7 @@ const PartyForm: React.FC<Props> = ({ library, count, initial, blocked, sampledO
   const [error, setError] = useState(''), [busy, setBusy] = useState(false);
   const [sampleUrls, setSampleUrls] = useState<Map<string, string>>(new Map());
   const [samplesLoading, setSamplesLoading] = useState(true);
+  const [undoBlock, setUndoBlock] = useState<{ blocked: string[]; picked: string[] } | null>(null);
   const dialog = useModalA11y<HTMLDivElement>(true);
   const close = useMobileHistoryLayer(true, () => { if (busy) return false; onClose(); }, 'roll-party');
 
@@ -43,24 +44,8 @@ const PartyForm: React.FC<Props> = ({ library, count, initial, blocked, sampledO
   }, [close, dialog]);
   useEffect(() => {
     let current = true;
-    void (async () => {
-      const urls = new Map<string, string>();
-      const [status, data] = await Promise.all([
-        getArtistSampleStatus().catch(() => null),
-        getArtistSampleData().catch(() => ({ templates: {}, samples: [] })),
-      ]);
-      for (const sample of data.samples) urls.set(normalizeArtistSampleTag(sample.tag), sample.imageUrl);
-      const ready = (['v45', 'v5'] as const).filter(pack => status?.packs.some(item => item.id === pack && item.phase === 'ready'));
-      const catalogs = await Promise.all(ready.map(pack => getArtistSampleCatalog(pack).catch(() => null)));
-      for (const [index, catalog] of catalogs.entries()) {
-        if (!catalog) continue;
-        for (const tag of catalog.tags) {
-          const normalized = normalizeArtistSampleTag(tag);
-          if (!urls.has(normalized)) urls.set(normalized, buildArtistSampleImageUrl(ready[index], tag, 0, catalog.revision));
-        }
-      }
-      if (current) { setSampleUrls(urls); setSamplesLoading(false); }
-    })().catch(() => { if (current) { setSampleUrls(new Map()); setSamplesLoading(false); } });
+    void loadArtistSampleUrls().then(urls => { if (current) { setSampleUrls(urls); setSamplesLoading(false); } })
+      .catch(() => { if (current) { setSampleUrls(new Map()); setSamplesLoading(false); } });
     return () => { current = false; };
   }, []);
   useEffect(() => {
@@ -80,7 +65,13 @@ const PartyForm: React.FC<Props> = ({ library, count, initial, blocked, sampledO
     while (next.length < Math.min(size, PARTY_LIMIT) && pool.length) next.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
     setPicked(next); setError('');
   };
-  const redraw = () => { const pool = available().concat(picked); const next: string[] = []; while (next.length < Math.min(count, PARTY_LIMIT) && pool.length) next.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]); setPicked(next); setError(''); };
+  const redraw = () => {
+    const pool = available();
+    if (!pool.length) { setError(t('没有可重新选择的画师')); return; }
+    const next: string[] = [];
+    while (next.length < Math.min(count, PARTY_LIMIT) && pool.length) next.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
+    setPicked(next); setError(''); setUndoBlock(null);
+  };
   const add = (tag: string) => {
     if (picked.length >= PARTY_LIMIT || pickedKeys.has(key(tag)) || blockedKeys.has(key(tag))) return;
     setPicked([...picked, tag]); setError('');
@@ -101,14 +92,22 @@ const PartyForm: React.FC<Props> = ({ library, count, initial, blocked, sampledO
     if (!picked.length || busy) return;
     setBusy(true); setError('');
     try {
+      const previous = blockedTags, previousPicked = picked;
       const next = [...blockedTags];
       for (const tag of picked) if (!next.some(item => key(item) === key(tag))) next.push(tag);
-      await onBlock(next); setBlockedTags(next); setPicked([]);
+      await onBlock(next); setBlockedTags(next); setPicked([]); setUndoBlock({ blocked: previous, picked: previousPicked });
     } catch (cause) { setError((cause as Error).message); }
     finally { setBusy(false); }
   };
-  const submit = () => { if (!picked.length) { setError('请先抽卡或添加至少一位画师'); return; } onSave(picked); onClose(); };
-  const hint = samplesLoading ? t('正在读取画师样张…') : sampledOnly && !sampleUrls.size ? t('没有可用的样张画师') : t('一次抽 {0} 位，可逐位替换', [count]);
+  const undoBlocked = async () => {
+    if (!undoBlock || busy) return;
+    setBusy(true); setError('');
+    try { await onBlock(undoBlock.blocked); setBlockedTags(undoBlock.blocked); setPicked(undoBlock.picked); setUndoBlock(null); }
+    catch (cause) { setError((cause as Error).message); }
+    finally { setBusy(false); }
+  };
+  const submit = () => { if (!picked.length) { setError('请先随机选择或添加至少一位画师'); return; } onSave(picked); onClose(); };
+  const hint = samplesLoading ? t('正在读取画师样张…') : sampledOnly && !sampleUrls.size ? t('没有可用的样张画师') : t('一次选择 {0} 位，可逐位替换', [count]);
 
   return <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/40 p-3 backdrop-blur-sm">
     <div ref={dialog} role="dialog" aria-modal="true" aria-label={t('固定画师')} className="appearance-panel flex max-h-[92dvh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-900">
@@ -119,9 +118,9 @@ const PartyForm: React.FC<Props> = ({ library, count, initial, blocked, sampledO
       </header>
 
       <div className="flex flex-none flex-wrap items-center gap-2 border-b border-gray-200 px-4 py-2.5 dark:border-gray-800">
-        <ToolbarButton tone="primary" disabled={busy} onClick={() => draw(count)}><Shuffle />{t('抽卡')}</ToolbarButton>
-        <ToolbarButton disabled={busy} onClick={redraw}><RotateCcw />{t('重抽')}</ToolbarButton>
-        <ToolbarButton disabled={busy || picked.length >= PARTY_LIMIT} onClick={() => draw(picked.length + 1)}><Plus />{t('补抽')}</ToolbarButton>
+        <ToolbarButton tone="primary" disabled={busy} onClick={() => draw(count)}><Shuffle />{t('随机选择')}</ToolbarButton>
+        <ToolbarButton disabled={busy} onClick={redraw}><RotateCcw />{t('重新选择')}</ToolbarButton>
+        <ToolbarButton disabled={busy || picked.length >= PARTY_LIMIT} onClick={() => draw(picked.length + 1)}><Plus />{t('再加一位')}</ToolbarButton>
         <span className="ml-auto text-xs text-gray-500">{hint}</span>
       </div>
 
@@ -138,7 +137,7 @@ const PartyForm: React.FC<Props> = ({ library, count, initial, blocked, sampledO
               <button type="button" aria-label={t('移除 {0}', [tag])} title={t('移除')} disabled={busy} onClick={() => setPicked(picked.filter(item => item !== tag))} className="mobile-size-locked absolute right-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-black/50 text-white backdrop-blur-md transition hover:bg-rose-600 disabled:opacity-40"><X className="h-3.5 w-3.5" /></button>
             </div>;
           })}
-          {picked.length < PARTY_LIMIT && <button type="button" disabled={busy} onClick={() => draw(picked.length + 1)} className="mobile-touch flex aspect-[2/3] flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed border-gray-300 text-xs text-gray-400 transition hover:border-indigo-400 hover:text-indigo-500 disabled:opacity-40 dark:border-gray-700"><Plus className="h-5 w-5" />{t('补抽')}</button>}
+          {picked.length < PARTY_LIMIT && <button type="button" disabled={busy} onClick={() => draw(picked.length + 1)} className="mobile-touch flex aspect-[2/3] flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed border-gray-300 text-xs text-gray-400 transition hover:border-indigo-400 hover:text-indigo-500 disabled:opacity-40 dark:border-gray-700"><Plus className="h-5 w-5" />{t('再加一位')}</button>}
         </div>
       </div>
 
@@ -146,6 +145,7 @@ const PartyForm: React.FC<Props> = ({ library, count, initial, blocked, sampledO
         <div className="flex flex-wrap items-center gap-2">
           <ToolbarButton disabled={busy || !picked.length} onClick={() => void blockPicked()}><Ban />{t('屏蔽这些')}</ToolbarButton>
           <span className="text-xs text-gray-500">{t('已屏蔽 {0} 位', [blockedTags.length])}</span>
+          {undoBlock && <button type="button" disabled={busy} onClick={() => void undoBlocked()} className="mobile-touch text-xs font-semibold text-indigo-600 underline dark:text-indigo-300">{t('撤销屏蔽')}</button>}
           {!!blockedTags.length && <details className="min-w-0"><summary className="mobile-touch cursor-pointer text-xs font-semibold text-gray-500 hover:text-indigo-500">{t('管理屏蔽')}</summary><div className="mt-2 flex max-h-24 flex-wrap gap-1.5 overflow-y-auto">{blockedTags.map(tag => <button key={tag} type="button" aria-label={t('取消屏蔽 {0}', [tag])} disabled={busy} onClick={async () => { const next = blockedTags.filter(item => item !== tag); setBusy(true); try { await onBlock(next); setBlockedTags(next); } finally { setBusy(false); } }} className="mobile-touch inline-flex items-center gap-1 rounded-md bg-gray-100 px-2 py-1 text-xs text-gray-600 hover:text-rose-500 dark:bg-gray-800 dark:text-gray-300">{tag}<X className="h-3 w-3" /></button>)}</div></details>}
         </div>
         <div className="grid items-start gap-2.5 sm:grid-cols-2">
@@ -168,7 +168,7 @@ const PartyForm: React.FC<Props> = ({ library, count, initial, blocked, sampledO
       </div>
 
       <footer className="flex flex-none items-center justify-between gap-3 border-t border-gray-200 px-4 py-2.5 dark:border-gray-800">
-        <span className="min-w-0 text-xs text-gray-500">{t('已固定 {0} 位 · 之后每轮只抽权重', [picked.length])}</span>
+        <span className="min-w-0 text-xs text-gray-500">{t('已固定 {0} 位 · 之后每轮只随机权重', [picked.length])}</span>
         <div className="flex shrink-0 items-center gap-2">
           <ToolbarButton disabled={busy} onClick={close}>{t('取消')}</ToolbarButton>
           <ToolbarButton className="!border-emerald-600 !bg-emerald-600 !text-white" disabled={busy || !picked.length} onClick={submit}>{t('确定')}</ToolbarButton>

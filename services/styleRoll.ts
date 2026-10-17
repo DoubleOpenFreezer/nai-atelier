@@ -71,14 +71,14 @@ export function parseRollArtists(text: string): RollArtist[] {
     if (!validTag(tag) || !validWeight(weight)) throw new Error('请填写画师 Tag，权重使用 0.1～3.0 的一位小数');
     if (!seen.has(tagKey(tag))) { seen.add(tagKey(tag)); result.push({ tag, weight, locked: false, excluded: false }); }
   }
-  if (result.length > 1000) throw new Error('每个实验最多指定 1000 位画师');
+  if (result.length > 1000) throw new Error('每个画风记录最多指定 1000 位画师');
   return result;
 }
 
 export function mergeRollArtists(current: RollArtist[], incoming: RollArtist[]): RollArtist[] {
   const keys = new Set(current.map(artist => tagKey(artist.tag)));
   const added = incoming.filter(artist => { const key = tagKey(artist.tag); if (keys.has(key)) return false; keys.add(key); return true; });
-  if (current.length + added.length > 1000) throw new Error('每个实验最多指定 1000 位画师');
+  if (current.length + added.length > 1000) throw new Error('每个画风记录最多指定 1000 位画师');
   return [...current, ...added];
 }
 
@@ -152,7 +152,7 @@ export function validateRollExperiment(value: unknown): asserts value is RollExp
   if (!e || e.version !== 1 || !validId(e.id) || typeof e.name !== 'string' || !e.name.trim() || e.name.length > 120 ||
     !Number.isSafeInteger(e.revision) || e.revision < 0 || ![e.createdAt, e.updatedAt].every(Number.isFinite) ||
     !Array.isArray(e.artists) || e.artists.length > 1000 || !Array.isArray(e.candidates) || e.candidates.length > ROLL_CANDIDATE_LIMIT ||
-    (e.archived !== undefined && typeof e.archived !== 'boolean') || (e.sampledOnly !== undefined && typeof e.sampledOnly !== 'boolean')) throw new Error('Roll 串实验资料无效');
+    (e.archived !== undefined && typeof e.archived !== 'boolean') || (e.sampledOnly !== undefined && typeof e.sampledOnly !== 'boolean')) throw new Error('Roll 串画风记录资料无效');
   validateRollTemplate(e.template);
   const keys = new Set<string>();
   for (const artist of e.artists) {
@@ -192,7 +192,10 @@ export function rollCandidates(experiment: RollExperiment, count: number, option
   validateRollRules(experiment.artists, experiment.rules);
   const plan = options.plan;
   validateRollDrawPlan(plan, experiment.rules);
-  if (!Number.isSafeInteger(count) || count < 1 || count > 24 || experiment.candidates.length + count > ROLL_CANDIDATE_LIMIT) throw new Error('每次可 Roll 1～24 串，每个实验最多 240 串');
+  if (!Number.isSafeInteger(count) || count < 1 || count > 24 || experiment.candidates.length + count > ROLL_CANDIDATE_LIMIT) {
+    const remaining = Math.max(0, ROLL_CANDIDATE_LIMIT - experiment.candidates.length);
+    throw new Error(`本记录最多保留 ${ROLL_CANDIDATE_LIMIT} 个候选，当前还可 Roll ${remaining} 串；可在回收站永久清理旧候选后继续`);
+  }
   const random = options.random || Math.random, rules = experiment.rules;
   const blocked = new Set((options.blockedTags || []).map(tagKey));
   const pool = experiment.artists.filter(artist => !artist.excluded && !blocked.has(tagKey(artist.tag)));
@@ -234,9 +237,34 @@ export function rollCandidates(experiment: RollExperiment, count: number, option
   return result;
 }
 
+/** 记录容量：候选上限只约束实际配方，不把已归档项藏成另一套计数。 */
+export const rollCandidateCapacity = (experiment: RollExperiment) => Math.max(0, ROLL_CANDIDATE_LIMIT - experiment.candidates.length);
+
+/**
+ * 永久清理已归档候选；轮次引用同步移除，空轮删除。
+ * 只接受已归档项，避免用户误删仍在挑选的候选。
+ */
+export function removeRollCandidates(experiment: RollExperiment, ids: readonly string[]): RollExperiment {
+  const remove = new Set(ids);
+  if (!remove.size) return experiment;
+  const candidates = experiment.candidates.filter(candidate => {
+    if (!remove.has(candidate.id)) return true;
+    if (!candidate.archived) throw new Error('只能永久清理已归档的候选');
+    return false;
+  });
+  const rounds = experiment.rounds
+    .map(round => ({ ...round, candidateIds: round.candidateIds.filter(id => !remove.has(id)) }))
+    .filter(round => round.candidateIds.length > 0);
+  return { ...experiment, candidates, rounds };
+}
+
+/** 保存后的风格串名带 1～2 位主权重画师，便于在风格串列表里回想配方。 */
 export function rollCandidateToChain(experiment: RollExperiment, candidate: RollCandidate, imageUrl?: string): PromptChain {
+  const index = experiment.candidates.indexOf(candidate) + 1;
+  const leadArtists = [...candidate.tags].sort((a, b) => b.weight - a.weight).slice(0, 2).map(item => item.tag).join(' / ');
+  const name = `${experiment.name} · ${index}${leadArtists ? ` · ${leadArtists}` : ''}`.slice(0, 120);
   return {
-    id: '', userId: '', name: `${experiment.name} · ${experiment.candidates.indexOf(candidate) + 1}`, description: 'Roll 串',
+    id: '', userId: '', name, description: 'Roll 串',
     type: 'style', basePrompt: rollPrompt(experiment.template, candidate.tags), negativePrompt: experiment.template.negativePrompt,
     params: structuredClone(experiment.template.params), modules: [], variableValues: { subject: '' }, tags: [],
     previewImage: imageUrl, createdAt: Date.now(), updatedAt: Date.now(),

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { candidateFixture, rollFixture, seededRandom } from '../fixtures/styleRoll';
-import { formatRollStyle, mergeRollArtists, parseRollArtists, resolveRollArtists, rollCandidates, rollCandidateToChain, rollPrompt, rollSignature, validateRollExperiment, validateRollRules, validateRollTemplate } from '../../services/styleRoll';
+import { formatRollStyle, mergeRollArtists, parseRollArtists, removeRollCandidates, resolveRollArtists, rollCandidateCapacity, rollCandidates, rollCandidateToChain, rollPrompt, rollSignature, validateRollExperiment, validateRollRules, validateRollTemplate } from '../../services/styleRoll';
 
 describe('Roll 串画师与规则', () => {
   it('完整词库不受手填1000项限制，覆盖项按名称去重且锁定／排除优先', () => {
@@ -132,5 +132,32 @@ describe('风格串保存', () => {
     expect(saved.basePrompt).toBe(`${formatRollStyle(e.candidates[0].tags)}, synthetic subject`); expect(saved.params.seed).toBe(0);
     expect(saved.params.characters).toEqual(e.template.params.characters); expect(saved.params.characters).not.toBe(e.template.params.characters);
     expect(saved.modules).toEqual([]); expect(saved.variableValues).toEqual({ subject: '' }); expect(saved.tags).toEqual([]);
+  });
+  it('保存名带候序号与主权重画师，便于在风格串列表辨认', () => {
+    const e = rollFixture();
+    e.candidates = [{ id: 'mixed', tags: [{ tag: 'alpha', weight: 1.2 }, { tag: 'beta', weight: 2 }, { tag: 'gamma', weight: 0.8 }], createdAt: 1, archived: false }];
+    expect(rollCandidateToChain(e, e.candidates[0]).name).toBe('合成实验 · 1 · beta / alpha');
+  });
+});
+
+describe('候选容量与永久清理', () => {
+  const candidate = (id: string, archived = false) => ({ ...candidateFixture(id), archived });
+  it('容量按全部候选计算，已归档项仍占位', () => {
+    const e = rollFixture();
+    e.candidates = Array.from({ length: 238 }, (_, index) => candidate(`c${index}`));
+    expect(rollCandidateCapacity(e)).toBe(2);
+    expect(() => rollCandidates(e, 3)).toThrow('还可 Roll 2 串');
+  });
+  it('永久清理只接受已归档候选，并同步移除轮次引用、删除空轮', () => {
+    const e = rollFixture();
+    e.candidates = [candidate('keep'), candidate('drop', true)];
+    e.rounds = [{ id: 'r1', candidateIds: ['drop'], createdAt: 1 }, { id: 'r2', candidateIds: ['keep', 'drop'], createdAt: 2 }];
+    const next = removeRollCandidates(e, ['drop']);
+    expect(next.candidates.map(item => item.id)).toEqual(['keep']);
+    expect(next.rounds.map(round => round.id)).toEqual(['r2']);
+    expect(next.rounds[0].candidateIds).toEqual(['keep']);
+    expect(() => validateRollExperiment(next)).not.toThrow();
+    expect(() => removeRollCandidates(e, ['keep'])).toThrow('只能永久清理已归档的候选');
+    expect(removeRollCandidates(e, [])).toBe(e);
   });
 });

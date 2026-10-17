@@ -97,8 +97,8 @@ const SetupForm: React.FC<Props> = ({ initial, chains, library = [], libraryCoun
               {(['random', 'pinnedArtists', 'fixedWeight'] as const).map(mode => <ToolbarButton key={mode} active={plan.mode === mode} onClick={() => changeMode(mode)} className="!px-1 !text-xs">{t(mode === 'random' ? '全随机' : mode === 'pinnedArtists' ? '固定画师' : '固定权重')}</ToolbarButton>)}
             </div>
             {plan.mode === 'pinnedArtists' && <div className="flex flex-wrap items-center gap-2 rounded-xl bg-gray-50 p-2 dark:bg-gray-800/50">
-              <span className="min-w-0 flex-1 text-xs text-gray-500">{plan.pinnedArtists?.length ? t('已固定 {0} 位画师', [plan.pinnedArtists.length]) : t('尚未固定画师，先组队再抽权重')}</span>
-              <ToolbarButton disabled={busy} onClick={() => setPartyOpen(true)}><Users />{t('组队')}</ToolbarButton>
+              <span className="min-w-0 flex-1 text-xs text-gray-500">{plan.pinnedArtists?.length ? t('已固定 {0} 位画师', [plan.pinnedArtists.length]) : t('尚未固定画师，先选择固定画师再随机权重')}</span>
+              <ToolbarButton disabled={busy} onClick={() => setPartyOpen(true)}><Users />{t('选择固定画师')}</ToolbarButton>
             </div>}
             {plan.mode === 'fixedWeight' && <p className="text-xs text-gray-500">{t('所有权重固定为 {0}', [draft.rules.minWeight.toFixed(1)])}</p>}
             <p className="text-xs text-gray-400">{t('之后每轮默认使用；在「本轮设置」里可以临时改。')}</p>
@@ -126,7 +126,7 @@ const SetupForm: React.FC<Props> = ({ initial, chains, library = [], libraryCoun
           </div>
           </div></details>
         </div> : <div className="space-y-4">
-          {frozen && <p className="flex items-center gap-2 text-xs text-gray-500"><LockKeyhole className="h-4 w-4" />{t('配置已随候选固定；修改模型、提示词或 Seed 请新建实验。')}</p>}
+          {frozen && <p className="flex items-center gap-2 text-xs text-gray-500"><LockKeyhole className="h-4 w-4" />{t('配置已随候选固定；修改模型、提示词或 Seed 请新建画风记录。')}</p>}
           {!frozen && <label className="block text-xs font-semibold">{t('载入风格串')}<select aria-label={t('载入生成配置')} className={`${field} mt-1`} value="" onChange={event => importChain(event.target.value)}><option value="">{t('选择已有风格串')}</option>{chains.filter(chain => chain.type === 'style').map(chain => <option key={chain.id} value={chain.id}>{chain.name}</option>)}</select></label>}
           {legacyUpgraded && <p className="rounded-lg bg-indigo-50 px-3 py-2 text-xs text-indigo-600 dark:bg-indigo-950/30 dark:text-indigo-300">{t('已把旧的默认提示词换成质量词模板，保存后生效。')}</p>}
           {!frozen && <div className="flex flex-wrap gap-2"><ToolbarButton disabled={busy} onClick={() => setDraft({ ...draft, template: { ...draft.template, prompt: DEFAULT_ROLL_PROMPT, negativePrompt: DEFAULT_ROLL_NEGATIVE } })}><Sparkles />{t('套用常用质量词')}</ToolbarButton></div>}

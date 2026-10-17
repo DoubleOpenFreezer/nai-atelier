@@ -18,6 +18,10 @@ interface Props {
   onSave: (id: string) => void; onArchive: (id: string) => void; busy: boolean;
   /** 正在生成的候选与其流式预览图。 */
   preview?: { id: string; image: string } | null;
+  /** 每个候选所属轮次，用于在编号旁标出 R2/R3。 */
+  roundNumbers?: Map<string, number>;
+  /** 正在等待生成的候选；没有流式预览时也显示进行中。 */
+  generatingId?: string;
   scrollRef: React.RefObject<HTMLDivElement | null>; onScroll: () => void;
   notify: (message: string, type?: 'success' | 'error') => void;
 }
@@ -31,7 +35,7 @@ const ACCENT_COLORS = [
   'bg-cyan-500 text-cyan-700 dark:text-cyan-300',
 ];
 
-export const StyleRollGallery: React.FC<Props> = ({ experiment, candidates, images, selectedId, selectionFocusEnabled, historyReady, historyLoading, selecting, selectedIds, onSelect, onToggle, onSave, onArchive, busy, preview, scrollRef, onScroll, notify }) => {
+export const StyleRollGallery: React.FC<Props> = ({ experiment, candidates, images, selectedId, selectionFocusEnabled, historyReady, historyLoading, selecting, selectedIds, onSelect, onToggle, onSave, onArchive, busy, preview, roundNumbers, generatingId, scrollRef, onScroll, notify }) => {
   const display = useMobileImageDisplayPreferences('roll');
   const requestedColumns = useMasonryColumnCount(display, undefined, scrollRef, 220);
   const columns = display.desktopColumns === 'auto' ? Math.min(4, requestedColumns) : requestedColumns;
@@ -41,6 +45,7 @@ export const StyleRollGallery: React.FC<Props> = ({ experiment, candidates, imag
 
   const renderCard = (candidate: RollCandidate) => {
     const item = images.get(candidate.id), index = experiment.candidates.indexOf(candidate) + 1;
+    const roundNo = roundNumbers?.get(candidate.id);
     const selected = selecting ? selectedIds.has(candidate.id) : selectedId === candidate.id;
     const activate = () => { if (selecting) { if (!busy) onToggle(candidate.id); } else onSelect(selectedId === candidate.id ? '' : candidate.id); };
 
@@ -49,17 +54,17 @@ export const StyleRollGallery: React.FC<Props> = ({ experiment, candidates, imag
 
     return <PressRevealSurface key={candidate.id} pressDisabled={selecting} role={selecting ? 'checkbox' : 'button'} tabIndex={0}
       data-agent-action="select" data-gallery-work-id={candidate.id} data-safe-mode-work="true"
-      aria-label={t(selecting ? '选择画风 {0}' : '查看候选 {0}', [index])} aria-checked={selecting ? selected : undefined} aria-pressed={selecting ? undefined : selected} aria-disabled={selecting ? busy : undefined}
+      aria-label={t(selecting ? '选择候选 {0}' : '查看候选 {0}', [index])} aria-checked={selecting ? selected : undefined} aria-pressed={selecting ? undefined : selected} aria-disabled={selecting ? busy : undefined}
       onClick={activate} onKeyDown={event => { if (event.target === event.currentTarget && ['Enter', ' '].includes(event.key)) { event.preventDefault(); activate(); } }}
-      className={`mobile-gallery-item gallery-image-card gallery-card-visual group relative flex min-w-0 cursor-pointer flex-col overflow-hidden rounded-2xl border bg-white shadow-sm text-left transition-all duration-200 dark:bg-gray-850 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${selected ? '!border-indigo-500 ring-2 ring-indigo-500/25 shadow-md shadow-indigo-500/10' : 'border-gray-200/90 hover:border-indigo-400 hover:shadow-md dark:border-gray-800/80 dark:hover:border-indigo-500/50'} ${!selecting && selectionFocusEnabled && selectedId && !selected ? 'brightness-[.7]' : ''}`}>
+      className={`mobile-gallery-item gallery-image-card gallery-card-visual group relative flex min-w-0 cursor-pointer flex-col overflow-hidden rounded-lg border bg-white shadow-sm text-left transition-all duration-200 dark:bg-gray-850 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${selected ? '!border-indigo-500 ring-2 ring-indigo-500/25 shadow-md shadow-indigo-500/10' : 'border-gray-200/90 hover:border-indigo-400 hover:shadow-md dark:border-gray-800/80 dark:hover:border-indigo-500/50'} ${!selecting && selectionFocusEnabled && selectedId && !selected ? 'brightness-[.7]' : ''}`}>
 
       {/* 左上角：编号与丢弃操作 */}
       <div className="absolute left-2.5 top-2.5 z-20 flex flex-col items-start gap-1.5">
         <span className="pointer-events-none flex items-center gap-1 rounded-full border border-black/10 bg-black/40 px-2 py-0.5 text-xs font-mono font-medium text-white shadow-sm backdrop-blur-md dark:border-white/10 dark:bg-black/60">
-          #{index}
+          #{index}{roundNo ? <span className="text-micro opacity-70">R{roundNo}</span> : null}
         </span>
         {!selecting && <div data-card-action="true" className="hover-reveal-md">
-          <button type="button" aria-label={t(candidate.archived ? '恢复画风 {0}' : '丢弃画风 {0}', [index])} title={t(candidate.archived ? '恢复' : '丢弃')} disabled={busy} onClick={event => { event.stopPropagation(); onArchive(candidate.id); }} className={`mobile-size-locked flex h-9 w-9 items-center justify-center rounded-full text-white shadow-md backdrop-blur-md transition-all hover:scale-110 disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white md:h-8 md:w-8 ${candidate.archived ? 'bg-amber-500/90 hover:bg-amber-600' : 'bg-black/50 hover:bg-red-600'}`}>
+          <button type="button" aria-label={t(candidate.archived ? '恢复候选 {0}' : '丢弃候选 {0}', [index])} title={t(candidate.archived ? '恢复' : '丢弃')} disabled={busy} onClick={event => { event.stopPropagation(); onArchive(candidate.id); }} className={`mobile-size-locked flex h-9 w-9 items-center justify-center rounded-full text-white shadow-md backdrop-blur-md transition-all hover:scale-110 disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white md:h-8 md:w-8 ${candidate.archived ? 'bg-amber-500/90 hover:bg-amber-600' : 'bg-black/50 hover:bg-red-600'}`}>
             {candidate.archived ? <RotateCcw className="h-3.5 w-3.5" /> : <Trash2 className="h-3.5 w-3.5" />}
           </button>
         </div>}
@@ -72,7 +77,7 @@ export const StyleRollGallery: React.FC<Props> = ({ experiment, candidates, imag
               <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gray-100 dark:bg-gray-900 text-gray-400">
                 <Dice5 className="h-6 w-6 animate-pulse" />
               </div>
-              <span className="text-xs font-medium">{t(historyReady ? '待生成' : historyLoading ? '加载中…' : '历史暂不可用')}</span>
+              <span className="text-xs font-medium">{t(historyReady ? (generatingId === candidate.id ? '生成中…' : '待生成') : historyLoading ? '加载中…' : '历史暂不可用')}</span>
             </div>}
 
         {selecting ? (
@@ -83,10 +88,10 @@ export const StyleRollGallery: React.FC<Props> = ({ experiment, candidates, imag
             <div data-card-action="true" className="absolute right-2 top-2 z-20 flex flex-col items-center gap-1.5">
               {item && <ImageShareActions imageUrl={item.imageUrl} filename={`roll-${item.id}.png`} generationData={item} favorite={{ imageUrl: item.imageUrl, sourceType: 'history', sourceId: item.id }} notify={notify} variant="card" className="flex-col" />}
               {!candidate.archived && item && (candidate.savedChainId
-                ? <span aria-label={t('已保存画风 {0}', [index])} title={t('已保存到风格串')} className={`${IMAGE_CARD_ACTION_CLASS} inline-flex items-center justify-center rounded-full bg-emerald-600 text-white shadow-lg backdrop-blur-md`}><Check className="h-4 w-4" /></span>
+                ? <span aria-label={t('已保存候选 {0}', [index])} title={t('已保存到风格串')} className={`${IMAGE_CARD_ACTION_CLASS} inline-flex items-center justify-center rounded-full bg-emerald-600 text-white shadow-lg backdrop-blur-md`}><Check className="h-4 w-4" /></span>
                 : <button
                   type="button"
-                  aria-label={t('保存画风 {0}', [index])}
+                  aria-label={t('保存候选 {0}', [index])}
                   title={t('存为风格串')}
                   disabled={busy}
                   onClick={event => { event.stopPropagation(); onSave(candidate.id); }}
@@ -135,9 +140,9 @@ export const StyleRollGallery: React.FC<Props> = ({ experiment, candidates, imag
     </PressRevealSurface>;
   };
 
-  return <section ref={scrollRef} onScroll={onScroll} aria-label={t('画风库')} className="min-h-0 min-w-0 flex-1 overflow-y-auto p-3 md:p-5">
+  return <section ref={scrollRef} onScroll={onScroll} aria-label={t('候选图库')} className="min-h-0 min-w-0 flex-1 overflow-y-auto p-3 md:p-5">
     {candidates.length ? display.layout === 'masonry' ? <ShortestColumnMasonry items={candidates} columns={columns} getItemKey={candidate => candidate.id} estimateItemHeight={(candidate, width) => width / ratio(candidate) + (frosted ? 2 : 80)} renderItem={renderCard} />
       : <div className={`${mobileGalleryClassName(display)} workspace-card-grid workspace-roll-grid`} style={mobileGalleryStyle(display, columns)}>{candidates.map(renderCard)}</div>
-      : <EmptyState className="h-full min-h-60" title={t('暂无匹配画风')} />}
+      : <EmptyState className="h-full min-h-60" title={t('暂无匹配候选')} />}
   </section>;
 };

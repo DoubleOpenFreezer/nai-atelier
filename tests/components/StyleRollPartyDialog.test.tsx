@@ -25,15 +25,15 @@ const open = (overrides: Partial<React.ComponentProps<typeof StyleRollPartyDialo
 };
 const loaded = () => waitFor(() => expect(screen.queryByText('正在读取画师样张…')).toBeNull());
 
-it('抽卡按设定人数抽出一组，可踢出、补抽并用手动输入覆盖', async () => {
+it('随机选择按设定人数抽出一组，可踢出、再加一位并用手动输入覆盖', async () => {
   const { onSave } = open();
   await loaded();
-  expect(screen.getByText('已固定 0 位 · 之后每轮只抽权重')).toBeTruthy();
-  fireEvent.click(screen.getByRole('button', { name: '抽卡' }));
+  expect(screen.getByText('已固定 0 位 · 之后每轮只随机权重')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: '随机选择' }));
   expect(screen.getAllByRole('button', { name: /^移除 artist_/ })).toHaveLength(4);
   fireEvent.click(screen.getAllByRole('button', { name: /^移除 artist_/ })[0]);
   expect(screen.getAllByRole('button', { name: /^移除 artist_/ })).toHaveLength(3);
-  fireEvent.click(screen.getAllByRole('button', { name: '补抽' })[0]);
+  fireEvent.click(screen.getAllByRole('button', { name: '再加一位' })[0]);
   expect(screen.getAllByRole('button', { name: /^移除 artist_/ })).toHaveLength(4);
   fireEvent.change(screen.getByRole('textbox', { name: '手动输入' }), { target: { value: '1.2::artist:alpha ::, beta' } });
   fireEvent.click(screen.getByRole('button', { name: '应用' }));
@@ -47,20 +47,20 @@ it('屏蔽当前集合会写入全局名单并清空本次选择', async () => {
   const onBlock = vi.fn(async (_tags: string[]) => {});
   open({ blocked: ['old_artist'], onBlock });
   await loaded();
-  fireEvent.click(screen.getByRole('button', { name: '抽卡' }));
+  fireEvent.click(screen.getByRole('button', { name: '随机选择' }));
   fireEvent.click(screen.getByRole('button', { name: '屏蔽这些' }));
   await waitFor(() => expect(onBlock).toHaveBeenCalledOnce());
   expect(onBlock.mock.calls[0][0]).toContain('old_artist');
   expect(onBlock.mock.calls[0][0]).toHaveLength(5);
   await waitFor(() => expect(screen.getByText('已屏蔽 5 位')).toBeTruthy());
-  expect(screen.getByText('已固定 0 位 · 之后每轮只抽权重')).toBeTruthy();
+  expect(screen.getByText('已固定 0 位 · 之后每轮只随机权重')).toBeTruthy();
 });
 
 it('已屏蔽画师不会再被抽到，也可以从管理列表取消屏蔽', async () => {
   const onBlock = vi.fn(async (_tags: string[]) => {});
   open({ blocked: library.slice(0, 36), onBlock });
   await loaded();
-  fireEvent.click(screen.getByRole('button', { name: '抽卡' }));
+  fireEvent.click(screen.getByRole('button', { name: '随机选择' }));
   expect(screen.getAllByRole('button', { name: /^移除 artist_/ })).toHaveLength(4);
   for (const index of [36, 37, 38, 39]) expect(screen.getByText(`artist_${index}`)).toBeTruthy();
   fireEvent.click(screen.getByText('管理屏蔽'));
@@ -69,11 +69,11 @@ it('已屏蔽画师不会再被抽到，也可以从管理列表取消屏蔽', a
   expect(onBlock.mock.calls[0][0]).toHaveLength(35);
 });
 
-it('只抽有样张时，抽卡限定在有样张的画师内', async () => {
+it('只抽有样张时，随机选择限定在有样张的画师内', async () => {
   mocks.catalogTags = ['artist_1', 'artist_2'];
   open({ sampledOnly: true });
   await loaded();
-  fireEvent.click(screen.getByRole('button', { name: '抽卡' }));
+  fireEvent.click(screen.getByRole('button', { name: '随机选择' }));
   const labels = screen.getAllByRole('button', { name: /^移除 / }).map(button => button.getAttribute('aria-label'));
   expect(labels.sort()).toEqual(['移除 artist_1', '移除 artist_2']);
 });
