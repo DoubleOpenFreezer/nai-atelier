@@ -356,7 +356,7 @@ describe.each<Kind>(['artist', 'character'])('%s 目录只负责 Tag 取用', ki
     const toolbar = within(container.querySelector('header')!);
     expect(toolbar.getAllByRole('button').map(button => button.getAttribute('aria-label'))).toEqual([
       ...(kind === 'artist' ? [null, null] : []),
-      '筛选', '随机抽卡', '抽卡设置', ...(kind === 'character' ? ['新建自定义角色'] : []),
+      '筛选', '随机抽卡', kind === 'artist' ? '画师库设置' : '抽卡设置', ...(kind === 'character' ? ['新建自定义角色'] : []),
     ]);
     expect(toolbar.getByRole('searchbox')).toBeTruthy();
     const draw = toolbar.getByRole('button', { name: '随机抽卡' });

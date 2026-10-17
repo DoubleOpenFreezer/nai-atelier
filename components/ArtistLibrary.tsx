@@ -6,13 +6,14 @@ import { useImageRatios } from './useImageRatios';
 import { appearanceScrollBehavior } from '../services/appearancePreferences';
 
 import React, { useContext, useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { flushSync } from 'react-dom';
 import { compareLibraryTags } from '../services/tagLibrary';
 import { IMPORT_SESSION_KEY } from '../services/metadataService';
 import { TagSelectionBar } from './TagSelectionBar';
 import { ArtistDictionaryEntry, ArtistDictionarySort, getArtistDictionaryPage, searchArtistDictionary } from '../services/tagDictionary';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMasonry';
-import { Check, ChevronDown, Dice5, LoaderCircle } from 'lucide-react';
+import { Check, Dice5, LoaderCircle, Settings2 } from 'lucide-react';
 import { ToolbarButton, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
 import { ToolbarPopover, TOOLBAR_FIELD_CLASS } from './ToolbarPopover';
 import { ArtistSampleSettingsDialog } from './ArtistSampleSettingsDialog';
@@ -36,13 +37,14 @@ interface ArtistLibraryProps {
 }
 
 type ArtistGachaMode = 'mixed' | 'uniform' | 'popular';
+type SampleSettingsTarget = { tag?: string; pack: ArtistSamplePack; enterAfterSave: false } | { tag: string; pack: ArtistSamplePack; enterAfterSave: true };
 const SAMPLE_PACKS = ['v45', 'v5'] as const;
 
 export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigateToPlayground, selectionFocusEnabled = true }) => {
   useLanguage();
     const [samplePack, setSamplePack] = useState<ArtistSamplePack>(() => localStorage.getItem('nai_artist_sample_pack') === 'v5' ? 'v5' : 'v45');
     const [cardPacks, setCardPacks] = useState<Partial<Record<string, ArtistSamplePack>>>({});
-    const [sampleSettings, setSampleSettings] = useState<{ tag: string; pack: ArtistSamplePack; enterAfterSave: boolean } | null>(null);
+    const [sampleSettings, setSampleSettings] = useState<SampleSettingsTarget | null>(null);
     const [onlySamples, setOnlySamples] = useState(true);
     const [sampleStatus, setSampleStatus] = useState<ArtistSampleStatus | null>(null);
     const [sampleCatalogs, setSampleCatalogs] = useState<Partial<Record<ArtistSamplePack, ArtistSampleCatalog>>>({});
@@ -95,7 +97,6 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
                             const effectivePack = cardPacks[artist.name] || samplePack;
                             const samples = samplesByPack[effectivePack];
                             const artistOwnSamples = samples.ownNames.has(artist.name) ? samples.own.filter(sample => normalizeArtistSampleTag(sample.tag) === normalizeArtistSampleTag(artist.name)) : [];
-                            const hasSample = samples.packedNames.has(artist.name) || artistOwnSamples.length > 0;
                             const ratioKey = `${effectivePack}:${artist.name}`;
 
                             return (
@@ -115,7 +116,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
                                         event.preventDefault(); toggleCart(artist.name);
                                     }}
                                 >
-                                    <div className={`${hasSample ? 'mobile-gallery-frame md:aspect-[2/3]' : 'h-32'} relative overflow-hidden bg-gray-200 dark:bg-gray-900`} style={{ '--mobile-image-ratio': artistRatios[ratioKey] ? `${Math.round(artistRatios[ratioKey] * 1000)} / 1000` : '2 / 3' } as React.CSSProperties}>
+                                    <div className="mobile-gallery-frame md:aspect-[2/3] relative overflow-hidden bg-gray-200 dark:bg-gray-900" style={{ '--mobile-image-ratio': artistRatios[ratioKey] ? `${Math.round(artistRatios[ratioKey] * 1000)} / 1000` : '2 / 3' } as React.CSSProperties}>
                                         <ArtistSampleCover
                                             tag={artist.name}
                                             pack={effectivePack}
@@ -126,7 +127,6 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
                                             ownSamples={artistOwnSamples}
                                             alt={artist.chinese || artist.name}
                                             onSupplement={() => supplementSample(artist.name, effectivePack)}
-                                            onSettings={() => setSampleSettings({ tag: artist.name, pack: effectivePack, enterAfterSave: false })}
                                             imageClassName={imageDisplay.layout === 'masonry' ? 'h-full w-full object-contain' : undefined}
                                             notify={notify}
                                             onImageLoad={(width, height) => updateImageRatio(ratioKey, width, height)}
@@ -152,6 +152,21 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
     const [usePrefix, setUsePrefix] = useState(true);
     const scrollContainerRef = useRef<HTMLDivElement>(null);
     const active = useContext(ImageActivityContext);
+    const activeRef = useRef(active); activeRef.current = active;
+    useEffect(() => { activeRef.current = active; return () => { activeRef.current = false; }; }, [active]);
+    const librarySettingsRef = useRef<HTMLDivElement>(null);
+    const openTemplateSettings = (pack: ArtistSamplePack, close: () => void) => {
+        // 手机面板先退回其历史层，再开配置，避免返回事件把新窗口一起关闭。
+        const returned = window.history.state?.__naiMobileLayer?.startsWith('sheet-')
+            ? new Promise<void>(resolve => window.addEventListener('popstate', () => resolve(), { once: true })) : null;
+        flushSync(close);
+        const open = () => {
+            if (!activeRef.current) return;
+            librarySettingsRef.current?.querySelector<HTMLButtonElement>('button[aria-haspopup]')?.focus({ preventScroll: true });
+            setSampleSettings({ pack, enterAfterSave: false });
+        };
+        if (returned) void returned.then(open); else open();
+    };
     useEffect(() => {
         const changed = () => setSampleRefresh(current => current + 1);
         window.addEventListener(ARTIST_SAMPLES_CHANGED, changed);
@@ -469,15 +484,15 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
                         <button type="button" onClick={() => { setArtistSort('popular'); setShowFavOnly(false); setOnlySamples(true); leaveGacha(); }} className="text-xs font-bold text-indigo-600 dark:text-indigo-300">{t("重置筛选")}</button>
                     </div>
                 </ToolbarPopover>
-                <div className="flex flex-none items-center border-l border-gray-200 pl-2 dark:border-gray-700">
-                    <ToolbarButton aria-label={gachaArtists ? t("再抽一批") : t("随机抽卡")} onClick={() => void drawGacha()} disabled={isGachaLoading || sampledArtists.length <= 0} className="mobile-touch !rounded-r-none !border-r-0" tone="neutral">
+                <ToolbarButton aria-label={gachaArtists ? t("再抽一批") : t("随机抽卡")} onClick={() => void drawGacha()} disabled={isGachaLoading || sampledArtists.length <= 0} className="mobile-touch" tone="neutral">
                         {isGachaLoading ? <LoaderCircle className="animate-spin" /> : <Dice5 />}<span className="hidden sm:inline">{gachaArtists ? t("再抽一批") : t("随机抽卡")}</span>
-                    </ToolbarButton>
-                    <ToolbarPopover label={t("抽卡设置")} title={t("画师抽卡设置")} icon={<ChevronDown />} className="[&_button[aria-haspopup]]:rounded-l-none [&_button[aria-haspopup]>span]:hidden" width={320}>
-                        <div className="grid grid-cols-2 gap-3">
+                </ToolbarButton>
+                <div ref={librarySettingsRef} className="flex flex-none items-center border-l border-gray-200 pl-2 dark:border-gray-700">
+                    <ToolbarPopover label={t('画师库设置')} title={t('画师库设置')} icon={<Settings2 />} className="[&_button>span]:!inline" width={320}>
+                      {close => <div className="space-y-4"><div className="grid grid-cols-2 gap-3">
                             <label className="text-sm font-semibold dark:text-white">{t("抽卡方式")}<select value={gachaMode} onChange={event => setGachaMode(event.target.value as ArtistGachaMode)} className={TOOLBAR_FIELD_CLASS}><option value="mixed">{t("惊喜混合")}</option><option value="uniform">{t("完全随机")}</option><option value="popular">{t("热门画师")}</option></select></label>
                             <label className="text-sm font-semibold dark:text-white">{t("数量")}<select value={gachaCount} onChange={event => setGachaCount(Number(event.target.value) as 6 | 12 | 24)} className={TOOLBAR_FIELD_CLASS}><option value={6}>{t("6 位")}</option><option value={12}>{t("12 位")}</option><option value={24}>{t("24 位")}</option></select></label>
-                        </div>
+                        </div><div className="border-t border-gray-200 pt-3 dark:border-gray-700"><p className="mb-2 text-xs font-semibold text-gray-500 dark:text-gray-400">{t('补图生成设置')}</p><div className="grid grid-cols-2 gap-2">{SAMPLE_PACKS.map(pack => <button key={pack} type="button" aria-label={t('{0} 补图生成设置', [pack === 'v45' ? 'V4.5' : 'V5'])} onClick={() => openTemplateSettings(pack, close)} className="mobile-touch min-h-11 rounded-lg border border-gray-200 bg-gray-50 px-3 text-xs font-semibold text-gray-700 hover:border-indigo-400 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:border-indigo-500 dark:hover:text-indigo-300">{pack === 'v45' ? 'V4.5' : 'V5'}</button>)}</div></div></div>}
                     </ToolbarPopover>
                 </div>
             </WorkspaceToolbar>

@@ -1,4 +1,8 @@
 {
+  "样张版本 {0}，切换为 {1}": ["樣張版本 {0}，切換為 {1}", "Sample version {0}; switch to {1}", "サンプル {0}：{1}に切り替え", "샘플 버전 {0}, {1}(으)로 전환"],
+  "画师库设置": ["畫師庫設定", "Artist library settings", "絵師ライブラリ設定", "작가 라이브러리 설정"],
+  "{0} 补图生成设置": ["{0} 補圖生成設定", "{0} sample generation settings", "{0} サンプル補完の生成設定", "{0} 샘플 생성 설정"],
+  "{0} 暂无样张": ["{0} 暫無樣張", "No {0} samples yet", "{0} のサンプルはまだありません", "{0} 샘플이 아직 없습니다"],
   "请先配置 NovelAI API Key": ["請先設定 NovelAI API Key", "Configure a NovelAI API key first", "先にNovelAI APIキーを設定してください", "NovelAI API 키를 먼저 설정하세요"],
   "当前为只读权限，不能生成图片": ["目前為唯讀權限，無法生成圖片", "Read-only access cannot generate images", "読み取り専用では画像を生成できません", "읽기 전용 권한으로는 이미지를 생성할 수 없습니다"],
   "今日内不再显示": ["今日內不再顯示", "Don’t show again today", "今日は再表示しない", "오늘 다시 표시하지 않기"],

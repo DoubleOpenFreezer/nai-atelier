@@ -78,3 +78,16 @@ it('已有模板修改仅保存，字段布局适配窄屏，不提交生图', a
   fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
   await waitFor(() => expect(saved).toHaveBeenCalledWith(template));
 });
+
+it.each(['v45', 'v5'] as const)('顶栏打开%s模板不绑定画师，副标题仅版本，保存只写该版本', async pack => {
+  const saved = vi.fn();
+  render(<ArtistSampleSettingsDialog pack={pack} enterAfterSave={false} onSaved={saved} onClose={vi.fn()} />);
+  const version = pack === 'v45' ? 'V4.5' : 'V5';
+  expect(screen.getByText(`NovelAI ${version}`).textContent).toBe(`NovelAI ${version}`);
+  await screen.findByLabelText('正向提示词');
+  await waitFor(() => expect((screen.getByRole('button', { name: '保存配置' }) as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.change(screen.getByLabelText('正向提示词'), { target: { value: `portrait ${version}, {artist}` } });
+  fireEvent.click(screen.getByRole('button', { name: '保存配置' }));
+  await waitFor(() => expect(mocks.save).toHaveBeenCalledWith(pack, expect.objectContaining({ prompt: `portrait ${version}, {artist}`, params: expect.objectContaining({ model: pack === 'v45' ? 'nai-diffusion-4-5-full' : 'nai-diffusion-5-full' }) })));
+  expect(saved).toHaveBeenCalledOnce(); expect(screen.queryByRole('button', { name: '保存并进入实验室' })).toBeNull();
+});

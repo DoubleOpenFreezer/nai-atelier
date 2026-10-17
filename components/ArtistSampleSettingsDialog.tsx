@@ -70,7 +70,7 @@ const TemplateEditor: React.FC<{ pack: ArtistSamplePack; value: ArtistSampleTemp
 };
 
 export const ArtistSampleSettingsDialog: React.FC<{
-  tag: string; pack: ArtistSamplePack; enterAfterSave: boolean;
+  tag?: string; pack: ArtistSamplePack; enterAfterSave: boolean;
   onSaved: (template: ArtistSampleTemplate) => void; onClose: () => void;
 }> = ({ tag, pack, enterAfterSave, onSaved, onClose }) => {
   useLanguage();
@@ -106,7 +106,7 @@ export const ArtistSampleSettingsDialog: React.FC<{
   };
   return <ImagePreviewPortal><div ref={dialogRef} role="dialog" aria-modal="true" aria-label={t('补图生成设置')} className="fixed inset-0 z-[1250] flex items-center justify-center bg-black/50 p-3 backdrop-blur-sm" onMouseDown={event => { if (event.target === event.currentTarget) close(); }}>
     <div className="appearance-panel flex max-h-[90dvh] w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900">
-      <header className="flex flex-none items-center gap-3 border-b border-gray-200 px-4 py-3 dark:border-gray-700"><div className="min-w-0 flex-1"><h2 className="font-bold dark:text-white">{t('补图生成设置')}</h2><p className="mt-1 break-words text-xs text-gray-500">{tag} · NovelAI {pack === 'v45' ? 'V4.5' : 'V5'}</p></div><button type="button" aria-label={t('关闭')} disabled={saving} onClick={close} className="mobile-touch rounded-lg p-2 text-gray-500"><X className="h-4 w-4" /></button></header>
+      <header className="flex flex-none items-center gap-3 border-b border-gray-200 px-4 py-3 dark:border-gray-700"><div className="min-w-0 flex-1"><h2 className="font-bold dark:text-white">{t('补图生成设置')}</h2><p className="mt-1 break-words text-xs text-gray-500">{tag ? `${tag} · ` : ''}NovelAI {pack === 'v45' ? 'V4.5' : 'V5'}</p></div><button type="button" aria-label={t('关闭')} disabled={saving} onClick={close} className="mobile-touch rounded-lg p-2 text-gray-500"><X className="h-4 w-4" /></button></header>
       <div className="min-h-0 overflow-y-auto p-4">
         {loading ? <p className="text-sm text-gray-500">{t('正在读取配置…')}</p> : template && <fieldset disabled={saving}><TemplateEditor pack={pack} value={template} onChange={setTemplate} onModelValidChange={setValid} /></fieldset>}
         {error && <p role="alert" className="mt-2 break-words text-xs text-red-600 dark:text-red-300">{error}{!template && <button type="button" className="mobile-touch ml-2 underline" onClick={() => setRetry(value => value + 1)}>{t('重试读取配置')}</button>}</p>}
