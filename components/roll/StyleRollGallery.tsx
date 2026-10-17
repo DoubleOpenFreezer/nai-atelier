@@ -114,19 +114,19 @@ export const StyleRollGallery: React.FC<Props> = ({ experiment, candidates, imag
 
 
 
-      {/* 卡片底栏信息：小号磨砂标签，磨砂偏好下叠在图片底部 */}
-      <div className="gallery-card-caption flex items-center justify-between px-3 py-2 gap-2 bg-white/95 dark:bg-gray-850/95 border-t border-gray-100 dark:border-gray-800">
+      {/* 卡片底栏信息：小号磨砂标签，磨砂偏好下叠在图片底部并上移一行 */}
+      <div className="gallery-card-caption flex items-center justify-between px-3 py-2 gap-2 bg-white/95 dark:bg-gray-850/95 border-t border-gray-100 dark:border-gray-800" style={frosted ? { paddingBottom: '1.75rem' } : undefined}>
         <div className="flex flex-wrap items-center gap-1 overflow-hidden min-w-0 flex-1" title={candidate.tags.map(entry => `${entry.tag} (${entry.weight.toFixed(1)})`).join(', ')}>
-          {candidate.tags.slice(0, 3).map((entry, entryIndex) => (
+          {candidate.tags.slice(0, 6).map((entry, entryIndex) => (
             <span key={entry.tag} className="gallery-card-badge inline-flex items-center gap-1 rounded-md bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 text-micro font-medium text-gray-700 dark:text-gray-200 truncate max-w-[112px] border border-gray-200/50 dark:border-gray-700/50">
               <span className={`inline-block h-1 w-1 shrink-0 rounded-full ${ACCENT_COLORS[entryIndex % ACCENT_COLORS.length].split(' ')[0]}`} />
               <span className="truncate">{entry.tag}</span>
               <span className="font-mono text-micro opacity-60 font-semibold">{entry.weight.toFixed(1)}</span>
             </span>
           ))}
-          {candidate.tags.length > 3 && (
+          {candidate.tags.length > 6 && (
             <span className="gallery-card-badge rounded-md bg-gray-100 px-1.5 py-0.5 text-micro font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400">
-              +{candidate.tags.length - 3}
+              +{candidate.tags.length - 6}
             </span>
           )}
         </div>
@@ -145,7 +145,7 @@ export const StyleRollGallery: React.FC<Props> = ({ experiment, candidates, imag
   };
 
   return <section ref={scrollRef} onScroll={onScroll} aria-label={t('画风库')} className="min-h-0 min-w-0 flex-1 overflow-y-auto p-3 md:p-5">
-    {candidates.length ? display.layout === 'masonry' ? <ShortestColumnMasonry items={candidates} columns={columns} getItemKey={candidate => candidate.id} estimateItemHeight={(candidate, width) => width / ratio(candidate) + (frosted ? 2 : 62)} renderItem={renderCard} />
+    {candidates.length ? display.layout === 'masonry' ? <ShortestColumnMasonry items={candidates} columns={columns} getItemKey={candidate => candidate.id} estimateItemHeight={(candidate, width) => width / ratio(candidate) + (frosted ? 2 : 80)} renderItem={renderCard} />
       : <div className={`${mobileGalleryClassName(display)} workspace-card-grid workspace-roll-grid`} style={mobileGalleryStyle(display, columns)}>{candidates.map(renderCard)}</div>
       : <EmptyState className="h-full min-h-60" title={t('暂无匹配画风')} />}
   </section>;
