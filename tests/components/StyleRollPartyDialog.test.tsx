@@ -4,16 +4,18 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { StyleRollPartyDialog } from '../../components/roll/StyleRollPartyDialog';
 
+const mocks = vi.hoisted(() => ({ catalogTags: [] as string[] }));
 vi.mock('../../services/tagDictionary', async original => ({ ...await original<typeof import('../../services/tagDictionary')>(), searchArtistDictionary: async () => [] }));
 vi.mock('../../services/artistSamples', () => ({
   getArtistSampleStatus: async () => ({ available: true, canManage: false, packs: [{ id: 'v45', phase: 'ready' }] }),
-  getArtistSampleCatalog: async () => ({ pack: 'v45', revision: 'synthetic', tags: [] }),
-  buildArtistSampleImageUrl: () => '',
+  getArtistSampleCatalog: async () => ({ pack: 'v45', revision: 'synthetic', tags: mocks.catalogTags }),
+  buildArtistSampleImageUrl: (pack: string, tag: string, index: number, revision: string) => `/api/artist-samples/image?pack=${pack}&tag=${encodeURIComponent(tag)}&index=${index}&revision=${revision}`,
   normalizeArtistSampleTag: (tag: string) => tag.replace(/_/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase(),
 }));
+vi.mock('../../services/artistSampleDrafts', () => ({ getArtistSampleData: async () => ({ templates: {}, samples: [] }) }));
 
 const library = Array.from({ length: 40 }, (_, index) => `artist_${index}`);
-beforeEach(() => { vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener() {}, removeEventListener() {} })); });
+beforeEach(() => { mocks.catalogTags = []; vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener() {}, removeEventListener() {} })); });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 const open = (overrides: Partial<React.ComponentProps<typeof StyleRollPartyDialog>> = {}) => {
@@ -21,9 +23,11 @@ const open = (overrides: Partial<React.ComponentProps<typeof StyleRollPartyDialo
   render(<StyleRollPartyDialog library={library} count={4} initial={[]} blocked={[]} onSave={onSave} onBlock={onBlock} onClose={onClose} {...overrides} />);
   return { onSave, onBlock, onClose };
 };
+const loaded = () => waitFor(() => expect(screen.queryByText('正在读取画师样张…')).toBeNull());
 
-it('抽卡按设定人数抽出一组，可踢出、补抽并用手动输入覆盖', () => {
+it('抽卡按设定人数抽出一组，可踢出、补抽并用手动输入覆盖', async () => {
   const { onSave } = open();
+  await loaded();
   expect(screen.getByText('已固定 0 位 · 之后每轮只抽权重')).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: '抽卡' }));
   expect(screen.getAllByRole('button', { name: /^移除 artist_/ })).toHaveLength(4);
@@ -42,6 +46,7 @@ it('抽卡按设定人数抽出一组，可踢出、补抽并用手动输入覆�
 it('屏蔽当前集合会写入全局名单并清空本次选择', async () => {
   const onBlock = vi.fn(async (_tags: string[]) => {});
   open({ blocked: ['old_artist'], onBlock });
+  await loaded();
   fireEvent.click(screen.getByRole('button', { name: '抽卡' }));
   fireEvent.click(screen.getByRole('button', { name: '屏蔽这些' }));
   await waitFor(() => expect(onBlock).toHaveBeenCalledOnce());
@@ -54,6 +59,7 @@ it('屏蔽当前集合会写入全局名单并清空本次选择', async () => {
 it('已屏蔽画师不会再被抽到，也可以从管理列表取消屏蔽', async () => {
   const onBlock = vi.fn(async (_tags: string[]) => {});
   open({ blocked: library.slice(0, 36), onBlock });
+  await loaded();
   fireEvent.click(screen.getByRole('button', { name: '抽卡' }));
   expect(screen.getAllByRole('button', { name: /^移除 artist_/ })).toHaveLength(4);
   for (const index of [36, 37, 38, 39]) expect(screen.getByText(`artist_${index}`)).toBeTruthy();
@@ -63,8 +69,10 @@ it('已屏蔽画师不会再被抽到，也可以从管理列表取消屏蔽', a
   expect(onBlock.mock.calls[0][0]).toHaveLength(35);
 });
 
-it('只抽有样张时，抽卡限定在给定集合内', () => {
-  open({ sampledTags: new Set(['artist 1', 'artist 2']) });
+it('只抽有样张时，抽卡限定在有样张的画师内', async () => {
+  mocks.catalogTags = ['artist_1', 'artist_2'];
+  open({ sampledOnly: true });
+  await loaded();
   fireEvent.click(screen.getByRole('button', { name: '抽卡' }));
   const labels = screen.getAllByRole('button', { name: /^移除 / }).map(button => button.getAttribute('aria-label'));
   expect(labels.sort()).toEqual(['移除 artist_1', '移除 artist_2']);

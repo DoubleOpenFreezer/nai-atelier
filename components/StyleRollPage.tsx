@@ -450,7 +450,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
       </div>}
     {experiment && isMobile && <ImagePreviewPortal><MobileDetailView open={Boolean(selected) && !setup} title={t('候选 {0}', [experiment.candidates.findIndex(candidate => candidate.id === selectedId) + 1])} onClose={() => setSelectedId('')}>{detail}</MobileDetailView></ImagePreviewPortal>}
     {setup && <StyleRollSetup initial={setup} chains={chains} libraryCount={library.length} libraryLoading={libraryLoading} enforceFreeStepLimit={enforceFreeStepLimit} onClose={() => setSetup(null)} onSave={async value => { await store(value); if (!experiments.some(item => item.id === value.id)) setExperimentId(value.id); }} />}
-    {partyOpen && <StyleRollPartyDialog library={library} count={artistsPerMix} initial={pinnedArtists} blocked={blocklist} sampledTags={sampledOnly ? sampledTags : null} onBlock={async tags => { setBlocklist(await saveRollBlocklist(tags)); }} onSave={tags => setPinnedArtists(tags)} onClose={() => setPartyOpen(false)} />}
+    {partyOpen && <StyleRollPartyDialog library={library} count={artistsPerMix} initial={pinnedArtists} blocked={blocklist} sampledOnly={sampledOnly} onBlock={async tags => { setBlocklist(await saveRollBlocklist(tags)); }} onSave={tags => setPinnedArtists(tags)} onClose={() => setPartyOpen(false)} />}
     {lightbox && <ImageLightbox src={lightbox.imageUrl} generationData={lightbox} favorite={{ imageUrl: lightbox.imageUrl, sourceType: 'history', sourceId: lightbox.id }} notify={notify} onClose={() => setLightbox(null)} />}
   </div>;
 };

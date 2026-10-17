@@ -3,6 +3,7 @@ import { Ban, Plus, RotateCcw, Search, Shuffle, X } from 'lucide-react';
 import { t, useLanguage } from '../../services/i18n';
 import { searchArtistDictionary, type ArtistDictionaryEntry } from '../../services/tagDictionary';
 import { buildArtistSampleImageUrl, getArtistSampleCatalog, getArtistSampleStatus, normalizeArtistSampleTag, type ArtistSamplePack } from '../../services/artistSamples';
+import { getArtistSampleData } from '../../services/artistSampleDrafts';
 import { ImagePreviewPortal } from '../ImagePreviewPortal';
 import { IconButton, ToolbarButton } from '../DesignSystem';
 import { SmartImage } from '../SmartImage';
@@ -15,8 +16,8 @@ const field = 'mobile-touch min-w-0 w-full rounded-xl border border-gray-200 bg-
 
 interface Props {
   library: string[]; count: number; initial: string[]; blocked: string[];
-  /** 非空时只从这些归一化 Tag 中抽卡；null 表示样张仍在读取。 */
-  sampledTags?: Set<string> | null;
+  /** 只从有样张的画师中抽卡；手动添加与搜索不受限制。 */
+  sampledOnly?: boolean;
   onBlock: (tags: string[]) => Promise<void>;
   onSave: (tags: string[]) => void;
   onClose: () => void;
@@ -24,16 +25,15 @@ interface Props {
 
 export const StyleRollPartyDialog: React.FC<Props> = props => <ImagePreviewPortal><PartyForm {...props} /></ImagePreviewPortal>;
 
-const PartyForm: React.FC<Props> = ({ library, count, initial, blocked, sampledTags = null, onBlock, onSave, onClose }) => {
+const PartyForm: React.FC<Props> = ({ library, count, initial, blocked, sampledOnly = false, onBlock, onSave, onClose }) => {
   useLanguage();
   const [picked, setPicked] = useState<string[]>(initial);
   const [blockedTags, setBlockedTags] = useState<string[]>(blocked);
   const [search, setSearch] = useState(''), [manual, setManual] = useState('');
   const [suggestions, setSuggestions] = useState<ArtistDictionaryEntry[]>([]);
   const [error, setError] = useState(''), [busy, setBusy] = useState(false);
-  const [samplePack, setSamplePack] = useState<ArtistSamplePack | null>(null);
-  const [sampleRevision, setSampleRevision] = useState('');
-  const [sampleTags, setSampleTags] = useState<Map<string, string>>(new Map());
+  const [sampleUrls, setSampleUrls] = useState<Map<string, string>>(new Map());
+  const [samplesLoading, setSamplesLoading] = useState(true);
   const dialog = useModalA11y<HTMLDivElement>(true);
   const close = useMobileHistoryLayer(true, () => { if (busy) return false; onClose(); }, 'roll-party');
 
@@ -44,16 +44,23 @@ const PartyForm: React.FC<Props> = ({ library, count, initial, blocked, sampledT
   useEffect(() => {
     let current = true;
     void (async () => {
-      try {
-        const status = await getArtistSampleStatus();
-        const ready = ['v45', 'v5'].map(id => status.packs.find(pack => pack.id === id && pack.phase === 'ready')).find(Boolean);
-        if (!ready || !current) return;
-        const catalog = await getArtistSampleCatalog(ready.id);
-        if (!current) return;
-        setSamplePack(ready.id); setSampleRevision(catalog.revision);
-        setSampleTags(new Map(catalog.tags.map(tag => [normalizeArtistSampleTag(tag), tag])));
-      } catch { setSamplePack(null); }
-    })();
+      const urls = new Map<string, string>();
+      const [status, data] = await Promise.all([
+        getArtistSampleStatus().catch(() => null),
+        getArtistSampleData().catch(() => ({ templates: {}, samples: [] })),
+      ]);
+      for (const sample of data.samples) urls.set(normalizeArtistSampleTag(sample.tag), sample.imageUrl);
+      const ready = (['v45', 'v5'] as const).filter(pack => status?.packs.some(item => item.id === pack && item.phase === 'ready'));
+      const catalogs = await Promise.all(ready.map(pack => getArtistSampleCatalog(pack).catch(() => null)));
+      for (const [index, catalog] of catalogs.entries()) {
+        if (!catalog) continue;
+        for (const tag of catalog.tags) {
+          const normalized = normalizeArtistSampleTag(tag);
+          if (!urls.has(normalized)) urls.set(normalized, buildArtistSampleImageUrl(ready[index], tag, 0, catalog.revision));
+        }
+      }
+      if (current) { setSampleUrls(urls); setSamplesLoading(false); }
+    })().catch(() => { if (current) { setSampleUrls(new Map()); setSamplesLoading(false); } });
     return () => { current = false; };
   }, []);
   useEffect(() => {
@@ -65,11 +72,8 @@ const PartyForm: React.FC<Props> = ({ library, count, initial, blocked, sampledT
 
   const blockedKeys = new Set(blockedTags.map(key));
   const pickedKeys = new Set(picked.map(key));
-  const sampleUrl = (tag: string) => {
-    const original = sampleTags.get(normalizeArtistSampleTag(tag));
-    return samplePack && original ? buildArtistSampleImageUrl(samplePack, original, 0, sampleRevision) : '';
-  };
-  const available = () => library.filter(tag => !blockedKeys.has(key(tag)) && !pickedKeys.has(key(tag)) && (!sampledTags || sampledTags.has(normalizeArtistSampleTag(tag))));
+  const sampleUrl = (tag: string) => sampleUrls.get(normalizeArtistSampleTag(tag)) || '';
+  const available = () => library.filter(tag => !blockedKeys.has(key(tag)) && !pickedKeys.has(key(tag)) && (!sampledOnly || sampleUrls.has(normalizeArtistSampleTag(tag))));
   const draw = (size: number) => {
     const pool = available();
     const next = [...picked];
@@ -104,6 +108,7 @@ const PartyForm: React.FC<Props> = ({ library, count, initial, blocked, sampledT
     finally { setBusy(false); }
   };
   const submit = () => { if (!picked.length) { setError('请先抽卡或添加至少一位画师'); return; } onSave(picked); onClose(); };
+  const hint = samplesLoading ? t('正在读取画师样张…') : sampledOnly && !sampleUrls.size ? t('没有可用的样张画师') : t('一次抽 {0} 位，可逐位替换', [count]);
 
   return <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/40 p-3 backdrop-blur-sm">
     <div ref={dialog} role="dialog" aria-modal="true" aria-label={t('固定画师')} className="appearance-panel flex max-h-[92dvh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-900">
@@ -117,25 +122,23 @@ const PartyForm: React.FC<Props> = ({ library, count, initial, blocked, sampledT
         <ToolbarButton tone="primary" disabled={busy} onClick={() => draw(count)}><Shuffle />{t('抽卡')}</ToolbarButton>
         <ToolbarButton disabled={busy} onClick={redraw}><RotateCcw />{t('重抽')}</ToolbarButton>
         <ToolbarButton disabled={busy || picked.length >= PARTY_LIMIT} onClick={() => draw(picked.length + 1)}><Plus />{t('补抽')}</ToolbarButton>
-        <span className="ml-auto text-xs text-gray-500">{sampledTags && !sampledTags.size ? t('没有可用的样张画师') : t('一次抽 {0} 位，可逐位替换', [count])}</span>
+        <span className="ml-auto text-xs text-gray-500">{hint}</span>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
         <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 md:grid-cols-4">
           {picked.map(tag => {
             const url = sampleUrl(tag);
-            return <div key={tag} className="group relative overflow-hidden rounded-xl border border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-800">
-              <div className="relative h-36 w-full overflow-hidden bg-gray-100 dark:bg-gray-950">
-                {url ? <SmartImage src={url} alt={tag} className="h-full w-full object-cover" containerClassName="h-full w-full" />
-                  : <div className="flex h-full w-full items-center justify-center text-xs text-gray-400 dark:text-gray-600">{t('暂无样张')}</div>}
-                <button type="button" aria-label={t('移除 {0}', [tag])} title={t('移除')} disabled={busy} onClick={() => setPicked(picked.filter(item => item !== tag))} className="mobile-size-locked absolute right-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-black/50 text-white backdrop-blur-md transition hover:bg-rose-600 disabled:opacity-40"><X className="h-3.5 w-3.5" /></button>
+            return <div key={tag} className="group relative aspect-[2/3] overflow-hidden rounded-xl border border-gray-200 bg-gray-100 dark:border-gray-700 dark:bg-gray-950">
+              {url ? <SmartImage src={url} alt={tag} previewTransform={url.startsWith('/api/artist-samples/image?') ? 'artist-sample-padding-v1' : undefined} className="h-full w-full object-cover" containerClassName="absolute inset-0" />
+                : <div className="flex h-full w-full items-center justify-center text-xs text-gray-400 dark:text-gray-600">{samplesLoading ? t('正在读取画师样张…') : t('暂无样张')}</div>}
+              <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/40 to-transparent px-2 pb-1.5 pt-8">
+                <span className="block truncate text-xs font-medium text-white" title={tag}>{tag}</span>
               </div>
-              <div className="flex items-center gap-1 px-2 py-1.5">
-                <span className="min-w-0 flex-1 truncate text-xs font-medium text-gray-800 dark:text-gray-200" title={tag}>{tag}</span>
-              </div>
+              <button type="button" aria-label={t('移除 {0}', [tag])} title={t('移除')} disabled={busy} onClick={() => setPicked(picked.filter(item => item !== tag))} className="mobile-size-locked absolute right-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-black/50 text-white backdrop-blur-md transition hover:bg-rose-600 disabled:opacity-40"><X className="h-3.5 w-3.5" /></button>
             </div>;
           })}
-          {picked.length < PARTY_LIMIT && <button type="button" disabled={busy} onClick={() => draw(picked.length + 1)} className="mobile-touch flex h-36 flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed border-gray-300 text-xs text-gray-400 transition hover:border-indigo-400 hover:text-indigo-500 disabled:opacity-40 dark:border-gray-700"><Plus className="h-5 w-5" />{t('补抽')}</button>}
+          {picked.length < PARTY_LIMIT && <button type="button" disabled={busy} onClick={() => draw(picked.length + 1)} className="mobile-touch flex aspect-[2/3] flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed border-gray-300 text-xs text-gray-400 transition hover:border-indigo-400 hover:text-indigo-500 disabled:opacity-40 dark:border-gray-700"><Plus className="h-5 w-5" />{t('补抽')}</button>}
         </div>
       </div>
 
