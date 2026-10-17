@@ -17,9 +17,9 @@ it('准备期间切 Key 不将旧配置或旧授权投递到新 Key', async () =
   await expect(beginRollGeneration(rollFixture(), candidateFixture('c'), 'synthetic-key', 0, false)).rejects.toThrow('Key 已变化');
   expect(mocks.begin).not.toHaveBeenCalled();
 });
-it('一轮多配方一次提交，各张保留自己的画师、历史来源和验证Seed', async () => {
-  const e = rollFixture(), first = candidateFixture('a', 'alpha'), second = { ...candidateFixture('b', 'beta'), seed: 42 };
+it('一轮多配方一次提交，各张保留自己的画师、历史来源和公共固定Seed', async () => {
+  const e = rollFixture(), first = candidateFixture('a', 'alpha'), second = candidateFixture('b', 'beta');
   await beginRollGeneration(e, [first, second], 'synthetic-key', 4, false);
-  expect(mocks.build).toHaveBeenNthCalledWith(2, expect.objectContaining({ prompt: expect.stringContaining('artist:beta'), params: expect.objectContaining({ seed: 42 }) }));
+  expect(mocks.build).toHaveBeenNthCalledWith(2, expect.objectContaining({ prompt: expect.stringContaining('artist:beta'), params: expect.objectContaining({ seed: 0 }) }));
   expect(mocks.begin).toHaveBeenCalledOnce(); expect(mocks.begin.mock.calls[0][0]).toEqual(expect.objectContaining({ count: 2, descriptor: expect.objectContaining({ sequence: [expect.objectContaining({ history: expect.objectContaining({ modules: [expect.objectContaining({ id: 'style-roll:a' })] }) }), expect.objectContaining({ history: expect.objectContaining({ modules: [expect.objectContaining({ id: 'style-roll:b' })] }) })] }) }));
 });

@@ -13,7 +13,7 @@ describe('Roll 串画师与规则', () => {
     expect(candidate.genes[0]).toEqual({ tag: 'CATALOG 0', weight: 2 }); expect(candidate.genes.some(gene => gene.tag === 'catalog_1204')).toBe(true);
     expect(candidate.genes.some(gene => gene.tag === 'catalog_1')).toBe(false); expect(overrides).toHaveLength(2);
   });
-  it('旧候选即使从词库移除也可保留画师精修，排除项仍生效', () => {
+  it('已有候选即使从词库移除也可保留画师调整，排除项仍生效', () => {
     const e = rollFixture(); e.artists = []; e.candidates = [candidateFixture('old', 'old-artist')];
     e.artists = resolveRollArtists([], [], e.candidates[0].genes);
     expect(manualRollVariant(e, e.candidates[0], [1.1]).genes).toEqual([{ tag: 'old-artist', weight: 1.1 }]);
@@ -38,6 +38,12 @@ describe('Roll 串画师与规则', () => {
     e.artists = parseRollArtists('alpha, beta, gamma').map(artist => ({ ...artist, locked: true }));
     expect(() => validateRollRules(e.artists, { ...e.rules, minArtists: 1, maxArtists: 2 })).toThrow('锁定画师');
   });
+  it('当前衍生配方只关联一个已有父代，引用无效或多个父代时拒绝保存', () => {
+    const e = rollFixture(); e.candidates = [candidateFixture('a'), candidateFixture('b'), { ...candidateFixture('derived'), method: 'manual', parents: ['a'], generation: 1 }];
+    expect(() => validateRollExperiment(e)).not.toThrow();
+    e.candidates[2].parents = ['missing']; expect(() => validateRollExperiment(e)).toThrow('谱系资料无效');
+    e.candidates[2].parents = ['a', 'b']; expect(() => validateRollExperiment(e)).toThrow('谱系资料无效');
+  });
 });
 
 describe('Roll 和手动调整', () => {
@@ -51,19 +57,11 @@ describe('Roll 和手动调整', () => {
       expect(candidate.genes).toHaveLength(4); expect(candidate.genes).toContainEqual({ tag: 'epsilon', weight: 1.3 }); expect(candidate.genes.some(gene => gene.tag === 'beta')).toBe(false);
       expect(candidate.parents).not.toContain('archived'); if (candidate.parents.length) expect(candidate.genes.some(gene => ['alpha', 'gamma', 'delta'].includes(gene.tag))).toBe(true);
     }
-    expect(new Set(result.map(candidate => rollSignature(candidate.genes))).size).toBe(8); expect(e.votes).toEqual([]);
+    expect(new Set(result.map(candidate => rollSignature(candidate.genes))).size).toBe(8);
   });
   it('未保存、已归档或已不在可用词库内的组合不冒充偏好，自动退回完整词库随机抽取', () => {
     const e = rollFixture(); e.candidates = [candidateFixture('not-kept', 'alpha'), { ...candidateFixture('missing', 'removed'), savedChainId: 'gone' }];
     const result = rollCandidates(e, 4, { mode: 'saved', random: seededRandom() }); expect(result.every(candidate => candidate.method === 'random' && !candidate.parents.length)).toBe(true);
-  });
-  it('旧投票不影响保存偏好，抽取后旧票和原图绑定保持不变', () => {
-    const e = rollFixture(); e.candidates = [{ ...candidateFixture('saved', 'alpha'), savedChainId: 'kept-chain' }, candidateFixture('other', 'beta')];
-    const withoutVotes = rollCandidates(e, 4, { mode: 'saved', random: seededRandom() });
-    e.votes = [{ id: 'old-vote', left: 'saved', right: 'other', leftImage: 'original-saved', rightImage: 'original-other', result: 'right', createdAt: 1 }];
-    const before = structuredClone(e.votes), withVotes = rollCandidates(e, 4, { mode: 'saved', random: seededRandom() });
-    const recipes = (candidates: typeof withoutVotes) => candidates.map(({ genes, method, parents, generation }) => ({ genes, method, parents, generation }));
-    expect(recipes(withVotes)).toEqual(recipes(withoutVotes)); expect(e.votes).toEqual(before);
   });
   it('精确调整生成独立新变体并遵守锁定、排除及范围，原串保持不变', () => {
     const e = rollFixture(); const parent = { ...candidateFixture('manual-parent', 'alpha'), genes: [{ tag: 'alpha', weight: 1 }, { tag: 'beta', weight: 1 }] }; e.candidates = [parent];

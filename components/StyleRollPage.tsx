@@ -4,7 +4,7 @@ import { ChevronDown, Copy, Dice5, Download, FlaskConical, ImagePlus, ListChecks
 import type { LocalGenItem, PromptChain } from '../types';
 import { t, useLanguage } from '../services/i18n';
 import { DEFAULT_ROLL_RULES, formatRollStyle, manualRollVariant, resolveRollArtists, rollCandidateToChain, rollSourceId, type RollCandidate, type RollExperiment } from '../services/styleRoll';
-import { beginRollRound, currentRollRound, rollVerificationIds } from '../services/styleRollWorkflow';
+import { beginRollRound, currentRollRound } from '../services/styleRollWorkflow';
 import { rollPendingCandidates, rollWorkspaceCandidates } from '../services/styleRollWorkspace';
 import { getArtistSampleDictionary } from '../services/artistSamples';
 import { loadRollExperiments, loadRollHistory, rollCandidateImages, saveRollExperiment } from '../services/styleRollApi';
@@ -43,7 +43,7 @@ interface Props {
   onOpenChain: (id: string) => void;
   onNavigateToPlayground: () => void;
 }
-const methodLabels = { random: '随机组合', mutate: '参考保留组合', crossover: '双亲交叉', refine: '微调变体', manual: '手动变体' };
+const methodLabels = { random: '随机组合', mutate: '参考保留组合', manual: '手动变体' };
 const selectClass = 'mobile-touch h-10 min-w-0 rounded-xl border border-gray-200 bg-white px-2 text-sm dark:border-gray-700 dark:bg-gray-900';
 const GENE_ACCENTS = ['bg-indigo-500', 'bg-emerald-500', 'bg-purple-500', 'bg-amber-500', 'bg-rose-500', 'bg-sky-500'];
 
@@ -147,12 +147,12 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
       artists: experiment ? structuredClone(experiment.artists) : [], rules: experiment ? { ...experiment.rules } : { ...DEFAULT_ROLL_RULES },
       template: experiment ? structuredClone(experiment.template) : { prompt: '{style}, 1girl, solo, upper body, simple background, looking at viewer', negativePrompt: '',
         params: applyNaiModelSettings({ model: DEFAULT_NAI_MODEL, width: 832, height: 1216, steps: runtime.freeMaxSteps, scale: 5, sampler: 'k_euler_ancestral', qualityToggle: false, ucPreset: 4, seed: 0, characters: [] }, runtime) },
-      candidates: [], votes: [],
+      candidates: [], rounds: [],
     };
     return next;
   };
   const generate = async (candidates: RollCandidate[] = selected ? [selected] : [], target = experiment) => {
-    if (!target || target.archived || !candidates.length || manualWeights || candidates.some(candidate => candidate.archived || images.has(candidate.id) || target.votes.some(vote => vote.left === candidate.id || vote.right === candidate.id)) || loadingRef.current || generatingRef.current || session || (target.id === experiment?.id && (historyLoading || !historyReady))) return;
+    if (!target || target.archived || !candidates.length || manualWeights || candidates.some(candidate => candidate.archived || images.has(candidate.id)) || loadingRef.current || generatingRef.current || session || (target.id === experiment?.id && (historyLoading || !historyReady))) return;
     if (!continuousGenerationEnabled && candidates.length > 1) { setError(t('连续生成已关闭，请开启后生成本轮')); return; }
     const key = readRollApiKey();
     if (!key) { setError(t('请先在“全局设置”中配置 NovelAI API Key')); return; }
@@ -198,7 +198,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
     if (!continuousGenerationEnabled && count > 1) throw new Error('连续生成已关闭，请开启后生成本轮');
     if (libraryLoading || libraryError || !library.length) throw new Error(libraryError || '画师词库尚未就绪，请重新加载');
     let source = experiment || makeExperiment();
-    if (round && !round.closedAt) source = { ...source, rounds: source.rounds!.map(item => item.id === round.id ? { ...item, closedAt: Date.now() } : item) };
+    if (round && !round.closedAt) source = { ...source, rounds: source.rounds.map(item => item.id === round.id ? { ...item, closedAt: Date.now() } : item) };
     source = { ...source, rules: { ...source.rules, minArtists: artistsPerMix, maxArtists: artistsPerMix } };
     const next = beginRollRound(source, library, count);
     const saved = await store(next), created = currentRollRound(saved)!;
@@ -209,8 +209,8 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
     if (!experiment || !historyReady || historyLoading || session || generatingRef.current) return;
     let source = experiment;
     const pending = rollPendingCandidates(experiment, images, ids).slice(0, continuousGenerationEnabled ? 24 : 1);
-    if (!pending.length) throw new Error('原图暂不可用，请恢复原历史。');
-    if (ids || !round || round.closedAt) source = await store({ ...experiment, rounds: [...(experiment.rounds || []).map(item => item.id === round?.id && !item.closedAt ? { ...item, closedAt: Date.now() } : item), { id: createUuid(), kind: 'batch', candidateIds: pending.map(candidate => candidate.id), opponents: [], createdAt: Date.now() }] });
+    if (!pending.length) return;
+    if (ids || !round || round.closedAt) source = await store({ ...experiment, rounds: [...experiment.rounds.map(item => item.id === round?.id && !item.closedAt ? { ...item, closedAt: Date.now() } : item), { id: createUuid(), candidateIds: pending.map(candidate => candidate.id), createdAt: Date.now() }] });
     setSelectedId(''); setSelecting(false); setSelectedIds(new Set()); setRoundId(currentRollRound(source)?.id || ''); setFilter('all'); void generate(pending, source);
   });
   const resume = () => void perform(async () => {
@@ -305,7 +305,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
       })}</div>
     </div>
     {manualWeights && <div className="flex flex-wrap gap-2"><ToolbarButton className="!border-emerald-600 !bg-emerald-600 !text-white" disabled={busy || loading} onClick={saveManualWeights}>{t('保存为新变体')}</ToolbarButton><ToolbarButton disabled={busy} onClick={() => setManualWeights(null)}>{t('取消')}</ToolbarButton></div>}
-    {!selectedImage && (experiment.votes.some(vote => vote.left === selected.id || vote.right === selected.id) ? <p className="text-xs text-amber-600 dark:text-amber-400">{t('原图暂不可用，请恢复原历史。')}</p> : <ToolbarButton data-agent-action="business" tone="primary" className="!h-11 w-full" disabled={busy || loading || preparing || Boolean(session) || Boolean(manualWeights) || historyLoading || !historyReady || selected.archived} onClick={() => void generate()}>{preparing ? <LoaderCircle className="animate-spin" /> : <ImagePlus />}{t('生成图片')} · {costLabel}</ToolbarButton>)}
+    {!selectedImage && <ToolbarButton data-agent-action="business" tone="primary" className="!h-11 w-full" disabled={busy || loading || preparing || Boolean(session) || Boolean(manualWeights) || historyLoading || !historyReady || selected.archived} onClick={() => void generate()}>{preparing ? <LoaderCircle className="animate-spin" /> : <ImagePlus />}{t('生成图片')} · {costLabel}</ToolbarButton>}
     {!historyLoading && !historyReady && <p className="text-xs text-amber-600 dark:text-amber-400">{t('历史暂不可用，请重新加载后再生成。')}</p>}
     <div className="grid grid-cols-2 gap-2">
       <ToolbarButton disabled={busy || loading || Boolean(manualWeights)} tone="primary" className="!h-10 rounded-xl font-bold shadow-sm" onClick={selected.savedChainId && chains.some(chain => chain.id === selected.savedChainId) ? () => onOpenChain(selected.savedChainId!) : () => saveCandidate()}><Save />{t(selected.savedChainId && chains.some(chain => chain.id === selected.savedChainId) ? '打开风格串' : '存为风格串')}</ToolbarButton>
@@ -325,10 +325,9 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
     </details>
   </div> : null;
 
-  const verificationIds = experiment ? rollVerificationIds(experiment) : new Set<string>();
-  const candidates = experiment ? experiment.candidates.filter(candidate => !candidate.archived && !verificationIds.has(candidate.id)) : [];
+  const candidates = experiment ? experiment.candidates.filter(candidate => !candidate.archived) : [];
   const roundPending = experiment ? rollPendingCandidates(experiment, images) : [];
-  const scopedRound = experiment?.rounds?.find(item => item.id === roundId);
+  const scopedRound = experiment?.rounds.find(item => item.id === roundId);
   const selectedPending = experiment ? rollPendingCandidates(experiment, images, chosen.map(candidate => candidate.id)) : [];
   const saveable = chosen.filter(candidate => images.has(candidate.id) && !candidate.archived && !candidate.savedChainId);
   const working = Boolean(session || preparing), frozen = busy || loading;
@@ -381,7 +380,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
               <div role="group" aria-label={t('画风筛选')} className="grid grid-cols-2 gap-2">
                 {(['all', 'originals', 'variants', 'saved', 'pending', 'archived'] as const).map(value => <ToolbarButton key={value} aria-label={t(value === 'all' ? '全部' : value === 'originals' ? '纯新探索' : value === 'variants' ? '微调变体' : value === 'saved' ? '已保存' : value === 'pending' ? '待生成' : '回收站')} active={filter === value} onClick={() => { setFilter(value); setSelectedId(''); selectionAnchor.clearAnchor(); close(); }}>{t(value === 'all' ? '全部' : value === 'originals' ? '纯新探索' : value === 'variants' ? '微调变体' : value === 'saved' ? '已保存' : value === 'pending' ? '待生成' : '回收站')}<span className="ml-auto text-xs opacity-60">{experiment ? rollWorkspaceCandidates(experiment, images, { filter: value, roundId, query: '', sort }).length : 0}</span></ToolbarButton>)}
               </div>
-              <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300">{t('查看轮次')}<select aria-label={t('查看轮次')} value={roundId} onChange={event => { setRoundId(event.target.value); setSelectedId(''); }} className={TOOLBAR_FIELD_CLASS}><option value="">{t('全部轮次')}</option>{[...(experiment?.rounds || [])].reverse().map(item => <option key={item.id} value={item.id}>{t('第 {0} 轮', [(experiment?.rounds?.indexOf(item) ?? 0) + 1])} · {item.candidateIds.length}</option>)}</select></label>
+              <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300">{t('查看轮次')}<select aria-label={t('查看轮次')} value={roundId} onChange={event => { setRoundId(event.target.value); setSelectedId(''); }} className={TOOLBAR_FIELD_CLASS}><option value="">{t('全部轮次')}</option>{[...(experiment?.rounds || [])].reverse().map(item => <option key={item.id} value={item.id}>{t('第 {0} 轮', [(experiment?.rounds.indexOf(item) ?? 0) + 1])} · {item.candidateIds.length}</option>)}</select></label>
               <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300">{t('排序')}<select aria-label={t('画风排序')} value={sort} onChange={event => setSort(event.target.value)} className={TOOLBAR_FIELD_CLASS}><option value="new">{t('最新生成')}</option><option value="old">{t('最早优先')}</option></select></label>
               <button type="button" className="mobile-touch text-xs font-semibold text-indigo-600 dark:text-indigo-300" onClick={() => { setFilter('all'); setRoundId(''); setSort('new'); setQuery(''); close(); }}>{t('重置筛选')}</button>
             </div>}
@@ -398,7 +397,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
           <ToolbarButton aria-label={t('批量选择画风')} title={t('多选')} disabled={frozen || !experiment} onClick={() => { setSelectedId(''); setSelecting(true); setSelectedIds(new Set()); }}><ListChecks /><span className="hidden xl:inline">{t('多选')}</span></ToolbarButton>
 
           {experiment && <span className="hidden xl:inline text-xs text-gray-400 dark:text-gray-500 whitespace-nowrap">
-            {`${scopedRound ? t('第 {0} 轮', [(experiment.rounds?.indexOf(scopedRound) ?? 0) + 1]) : t('全部轮次')} · ${t('显示 {0} 套', [visible.length])}`}
+            {`${scopedRound ? t('第 {0} 轮', [experiment.rounds.indexOf(scopedRound) + 1]) : t('全部轮次')} · ${t('显示 {0} 套', [visible.length])}`}
           </span>}
 
           {/* 最右侧主 CTA 组合：开始 Roll + 本轮设置 */}

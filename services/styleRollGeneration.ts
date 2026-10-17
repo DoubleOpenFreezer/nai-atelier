@@ -15,7 +15,7 @@ export async function beginRollGeneration(experiment: RollExperiment, candidate:
     const prompt = rollPrompt(experiment.template, item.genes);
     const descriptor = await buildGenerationJobDescriptor({
       operation: 'text-to-image', prompt, negative: experiment.template.negativePrompt,
-      params: { ...structuredClone(experiment.template.params), ...(item.seed === undefined ? {} : { seed: item.seed }) }, forceEmptySeed: false, stream, approvedCost,
+      params: structuredClone(experiment.template.params), forceEmptySeed: false, stream, approvedCost,
       history: { basePrompt: prompt, subjectPrompt: '',
         modules: [{ id: rollCandidateModuleId(item.id), name: 'Roll 串', content: formatRollStyle(item.genes), isActive: false }],
         sourceChainId: rollSourceId(experiment.id), sourceChainName: experiment.name, sourceChainType: 'style' },

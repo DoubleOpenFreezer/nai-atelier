@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Check, Compass, Dice5, Flame, Layers, RotateCcw, Save, Sparkles, Trash2 } from 'lucide-react';
+import { Check, Compass, Dice5, RotateCcw, Save, Sparkles, Trash2 } from 'lucide-react';
 import type { LocalGenItem } from '../../types';
 import { t } from '../../services/i18n';
 import { type RollCandidate, type RollExperiment } from '../../services/styleRoll';
@@ -23,8 +23,6 @@ interface Props {
 const methodMeta: Record<string, { label: string; icon: React.ReactNode; color: string }> = {
   random: { label: '随机', icon: <Dice5 className="h-3 w-3" />, color: 'text-sky-500 bg-sky-50 dark:bg-sky-950/40 border-sky-200 dark:border-sky-800' },
   mutate: { label: '变异', icon: <Sparkles className="h-3 w-3" />, color: 'text-amber-500 bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-800' },
-  crossover: { label: '双亲', icon: <Layers className="h-3 w-3" />, color: 'text-purple-500 bg-purple-50 dark:bg-purple-950/40 border-purple-200 dark:border-purple-800' },
-  refine: { label: '微调', icon: <Flame className="h-3 w-3" />, color: 'text-rose-500 bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-800' },
   manual: { label: '手动', icon: <Compass className="h-3 w-3" />, color: 'text-emerald-500 bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800' },
 };
 
@@ -48,7 +46,6 @@ export const StyleRollGallery: React.FC<Props> = ({ experiment, candidates, imag
   const renderCard = (candidate: RollCandidate) => {
     const item = images.get(candidate.id), index = experiment.candidates.indexOf(candidate) + 1;
     const selected = selecting ? selectedIds.has(candidate.id) : selectedId === candidate.id;
-    const hasOriginal = experiment.votes.some(vote => vote.left === candidate.id || vote.right === candidate.id);
     const method = methodMeta[candidate.method] || methodMeta.random;
     const activate = () => { if (selecting) { if (!busy) onToggle(candidate.id); } else onSelect(selectedId === candidate.id ? '' : candidate.id); };
 
@@ -80,7 +77,7 @@ export const StyleRollGallery: React.FC<Props> = ({ experiment, candidates, imag
               <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gray-100 dark:bg-gray-900 text-gray-400">
                 <Dice5 className="h-6 w-6 animate-pulse" />
               </div>
-              <span className="text-xs font-medium">{t(historyReady ? hasOriginal ? '原图暂不可用' : '待生成' : historyLoading ? '加载中…' : '历史暂不可用')}</span>
+              <span className="text-xs font-medium">{t(historyReady ? '待生成' : historyLoading ? '加载中…' : '历史暂不可用')}</span>
             </div>}
 
         {selecting ? (

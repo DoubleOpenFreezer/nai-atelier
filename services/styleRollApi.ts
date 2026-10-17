@@ -26,12 +26,11 @@ export async function loadRollHistory(experimentId: string): Promise<LocalGenIte
 
 export function rollCandidateImages(experiment: RollExperiment, history: LocalGenItem[]): Map<string, LocalGenItem> {
   const images = new Map<string, LocalGenItem>();
-  const votedImages = new Map(experiment.votes.flatMap(vote => [[vote.left, vote.leftImage], [vote.right, vote.rightImage]] as [string, string][]));
   for (const item of [...history].sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id))) {
     if (item.sourceChainId !== rollSourceId(experiment.id) || item.edit) continue;
     const candidate = experiment.candidates.find(candidate => item.modules?.some(module => module.id === rollCandidateModuleId(candidate.id)));
-    if (candidate && !images.has(candidate.id) && (!votedImages.has(candidate.id) || votedImages.get(candidate.id) === item.id) &&
-      item.prompt === rollPrompt(experiment.template, candidate.genes) && item.params.seed === (candidate.seed ?? experiment.template.params.seed)) images.set(candidate.id, item);
+    if (candidate && !images.has(candidate.id) &&
+      item.prompt === rollPrompt(experiment.template, candidate.genes) && item.params.seed === experiment.template.params.seed) images.set(candidate.id, item);
   }
   return images;
 }

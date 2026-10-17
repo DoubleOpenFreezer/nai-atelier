@@ -5,7 +5,7 @@ export interface RollArtist { tag: string; weight: number; locked: boolean; excl
 export interface RollGene { tag: string; weight: number }
 export interface RollRules { minArtists: number; maxArtists: number; minWeight: number; maxWeight: number }
 export interface RollTemplate { prompt: string; negativePrompt: string; params: NAIParams }
-export type RollMethod = 'random' | 'mutate' | 'crossover' | 'refine' | 'manual';
+export type RollMethod = 'random' | 'mutate' | 'manual';
 export interface RollCandidate {
   id: string;
   genes: RollGene[];
@@ -15,12 +15,9 @@ export interface RollCandidate {
   createdAt: number;
   archived: boolean;
   savedChainId?: string;
-  seed?: number;
 }
-export interface RollVote { id: string; left: string; right: string; leftImage: string; rightImage: string; result: 'left' | 'right' | 'draw'; createdAt: number; roundId?: string }
 export interface RollRound {
-  id: string; kind: 'batch' | 'random' | 'evolve' | 'refine' | 'verify'; candidateIds: string[]; opponents: string[];
-  createdAt: number; closedAt?: number; baseId?: string; parentId?: string; jitter?: number;
+  id: string; candidateIds: string[]; createdAt: number; closedAt?: number;
 }
 export interface RollExperiment {
   version: 1;
@@ -33,9 +30,7 @@ export interface RollExperiment {
   artists: RollArtist[];
   rules: RollRules;
   candidates: RollCandidate[];
-  votes: RollVote[];
-  rounds?: RollRound[];
-  finalCandidateId?: string;
+  rounds: RollRound[];
   archived?: boolean;
 }
 
@@ -107,14 +102,14 @@ export function validateRollRules(artists: RollArtist[], rules: RollRules): void
   if (locked.length > rules.maxArtists) throw new Error('锁定画师数量超过每串上限');
 }
 
-/** 保存／导入是信任边界，旧实验读坏时停止，不能用空数据覆盖。 */
+/** 保存／导入是信任边界，资料读坏时停止，不能用空数据覆盖。 */
 export function validateRollExperiment(value: unknown): asserts value is RollExperiment {
   const e = value as RollExperiment;
   const validId = (id: unknown): id is string => typeof id === 'string' && /^[a-zA-Z0-9_-]{1,100}$/.test(id);
   if (!e || e.version !== 1 || !validId(e.id) || typeof e.name !== 'string' || !e.name.trim() || e.name.length > 120 ||
     !Number.isSafeInteger(e.revision) || e.revision < 0 || ![e.createdAt, e.updatedAt].every(Number.isFinite) ||
     !Array.isArray(e.artists) || e.artists.length > 1000 || !Array.isArray(e.candidates) || e.candidates.length > ROLL_CANDIDATE_LIMIT ||
-    !Array.isArray(e.votes) || e.votes.length > 10000 || (e.archived !== undefined && typeof e.archived !== 'boolean')) throw new Error('Roll 串实验资料无效');
+    (e.archived !== undefined && typeof e.archived !== 'boolean')) throw new Error('Roll 串实验资料无效');
   validateRollTemplate(e.template);
   const keys = new Set<string>();
   for (const artist of e.artists) {
@@ -128,35 +123,18 @@ export function validateRollExperiment(value: unknown): asserts value is RollExp
   for (const candidate of e.candidates) {
     if (!candidate || !validId(candidate.id) || ids.has(candidate.id) || !Array.isArray(candidate.genes) || !candidate.genes.length || candidate.genes.length > 16 ||
       !candidate.genes.every(gene => gene && validTag(gene.tag) && validWeight(gene.weight)) || new Set(candidate.genes.map(gene => tagKey(gene.tag))).size !== candidate.genes.length ||
-      !['random', 'mutate', 'crossover', 'refine', 'manual'].includes(candidate.method) || !Number.isSafeInteger(candidate.generation) || candidate.generation < 0 ||
-      !Number.isFinite(candidate.createdAt) || (candidate.seed !== undefined && (!Number.isSafeInteger(candidate.seed) || candidate.seed < 0 || candidate.seed > 4294967295)) || typeof candidate.archived !== 'boolean' || !Array.isArray(candidate.parents) || candidate.parents.length > 2 ||
+      !['random', 'mutate', 'manual'].includes(candidate.method) || !Number.isSafeInteger(candidate.generation) || candidate.generation < 0 ||
+      !Number.isFinite(candidate.createdAt) || typeof candidate.archived !== 'boolean' || !Array.isArray(candidate.parents) || candidate.parents.length > 1 ||
       candidate.parents.some(id => !ids.has(id)) || (candidate.savedChainId !== undefined && !validId(candidate.savedChainId))) throw new Error('候选串或谱系资料无效');
     ids.add(candidate.id);
   }
   const rounds = new Set<string>();
-  if (e.rounds !== undefined && (!Array.isArray(e.rounds) || e.rounds.length > ROLL_CANDIDATE_LIMIT)) throw new Error('画风轮次资料无效');
-  for (const round of e.rounds || []) {
-    if (!round || !validId(round.id) || rounds.has(round.id) || !['batch', 'random', 'evolve', 'refine', 'verify'].includes(round.kind) ||
+  if (!Array.isArray(e.rounds) || e.rounds.length > ROLL_CANDIDATE_LIMIT) throw new Error('画风轮次资料无效');
+  for (const round of e.rounds) {
+    if (!round || !validId(round.id) || rounds.has(round.id) ||
       !Number.isFinite(round.createdAt) || (round.closedAt !== undefined && !Number.isFinite(round.closedAt)) ||
-      !Array.isArray(round.candidateIds) || !round.candidateIds.length || round.candidateIds.length > 24 || new Set(round.candidateIds).size !== round.candidateIds.length || round.candidateIds.some(id => !ids.has(id)) ||
-      !Array.isArray(round.opponents) || round.opponents.length > ROLL_CANDIDATE_LIMIT || new Set(round.opponents).size !== round.opponents.length || round.opponents.some(id => !ids.has(id) || round.candidateIds.includes(id)) ||
-      (round.baseId !== undefined && !ids.has(round.baseId)) || (round.parentId !== undefined && !ids.has(round.parentId)) ||
-      (round.jitter !== undefined && ![0.1, 0.2, 0.3].includes(round.jitter)) ||
-      (round.kind === 'refine' && (!round.baseId || !round.parentId || round.jitter === undefined)) ||
-      (round.kind === 'verify' && (!round.baseId || !round.parentId || ![3, 6].includes(round.candidateIds.length)))) throw new Error('画风轮次资料无效');
+      !Array.isArray(round.candidateIds) || !round.candidateIds.length || round.candidateIds.length > 24 || new Set(round.candidateIds).size !== round.candidateIds.length || round.candidateIds.some(id => !ids.has(id))) throw new Error('画风轮次资料无效');
     rounds.add(round.id);
-  }
-  if (e.finalCandidateId !== undefined && !ids.has(e.finalCandidateId)) throw new Error('最终画风资料无效');
-  const voteIds = new Set<string>(), votedImages = new Map<string, string>();
-  for (const vote of e.votes) {
-    if (!vote || !validId(vote.id) || voteIds.has(vote.id) || !ids.has(vote.left) || !ids.has(vote.right) || vote.left === vote.right ||
-      !validId(vote.leftImage) || !validId(vote.rightImage) || vote.leftImage === vote.rightImage ||
-      !['left', 'right', 'draw'].includes(vote.result) || !Number.isFinite(vote.createdAt) || (vote.roundId !== undefined && !rounds.has(vote.roundId))) throw new Error('对比记录无效');
-    for (const [candidate, image] of [[vote.left, vote.leftImage], [vote.right, vote.rightImage]]) {
-      if (votedImages.has(candidate) && votedImages.get(candidate) !== image) throw new Error('已评价候选的对照图不可替换');
-      votedImages.set(candidate, image);
-    }
-    voteIds.add(vote.id);
   }
 }
 
@@ -199,7 +177,7 @@ export function rollCandidateToChain(experiment: RollExperiment, candidate: Roll
   return {
     id: '', userId: '', name: `${experiment.name} · ${experiment.candidates.indexOf(candidate) + 1}`, description: `Roll 串 · ${candidate.method} · ${candidate.generation}`,
     type: 'style', basePrompt: rollPrompt(experiment.template, candidate.genes), negativePrompt: experiment.template.negativePrompt,
-    params: { ...structuredClone(experiment.template.params), ...(candidate.seed === undefined ? {} : { seed: candidate.seed }) }, modules: [], variableValues: { subject: '' }, tags: [],
+    params: structuredClone(experiment.template.params), modules: [], variableValues: { subject: '' }, tags: [],
     previewImage: imageUrl, createdAt: Date.now(), updatedAt: Date.now(),
   };
 }

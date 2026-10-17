@@ -31,13 +31,13 @@ export async function handleStyleRollRoute({ path, method, request, db, currentU
     if (JSON.stringify(previous.template) !== JSON.stringify(experiment.template)) return error('已有候选的实验配置不可修改，请新建实验', 400);
     for (const candidate of previous.candidates) {
       const next = experiment.candidates.find(item => item.id === candidate.id);
-      if (!next || JSON.stringify([candidate.genes, candidate.parents, candidate.method, candidate.generation, candidate.seed]) !== JSON.stringify([next.genes, next.parents, next.method, next.generation, next.seed])) {
+      if (!next || JSON.stringify([candidate.genes, candidate.parents, candidate.method, candidate.generation]) !== JSON.stringify([next.genes, next.parents, next.method, next.generation])) {
         return error('已有候选不可覆盖或删除，请创建变体或归档', 400);
       }
     }
   }
-  for (const round of previous?.rounds || []) {
-    const next = experiment.rounds?.find(item => item.id === round.id);
+  for (const round of previous?.rounds ?? []) {
+    const next = experiment.rounds.find(item => item.id === round.id);
     if (!next || (round.closedAt !== undefined && next.closedAt !== round.closedAt) || JSON.stringify({ ...round, closedAt: undefined }) !== JSON.stringify({ ...next, closedAt: undefined })) return error('已有画风轮次不可覆盖或删除', 400);
   }
   const saved = { ...experiment, revision: experiment.revision + 1, updatedAt: Date.now() };
