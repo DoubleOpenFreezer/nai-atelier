@@ -277,7 +277,12 @@ it('批量保存逐项落盘，第二项关联失败保留选择，重试不重�
 
 it('单项与批量丢弃共用可恢复状态，不删除原图及保存的风格串', async () => {
   experiment.candidates[0].savedChainId = 'existing';
-  await setup(); fireEvent.click(screen.getByRole('button', { name: '丢弃画风 1' }));
+  await setup();
+  const discard = screen.getByRole('button', { name: '丢弃画风 1' });
+  const column = discard.parentElement!.parentElement!;
+  expect(column.className).toContain('left-2.5'); expect(column.className).toContain('top-2.5');
+  expect(column.textContent).toContain('#1'); expect(column.className).not.toContain('bottom-2.5');
+  fireEvent.click(discard);
   await waitFor(() => expect(screen.queryByRole('button', { name: '查看候选 1' })).toBeNull());
   expect(mocks.save.mock.calls[0][0].candidates[0]).toEqual({ ...experiment.candidates[0], archived: true });
   filterBy('回收站'); expect(screen.getByRole('button', { name: '查看候选 1' })).toBeTruthy();

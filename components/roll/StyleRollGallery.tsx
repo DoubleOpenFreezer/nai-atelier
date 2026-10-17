@@ -51,11 +51,16 @@ export const StyleRollGallery: React.FC<Props> = ({ experiment, candidates, imag
       onClick={activate} onKeyDown={event => { if (event.target === event.currentTarget && ['Enter', ' '].includes(event.key)) { event.preventDefault(); activate(); } }}
       className={`mobile-gallery-item gallery-image-card gallery-card-visual group relative flex min-w-0 cursor-pointer flex-col overflow-hidden rounded-2xl border bg-white shadow-sm text-left transition-all duration-200 dark:bg-gray-850 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${selected ? '!border-indigo-500 ring-2 ring-indigo-500/25 shadow-md shadow-indigo-500/10' : 'border-gray-200/90 hover:border-indigo-400 hover:shadow-md dark:border-gray-800/80 dark:hover:border-indigo-500/50'} ${!selecting && selectionFocusEnabled && selectedId && !selected ? 'brightness-[.7]' : ''}`}>
 
-      {/* 顶部微型信息徽章 */}
-      <div className="absolute left-2.5 top-2.5 z-20 flex items-center gap-1.5 pointer-events-none">
-        <span className="flex items-center gap-1 rounded-full border border-black/10 bg-black/40 px-2 py-0.5 text-xs font-mono font-medium text-white shadow-sm backdrop-blur-md dark:border-white/10 dark:bg-black/60">
+      {/* 左上角：编号与丢弃操作 */}
+      <div className="absolute left-2.5 top-2.5 z-20 flex flex-col items-start gap-1.5">
+        <span className="pointer-events-none flex items-center gap-1 rounded-full border border-black/10 bg-black/40 px-2 py-0.5 text-xs font-mono font-medium text-white shadow-sm backdrop-blur-md dark:border-white/10 dark:bg-black/60">
           #{index}
         </span>
+        {!selecting && <div data-card-action="true" className="hover-reveal-md">
+          <button type="button" aria-label={t(candidate.archived ? '恢复画风 {0}' : '丢弃画风 {0}', [index])} title={t(candidate.archived ? '恢复' : '丢弃')} disabled={busy} onClick={event => { event.stopPropagation(); onArchive(candidate.id); }} className={`mobile-size-locked flex h-9 w-9 items-center justify-center rounded-full text-white shadow-md backdrop-blur-md transition-all hover:scale-110 disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white md:h-8 md:w-8 ${candidate.archived ? 'bg-amber-500/90 hover:bg-amber-600' : 'bg-black/50 hover:bg-red-600'}`}>
+            {candidate.archived ? <RotateCcw className="h-3.5 w-3.5" /> : <Trash2 className="h-3.5 w-3.5" />}
+          </button>
+        </div>}
       </div>
 
       <div className="mobile-gallery-frame relative w-full overflow-hidden border-b border-gray-100 bg-gray-50 dark:border-gray-800 dark:bg-gray-950" style={{ '--mobile-image-ratio': String(ratio(candidate)) } as React.CSSProperties}>
@@ -71,13 +76,6 @@ export const StyleRollGallery: React.FC<Props> = ({ experiment, candidates, imag
           <span aria-hidden="true" className={`absolute right-2 top-2 z-20 flex h-7 w-7 items-center justify-center rounded-full border shadow backdrop-blur transition-all ${selected ? 'border-indigo-500 bg-indigo-600 text-white scale-105' : 'border-white/80 bg-black/35 text-transparent hover:scale-105'}`}><Check className="h-4 w-4" /></span>
         ) : (
           <>
-            {/* 优雅的操作按钮（丢弃 / 恢复） */}
-            <div data-card-action="true" className="hover-reveal-md absolute left-2.5 bottom-2.5 z-20">
-              <button type="button" aria-label={t(candidate.archived ? '恢复画风 {0}' : '丢弃画风 {0}', [index])} title={t(candidate.archived ? '恢复' : '丢弃')} disabled={busy} onClick={event => { event.stopPropagation(); onArchive(candidate.id); }} className={`mobile-size-locked flex h-9 w-9 items-center justify-center rounded-full text-white shadow-md backdrop-blur-md transition-all hover:scale-110 disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white md:h-8 md:w-8 ${candidate.archived ? 'bg-amber-500/90 hover:bg-amber-600' : 'bg-black/50 hover:bg-red-600'}`}>
-                {candidate.archived ? <RotateCcw className="h-3.5 w-3.5" /> : <Trash2 className="h-3.5 w-3.5" />}
-              </button>
-            </div>
-
             {/* 右上角操作岛（分享 / 存为风格串） */}
             <div data-card-action="true" className="absolute right-2 top-2 z-20 flex flex-col items-center gap-1.5">
               {item && <ImageShareActions imageUrl={item.imageUrl} filename={`roll-${item.id}.png`} generationData={item} favorite={{ imageUrl: item.imageUrl, sourceType: 'history', sourceId: item.id }} notify={notify} variant="card" className="flex-col" />}
