@@ -1,9 +1,10 @@
 import React, { useContext, useEffect, useRef, useState } from 'react';
-import { ChevronLeft, ChevronRight, ImageIcon, Settings2 } from 'lucide-react';
+import { ChevronDown, ChevronLeft, ChevronRight, ImageIcon, Settings2 } from 'lucide-react';
 import { t, useLanguage } from '../services/i18n';
 import { buildArtistSampleImageUrl, getArtistSampleLookup, type ArtistOwnSample, type ArtistSampleLookup, type ArtistSamplePack } from '../services/artistSamples';
 import { ImageActivityContext, SmartImage } from './SmartImage';
 import { ImageShareOverlay } from './ImageShareActions';
+import { ToolbarPopover, TOOLBAR_MENU_CLASS } from './ToolbarPopover';
 
 export const ArtistSampleCover: React.FC<{
   tag: string;
@@ -13,12 +14,14 @@ export const ArtistSampleCover: React.FC<{
   ownSamples: ArtistOwnSample[];
   alt: string;
   imageClassName?: string;
+  onPackChange: (pack: ArtistSamplePack) => void;
+  sampleStatusText?: string;
   onSupplement: () => void;
   onSettings?: () => void;
   notify: (message: string, type?: 'success' | 'error') => void;
   onFavoriteChange?: (active: boolean) => void;
   onImageLoad?: (width: number, height: number) => void;
-}> = ({ tag, pack, revision, hasPackSample, ownSamples, alt, imageClassName, onSupplement, onSettings, notify, onFavoriteChange, onImageLoad }) => {
+}> = ({ tag, pack, revision, hasPackSample, ownSamples, alt, imageClassName, onPackChange, sampleStatusText, onSupplement, onSettings, notify, onFavoriteChange, onImageLoad }) => {
   useLanguage();
   const active = useContext(ImageActivityContext);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -64,7 +67,32 @@ export const ArtistSampleCover: React.FC<{
   };
   const filename = `artist-${pack}-${tag}-${own?.id || packIndex}.png`;
   const move = (direction: number) => { setIndex(current => Math.max(0, Math.min(total - 1, current + direction))); setImageError(false); };
+  const stopCardAction = (event: React.SyntheticEvent) => event.stopPropagation();
+  const runAfterClose = (close: () => void, action: () => void) => {
+    close();
+    window.setTimeout(action, 0);
+  };
   return <div ref={rootRef} className="absolute inset-0">
+    <div data-card-action="true" className="absolute left-2 top-2 z-20" onClick={stopCardAction} onPointerDown={stopCardAction} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') event.stopPropagation(); }}>
+      <ToolbarPopover
+        label={t('样张版本与补图：{0}', [pack === 'v45' ? 'V4.5' : 'V5'])}
+        title={t('画师样张模型')}
+        icon={<><span className="text-[11px] font-bold leading-none">{pack === 'v45' ? 'V4.5' : 'V5'}</span><ChevronDown className="!h-2.5 !w-2.5" /></>}
+        iconOnly
+        width={256}
+        className="[&>button]:!h-11 [&>button]:!w-11 [&>button]:!rounded-lg [&>button]:!border-white/60 [&>button]:!bg-black/55 [&>button]:!text-white [&>button:hover]:!bg-black/70 md:[&>button]:!h-8"
+      >{(close) => <div data-card-action="true" onClick={stopCardAction} onPointerDown={stopCardAction} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') event.stopPropagation(); }} className="space-y-2">
+        {sampleStatusText && <p role="status" className="px-2 py-1 text-xs text-gray-500 dark:text-gray-400">{sampleStatusText}</p>}
+        <p className="px-2 pt-1 text-xs font-semibold text-gray-500 dark:text-gray-400">{t('画师样张模型')}</p>
+        <div className="grid grid-cols-2 gap-2">
+          {(['v45', 'v5'] as const).map(option => <button key={option} type="button" aria-pressed={pack === option} onClick={() => runAfterClose(close, () => onPackChange(option))} className={`${TOOLBAR_MENU_CLASS} min-h-11 justify-center ${pack === option ? 'bg-indigo-50 font-semibold text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300' : ''}`}>{option === 'v45' ? 'V4.5' : 'V5'}</button>)}
+        </div>
+        <div className="border-t border-gray-200 pt-1 dark:border-gray-700">
+          <button type="button" onClick={() => runAfterClose(close, onSupplement)} className={`${TOOLBAR_MENU_CLASS} min-h-11`}><ImageIcon />{t('补充样张')}</button>
+          {onSettings && <button type="button" onClick={() => runAfterClose(close, onSettings)} className={`${TOOLBAR_MENU_CLASS} min-h-11`}><Settings2 />{t('补图生成设置')}</button>}
+        </div>
+      </div>}</ToolbarPopover>
+    </div>
     {imageUrl && !imageError ? <>
       <SmartImage key={`${imageUrl}:${retry}`} src={imageUrl} alt={alt} eager={visible} className={imageClassName} previewTransform={!own && imageUrl.startsWith('/api/artist-samples/image?') ? 'artist-sample-padding-v1' : undefined} onError={() => setImageError(true)} onLoad={event => { if (event.currentTarget.naturalWidth && event.currentTarget.naturalHeight) onImageLoad?.(event.currentTarget.naturalWidth, event.currentTarget.naturalHeight); }} />
       <ImageShareOverlay imageUrl={imageUrl} filename={filename} favorite={favorite} notify={notify} onFavoriteChange={onFavoriteChange} />
@@ -75,7 +103,7 @@ export const ArtistSampleCover: React.FC<{
       </>}
     </> : <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-3 text-center text-gray-400">
       <ImageIcon className="h-6 w-6" />
-      <span className="text-micro">{imageError ? t('样张图片加载失败') : error || (hasPackSample && !lookup ? t('正在读取样张…') : t('暂无样张'))}</span>
+      <span className="text-micro">{imageError ? t('样张图片加载失败') : error || sampleStatusText || t('暂无样张')}</span>
       {(error || imageError) && <button type="button" data-card-action="true" onClick={event => { event.stopPropagation(); setLookupResult(undefined); setImageError(false); setRetry(current => current + 1); }} className="mobile-touch rounded-lg border border-gray-300 px-2 py-1 text-xs dark:border-gray-700">{t('重试')}</button>}
       {(!hasPackSample || lookup?.imageCount === 0) && !ownSamples.length && <div className="flex items-center gap-1"><button type="button" data-card-action="true" onClick={event => { event.stopPropagation(); onSupplement(); }} className="mobile-touch rounded-lg border border-gray-300 px-2 py-1 text-xs hover:border-indigo-400 hover:text-indigo-500 dark:border-gray-700">{t('补充样张')}</button>{onSettings && <button type="button" data-card-action="true" aria-label={t('补图生成设置')} title={t('补图生成设置')} onClick={event => { event.stopPropagation(); onSettings(); }} className="mobile-touch rounded-lg p-2 hover:text-indigo-500"><Settings2 className="h-4 w-4" /></button>}</div>}
     </div>}

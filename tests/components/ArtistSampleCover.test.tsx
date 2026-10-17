@@ -17,7 +17,7 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 const visible = (value = true) => act(() => { mocks.observers.at(-1)!([{ isIntersecting: value } as IntersectionObserverEntry], {} as IntersectionObserver); });
 const setup = (ownSamples: ArtistOwnSample[] = [], hasPackSample = true) => {
-  const props = { tag: 'synthetic artist', pack: 'v45' as const, revision: 'one', hasPackSample, ownSamples, alt: '合成画师', onSupplement: vi.fn(), notify: vi.fn() };
+  const props = { tag: 'synthetic artist', pack: 'v45' as const, revision: 'one', hasPackSample, ownSamples, alt: '合成画师', onPackChange: vi.fn(), onSupplement: vi.fn(), notify: vi.fn() };
   const view = render(<ArtistSampleCover {...props} />); return { ...view, props };
 };
 
@@ -41,7 +41,7 @@ it('自建样张优先展示真实元数据和标记，图片点击冒泡选择�
   const own: ArtistOwnSample = { id: 'own-1', tag: 'synthetic artist', pack: 'v45', imageUrl: '/api/assets/own.png', prompt: 'own prompt', negativePrompt: 'own negative', createdAt: 1,
     params: { model: 'nai-diffusion-4-5-full', width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler_ancestral' } };
   const select = vi.fn();
-  const props = { tag: own.tag, pack: own.pack, revision: 'one', hasPackSample: true, ownSamples: [own], alt: '合成画师', onSupplement: vi.fn(), notify: vi.fn() };
+  const props = { tag: own.tag, pack: own.pack, revision: 'one', hasPackSample: true, ownSamples: [own], alt: '合成画师', onPackChange: vi.fn(), onSupplement: vi.fn(), notify: vi.fn() };
   render(<div onClick={select}><ArtistSampleCover {...props} /></div>);
   expect(screen.getByText('自建样张')).toBeTruthy(); expect(screen.getByRole('img').getAttribute('src')).toBe(own.imageUrl);
   expect(screen.getByRole('img').getAttribute('data-preview-transform')).toBeNull();
@@ -53,7 +53,7 @@ it('自建样张优先展示真实元数据和标记，图片点击冒泡选择�
 });
 
 it('收藏、分享、翻图、补充与设置操作不会冒泡选择画师', async () => {
-  const select = vi.fn(), props = { tag: 'artist', pack: 'v45' as const, revision: 'one', hasPackSample: true, ownSamples: [], alt: 'artist', onSupplement: vi.fn(), onSettings: vi.fn(), notify: vi.fn() };
+  const select = vi.fn(), props = { tag: 'artist', pack: 'v45' as const, revision: 'one', hasPackSample: true, ownSamples: [], alt: 'artist', onPackChange: vi.fn(), onSupplement: vi.fn(), onSettings: vi.fn(), notify: vi.fn() };
   render(<div onClick={select}><ArtistSampleCover {...props} /></div>);
   visible(); await screen.findByRole('img');
   fireEvent.click(screen.getByRole('button', { name: '收藏' }));
@@ -85,11 +85,40 @@ it('读取失败区别于无图，只有主动重试才再次lookup；缺图补�
 });
 it('缺图卡补图设置与补充入口相邻，操作不选择画师', () => {
   const select = vi.fn(), supplement = vi.fn(), settings = vi.fn();
-  render(<div onClick={select}><ArtistSampleCover tag="artist" pack="v45" revision="one" hasPackSample={false} ownSamples={[]} alt="artist" onSupplement={supplement} onSettings={settings} notify={vi.fn()} /></div>);
+  render(<div onClick={select}><ArtistSampleCover tag="artist" pack="v45" revision="one" hasPackSample={false} ownSamples={[]} alt="artist" sampleStatusText="图包正在下载" onPackChange={vi.fn()} onSupplement={supplement} onSettings={settings} notify={vi.fn()} /></div>);
+  expect(screen.getByText('图包正在下载')).toBeTruthy();
   const button = screen.getByRole('button', { name: '补图生成设置' });
   expect(button.title).toBe('补图生成设置');
   expect(button.parentElement).toBe(screen.getByRole('button', { name: '补充样张' }).parentElement);
   fireEvent.click(button); expect(settings).toHaveBeenCalledOnce();
   fireEvent.click(screen.getByRole('button', { name: '补充样张' })); expect(supplement).toHaveBeenCalledOnce();
+  expect(select).not.toHaveBeenCalled();
+});
+
+it('卡片内模型菜单只切换当前画师，关闭弹层后回调且不选择卡片', async () => {
+  const select = vi.fn(), onPackChange = vi.fn();
+  render(<div onClick={select}><ArtistSampleCover tag="artist" pack="v45" revision="one" hasPackSample={true} ownSamples={[]} alt="artist" onPackChange={onPackChange} onSupplement={vi.fn()} notify={vi.fn()} /></div>);
+  const trigger = screen.getByRole('button', { name: /样张版本与补图/ });
+  expect(trigger.title).toMatch(/V4\.5/);
+  fireEvent.click(trigger);
+  expect(await screen.findByRole('dialog', { name: '画师样张模型' })).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'V5' }));
+  await waitFor(() => expect(onPackChange).toHaveBeenCalledWith('v5'));
+  expect(screen.queryByRole('dialog', { name: '画师样张模型' })).toBeNull();
+  expect(select).not.toHaveBeenCalled();
+});
+
+it('已有图包样张时也能从卡片菜单补图和设置，动作不会选中画师', async () => {
+  const select = vi.fn(), onSupplement = vi.fn(), onSettings = vi.fn();
+  render(<div onClick={select}><ArtistSampleCover tag="artist" pack="v45" revision="one" hasPackSample={true} ownSamples={[]} alt="artist" onPackChange={vi.fn()} onSupplement={onSupplement} onSettings={onSettings} notify={vi.fn()} /></div>);
+  fireEvent.click(screen.getByRole('button', { name: /样张版本与补图/ }));
+  expect(await screen.findByRole('dialog', { name: '画师样张模型' })).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: '补充样张' }));
+  await waitFor(() => expect(onSupplement).toHaveBeenCalledOnce());
+  expect(select).not.toHaveBeenCalled();
+  expect(screen.queryByRole('dialog', { name: '画师样张模型' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: /样张版本与补图/ }));
+  fireEvent.click(await screen.findByRole('button', { name: '补图生成设置' }));
+  await waitFor(() => expect(onSettings).toHaveBeenCalledOnce());
   expect(select).not.toHaveBeenCalled();
 });

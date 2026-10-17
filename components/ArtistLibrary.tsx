@@ -36,24 +36,28 @@ interface ArtistLibraryProps {
 }
 
 type ArtistGachaMode = 'mixed' | 'uniform' | 'popular';
+const SAMPLE_PACKS = ['v45', 'v5'] as const;
 
 export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigateToPlayground, selectionFocusEnabled = true }) => {
   useLanguage();
     const [samplePack, setSamplePack] = useState<ArtistSamplePack>(() => localStorage.getItem('nai_artist_sample_pack') === 'v5' ? 'v5' : 'v45');
+    const [cardPacks, setCardPacks] = useState<Partial<Record<string, ArtistSamplePack>>>({});
     const [sampleSettings, setSampleSettings] = useState<{ tag: string; pack: ArtistSamplePack; enterAfterSave: boolean } | null>(null);
     const [onlySamples, setOnlySamples] = useState(true);
     const [sampleStatus, setSampleStatus] = useState<ArtistSampleStatus | null>(null);
-    const [sampleCatalog, setSampleCatalog] = useState<ArtistSampleCatalog | null>(null);
+    const [sampleCatalogs, setSampleCatalogs] = useState<Partial<Record<ArtistSamplePack, ArtistSampleCatalog>>>({});
+    const [catalogErrors, setCatalogErrors] = useState<Partial<Record<ArtistSamplePack, string>>>({});
     const [sampleData, setSampleData] = useState<{ templates: Partial<Record<ArtistSamplePack, ArtistSampleTemplate>>; samples: ArtistOwnSample[] }>({ templates: {}, samples: [] });
     const [sampleDictionary, setSampleDictionary] = useState<ArtistDictionaryEntry[]>([]);
     const [sampleLoading, setSampleLoading] = useState(true);
     const [sampleError, setSampleError] = useState('');
     const [sampleRefresh, setSampleRefresh] = useState(0);
     const [sampleLimit, setSampleLimit] = useState(100);
-    const currentPackStatus = sampleStatus?.packs.find(pack => pack.id === samplePack);
-    const download = currentPackStatus?.download;
-    const downloadPercent = download && download.totalBytes > 0 ? Math.min(100, Math.round(download.receivedBytes / download.totalBytes * 100)) : 0;
-    const sampleStatusText = sampleError || (sampleLoading && !currentPackStatus ? t('正在读取样张…')
+    const getSampleStatusText = (pack: ArtistSamplePack) => {
+      const currentPackStatus = sampleStatus?.packs.find(item => item.id === pack);
+      const download = currentPackStatus?.download;
+      const downloadPercent = download && download.totalBytes > 0 ? Math.min(100, Math.round(download.receivedBytes / download.totalBytes * 100)) : 0;
+      return sampleError || catalogErrors[pack] || (sampleLoading && (!currentPackStatus || (currentPackStatus.phase === 'ready' && !sampleCatalogs[pack])) ? t('正在读取样张…')
         : download?.stage === 'downloading' ? t('图包下载中：{0}%', [downloadPercent])
         : download?.stage === 'verifying' ? t('正在校验图包…')
         : download?.stage === 'paused' ? t('图包下载已暂停：{0}%', [downloadPercent])
@@ -62,25 +66,37 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
         : currentPackStatus?.phase === 'error' ? currentPackStatus.error || t('样张索引异常')
         : currentPackStatus?.phase === 'ready' ? t('已读取 {0} 个样张 Tag', [currentPackStatus.count])
         : t('该模型尚未配置样张图包'));
-    const ownSamples = useMemo(() => sampleData.samples.filter(sample => sample.pack === samplePack).sort((left, right) => right.createdAt - left.createdAt), [sampleData.samples, samplePack]);
-    const packArtists = useMemo(() => matchArtistSampleTags(sampleDictionary, sampleCatalog?.pack === samplePack ? sampleCatalog.tags : []), [sampleDictionary, sampleCatalog, samplePack]);
-    const ownArtists = useMemo(() => matchArtistSampleTags(sampleDictionary, ownSamples.map(sample => sample.tag)), [sampleDictionary, ownSamples]);
-    const packArtistNames = useMemo(() => new Set(packArtists.map(entry => entry.name)), [packArtists]);
-    const ownArtistNames = useMemo(() => new Set(ownArtists.map(entry => entry.name)), [ownArtists]);
-    const sampledArtists = useMemo(() => [...new Map([...packArtists, ...ownArtists].map(entry => [entry.name, entry])).values()], [packArtists, ownArtists]);
+    };
+    const currentPackStatus = sampleStatus?.packs.find(pack => pack.id === samplePack);
+    const download = currentPackStatus?.download;
+    const sampleStatusText = getSampleStatusText(samplePack);
+    const currentSampleError = sampleError || catalogErrors[samplePack];
+    const samplesByPack = useMemo(() => {
+        const forPack = (pack: ArtistSamplePack) => {
+            const own = sampleData.samples.filter(sample => sample.pack === pack).sort((left, right) => right.createdAt - left.createdAt);
+            const packed = matchArtistSampleTags(sampleDictionary, sampleCatalogs[pack]?.tags || []);
+            const ownArtists = matchArtistSampleTags(sampleDictionary, own.map(sample => sample.tag));
+            return { own, packed, ownArtists, packedNames: new Set(packed.map(entry => entry.name)), ownNames: new Set(ownArtists.map(entry => entry.name)) };
+        };
+        return { v45: forPack('v45'), v5: forPack('v5') };
+    }, [sampleData.samples, sampleDictionary, sampleCatalogs]);
+    const sampledArtists = useMemo(() => [...new Map([...samplesByPack[samplePack].packed, ...samplesByPack[samplePack].ownArtists].map(entry => [entry.name, entry])).values()], [samplesByPack, samplePack]);
     const imageDisplay = useMobileImageDisplayPreferences('artists');
     // 瀑布流（masonry 布局时）：封面按真实宽高比完整显示，最短列分配互相补齐。
     const [artistRatios, updateImageRatio] = useImageRatios();
     const frostedCaption = useGalleryFrostedCaption();
     const estimateArtistCardHeight = React.useCallback((artist: (typeof filteredArtists)[number], columnWidth: number) => {
-      const ratio = artistRatios[artist.name] || 2 / 3;
+      const ratio = artistRatios[`${cardPacks[artist.name] || samplePack}:${artist.name}`] || 2 / 3;
       const imageHeight = Math.max(1, columnWidth) / Math.max(0.1, ratio);
       return imageHeight + (frostedCaption ? 2 : 78);
-    }, [artistRatios, frostedCaption]);
+    }, [artistRatios, frostedCaption, cardPacks, samplePack]);
     const renderArtistCard = (artist: (typeof filteredArtists)[number]) => {
                             const isSelected = !!cart.find(c => c.name === artist.name);
-                            const artistOwnSamples = ownArtistNames.has(artist.name) ? ownSamples.filter(sample => normalizeArtistSampleTag(sample.tag) === normalizeArtistSampleTag(artist.name)) : [];
-                            const hasSample = packArtistNames.has(artist.name) || artistOwnSamples.length > 0;
+                            const effectivePack = cardPacks[artist.name] || samplePack;
+                            const samples = samplesByPack[effectivePack];
+                            const artistOwnSamples = samples.ownNames.has(artist.name) ? samples.own.filter(sample => normalizeArtistSampleTag(sample.tag) === normalizeArtistSampleTag(artist.name)) : [];
+                            const hasSample = samples.packedNames.has(artist.name) || artistOwnSamples.length > 0;
+                            const ratioKey = `${effectivePack}:${artist.name}`;
 
                             return (
                                 <PressRevealSurface
@@ -99,19 +115,21 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
                                         event.preventDefault(); toggleCart(artist.name);
                                     }}
                                 >
-                                    <div className={`${hasSample ? 'mobile-gallery-frame md:aspect-[2/3]' : 'h-32'} relative overflow-hidden bg-gray-200 dark:bg-gray-900`} style={{ '--mobile-image-ratio': artistRatios[artist.name] ? `${Math.round(artistRatios[artist.name] * 1000)} / 1000` : '2 / 3' } as React.CSSProperties}>
+                                    <div className={`${hasSample ? 'mobile-gallery-frame md:aspect-[2/3]' : 'h-32'} relative overflow-hidden bg-gray-200 dark:bg-gray-900`} style={{ '--mobile-image-ratio': artistRatios[ratioKey] ? `${Math.round(artistRatios[ratioKey] * 1000)} / 1000` : '2 / 3' } as React.CSSProperties}>
                                         <ArtistSampleCover
                                             tag={artist.name}
-                                            pack={samplePack}
-                                            revision={sampleCatalog?.pack === samplePack ? sampleCatalog.revision : ''}
-                                            hasPackSample={packArtistNames.has(artist.name)}
+                                            pack={effectivePack}
+                                            onPackChange={pack => setCardPacks(previous => ({ ...previous, [artist.name]: pack }))}
+                                            revision={sampleCatalogs[effectivePack]?.revision || ''}
+                                            hasPackSample={samples.packedNames.has(artist.name)}
+                                            sampleStatusText={!sampleCatalogs[effectivePack] ? getSampleStatusText(effectivePack) : undefined}
                                             ownSamples={artistOwnSamples}
                                             alt={artist.chinese || artist.name}
-                                            onSupplement={() => supplementSample(artist.name)}
-                                            onSettings={() => setSampleSettings({ tag: artist.name, pack: samplePack, enterAfterSave: false })}
+                                            onSupplement={() => supplementSample(artist.name, effectivePack)}
+                                            onSettings={() => setSampleSettings({ tag: artist.name, pack: effectivePack, enterAfterSave: false })}
                                             imageClassName={imageDisplay.layout === 'masonry' ? 'h-full w-full object-contain' : undefined}
                                             notify={notify}
-                                            onImageLoad={(width, height) => updateImageRatio(artist.name, width, height)}
+                                            onImageLoad={(width, height) => updateImageRatio(ratioKey, width, height)}
                                         />
                                         {isSelected && (
                                             <div className="absolute inset-0 border-4 border-indigo-500/80 pointer-events-none" />
@@ -142,27 +160,36 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
     useEffect(() => {
         if (!active) return;
         let cancelled = false;
-        setSampleLoading(true); setSampleError('');
+        setSampleLoading(true); setSampleError(''); setCatalogErrors({});
         void Promise.all([getArtistSampleStatus(), getArtistSampleData(), getArtistSampleDictionary()]).then(async ([status, data, dictionary]) => {
             if (cancelled) return;
             setSampleStatus(status); setSampleData(data); setSampleDictionary(dictionary);
-            const pack = status.packs.find(item => item.id === samplePack);
-            const catalog = pack?.phase === 'ready' ? await getArtistSampleCatalog(samplePack) : null;
-            if (cancelled) return;
-            if (catalog || !(pack?.phase === 'indexing' || ['downloading', 'verifying'].includes(pack?.download?.stage || ''))) setSampleCatalog(catalog);
+            // 新状态确认失效时立即清掉旧目录；两包独立就绪，不让另一包失败阻塞当前卡片。
+            setSampleCatalogs(previous => Object.fromEntries(Object.entries(previous).filter(([id, catalog]) => status.packs.some(pack => pack.id === id && pack.phase === 'ready' && pack.revision === catalog.revision))));
+            await Promise.all(SAMPLE_PACKS.map(async pack => {
+                if (status.packs.find(item => item.id === pack)?.phase !== 'ready') return;
+                try {
+                    const catalog = await getArtistSampleCatalog(pack);
+                    if (!cancelled) setSampleCatalogs(previous => ({ ...previous, [pack]: catalog }));
+                } catch (error) {
+                    if (cancelled) return;
+                    setSampleCatalogs(previous => { const next = { ...previous }; delete next[pack]; return next; });
+                    setCatalogErrors(previous => ({ ...previous, [pack]: error instanceof Error ? error.message : t('样张读取失败') }));
+                }
+            }));
         }).catch(error => { if (!cancelled) setSampleError(error instanceof Error ? error.message : t('样张读取失败')); })
             .finally(() => { if (!cancelled) setSampleLoading(false); });
         return () => { cancelled = true; };
-    }, [active, samplePack, sampleRefresh]);
+    }, [active, sampleRefresh]);
     useEffect(() => {
         if (!active || !sampleStatus?.packs.some(pack => pack.phase === 'indexing' || ['downloading', 'verifying'].includes(pack.download?.stage || ''))) return;
         const timer = window.setInterval(() => setSampleRefresh(current => current + 1), 2000);
         return () => window.clearInterval(timer);
     }, [active, sampleStatus]);
-    const supplementSample = (tag: string) => {
-        const template = sampleData.templates[samplePack];
-        if (!template) { setSampleSettings({ tag, pack: samplePack, enterAfterSave: true }); return; }
-        try { prepareArtistSampleImport(tag, samplePack, template); onNavigateToPlayground?.(); }
+    const supplementSample = (tag: string, pack: ArtistSamplePack) => {
+        const template = sampleData.templates[pack];
+        if (!template) { setSampleSettings({ tag, pack, enterAfterSave: true }); return; }
+        try { prepareArtistSampleImport(tag, pack, template); onNavigateToPlayground?.(); }
         catch (error) { notify(error instanceof Error ? error.message : t('样张配置导入失败'), 'error'); }
     };
     const selectionAnchor = useGallerySelectionAnchor(scrollContainerRef, scrollContainerRef, cart.some(item => item.name === focusedName) ? focusedName : null, active, selectionFocusEnabled);
@@ -425,7 +452,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
             {/* --- Controls Header --- */}
             <WorkspaceToolbar>
                 <div role="group" aria-label={t('画师样张模型')} className="flex flex-none rounded-xl border border-gray-200 bg-gray-100 p-0.5 dark:border-gray-700 dark:bg-gray-950">
-                    {(['v45', 'v5'] as const).map(pack => <button type="button" key={pack} aria-pressed={samplePack === pack} onClick={() => { if (pack === samplePack) return; setSamplePack(pack); localStorage.setItem('nai_artist_sample_pack', pack); recentGachaIndicesRef.current = []; leaveGacha(true); }} className={`mobile-touch rounded-lg px-2 py-1.5 text-xs font-bold ${samplePack === pack ? 'bg-white text-indigo-600 shadow-sm dark:bg-gray-800 dark:text-indigo-300' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'}`}>{pack === 'v45' ? 'V4.5' : 'V5'}</button>)}
+                    {(['v45', 'v5'] as const).map(pack => <button type="button" key={pack} aria-pressed={samplePack === pack} onClick={() => { setCardPacks({}); if (pack === samplePack) return; setSamplePack(pack); localStorage.setItem('nai_artist_sample_pack', pack); recentGachaIndicesRef.current = []; leaveGacha(true); }} className={`mobile-touch rounded-lg px-2 py-1.5 text-xs font-bold ${samplePack === pack ? 'bg-white text-indigo-600 shadow-sm dark:bg-gray-800 dark:text-indigo-300' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'}`}>{pack === 'v45' ? 'V4.5' : 'V5'}</button>)}
                 </div>
                 <div className="relative min-w-0 flex-1">
                     <ToolbarSearch value={searchTerm} onChange={event => { setSearchTerm(event.target.value); leaveGacha(); }} placeholder={t("搜索画师名称或 Tag")} containerClassName="md:max-w-none!" className="pr-9" />
@@ -433,7 +460,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
                 </div>
                 <ToolbarPopover title={t("筛选画师")} count={Number(artistSort !== 'popular') + Number(showFavOnly) + Number(!onlySamples)}>
                     <div className="space-y-3">
-                        <p role="status" className={`text-xs ${sampleError || download?.stage === 'error' || currentPackStatus?.phase === 'error' ? 'text-red-500' : 'text-gray-500'}`}>{sampleStatusText}</p>
+                        <p role="status" className={`text-xs ${currentSampleError || download?.stage === 'error' || currentPackStatus?.phase === 'error' ? 'text-red-500' : 'text-gray-500'}`}>{sampleStatusText}</p>
                         <label className="mobile-touch flex items-center gap-2 text-sm dark:text-white"><input type="checkbox" checked={onlySamples} onChange={event => { setOnlySamples(event.target.checked); leaveGacha(); }} />{t('只看有样张')}</label>
                         <label className="block text-sm font-semibold dark:text-white">{t("排序")}<select aria-label={t("画师排序")} value={artistSort} onChange={event => { setArtistSort(event.target.value as ArtistDictionarySort); leaveGacha(); }} className={TOOLBAR_FIELD_CLASS}>
                             <option value="popular">{searchTerm.trim() ? t("相关性优先 · 热度高") : t("热度从高到低")}</option><option value="least">{searchTerm.trim() ? t("相关性优先 · 热度低") : t("热度从低到高")}</option><option value="name-asc">{t("名称 A → Z")}</option><option value="name-desc">{t("名称 Z → A")}</option>
@@ -468,7 +495,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigate
 
             {/* --- Main Content Area --- */}
             <div ref={scrollContainerRef} onScroll={() => { selectionAnchor.onScroll(); onScrollRestore(); }} className="flex-1 overflow-y-auto p-4 md:p-6 pb-40 bg-gray-50 dark:bg-gray-900 scroll-smooth relative">
-                {onlySamples && !filteredArtists.length && <div role="status" className="py-12 text-center text-sm text-gray-400">{!sampleError && !sampleLoading && currentPackStatus?.phase === 'ready' && (!download || ['missing', 'ready'].includes(download.stage)) ? t('没有匹配的画师样张') : sampleStatusText}{sampleError && <button type="button" className="mobile-touch ml-2 rounded border border-gray-300 px-2 py-1 dark:border-gray-700" onClick={() => setSampleRefresh(current => current + 1)}>{t('重试')}</button>}</div>}
+                {onlySamples && !filteredArtists.length && <div role="status" className="py-12 text-center text-sm text-gray-400">{!currentSampleError && !sampleLoading && currentPackStatus?.phase === 'ready' && (!download || ['missing', 'ready'].includes(download.stage)) ? t('没有匹配的画师样张') : sampleStatusText}{currentSampleError && <button type="button" className="mobile-touch ml-2 rounded border border-gray-300 px-2 py-1 dark:border-gray-700" onClick={() => setSampleRefresh(current => current + 1)}>{t('重试')}</button>}</div>}
                 {imageDisplay.layout === 'masonry' ? (
                     <ShortestColumnMasonry<ArtistDictionaryEntry>
                         stableColumns

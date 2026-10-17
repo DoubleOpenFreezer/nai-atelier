@@ -1,7 +1,7 @@
 import { useLayoutEffect, useState, type CSSProperties, type RefObject } from 'react';
 
 /** 输入区浮层向可用空间展开，适配窄屏、字号变化与软键盘。 */
-export const useAgentPopoverPosition = (open: boolean, anchorRef: RefObject<HTMLElement | null>, popoverRef: RefObject<HTMLElement | null>, width = 360, align: 'start' | 'center' | 'end' = 'start') => {
+export const useAgentPopoverPosition = (open: boolean, anchorRef: RefObject<HTMLElement | null>, popoverRef: RefObject<HTMLElement | null>, width = 360, align: 'start' | 'center' | 'end' = 'start', placement: 'auto' | 'right' = 'auto') => {
   const [position, setPosition] = useState<CSSProperties>();
   useLayoutEffect(() => {
     if (!open) { setPosition(undefined); return; }
@@ -14,10 +14,15 @@ export const useAgentPopoverPosition = (open: boolean, anchorRef: RefObject<HTML
       const actualWidth = Math.min(width, Math.max(0, viewportWidth - 16));
       const above = anchor.top - top - 16, below = top + viewportHeight - anchor.bottom - 16;
       const upward = above >= below;
-      const maxHeight = Math.max(0, upward ? above : below);
+      const maxHeight = placement === 'right' ? Math.max(0, viewportHeight - 16) : Math.max(0, upward ? above : below);
       const height = Math.min(popoverRef.current?.scrollHeight || 320, maxHeight);
-      const desiredLeft = align === 'center' ? anchor.left + (anchor.width - actualWidth) / 2 : align === 'end' ? anchor.right - actualWidth : anchor.left;
-      setPosition({ position: 'fixed', width: actualWidth, maxHeight, left: Math.max(left + 8, Math.min(desiredLeft, left + viewportWidth - actualWidth - 8)), top: Math.max(top + 8, upward ? anchor.top - height - 8 : anchor.bottom + 8) });
+      const availableRight = left + viewportWidth - 8;
+      const rightCandidate = anchor.right + 8;
+      const desiredLeft = placement === 'right'
+        ? rightCandidate + actualWidth <= availableRight ? rightCandidate : anchor.left - actualWidth - 8
+        : align === 'center' ? anchor.left + (anchor.width - actualWidth) / 2 : align === 'end' ? anchor.right - actualWidth : anchor.left;
+      const desiredTop = placement === 'right' ? anchor.top : upward ? anchor.top - height - 8 : anchor.bottom + 8;
+      setPosition({ position: 'fixed', width: actualWidth, maxHeight, left: Math.max(left + 8, Math.min(desiredLeft, left + viewportWidth - actualWidth - 8)), top: Math.max(top + 8, Math.min(desiredTop, top + viewportHeight - height - 8)) });
     };
     place();
     const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(place);
@@ -29,6 +34,6 @@ export const useAgentPopoverPosition = (open: boolean, anchorRef: RefObject<HTML
       observer?.disconnect(); window.removeEventListener('resize', place); window.removeEventListener('scroll', place, true);
       window.visualViewport?.removeEventListener('resize', place); window.visualViewport?.removeEventListener('scroll', place);
     };
-  }, [open, anchorRef, popoverRef, width, align]);
+  }, [open, anchorRef, popoverRef, width, align, placement]);
   return position;
 };

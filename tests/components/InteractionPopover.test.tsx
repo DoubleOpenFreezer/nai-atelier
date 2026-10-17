@@ -1,10 +1,20 @@
 // @vitest-environment jsdom
-import React from 'react';
+import React, { useRef, useState } from 'react';
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { InfoPopover } from '../../components/InfoPopover';
+import { InteractionPopover } from '../../components/InteractionPopover';
+import { ImagePreviewPortal } from '../../components/ImagePreviewPortal';
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+
+const RightPlacementExample: React.FC = () => {
+  const anchorRef = useRef<HTMLButtonElement>(null);
+  const [open, setOpen] = useState(false);
+  return <div className="agent-stage"><button ref={anchorRef} onClick={() => setOpen(true)}>打开右侧菜单</button>
+    {open && <ImagePreviewPortal><InteractionPopover id="right-test-menu" label="右侧菜单" anchorRef={anchorRef} onClose={() => setOpen(false)} width={240} placement="right"><div><button>来源一</button></div></InteractionPopover></ImagePreviewPortal>}
+  </div>;
+};
 it.each([390, 1024, 1280])('宽度 %s 的说明留在根层并限制在视口中，不改变原容器结构', width => {
   vi.stubGlobal('innerWidth', width); vi.stubGlobal('innerHeight', 800);
   const view = render(<div className="agent-stage safe-mode dark"><main className="isolate overflow-hidden"><InfoPopover label="详情" content={'完整说明'.repeat(20)} /></main></div>);
@@ -26,4 +36,26 @@ it('说明保持文本选区，Esc 只关闭顶层说明，关闭后继续编辑
   fireEvent.click(help); fireEvent.keyDown(screen.getByRole('button', { name: '关闭说明' }), { key: 'Escape' });
   expect(parentEscape).not.toHaveBeenCalled(); expect(document.activeElement).toBe(input); expect([input.selectionStart, input.selectionEnd]).toEqual([0, 11]);
   window.removeEventListener('keydown', parentEscape); view.unmount();
+});
+
+it('右侧弹层保持锚点右方与顶边对齐，贴近视口底部时向上夹住且保留内部滚动', () => {
+  vi.stubGlobal('innerWidth', 1024); vi.stubGlobal('innerHeight', 800);
+  const first = render(<RightPlacementExample />);
+  const trigger = screen.getByRole('button', { name: '打开右侧菜单' });
+  vi.spyOn(trigger, 'getBoundingClientRect').mockReturnValue({ x: 40, y: 90, width: 44, height: 44, left: 40, right: 84, top: 90, bottom: 134, toJSON() {} });
+  fireEvent.click(trigger);
+  const firstPanel = screen.getByRole('dialog', { name: '右侧菜单' });
+  expect(parseFloat(firstPanel.style.left)).toBe(92);
+  expect(parseFloat(firstPanel.style.top)).toBe(90);
+  first.unmount();
+
+  vi.stubGlobal('innerWidth', 1024); vi.stubGlobal('innerHeight', 300);
+  render(<RightPlacementExample />);
+  const bottomTrigger = screen.getByRole('button', { name: '打开右侧菜单' });
+  vi.spyOn(bottomTrigger, 'getBoundingClientRect').mockReturnValue({ x: 40, y: 250, width: 44, height: 44, left: 40, right: 84, top: 250, bottom: 294, toJSON() {} });
+  fireEvent.click(bottomTrigger);
+  const bottomPanel = screen.getByRole('dialog', { name: '右侧菜单' });
+  expect(parseFloat(bottomPanel.style.top)).toBe(8);
+  expect(parseFloat(bottomPanel.style.maxHeight)).toBe(284);
+  expect(bottomPanel.className).toContain('overflow-y-auto');
 });

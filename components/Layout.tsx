@@ -11,6 +11,7 @@ import {
   Dice5,
   FlaskConical,
   FolderOpen,
+  Globe2,
   Heart,
   Layers,
   Palette,
@@ -28,6 +29,8 @@ import { AppearancePreferences, ThemeMode } from '../services/appearancePreferen
 import { CloudQueueStatus } from './CloudQueueStatus';
 import { OpusUsageBar } from './OpusUsageBar';
 import { DanbooruIcon, PixivIcon } from './PlatformIcons';
+import { InteractionPopover } from './InteractionPopover';
+import { ImagePreviewPortal } from './ImagePreviewPortal';
 
 const GlobalSettings = React.lazy(() => import('./GlobalSettings').then(module => ({ default: module.GlobalSettings })));
 
@@ -104,6 +107,9 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
   const [settingsSection, setSettingsSection] = useState<SettingsSection>('home');
   const [showResources, setShowResources] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem('nai_sidebar_collapsed') === 'true');
+  const [externalBrowseExpanded, setExternalBrowseExpanded] = useState(() => localStorage.getItem('nai_sidebar_external_gallery_expanded') === 'true');
+  const [showExternalBrowsePopover, setShowExternalBrowsePopover] = useState(false);
+  const externalBrowseTriggerRef = useRef<HTMLButtonElement>(null);
   const [sidebarWidth, setSidebarWidth] = useState(() => clampSidebarWidth(Number(localStorage.getItem('nai_sidebar_width')) || SIDEBAR_DEFAULT_WIDTH));
   const [isSidebarResizing, setIsSidebarResizing] = useState(false);
   const [mobileAgentDock, setMobileAgentDock] = useState<MobileAgentDock>(readMobileAgentDock);
@@ -114,6 +120,13 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
   const pendingSidebarRef = useRef<{ collapsed: boolean; width: number } | null>(null);
   const pendingMobileDragRef = useRef<{ left: number; y: number } | null>(null);
   const workspaceRef = useRef<HTMLElement | null>(null);
+  const externalItems = [
+    { id: 'aitag', label: 'AITag', icon: icons.tag },
+    { id: 'codex', label: '法典', icon: icons.codex },
+    { id: 'danbooru', label: 'Danbooru', icon: icons.danbooru },
+    { id: 'pixiv', label: 'Pixiv', icon: icons.pixiv },
+  ] as const;
+  const externalActiveItem = externalItems.find(item => item.id === activeView);
   const desktopGroups = [
     { label: '工作区', items: [
       { id: 'list', label: '风格串', icon: icons.list },
@@ -123,11 +136,8 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
     { label: '资源库', items: [
       { id: 'library', label: '画师库', icon: icons.artist },
       { id: 'characters', label: '角色库', icon: icons.character },
-      { id: 'aitag', label: 'AITag', icon: icons.tag },
-      { id: 'codex', label: '法典', icon: icons.codex },
-      { id: 'danbooru', label: 'Danbooru', icon: icons.danbooru },
-      { id: 'pixiv', label: 'Pixiv', icon: icons.pixiv },
       { id: 'inspiration', label: '收藏库', icon: icons.inspiration },
+      { id: 'external-browse', label: '素材浏览', icon: Globe2 },
     ] },
     { label: '记录', items: [
       { id: 'history', label: '历史', icon: icons.history },
@@ -165,10 +175,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
     { id: 'roll', label: 'Roll 串', icon: Dice5 },
     { id: 'library', label: '画师库', icon: icons.artist },
     { id: 'characters', label: '角色库', icon: icons.character },
-    { id: 'aitag', label: 'AITag', icon: icons.tag },
-    { id: 'codex', label: '法典', icon: icons.codex },
-    { id: 'danbooru', label: 'Danbooru', icon: icons.danbooru },
-    { id: 'pixiv', label: 'Pixiv', icon: icons.pixiv },
+    ...externalItems,
     { id: 'inspiration', label: '收藏库', icon: icons.inspiration },
   ];
   const resourceActive = resourceItems.some(item => item.id === activeView);
@@ -180,6 +187,27 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
   useEffect(() => {
     localStorage.setItem('nai_sidebar_collapsed', String(sidebarCollapsed));
   }, [sidebarCollapsed]);
+
+  useEffect(() => {
+    if (!sidebarCollapsed) setShowExternalBrowsePopover(false);
+  }, [sidebarCollapsed]);
+
+  useEffect(() => {
+    const closeForMobile = () => { if (window.innerWidth < 768) setShowExternalBrowsePopover(false); };
+    window.addEventListener('resize', closeForMobile);
+    closeForMobile();
+    return () => window.removeEventListener('resize', closeForMobile);
+  }, []);
+
+  const toggleExternalBrowseExpanded = () => setExternalBrowseExpanded(current => {
+    const next = !current;
+    localStorage.setItem('nai_sidebar_external_gallery_expanded', String(next));
+    return next;
+  });
+  const navigateFromExternalPopover = (view: string) => {
+    setShowExternalBrowsePopover(false);
+    window.setTimeout(() => onNavigate(view as AppView), 0);
+  };
 
   const startSidebarResize = (event: React.PointerEvent<HTMLButtonElement>) => {
     if (event.button !== 0) return;
@@ -357,8 +385,54 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
           {desktopGroups.map((group, groupIndex) => <div key={group.label} className={groupIndex ? 'mt-2 border-t border-gray-100 pt-2 dark:border-gray-800' : ''}>
             {!sidebarCollapsed && <div className="mb-1 px-3 text-micro font-bold uppercase tracking-[0.16em] text-gray-400 dark:text-gray-600">{t(group.label)}</div>}
             <div className="space-y-1">{group.items.map(item => {
+              if (item.id === 'external-browse') {
+                const active = Boolean(externalActiveItem);
+                const browseLabel = externalActiveItem ? t('素材浏览：{0}', [t(externalActiveItem.label)]) : t('素材浏览');
+                return <React.Fragment key={item.id}>
+                  <button
+                    ref={sidebarCollapsed ? externalBrowseTriggerRef : undefined}
+                    type="button"
+                    title={sidebarCollapsed ? browseLabel : undefined}
+                    aria-label={browseLabel}
+                    aria-current={active ? 'location' : undefined}
+                    aria-expanded={sidebarCollapsed ? showExternalBrowsePopover : externalBrowseExpanded}
+                    aria-controls={sidebarCollapsed ? showExternalBrowsePopover ? 'external-gallery-popover' : undefined : 'external-gallery-links'}
+                    aria-haspopup={sidebarCollapsed ? 'dialog' : undefined}
+                    onClick={() => sidebarCollapsed ? setShowExternalBrowsePopover(value => !value) : toggleExternalBrowseExpanded()}
+                    className={`relative flex h-11 w-full items-center rounded-xl outline-none transition-colors focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500 ${sidebarCollapsed ? 'justify-center px-0' : 'px-3'} ${active ? 'bg-indigo-50 font-bold text-indigo-600 dark:bg-indigo-500/15 dark:text-indigo-300' : 'text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100'}`}
+                  >
+                    {active && <span className="absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-indigo-500" />}
+                    <item.icon aria-hidden="true" className="h-5 w-5 flex-none" strokeWidth={1.8} />
+                    {!sidebarCollapsed && <span className="ml-3 flex min-w-0 flex-1 flex-col text-left text-sm">
+                      <span className="truncate">{t(item.label)}</span>
+                      {!externalBrowseExpanded && externalActiveItem && <span className="truncate text-micro font-normal text-gray-400">{t(externalActiveItem.label)}</span>}
+                    </span>}
+                    {!sidebarCollapsed && <ChevronRight aria-hidden="true" className={`ml-auto h-4 w-4 flex-none transition-transform ${externalBrowseExpanded ? 'rotate-90' : ''}`} />}
+                  </button>
+                  {!sidebarCollapsed && <div id="external-gallery-links" hidden={!externalBrowseExpanded} className="space-y-1 pl-3">
+                    {externalItems.map(source => {
+                      const sourceActive = activeView === source.id;
+                      return <button key={source.id} type="button" aria-current={sourceActive ? 'page' : undefined} onClick={() => onNavigate(source.id as AppView)} className={`relative flex h-11 w-full items-center rounded-xl px-3 text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500 ${sourceActive ? 'bg-indigo-50 font-bold text-indigo-600 dark:bg-indigo-500/15 dark:text-indigo-300' : 'text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100'}`}>
+                        {sourceActive && <span className="absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-indigo-500" />}
+                        <source.icon aria-hidden="true" className="h-5 w-5 flex-none" strokeWidth={1.8} />
+                        <span className="ml-3 min-w-0 truncate text-sm">{t(source.label)}</span>
+                      </button>;
+                    })}
+                  </div>}
+                  {sidebarCollapsed && showExternalBrowsePopover && <ImagePreviewPortal><InteractionPopover id="external-gallery-popover" label="素材浏览" anchorRef={externalBrowseTriggerRef} onClose={() => setShowExternalBrowsePopover(false)} width={240} placement="right" className="p-1.5">
+                    <div className="space-y-1">
+                      {externalItems.map(source => {
+                        const sourceActive = activeView === source.id;
+                        return <button key={source.id} type="button" aria-current={sourceActive ? 'page' : undefined} onClick={() => navigateFromExternalPopover(source.id)} className={`flex h-11 w-full items-center rounded-lg px-3 text-left text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500 ${sourceActive ? 'bg-indigo-50 font-bold text-indigo-600 dark:bg-indigo-500/15 dark:text-indigo-300' : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800'}`}>
+                          <source.icon aria-hidden="true" className="h-5 w-5 flex-none" strokeWidth={1.8} /><span className="ml-3 min-w-0 truncate">{t(source.label)}</span>
+                        </button>;
+                      })}
+                    </div>
+                  </InteractionPopover></ImagePreviewPortal>}
+                </React.Fragment>;
+              }
               const active = activeView === item.id;
-              return <button key={item.id} type="button" title={sidebarCollapsed ? t(item.label) : undefined} aria-label={t(item.label)} onClick={() => onNavigate(item.id as AppView)} className={`relative flex h-11 w-full items-center rounded-xl outline-none transition-colors focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500 ${sidebarCollapsed ? 'justify-center px-0' : 'px-3'} ${active ? 'bg-indigo-50 font-bold text-indigo-600 dark:bg-indigo-500/15 dark:text-indigo-300' : 'text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100'}`}>
+              return <button key={item.id} type="button" title={sidebarCollapsed ? t(item.label) : undefined} aria-label={t(item.label)} aria-current={active ? 'page' : undefined} onClick={() => onNavigate(item.id as AppView)} className={`relative flex h-11 w-full items-center rounded-xl outline-none transition-colors focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500 ${sidebarCollapsed ? 'justify-center px-0' : 'px-3'} ${active ? 'bg-indigo-50 font-bold text-indigo-600 dark:bg-indigo-500/15 dark:text-indigo-300' : 'text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100'}`}>
                 {active && <span className="absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-indigo-500" />}
                 <item.icon aria-hidden="true" className="h-5 w-5 flex-none" strokeWidth={1.8} />
                 {!sidebarCollapsed && <span className="ml-3 min-w-0 truncate text-sm">{t(item.label)}</span>}

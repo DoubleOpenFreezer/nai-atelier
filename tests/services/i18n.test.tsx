@@ -15,6 +15,13 @@ beforeEach(() => { localStorage.clear(); delete window.atelierLanguage; restoreL
 afterEach(() => { cleanup(); delete window.atelierLanguage; setLanguage('zh-CN'); vi.restoreAllMocks(); });
 
 describe('界面语言', () => {
+  it('素材浏览导航具备四种译文，当前来源名称保持原样', () => {
+    for (const language of LANGUAGES.filter(item => item.code !== 'zh-CN')) {
+      expect(translate(language.code, '素材浏览')).not.toBe('素材浏览');
+      const label = translate(language.code, '素材浏览：{0}', ['Pixiv']);
+      expect(label).toContain('Pixiv'); expect(label).not.toContain('{0}'); expect(label).not.toContain('素材浏览');
+    }
+  });
   it('图片列表页面设置具备四种译文，来源名称保持原样', () => {
     for (const language of LANGUAGES.filter(item => item.code !== 'zh-CN')) {
       for (const key of ['设置范围', '全局默认', '跟随全局', '当前值继承自全局设置；关闭后可单独调整此页面']) expect(translate(language.code, key)).not.toBe(key);
@@ -27,6 +34,8 @@ describe('界面语言', () => {
       const ready = translate(language.code, '可用 · {0} 个画师 Tag', [6145]);
       expect(ready).toContain('6145'); expect(ready).not.toContain('{0}');
       expect(translate(language.code, '自建配置，用于补充缺失样张。{artist} 会替换为画师 Tag。')).toContain('{artist}');
+      const cardMenu = translate(language.code, '样张版本与补图：{0}', ['V4.5']);
+      expect(cardMenu).toContain('V4.5'); expect(cardMenu).not.toContain('{0}'); expect(cardMenu).not.toContain('样张版本与补图');
     }
   });
   it('Roll 串的操作、数量、错误与画风占位符具备四种译文，切语言不改原 Tag', () => {

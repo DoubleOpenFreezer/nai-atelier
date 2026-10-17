@@ -11,11 +11,12 @@ export const InteractionPopover: React.FC<React.PropsWithChildren<{
   onClose: () => void;
   width?: number;
   align?: 'center' | 'end';
+  placement?: 'auto' | 'right';
   className?: string;
-}>> = ({ id, label, anchorRef, onClose, width = 320, align = 'center', className = '', children }) => {
+}>> = ({ id, label, anchorRef, onClose, width = 320, align = 'center', placement = 'auto', className = '', children }) => {
   useLanguage();
   const panel = useModalA11y<HTMLDivElement>(true);
-  const position = useAgentPopoverPosition(true, anchorRef, panel, width, align);
+  const position = useAgentPopoverPosition(true, anchorRef, panel, width, align, placement);
   useEffect(() => {
     const outside = (event: PointerEvent) => {
       if (!panel.current?.contains(event.target as Node) && !anchorRef.current?.contains(event.target as Node)) onClose();
