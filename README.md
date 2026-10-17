@@ -7,7 +7,7 @@
 
   **[简体中文](./README.md) · [繁體中文](./README.zh-TW.md) · [English](./README.en.md) · [日本語](./README.ja.md) · [한국어](./README.ko.md)**
 
-  [![Version](https://img.shields.io/badge/version-1.80.1-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.81.0-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4%20%7C%20V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据主权与备份)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网创作体验)
@@ -195,7 +195,7 @@ flowchart LR
 
 ### 🎲 Roll 串：抽取组合与微调权重
 
-桌面从工作区打开「Roll 串」，手机从「资源库」进入。点击右上「开始 Roll／再 Roll 一轮」，直接从画师库的完整 Tag 词库抽组合并逐张出图；无需手填画师、先收藏或另建池子。按钮旁的下拉箭头设置本轮张数、每串画师数，并进入提示词与生成设置。每轮有限张数，付费时确认整轮总费用，可暂停或取消，不自动付费重试。
+桌面从工作区打开「Roll 串」，手机从「资源库」进入。点击右上「开始 Roll／再 Roll 一轮」，直接从画师库的完整 Tag 词库抽组合并逐张出图；无需手填画师、先收藏或另建池子。按钮旁的「本轮设置」可直接调整本轮张数、每串画师数及最低／最高权重，并进入提示词与生成设置。权重默认 0.7～1.4，可在 0.1～3.0 内按 0.1 调整，上下限相同即为固定权重；开始新一轮或保存配置后随记录保存，下次抽取继续使用，锁定画师仍使用指定权重，旧配方不变。每轮有限张数，付费时确认整轮总费用，可暂停或取消，不自动付费重试。
 
 图库沿用风格串等页面的卡片、图片布局和外观偏好，自动列数最多四列，图片随可用空间放大；明确设置列数时尊重全局偏好。悬停、键盘聚焦或触屏长按卡片显露保存、丢弃和图片取用操作，爱心仍是全局图片收藏。点击图片看详情，可直接「存为风格串」或「送往实验室」。下一轮优先围绕当前记录内已保存、未丢弃的组合继续抽取，每四套保留一套全新随机探索。
 

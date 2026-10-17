@@ -47,8 +47,15 @@ describe('Roll 串画师与规则', () => {
 });
 
 describe('Roll 和手动调整', () => {
+  it('自定义范围包含上下界，范围相等时使用固定权重', () => {
+    const e = rollFixture(); e.rules = { ...e.rules, minWeight: 1.8, maxWeight: 2.2 };
+    expect(rollCandidates(e, 1, { random: () => 0 })[0].genes.every(gene => gene.weight === 1.8)).toBe(true);
+    expect(rollCandidates(e, 1, { random: () => 0.999999 })[0].genes.every(gene => gene.weight === 2.2)).toBe(true);
+    e.rules.minWeight = e.rules.maxWeight = 0.1;
+    expect(rollCandidates(e, 1)[0].genes.every(gene => gene.weight === 0.1)).toBe(true);
+  });
   it('保存作为偏好信号，优先保留原组合画师并留四分之一全新探索，锁定／排除和去重仍生效', () => {
-    const e = rollFixture(); e.rules = { ...e.rules, minArtists: 4, maxArtists: 4 };
+    const e = rollFixture(); e.rules = { ...e.rules, minArtists: 4, maxArtists: 4, minWeight: 1.8, maxWeight: 2.2 };
     e.candidates = [{ ...candidateFixture('saved'), savedChainId: 'chain', genes: ['alpha', 'beta', 'gamma', 'delta'].map(tag => ({ tag, weight: 1 })) }, { ...candidateFixture('archived', 'theta'), savedChainId: 'old-chain', archived: true }];
     e.artists[1].excluded = true; e.artists[4].locked = true; e.artists[4].weight = 1.3;
     const result = rollCandidates(e, 8, { mode: 'saved', random: seededRandom() });
@@ -56,6 +63,7 @@ describe('Roll 和手动调整', () => {
     for (const candidate of result) {
       expect(candidate.genes).toHaveLength(4); expect(candidate.genes).toContainEqual({ tag: 'epsilon', weight: 1.3 }); expect(candidate.genes.some(gene => gene.tag === 'beta')).toBe(false);
       expect(candidate.parents).not.toContain('archived'); if (candidate.parents.length) expect(candidate.genes.some(gene => ['alpha', 'gamma', 'delta'].includes(gene.tag))).toBe(true);
+      expect(candidate.genes.filter(gene => gene.tag !== 'epsilon').every(gene => gene.weight >= 1.8 && gene.weight <= 2.2)).toBe(true);
     }
     expect(new Set(result.map(candidate => rollSignature(candidate.genes))).size).toBe(8);
   });

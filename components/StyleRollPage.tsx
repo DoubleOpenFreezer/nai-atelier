@@ -61,6 +61,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
   const [historyReadyId, setHistoryReadyId] = useState('');
   const [selectedId, setSelectedId] = useState('');
   const [filter, setFilter] = useState('all'), [count, setCount] = useState(6), [artistsPerMix, setArtistsPerMix] = useState(4);
+  const [weightRange, setWeightRange] = useState({ minWeight: DEFAULT_ROLL_RULES.minWeight, maxWeight: DEFAULT_ROLL_RULES.maxWeight });
   const [query, setQuery] = useState(''), [sort, setSort] = useState('new'), [roundId, setRoundId] = useState('');
   const [selecting, setSelecting] = useState(false), [selectedIds, setSelectedIds] = useState(new Set<string>());
   const [savingProgress, setSavingProgress] = useState<{ completed: number; total: number } | null>(null);
@@ -77,6 +78,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
   const rememberScroll = useKeepAliveScrollRestore(scrollRef, `roll:${experimentId}:${filter}`, { skipRestore: selectionAnchor.hasAnchor });
   selectedExperimentRef.current = experimentId;
   const experiment = experiments.find(item => item.id === experimentId && !item.archived);
+  const roundRules = { minArtists: artistsPerMix, maxArtists: artistsPerMix, ...weightRange };
   const selected = experiment?.candidates.find(item => item.id === selectedId);
   const images = useMemo(() => experiment ? rollCandidateImages(experiment, history) : new Map<string, LocalGenItem>(), [experiment, history]);
   const round = experiment && currentRollRound(experiment);
@@ -117,7 +119,8 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
   useEffect(() => { setHistory([]); setSelectedId(''); setSelectedIds(new Set()); setSelecting(false); setRoundId(''); setQuery(''); setFilter('all'); }, [experimentId]);
   useEffect(() => { setRecordName(experiment?.name || ''); }, [experiment?.id, experiment?.name]);
   useEffect(() => { setManualWeights(null); }, [selectedId, experimentId]);
-  useEffect(() => { if (experiment) setArtistsPerMix(experiment.rules.minArtists === experiment.rules.maxArtists ? experiment.rules.minArtists : 4); }, [experimentId]);
+  useEffect(() => { if (experiment) setArtistsPerMix(experiment.rules.minArtists === experiment.rules.maxArtists ? experiment.rules.minArtists : 4); }, [experimentId, experiment?.rules.minArtists, experiment?.rules.maxArtists]);
+  useEffect(() => { setWeightRange({ minWeight: experiment?.rules.minWeight ?? DEFAULT_ROLL_RULES.minWeight, maxWeight: experiment?.rules.maxWeight ?? DEFAULT_ROLL_RULES.maxWeight }); }, [experimentId, experiment?.rules.minWeight, experiment?.rules.maxWeight]);
   useEffect(() => { if (active && experimentId) void refreshHistory(experimentId); }, [active, experimentId, refreshHistory]);
   useEffect(() => localHistory.subscribe(() => { if (selectedExperimentRef.current) void refreshHistory(selectedExperimentRef.current); }), [refreshHistory]);
   useEffect(() => {
@@ -144,7 +147,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
     const now = Date.now();
     const next: RollExperiment = {
       version: 1, id: createUuid(), name: t('画风记录 {0}', [experiments.length + 1]), revision: 0, createdAt: now, updatedAt: now,
-      artists: experiment ? structuredClone(experiment.artists) : [], rules: experiment ? { ...experiment.rules } : { ...DEFAULT_ROLL_RULES },
+      artists: experiment ? structuredClone(experiment.artists) : [], rules: roundRules,
       template: experiment ? structuredClone(experiment.template) : { prompt: '{style}, 1girl, solo, upper body, simple background, looking at viewer', negativePrompt: '',
         params: applyNaiModelSettings({ model: DEFAULT_NAI_MODEL, width: 832, height: 1216, steps: runtime.freeMaxSteps, scale: 5, sampler: 'k_euler_ancestral', qualityToggle: false, ucPreset: 4, seed: 0, characters: [] }, runtime) },
       candidates: [], rounds: [],
@@ -199,7 +202,7 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
     if (libraryLoading || libraryError || !library.length) throw new Error(libraryError || '画师词库尚未就绪，请重新加载');
     let source = experiment || makeExperiment();
     if (round && !round.closedAt) source = { ...source, rounds: source.rounds.map(item => item.id === round.id ? { ...item, closedAt: Date.now() } : item) };
-    source = { ...source, rules: { ...source.rules, minArtists: artistsPerMix, maxArtists: artistsPerMix } };
+    source = { ...source, rules: roundRules };
     const next = beginRollRound(source, library, count);
     const saved = await store(next), created = currentRollRound(saved)!;
     selectedExperimentRef.current = saved.id; setExperimentId(saved.id); setSelectedId(''); setSelectedIds(new Set()); setSelecting(false); setFilter('all'); setQuery(''); setRoundId(created.id);
@@ -408,9 +411,10 @@ export const StyleRollPage: React.FC<Props> = ({ active, chains, enforceFreeStep
                 <div className="grid grid-cols-2 gap-3">
                   <label className="text-xs font-semibold text-gray-600 dark:text-gray-300">{t('每串画师')}<input type="number" aria-label={t('每串画师数')} className={TOOLBAR_FIELD_CLASS} min={1} max={16} value={artistsPerMix} onChange={event => setArtistsPerMix(Number(event.target.value))} /></label>
                   <label className="text-xs font-semibold text-gray-600 dark:text-gray-300">{t('本轮张数')}<input type="number" aria-label={t('本轮生成张数')} className={TOOLBAR_FIELD_CLASS} min={1} max={24} value={count} onChange={event => setCount(Number(event.target.value))} /></label>
+                  {([['minWeight', '最低权重'], ['maxWeight', '最高权重']] as const).map(([key, label]) => <label key={key} className="text-xs font-semibold text-gray-600 dark:text-gray-300">{t(label)}<input type="number" className={TOOLBAR_FIELD_CLASS} min={0.1} max={3} step={0.1} value={weightRange[key]} onChange={event => setWeightRange(current => ({ ...current, [key]: Number(event.target.value) }))} /></label>)}
                 </div>
                 <p className="text-xs text-gray-500">{savedCount ? t('优先参考已保存的 {0} 套组合', [savedCount]) : t('从画师库自动抽取 · {0} 位画师', [library.length])}</p>
-                <ToolbarButton className="w-full" onClick={() => { setSetup(experiment || makeExperiment()); close(); }}><Settings2 />{t('提示词与生成设置')}</ToolbarButton>
+                <ToolbarButton className="w-full" onClick={() => { setSetup({ ...(experiment || makeExperiment()), rules: roundRules }); close(); }}><Settings2 />{t('提示词与生成设置')}</ToolbarButton>
               </div>}
             </ToolbarPopover>
           </div>

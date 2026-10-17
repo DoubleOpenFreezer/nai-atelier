@@ -3,11 +3,11 @@ import React from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { candidateFixture, rollFixture, rollImageFixture } from '../fixtures/styleRoll';
-import type { RollExperiment } from '../../services/styleRoll';
+import type { RollExperiment, RollRules } from '../../services/styleRoll';
 import { StyleRollPage } from '../../components/StyleRollPage';
 import { setLanguage } from '../../services/i18n';
 
-const mocks = vi.hoisted(() => ({ load: vi.fn(), save: vi.fn(), history: vi.fn(), dictionary: vi.fn(), generate: vi.fn(), confirm: vi.fn(), upload: vi.fn(), export: vi.fn(), stop: vi.fn(), approve: vi.fn(), pause: vi.fn(), session: null as any, key: 'synthetic-key', cost: 0, mobile: false }));
+const mocks = vi.hoisted(() => ({ load: vi.fn(), save: vi.fn(), history: vi.fn(), dictionary: vi.fn(), generate: vi.fn(), confirm: vi.fn(), upload: vi.fn(), export: vi.fn(), stop: vi.fn(), approve: vi.fn(), pause: vi.fn(), session: null as any, setupRules: null as RollRules | null, key: 'synthetic-key', cost: 0, mobile: false }));
 vi.mock('../../services/artistSamples', () => ({ getArtistSampleDictionary: mocks.dictionary }));
 vi.mock('../../services/styleRollApi', async original => ({ ...await original<typeof import('../../services/styleRollApi')>(), loadRollExperiments: mocks.load, saveRollExperiment: mocks.save, loadRollHistory: mocks.history }));
 vi.mock('../../services/styleRollGeneration', () => ({ beginRollGeneration: mocks.generate, readRollApiKey: () => mocks.key }));
@@ -23,12 +23,12 @@ vi.mock('../../components/ConfirmDialog', () => ({ useConfirmDialog: () => mocks
 vi.mock('../../components/ImageShareActions', () => ({ ImageShareActions: () => null, IMAGE_CARD_ACTION_CLASS: 'image-action' }));
 vi.mock('../../components/ImageLightbox', () => ({ ImageLightbox: () => null }));
 vi.mock('../../components/SmartImage', async original => ({ ...await original<typeof import('../../components/SmartImage')>(), SmartImage: ({ src, alt, className }: any) => <img src={src} alt={alt} className={className} />, OriginalImage: (props: any) => <img {...props} /> }));
-vi.mock('../../components/roll/StyleRollSetup', () => ({ StyleRollSetup: ({ initial, onSave, onClose }: any) => <div role="dialog"><button onClick={async () => { await onSave(initial); onClose(); }}>保存合成实验</button></div> }));
+vi.mock('../../components/roll/StyleRollSetup', () => ({ StyleRollSetup: ({ initial, onSave, onClose }: any) => <div role="dialog"><button onClick={async () => { await onSave({ ...initial, rules: mocks.setupRules || initial.rules }); onClose(); }}>保存合成实验</button></div> }));
 
 let experiment: RollExperiment;
 const rows = (e: RollExperiment) => e.candidates.map(candidate => rollImageFixture(e, candidate));
 beforeEach(() => {
-  vi.clearAllMocks(); mocks.cost = 0; mocks.mobile = false; mocks.session = null; mocks.key = 'synthetic-key'; localStorage.clear(); sessionStorage.clear();
+  vi.clearAllMocks(); mocks.cost = 0; mocks.mobile = false; mocks.session = null; mocks.setupRules = null; mocks.key = 'synthetic-key'; localStorage.clear(); sessionStorage.clear();
   experiment = rollFixture(); experiment.candidates = [candidateFixture('a', 'alpha'), candidateFixture('b', 'beta')];
   mocks.dictionary.mockResolvedValue(experiment.artists.map(artist => ({ name: artist.tag, chinese: '', postCount: 1 })));
   mocks.load.mockImplementation(async () => [structuredClone(experiment)]);
@@ -75,6 +75,8 @@ it('手机390px工具栏在内部横向滚动，主操作保持触控尺寸，�
   const menu = screen.getByRole('dialog', { name: '本轮设置' });
   expect(scroller.contains(menu)).toBe(false);
   expect(menu.closest('[data-roll-page]')).toBeNull();
+  expect(screen.getByRole('spinbutton', { name: '最低权重' })).toHaveProperty('value', '0.7');
+  expect(screen.getByRole('spinbutton', { name: '最高权重' })).toHaveProperty('value', '1.4');
 });
 
 it('纯新探索与微调变体实际切换候选，退出筛选回到完整集合且不提交生图', async () => {
@@ -93,16 +95,66 @@ it('纯新探索与微调变体实际切换候选，退出筛选回到完整集�
   expect(mocks.generate).not.toHaveBeenCalled(); expect(mocks.save).not.toHaveBeenCalled();
 });
 
-it('首次使用直接设置人数与张数开始一轮，无需先建实验或手填名单；多配方一次提交', async () => {
+it('首次使用直接设置人数、张数和权重范围开始一轮，无需先建实验；多配方一次提交', async () => {
   experiment.candidates = []; experiment.artists = []; mocks.load.mockResolvedValue([]);
   const names = Array.from({ length: 1205 }, (_, index) => `catalog-${index}`); mocks.dictionary.mockResolvedValue(names.map(name => ({ name, chinese: '', postCount: 1 })));
   await setup(); configure('每串画师数', '4');
   configure('本轮生成张数', '3');
+  configure('最低权重', '1.8'); configure('最高权重', '2.2');
   fireEvent.click(screen.getAllByRole('button', { name: '开始 Roll' })[0]); await waitFor(() => expect(mocks.generate).toHaveBeenCalledOnce());
   const [saved, candidates] = mocks.generate.mock.calls[0]; expect(saved.artists).toEqual([]); expect(candidates).toHaveLength(3);
   expect(candidates.every((candidate: any) => candidate.genes.length === 4 && candidate.genes.every((gene: any) => names.includes(gene.tag)))).toBe(true);
+  expect(saved.rules).toMatchObject({ minWeight: 1.8, maxWeight: 2.2 });
+  expect(candidates.every((candidate: any) => candidate.genes.every((gene: any) => gene.weight >= 1.8 && gene.weight <= 2.2))).toBe(true);
   expect(saved.rounds[0].candidateIds).toHaveLength(3);
   expect(screen.queryByRole('dialog')).toBeNull(); expect(screen.queryByAltText('左侧候选')).toBeNull(); expect(screen.queryByRole('list', { name: '画风探索进度' })).toBeNull();
+});
+it('权重范围随记录切换并在重新进入后恢复，新范围只作用于新候选', async () => {
+  experiment.rules = { ...experiment.rules, minWeight: 0.2, maxWeight: 0.5 };
+  const other = { ...structuredClone(experiment), id: 'other-record', name: '另一记录', rules: { ...experiment.rules, minWeight: 2, maxWeight: 2.4 } };
+  mocks.load.mockResolvedValue([experiment, other]);
+  const view = await setup();
+  fireEvent.click(screen.getByRole('button', { name: '本轮设置' }));
+  expect(screen.getByRole('spinbutton', { name: '最低权重' })).toHaveProperty('value', '0.2');
+  fireEvent.keyDown(window, { key: 'Escape' });
+  fireEvent.change(screen.getByRole('combobox', { name: '切换画风记录' }), { target: { value: other.id } });
+  fireEvent.click(screen.getByRole('button', { name: '本轮设置' }));
+  expect(screen.getByRole('spinbutton', { name: '最低权重' })).toHaveProperty('value', '2');
+  expect(screen.getByRole('spinbutton', { name: '最高权重' })).toHaveProperty('value', '2.4');
+  fireEvent.keyDown(window, { key: 'Escape' });
+  configure('最低权重', '1.7'); configure('最高权重', '1.9');
+  await waitFor(() => expect(screen.getByRole('button', { name: '再 Roll 一轮' })).toHaveProperty('disabled', false));
+  fireEvent.click(screen.getByRole('button', { name: '再 Roll 一轮' }));
+  await waitFor(() => expect(mocks.generate).toHaveBeenCalledOnce());
+  const saved = mocks.generate.mock.calls[0][0];
+  expect(saved.candidates.slice(0, 2)).toEqual(other.candidates);
+  expect(saved.rules).toMatchObject({ minWeight: 1.7, maxWeight: 1.9 });
+  view.unmount(); mocks.load.mockResolvedValue([saved]); await setup();
+  fireEvent.click(screen.getByRole('button', { name: '本轮设置' }));
+  expect(screen.getByRole('spinbutton', { name: '最低权重' })).toHaveProperty('value', '1.7');
+  expect(screen.getByRole('spinbutton', { name: '最高权重' })).toHaveProperty('value', '1.9');
+});
+it('本轮设置与完整配置双向同步人数和权重范围，保存配置不会自动出图', async () => {
+  await setup(); configure('每串画师数', '5'); configure('最低权重', '0.4'); configure('最高权重', '0.6');
+  const openSetup = () => { fireEvent.click(screen.getByRole('button', { name: '本轮设置' })); fireEvent.click(screen.getByRole('button', { name: '提示词与生成设置' })); };
+  openSetup(); fireEvent.click(screen.getByRole('button', { name: '保存合成实验' }));
+  await waitFor(() => expect(mocks.save).toHaveBeenCalledOnce());
+  expect(mocks.save.mock.calls[0][0].rules).toEqual({ minArtists: 5, maxArtists: 5, minWeight: 0.4, maxWeight: 0.6 });
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  mocks.setupRules = { minArtists: 6, maxArtists: 6, minWeight: 0.2, maxWeight: 0.3 };
+  openSetup(); fireEvent.click(screen.getByRole('button', { name: '保存合成实验' }));
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  fireEvent.click(screen.getByRole('button', { name: '本轮设置' }));
+  expect(screen.getByRole('spinbutton', { name: '每串画师数' })).toHaveProperty('value', '6');
+  expect(screen.getByRole('spinbutton', { name: '最低权重' })).toHaveProperty('value', '0.2');
+  expect(screen.getByRole('spinbutton', { name: '最高权重' })).toHaveProperty('value', '0.3');
+  expect(mocks.generate).not.toHaveBeenCalled();
+});
+it.each([['', '1.4'], ['1.5', '1.4'], ['0.7', '3.1'], ['0.75', '1.4']])('无效权重范围 %s～%s 不保存、不提交出图', async (min, max) => {
+  await setup(); configure('最低权重', min); configure('最高权重', max);
+  fireEvent.click(screen.getByRole('button', { name: '再 Roll 一轮' }));
+  expect(await screen.findByRole('alert')).toHaveProperty('textContent', expect.stringContaining('请检查画师数量和权重范围'));
+  expect(mocks.save).not.toHaveBeenCalled(); expect(mocks.generate).not.toHaveBeenCalled();
 });
 it('整轮按总费用确认，拒绝不提交，随后仅生成本轮原配方而不重新Roll', async () => {
   mocks.cost = 7; await setup(); configure('本轮生成张数', '2');

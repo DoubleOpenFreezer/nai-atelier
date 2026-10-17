@@ -32,11 +32,14 @@ it('已有候选冻结生成配置，画师锁定及排除仍可保存且不改�
   fireEvent.click(await screen.findByRole('checkbox', { name: '锁定画师：alpha' }));
   fireEvent.change(screen.getByRole('spinbutton', { name: '锁定权重：alpha' }), { target: { value: '1.7' } });
   fireEvent.click(screen.getByRole('checkbox', { name: '排除画师：beta' }));
+  fireEvent.change(screen.getByLabelText('最低权重'), { target: { value: '0.2' } });
+  fireEvent.change(screen.getByLabelText('最高权重'), { target: { value: '2.5' } });
   fireEvent.click(screen.getByRole('button', { name: '生成配置' }));
   expect((screen.getByLabelText('公共提示词（{style} 为画风位置）') as HTMLTextAreaElement).disabled).toBe(true);
   fireEvent.click(screen.getByRole('button', { name: '保存配置' })); await waitFor(() => expect(save).toHaveBeenCalledOnce());
   const value = save.mock.calls[0][0]; expect(value.artists[0]).toEqual(expect.objectContaining({ locked: true, weight: 1.7 })); expect(value.artists[1].excluded).toBe(true);
   expect(value.candidates).toEqual(initial.candidates); expect(value.template).toEqual(initial.template);
+  expect(value.rules).toMatchObject({ minWeight: 0.2, maxWeight: 2.5 });
 });
 it('保存失败保留输入和窗口，空白 Seed 或无效规则不投递', async () => {
   const save = vi.fn(async () => { throw new Error('合成保存失败'); }), close = vi.fn();
