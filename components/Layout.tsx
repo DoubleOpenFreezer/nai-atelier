@@ -11,6 +11,7 @@ import {
   Dice5,
   FlaskConical,
   FolderOpen,
+  Footprints,
   Heart,
   Images,
   Layers,
@@ -34,7 +35,7 @@ import { ImagePreviewPortal } from './ImagePreviewPortal';
 
 const GlobalSettings = React.lazy(() => import('./GlobalSettings').then(module => ({ default: module.GlobalSettings })));
 
-type AppView = 'list' | 'characters' | 'edit' | 'library' | 'aitag' | 'danbooru' | 'pixiv' | 'codex' | 'inspiration' | 'history' | 'playground' | 'roll';
+type AppView = 'list' | 'characters' | 'edit' | 'library' | 'aitag' | 'danbooru' | 'pixiv' | 'codex' | 'inspiration' | 'history' | 'footprint' | 'playground' | 'roll';
 type SettingsSection = 'home' | 'appearance' | 'generation' | 'novelai' | 'agent' | 'maintenance';
 
 interface LayoutProps {
@@ -71,6 +72,7 @@ const icons = {
   lab: FlaskConical,
   inspiration: Heart,
   history: Clock3,
+  footprint: Footprints,
   safe: ShieldCheck,
   settings: Settings,
 };
@@ -141,6 +143,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
     ] },
     { label: '记录', items: [
       { id: 'history', label: '历史', icon: icons.history },
+      { id: 'footprint', label: '创作足迹', icon: icons.footprint },
     ] },
   ];
 
@@ -476,7 +479,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
           <MobileNavButton label={t("风格串")} active={activeView === 'list'} icon={icons.list} onClick={() => navigateMobile('list')} />
           <MobileNavButton label={t("资源库")} active={resourceActive || showResources} icon={icons.resources} onClick={() => setShowResources(value => !value)} />
           <MobileNavButton label={t("实验室")} active={activeView === 'playground'} icon={icons.lab} onClick={() => navigateMobile('playground')} />
-          <MobileNavButton label={t("历史")} active={activeView === 'history'} icon={icons.history} onClick={() => navigateMobile('history')} />
+          <MobileNavButton label={t("历史")} active={activeView === 'history' || activeView === 'footprint'} icon={icons.history} onClick={() => navigateMobile('history')} />
           <MobileNavButton label={t("设置")} active={showSettings} icon={icons.settings} onClick={() => { setSettingsSection('home'); setShowSettings(true); }} />
         </div>
       </>}

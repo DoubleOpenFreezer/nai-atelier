@@ -14,7 +14,7 @@ import { ImageActivityContext, SmartImage } from './SmartImage';
 import { createUuid } from '../services/id';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMasonry';
-import { AlertTriangle, CalendarDays, ChevronDown, Clock3, Heart, Layers, ListChecks, LoaderCircle, Save, Trash2 } from 'lucide-react';
+import { AlertTriangle, CalendarDays, ChevronDown, Clock3, Footprints, Heart, Layers, ListChecks, LoaderCircle, Save, Trash2 } from 'lucide-react';
 import { CloseButton, EmptyState, IconButton, PageSpinner, ToolbarButton, ToolbarSelect, WorkspaceToolbar } from './DesignSystem';
 import { buildMediaUrl, canUseMediaGateway } from '../services/mobileImageCache';
 import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
@@ -35,6 +35,9 @@ interface GenHistoryProps {
     notify: (msg: string, type?: 'success' | 'error') => void;
     onNavigateToPlayground?: () => void;
     onRefreshInspiration?: () => void;
+    /** 由创作足迹页带入的筛选；token 变化时应用一次，不覆盖用户后续手动筛选。 */
+    initialQuery?: { query: HistoryBrowseQuery; token: number } | null;
+    onOpenFootprint?: () => void;
 }
 
 const toDateInputValue = (date: Date) => {
@@ -173,7 +176,7 @@ const HistoryCard = React.memo(function HistoryCard({
     );
 });
 
-export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNavigateToPlayground, onRefreshInspiration }) => {
+export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNavigateToPlayground, onRefreshInspiration, initialQuery, onOpenFootprint }) => {
   const language = useLanguage();
     const confirmAction = useConfirmDialog();
     const imageDisplay = useMobileImageDisplayPreferences('history');
@@ -650,6 +653,14 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
         exitSelectionMode();
         void goToPage(1, true);
     };
+    const applyBrowseQueryRef = useRef(applyBrowseQuery);
+    applyBrowseQueryRef.current = applyBrowseQuery;
+    const appliedInitialQueryRef = useRef(0);
+    useEffect(() => {
+        if (!initialQuery || initialQuery.token === appliedInitialQueryRef.current) return;
+        appliedInitialQueryRef.current = initialQuery.token;
+        applyBrowseQueryRef.current({ ...initialQuery.query });
+    }, [initialQuery?.token]);
 
     const submitDesktopPageJump = (event: React.FormEvent<HTMLFormElement>) => {
         event.preventDefault();
@@ -1034,6 +1045,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
                         </div>
                     </> : <>
                         <HistoryBrowseControls query={browseQuery} options={browseOptions} mobile={isMobileViewport} onApply={applyBrowseQuery} />
+                        {onOpenFootprint && <ToolbarButton aria-label={t('创作足迹')} title={t('创作足迹')} onClick={onOpenFootprint} className="md:hidden !px-2.5"><Footprints /></ToolbarButton>}
                         <div className="history-toolbar-status">
                             {newImageCount > 0 && <ToolbarButton aria-label={t("新增 {0} 张图片 · 查看最新", [newImageCount])} title={t("新增 {0} 张图片 · 查看最新", [newImageCount])} onClick={showNewImages} className="history-new-image-action !px-2.5"><span className="history-new-image-label">{t("新图")}</span><span className="tabular-nums">+{newImageCount}</span></ToolbarButton>}
                             <span className="history-result-count">{t("{0} 张", [totalCount])}</span>

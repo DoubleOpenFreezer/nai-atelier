@@ -19,11 +19,13 @@ import {
   ThemeMode,
 } from './services/appearancePreferences';
 import { PromptChain, User, Inspiration, ChainType } from './types';
+import type { HistoryBrowseQuery } from './services/historyBrowse';
 
 const ChainEditor = lazy(() => import('./components/ChainEditor').then(module => ({ default: module.ChainEditor })));
 const ArtistLibrary = lazy(() => import('./components/ArtistLibrary').then(module => ({ default: module.ArtistLibrary })));
 const InspirationGallery = lazy(() => import('./components/InspirationGallery').then(module => ({ default: module.InspirationGallery })));
 const GenHistory = lazy(() => import('./components/GenHistory').then(module => ({ default: module.GenHistory })));
+const CreationFootprint = lazy(() => import('./components/CreationFootprint').then(module => ({ default: module.CreationFootprint })));
 const AitagGallery = lazy(() => import('./components/AitagGallery').then(module => ({ default: module.AitagGallery })));
 const DanbooruGallery = lazy(() => import('./components/DanbooruGallery').then(module => ({ default: module.DanbooruGallery })));
 const PixivGallery = lazy(() => import('./components/PixivGallery').then(module => ({ default: module.PixivGallery })));
@@ -31,11 +33,11 @@ const CodexGallery = lazy(() => import('./components/CodexGallery').then(module 
 const CharacterLibrary = lazy(() => import('./components/CharacterLibrary').then(module => ({ default: module.CharacterLibrary })));
 const StyleRollPage = lazy(() => import('./components/StyleRollPage').then(module => ({ default: module.StyleRollPage })));
 
-type ViewState = 'list' | 'characters' | 'edit' | 'library' | 'aitag' | 'danbooru' | 'pixiv' | 'codex' | 'inspiration' | 'history' | 'playground' | 'roll';
+type ViewState = 'list' | 'characters' | 'edit' | 'library' | 'aitag' | 'danbooru' | 'pixiv' | 'codex' | 'inspiration' | 'history' | 'footprint' | 'playground' | 'roll';
 type KeepAliveView = Exclude<ViewState, 'edit'>;
 
 // 手机端实验室返回箭头的落点：只记录内容页，编辑器/实验室本身不作为返回落点。
-const LAB_ENTRY_VIEWS: ViewState[] = ['list', 'characters', 'library', 'aitag', 'danbooru', 'pixiv', 'codex', 'inspiration', 'history', 'roll'];
+const LAB_ENTRY_VIEWS: ViewState[] = ['list', 'characters', 'library', 'aitag', 'danbooru', 'pixiv', 'codex', 'inspiration', 'history', 'footprint', 'roll'];
 
 const CACHE_TTL = 60 * 60 * 1000; // 1 Hour Cache
 
@@ -69,6 +71,8 @@ const App = () => {
 
   // Data Cache State
   const [inspirationsCache, setInspirationsCache] = useState<Inspiration[] | null>(null);
+  const [historyEntry, setHistoryEntry] = useState<{ query: HistoryBrowseQuery; token: number } | null>(null);
+  const historyEntryTokenRef = useRef(0);
 
   // Cache Timestamps
   const [lastChainFetch, setLastChainFetch] = useState(0);
@@ -501,6 +505,12 @@ const App = () => {
   };
   handleNavigateRef.current = handleNavigate;
 
+  // 足迹页的排行与热力图都落到同一份真实历史；打开时带上筛选并复用历史页已有查询能力。
+  const openHistory = (query?: HistoryBrowseQuery) => {
+    setHistoryEntry({ query: query || { sort: 'newest' }, token: ++historyEntryTokenRef.current });
+    void handleNavigate('history');
+  };
+
   const handleUpdatePlaygroundChain = async (id: string, updates: Partial<PromptChain>) => {
     setPlaygroundChain(prev => prev ? { ...prev, ...updates } : null);
   };
@@ -737,8 +747,15 @@ const App = () => {
             await refreshData(true);
           }}
         />;
+      case 'footprint':
+        return <CreationFootprint
+          active={view === 'footprint'}
+          onOpenHistory={openHistory}
+          onOpenCollection={() => void handleNavigate('inspiration')}
+          onOpenLab={() => void handleNavigate('playground')}
+        />;
       case 'history':
-        return <GenHistory currentUser={currentUser} chains={chains} notify={notify} onNavigateToPlayground={() => handleNavigate('playground', undefined, { externalImport: true })} onRefreshInspiration={() => loadInspirations(true)} />;
+        return <GenHistory currentUser={currentUser} chains={chains} notify={notify} initialQuery={historyEntry} onOpenFootprint={() => void handleNavigate('footprint')} onNavigateToPlayground={() => handleNavigate('playground', undefined, { externalImport: true })} onRefreshInspiration={() => loadInspirations(true)} />;
       case 'roll':
         return <StyleRollPage active={view === 'roll'} chains={chains} notify={notify}
           continuousGenerationEnabled={appearancePreferences.continuousGenerationEnabled}

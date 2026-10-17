@@ -55,6 +55,15 @@ it('素材浏览分组默认收起，手动展开状态跨Layout重挂载保存'
   expect(localStorage.getItem('nai_sidebar_external_gallery_expanded')).toBe('false');
 });
 
+it('记录组提供创作足迹独立入口并标为当前页', () => {
+  const props = createProps('footprint');
+  const { container } = render(<div className="agent-stage"><Layout {...props} /></div>);
+  const item = within(getSidebar(container)).getByRole('button', { name: '创作足迹' });
+  expect(item.getAttribute('aria-current')).toBe('page');
+  fireEvent.click(item);
+  expect(props.onNavigate).toHaveBeenCalledWith('footprint');
+});
+
 it.each([
   ['AITag', 'aitag'], ['法典', 'codex'], ['Danbooru', 'danbooru'], ['Pixiv', 'pixiv'],
 ] as const)('%s 仍可从展开分组导航并标为当前页', (label, view) => {

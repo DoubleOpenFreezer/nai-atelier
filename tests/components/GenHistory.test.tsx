@@ -77,6 +77,11 @@ const setup = async (width = 1280, expectedCount = 2) => {
     return { ...result, notify, navigate, cards: Array.from(result.container.querySelectorAll<HTMLElement>('.mobile-gallery-item')) };
 };
 
+it('足迹带入的画师筛选应用到历史浏览查询', async () => {
+    render(<GenHistory currentUser={{ id: 'local', username: 'owner', role: 'user', createdAt: 1 }} chains={[]} notify={vi.fn()} initialQuery={{ query: { search: 'artist:alpha_artist', sort: 'newest' }, token: 1 }} />);
+    await waitFor(() => expect(vi.mocked(localHistory.getBrowseOrder).mock.calls.some(([query]) => query.search === 'artist:alpha_artist')).toBe(true));
+});
+
 describe('历史缩略图就地操作', () => {
     it.each(['masonry', 'portrait'])('历史 %s 布局仅在瀑布流测量前完整显示图片', async layout => {
         localStorage.setItem('nai_mobile_image_display', JSON.stringify({ layout, columns: 2 }));

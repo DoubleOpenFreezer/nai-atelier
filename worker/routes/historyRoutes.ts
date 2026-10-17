@@ -339,6 +339,138 @@ export async function handleHistoryRoute(ctx: RouteContext): Promise<Response | 
       });
     }
 
+    if (path === '/api/local-history/stats' && method === 'GET') {
+      // 足迹只读取本地历史聚合，不暴露完整 Prompt，也不写入任何记录。
+      const tzOffsetMinutes = Math.max(-840, Math.min(840, Math.trunc(Number(url.searchParams.get('tzOffset')) || 0)));
+      const offsetSeconds = tzOffsetMinutes * 60;
+      const rawDays = url.searchParams.get('days') || '30';
+      const days = rawDays === 'all' ? null : [7, 30, 365].includes(Number(rawDays)) ? Number(rawDays) : 30;
+      const now = Math.trunc(Number(url.searchParams.get('to')) || Date.now());
+      const from = days === null ? 0 : now - days * 86400000;
+      const dayExpr = "date(created_at / 1000 + ?, 'unixepoch')";
+      const rangeWhere = 'user_id = ? AND created_at >= ? AND created_at <= ?';
+      // 画师样张补全是辅助生成，不参与“最常用风格串/画师”，避免把补图当成创作配方。
+      const creativeWhere = `${rangeWhere} AND COALESCE(source_chain_id, '') NOT LIKE 'artist-sample:%'`;
+      // 风格串排行只承认真正的风格串来源：自由实验室（playground）和导入文件名不是配方。
+      const chainWhere = `${creativeWhere}
+        AND COALESCE(NULLIF(source_chain_id, ''), 'playground') <> 'playground'
+        AND COALESCE(source_chain_name, '') NOT LIKE '%.png'
+        AND COALESCE(source_chain_name, '') NOT LIKE '%.jpg'
+        AND COALESCE(source_chain_name, '') NOT LIKE '%.jpeg'
+        AND COALESCE(source_chain_name, '') NOT LIKE '%.webp'
+        AND COALESCE(source_chain_name, '') NOT LIKE '%.gif'`;
+      const rangeValues = [currentUser.id, from, now];
+      const modelExpr = "CASE WHEN json_valid(params) THEN json_extract(params, '$.model') END";
+      const widthExpr = "CASE WHEN json_valid(params) THEN CAST(json_extract(params, '$.width') AS INTEGER) END";
+      const heightExpr = "CASE WHEN json_valid(params) THEN CAST(json_extract(params, '$.height') AS INTEGER) END";
+      const stepsExpr = "CASE WHEN json_valid(params) THEN CAST(json_extract(params, '$.steps') AS INTEGER) END";
+      const operationExpr = "COALESCE(CASE WHEN json_valid(params) THEN json_extract(params, '$._local_edit.operation') END, 'text-to-image')";
+
+      const [totals, dailyResult, chainsResult, uniqueChains, models, sizes, steps, operations, artistRows] = await Promise.all([
+        db.prepare(`SELECT COUNT(*) AS images,
+          COUNT(DISTINCT ${dayExpr}) AS activeDays,
+          COALESCE(SUM(CASE WHEN is_favorite = 1 THEN 1 ELSE 0 END), 0) AS favoriteImages,
+          MIN(created_at) AS firstAt, MAX(created_at) AS lastAt
+          FROM local_generation_history WHERE ${creativeWhere}`)
+          .bind(offsetSeconds, ...rangeValues).first<any>(),
+        db.prepare(`SELECT ${dayExpr} AS day, COUNT(*) AS images
+          FROM local_generation_history
+          WHERE user_id = ? AND created_at >= ? AND created_at <= ?
+          AND COALESCE(source_chain_id, '') NOT LIKE 'artist-sample:%'
+          GROUP BY day ORDER BY day`)
+          .bind(offsetSeconds, currentUser.id, now - 365 * 86400000, now).all<{ day: string; images: number }>(),
+        db.prepare(`SELECT COALESCE(NULLIF(source_chain_id, ''), 'playground') AS id,
+          COALESCE(MAX(NULLIF(source_chain_name, '')), '') AS name,
+          COUNT(*) AS images, MAX(created_at) AS lastAt
+          FROM local_generation_history WHERE ${chainWhere}
+          GROUP BY COALESCE(NULLIF(source_chain_id, ''), 'playground') ORDER BY images DESC, lastAt DESC LIMIT 12`)
+          .bind(...rangeValues).all<{ id: string; name: string; images: number; lastAt: number }>(),
+        db.prepare(`SELECT COUNT(DISTINCT COALESCE(NULLIF(source_chain_id, ''), 'playground')) AS count
+          FROM local_generation_history WHERE ${chainWhere}`)
+          .bind(...rangeValues).first<{ count: number }>(),
+        db.prepare(`SELECT ${modelExpr} AS model, COUNT(*) AS images
+          FROM local_generation_history WHERE ${creativeWhere} AND ${modelExpr} IS NOT NULL
+          GROUP BY model ORDER BY images DESC LIMIT 8`)
+          .bind(...rangeValues).all<{ model: string; images: number }>(),
+        db.prepare(`SELECT ${widthExpr} AS width, ${heightExpr} AS height, COUNT(*) AS images
+          FROM local_generation_history WHERE ${creativeWhere} AND ${widthExpr} IS NOT NULL AND ${heightExpr} IS NOT NULL
+          GROUP BY width, height ORDER BY images DESC LIMIT 8`)
+          .bind(...rangeValues).all<{ width: number; height: number; images: number }>(),
+        db.prepare(`SELECT ${stepsExpr} AS steps, COUNT(*) AS images
+          FROM local_generation_history WHERE ${creativeWhere} AND ${stepsExpr} IS NOT NULL
+          GROUP BY steps ORDER BY images DESC LIMIT 8`)
+          .bind(...rangeValues).all<{ steps: number; images: number }>(),
+        db.prepare(`SELECT ${operationExpr} AS operation, COUNT(*) AS images
+          FROM local_generation_history WHERE ${creativeWhere}
+          GROUP BY operation ORDER BY images DESC`)
+          .bind(...rangeValues).all<{ operation: string; images: number }>(),
+        // 画师使用量从完整 Prompt 派生；限制扫描最近 4000 张，避免一次性拉取整段历史。
+        db.prepare(`SELECT prompt, base_prompt, subject_prompt, created_at
+          FROM local_generation_history WHERE ${creativeWhere}
+          AND (prompt LIKE '%artist:%' OR base_prompt LIKE '%artist:%' OR subject_prompt LIKE '%artist:%')
+          ORDER BY created_at DESC LIMIT 4000`)
+          .bind(...rangeValues).all<{ prompt: string | null; base_prompt: string | null; subject_prompt: string | null; created_at: number }>(),
+      ]);
+
+      const artistPattern = /(?:^|[\s,])artist:([^\s,}]+)/gi;
+      const artistMap = new Map<string, { name: string; images: number; lastAt: number }>();
+      for (const row of artistRows.results) {
+        const text = [row.prompt, row.base_prompt, row.subject_prompt].filter(Boolean).join(' ');
+        const seen = new Set<string>();
+        for (const match of text.matchAll(artistPattern)) {
+          const name = match[1].replace(/[.,;]+$/, '').toLowerCase();
+          if (!name || seen.has(name)) continue;
+          seen.add(name);
+          const current = artistMap.get(name);
+          const createdAt = Number(row.created_at) || 0;
+          if (current) {
+            current.images += 1;
+            current.lastAt = Math.max(current.lastAt, createdAt);
+          } else artistMap.set(name, { name, images: 1, lastAt: createdAt });
+        }
+      }
+      const artists = [...artistMap.values()]
+        .sort((left, right) => right.images - left.images || right.lastAt - left.lastAt)
+        .slice(0, 12);
+
+      const daySet = new Set(dailyResult.results.map(row => row.day));
+      const localNow = new Date(now + offsetSeconds * 1000);
+      let currentStreak = 0;
+      for (let index = 0; index < 370; index++) {
+        const key = new Date(localNow.getTime() - index * 86400000).toISOString().slice(0, 10);
+        if (daySet.has(key)) currentStreak += 1;
+        else if (index === 0) continue;
+        else break;
+      }
+
+      return json({
+        totals: {
+          images: Number(totals?.images || 0),
+          activeDays: Number(totals?.activeDays || 0),
+          favoriteImages: Number(totals?.favoriteImages || 0),
+          firstAt: totals?.firstAt ?? null,
+          lastAt: totals?.lastAt ?? null,
+          currentStreak,
+        },
+        daily: dailyResult.results.map(row => ({ date: row.day, images: Number(row.images) || 0 })),
+        chains: chainsResult.results.map(row => ({
+          id: row.id,
+          name: row.name || '',
+          images: Number(row.images) || 0,
+          lastAt: Number(row.lastAt) || 0,
+        })),
+        artists,
+        models: models.results.map(row => ({ model: row.model, images: Number(row.images) || 0 })),
+        sizes: sizes.results.map(row => ({ width: Number(row.width), height: Number(row.height), images: Number(row.images) || 0 })),
+        steps: steps.results.map(row => ({ steps: Number(row.steps), images: Number(row.images) || 0 })),
+        operations: operations.results.map(row => ({ operation: row.operation, images: Number(row.images) || 0 })),
+        uniqueChains: Number(uniqueChains?.count || 0),
+        uniqueArtists: artistMap.size,
+        artistScan: { scanned: artistRows.results.length, truncated: artistRows.results.length >= 4000 },
+        generatedAt: now,
+      });
+    }
+
     const imageMatch = path.match(/^\/api\/local-history\/([^/]+)\/image$/);
     if (imageMatch && method === 'GET') {
       const id = decodeURIComponent(imageMatch[1]);
