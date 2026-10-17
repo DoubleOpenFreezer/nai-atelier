@@ -5,7 +5,7 @@ export interface RollArtist { tag: string; weight: number; locked: boolean; excl
 /** 候选只记录本次抽到的画师与权重，不保存来源关系或代数。 */
 export interface RollTag { tag: string; weight: number }
 export interface RollRules { minArtists: number; maxArtists: number; minWeight: number; maxWeight: number }
-export interface RollTemplate { prompt: string; negativePrompt: string; params: NAIParams }
+export interface RollTemplate { prompt: string; negativePrompt: string; characterPrompt?: string; params: NAIParams }
 /** 本轮随机哪些维度；固定权重用 rules.minWeight === maxWeight 表达，不另存数值。 */
 export type RollDrawMode = 'random' | 'pinnedArtists' | 'fixedWeight';
 export interface RollDrawPlan {
@@ -50,9 +50,11 @@ export interface RollExperiment {
 }
 
 export const DEFAULT_ROLL_RULES: RollRules = { minArtists: 3, maxArtists: 6, minWeight: 0.7, maxWeight: 1.4 };
-/** 新建记录的公共提示词：质量词在前、画师串居中、构图与年份收尾。 */
-export const DEFAULT_ROLL_PROMPT = 'masterpiece, very aesthetic, best quality, absurdres, highres, no text, {style}, 1girl, solo, upper body, simple background, looking at viewer, year 2025';
+/** 新建记录的公共提示词：质量词包围画师串，主体固定，细节与光影修饰，年份收尾。 */
+export const DEFAULT_ROLL_PROMPT = 'masterpiece, very aesthetic, best quality, absurdres, highres, no text, {style}, 1girl, solo, upper body, looking at viewer, intricate details, ultra-detailed, depth of field, shiny skin, realistic skin surface, cinematic lighting, simple background, year 2025';
 export const DEFAULT_ROLL_NEGATIVE = 'worst quality, lowres, bad quality, jpeg artifacts, very displeasing, logo, chromatic aberration, scan artifacts, film grain, artistic error, multiple views, dithering, halftone, too many watermarks, blank page, screentone, negative space, watermark, signature, bad anatomy, bad hands, blurry';
+/** 历史默认模板：仍原样保存且没有候选时升级为新默认，用户改过的内容不动。 */
+export const LEGACY_ROLL_PROMPTS = ['{style}, 1girl, solo, upper body, simple background, looking at viewer'];
 export const ROLL_CANDIDATE_LIMIT = 240;
 const tenth = (value: number) => Math.round(value * 10) / 10;
 const tagKey = (tag: string) => tag.trim().replaceAll('_', ' ').replace(/\s+/g, ' ').toLowerCase();
@@ -92,10 +94,19 @@ export const formatRollStyle = (tags: RollTag[]) => tags.map(item => `${item.wei
 export const rollSignature = (tags: RollTag[]) => JSON.stringify(tags.map(item => [tagKey(item.tag), tenth(item.weight)]).sort((a, b) => String(a[0]).localeCompare(String(b[0]))));
 export const rollSourceId = (experimentId: string) => `style-roll:${experimentId}`;
 export const rollCandidateModuleId = (candidateId: string) => `style-roll:${candidateId}`;
-export const rollPrompt = (template: RollTemplate, tags: RollTag[]) => template.prompt.replace('{style}', formatRollStyle(tags));
+/** 画师串后紧跟独立的角色提示词；模板可用 {character} 指定位置。 */
+export const rollPrompt = (template: RollTemplate, tags: RollTag[]) => {
+  const style = formatRollStyle(tags), character = template.characterPrompt?.trim() || '';
+  if (template.prompt.includes('{character}')) return template.prompt.replace('{character}', character).replace('{style}', style);
+  if (!character) return template.prompt.replace('{style}', style);
+  return template.prompt.replace('{style}', `${style}, ${character}`);
+};
 
 export function validateRollTemplate(template: RollTemplate): void {
+  const character = template?.characterPrompt;
   if (!template || typeof template.prompt !== 'string' || template.prompt.length > 32000 || template.prompt.split('{style}').length !== 2 ||
+    template.prompt.split('{character}').length > 2 ||
+    (character !== undefined && typeof character !== 'string') || (typeof character === 'string' && character.length > 32000) ||
     typeof template.negativePrompt !== 'string' || template.negativePrompt.length > 32000) throw new Error('公共提示词需要且只能包含一个 {style} 占位符');
   const p = template.params;
   if (!p || typeof p.model !== 'string' || !/^nai-diffusion-(?:4|4-5|5)-/.test(p.model) || p.model.endsWith('-inpainting') ||

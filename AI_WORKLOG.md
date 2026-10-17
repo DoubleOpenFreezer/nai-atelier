@@ -6,6 +6,9 @@
 
 ## 2026-10-18
 
+- **DeepSeek Harness（deepseek-flash）**：按反馈把抽取方式分成两层：新建/编辑记录的配置弹层里设「默认抽取方式」，本轮设置里改的是临时覆盖，只写入轮次快照、不再改写记录默认；同时让「本轮设置」按钮显示文字（原来只有一个箭头，找不到入口）（feat: separate default and per-round draw modes）。
+- **DeepSeek Harness（deepseek-flash）**：按需求给 Roll 候选加「新建记录 · 只抽权重」：复制当前模板、固定 Seed、画师覆盖项与权重范围，新记录的抽取方式设为固定该候选的画师集合，后续每轮只随机权重；补译文与页面断言（feat: create a weights-only record from a roll candidate）。
+- **DeepSeek Harness（deepseek-flash）**：按反馈把 Roll 模板的角色描述拆成独立「角色提示词」字段，自动接在画师串之后并支持 `{character}` 占位，避免在公共提示词里手动找位置；补校验、译文与定向测试（feat: add a dedicated character prompt to roll templates）。
 - **DeepSeek Harness（deepseek-flash）**：按反馈把 Roll 卡片画师标签扩到两行（最多 6 个），底栏留出第二行间距，非磨砂布局同步调整瀑布流高度估算（style: show two rows of artist badges on roll cards）。
 - **DeepSeek Harness（deepseek-flash）**：按现场反馈补 Roll 串的生成与文案体验：生成时在本轮第一张未出图封面显示流式步骤预览（受既有「生成过程预览」设置控制）；统计本地 898 条风格串后，把新建记录的默认提示词换成常用的质量词 + 标准负面组合，并在「提示词与生成设置」加「套用常用质量词」；卡片画师标签缩小为 text-micro 并接入现有磨砂徽章样式。同步译文、CHANGELOG 与定向测试（feat: add roll streaming preview, quality defaults and compact frosted badges）。
 - **DeepSeek Harness（deepseek-flash）**：按用户要求给 Roll 串补上系统化的抽取控制：三种抽取方式（全随机／固定画师／固定权重）、组队弹层（抽卡、重抽、踢出、补抽、从画师库添加、手填）、全局屏蔽名单（独立私人设置，跨记录生效）、轮次条件快照与「沿用这轮条件」、记录概览；同步抽取逻辑、Worker 校验、五语文案与文档，补服务／Worker／组件定向测试；随后按反馈给组队弹层补上图包样张封面，并新增「只抽有样张的画师」开关（图包与自建样张都算，显式锁定项保留），同步记录字段、轮次条件与文案；再按现场反馈把抽卡池统一到「实际可显示样张」并接上画师库的保守裁边预览，卡片改为竖版大图（feat: add draw modes, artist party and global blocklist to style roll）。

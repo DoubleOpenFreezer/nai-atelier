@@ -19395,5 +19395,15 @@
   "可用 {0} 位有样张画师": ["可用 {0} 位有樣張畫師", "{0} sampled artists available", "サンプルありの絵師 {0} 人", "샘플 있는 작가 {0}명 사용 가능"],
   "没有可用的样张画师": ["沒有可用的樣張畫師", "No sampled artists available", "サンプルありの絵師がいません", "사용 가능한 샘플 작가가 없습니다"],
   "生成预览": ["生成預覽", "Generation preview", "生成プレビュー", "생성 미리보기"],
-  "套用常用质量词": ["套用常用品質詞", "Apply common quality tags", "よく使う品質タグを適用", "자주 쓰는 품질 태그 적용"]
+  "套用常用质量词": ["套用常用品質詞", "Apply common quality tags", "よく使う品質タグを適用", "자주 쓰는 품질 태그 적용"],
+  "角色提示词（可选）": ["角色提示詞（選填）", "Character prompt (optional)", "キャラクタープロンプト（任意）", "캐릭터 프롬프트(선택)"],
+  "自动接在画师串之后；也可在公共提示词里用 {character} 指定位置": ["自動接在畫師串之後；也可在公共提示詞裡用 {character} 指定位置", "Appended after the artist string; place {character} in the shared prompt to position it yourself", "絵師の組み合わせの後に自動で付きます。公共プロンプトに {character} を置くと位置を指定できます", "작가 조합 뒤에 자동으로 붙습니다. 공용 프롬프트에 {character}를 두면 위치를 지정할 수 있습니다"],
+  "已把旧的默认提示词换成质量词模板，保存后生效。": ["已把舊的預設提示詞換成品質詞模板，儲存後生效。", "The old default prompt was replaced with the quality preset; save to apply.", "古い既定プロンプトを品質タグのテンプレートに置き換えました。保存すると反映されます。", "이전 기본 프롬프트를 품질 태그 템플릿으로 바꿨습니다. 저장하면 적용됩니다."],
+  "{0} · 权重": ["{0} · 權重", "{0} · weights", "{0} · 重み", "{0} · 가중치"],
+  "已新建记录，之后每轮只抽权重": ["已新建記錄，之後每輪只抽權重", "New record created; later rounds roll weights only", "新しい記録を作成しました。以降は重みのみ抽選します", "새 기록을 만들었습니다. 이후에는 가중치만 추첨합니다."],
+  "新建记录 · 只抽权重": ["新建記錄 · 只抽權重", "New record · weights only", "新規記録 · 重みのみ", "새 기록 · 가중치만"],
+  "默认抽取方式": ["預設抽取方式", "Default draw mode", "既定の抽選方法", "기본 추첨 방식"],
+  "之后每轮默认使用；在「本轮设置」里可以临时改。": ["之後每輪預設使用；在「本輪設定」裡可以臨時改。", "Used by later rounds; override it temporarily in Round settings.", "以降のラウンドで既定として使われます。「ラウンド設定」で一時的に変更できます。", "이후 라운드에 기본으로 사용됩니다. 「라운드 설정」에서 임시로 바꿀 수 있습니다."],
+  "本轮抽取方式": ["本輪抽取方式", "This round draw mode", "今回の抽選方法", "이번 라운드 추첨 방식"],
+  "只影响本轮；默认方式在「提示词与生成设置」里改。": ["只影響本輪；預設方式在「提示詞與生成設定」裡改。", "Affects this round only; change the default in Prompt and generation settings.", "このラウンドのみに適用されます。既定は「プロンプトと生成設定」で変更します。", "이번 라운드에만 적용됩니다. 기본값은 「프롬프트 및 생성 설정」에서 변경하세요."]
 }

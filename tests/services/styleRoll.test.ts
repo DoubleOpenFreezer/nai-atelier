@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { candidateFixture, rollFixture, seededRandom } from '../fixtures/styleRoll';
-import { formatRollStyle, mergeRollArtists, parseRollArtists, resolveRollArtists, rollCandidates, rollCandidateToChain, rollSignature, validateRollExperiment, validateRollRules, validateRollTemplate } from '../../services/styleRoll';
+import { formatRollStyle, mergeRollArtists, parseRollArtists, resolveRollArtists, rollCandidates, rollCandidateToChain, rollPrompt, rollSignature, validateRollExperiment, validateRollRules, validateRollTemplate } from '../../services/styleRoll';
 
 describe('Roll 串画师与规则', () => {
   it('完整词库不受手填1000项限制，覆盖项按名称去重且锁定／排除优先', () => {
@@ -118,6 +118,14 @@ describe('抽取方式', () => {
 });
 
 describe('风格串保存', () => {
+  it('角色提示词跟随画师串，并支持模板内 {character} 占位', () => {
+    const e = rollFixture(); e.candidates = [candidateFixture('a')];
+    const style = formatRollStyle(e.candidates[0].tags);
+    expect(rollPrompt({ ...e.template, characterPrompt: 'miku, twintails' }, e.candidates[0].tags)).toBe(`${style}, miku, twintails, synthetic subject`);
+    expect(rollPrompt({ ...e.template, prompt: '{style}, {character}, landscape', characterPrompt: 'miku' }, e.candidates[0].tags)).toBe(`${style}, miku, landscape`);
+    expect(rollPrompt({ ...e.template, characterPrompt: '  ' }, e.candidates[0].tags)).toBe(`${style}, synthetic subject`);
+    expect(() => validateRollTemplate({ ...e.template, prompt: '{style} {character} {character}' })).toThrow();
+  });
   it('风格串保存保留完整配置和真实 Seed，独立深拷贝角色参数', () => {
     const e = rollFixture(); e.template.params.characters = [{ id: 'role', prompt: 'subject', negativePrompt: 'negative role', x: 0.5, y: 0.5 }];
     e.candidates = [candidateFixture('alpha')]; const saved = rollCandidateToChain(e, e.candidates[0], '/api/assets/synthetic.png');

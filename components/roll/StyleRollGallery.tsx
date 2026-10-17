@@ -82,8 +82,9 @@ export const StyleRollGallery: React.FC<Props> = ({ experiment, candidates, imag
             {/* 右上角操作岛（分享 / 存为风格串） */}
             <div data-card-action="true" className="absolute right-2 top-2 z-20 flex flex-col items-center gap-1.5">
               {item && <ImageShareActions imageUrl={item.imageUrl} filename={`roll-${item.id}.png`} generationData={item} favorite={{ imageUrl: item.imageUrl, sourceType: 'history', sourceId: item.id }} notify={notify} variant="card" className="flex-col" />}
-              {!candidate.savedChainId && !candidate.archived && item && (
-                <button
+              {!candidate.archived && item && (candidate.savedChainId
+                ? <span aria-label={t('已保存画风 {0}', [index])} title={t('已保存到风格串')} className={`${IMAGE_CARD_ACTION_CLASS} inline-flex items-center justify-center rounded-full bg-emerald-600 text-white shadow-lg backdrop-blur-md`}><Check className="h-4 w-4" /></span>
+                : <button
                   type="button"
                   aria-label={t('保存画风 {0}', [index])}
                   title={t('存为风格串')}
@@ -118,7 +119,7 @@ export const StyleRollGallery: React.FC<Props> = ({ experiment, candidates, imag
       <div className="gallery-card-caption flex items-center justify-between px-3 py-2 gap-2 bg-white/95 dark:bg-gray-850/95 border-t border-gray-100 dark:border-gray-800" style={frosted ? { paddingBottom: '1.75rem' } : undefined}>
         <div className="flex flex-wrap items-center gap-1 overflow-hidden min-w-0 flex-1" title={candidate.tags.map(entry => `${entry.tag} (${entry.weight.toFixed(1)})`).join(', ')}>
           {candidate.tags.slice(0, 6).map((entry, entryIndex) => (
-            <span key={entry.tag} className="gallery-card-badge inline-flex items-center gap-1 rounded-md bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 text-micro font-medium text-gray-700 dark:text-gray-200 truncate max-w-[112px] border border-gray-200/50 dark:border-gray-700/50">
+            <span key={entry.tag} className="gallery-card-badge inline-flex items-center gap-1 rounded-md bg-gray-100 dark:bg-gray-800 px-1 py-0.5 text-micro font-medium text-gray-700 dark:text-gray-200 truncate max-w-[96px] border border-gray-200/50 dark:border-gray-700/50">
               <span className={`inline-block h-1 w-1 shrink-0 rounded-full ${ACCENT_COLORS[entryIndex % ACCENT_COLORS.length].split(' ')[0]}`} />
               <span className="truncate">{entry.tag}</span>
               <span className="font-mono text-micro opacity-60 font-semibold">{entry.weight.toFixed(1)}</span>
@@ -129,16 +130,6 @@ export const StyleRollGallery: React.FC<Props> = ({ experiment, candidates, imag
               +{candidate.tags.length - 6}
             </span>
           )}
-        </div>
-
-        <div className="flex shrink-0 items-center gap-1.5">
-          {candidate.savedChainId && (
-            <span aria-label={t('已保存画风 {0}', [index])} title={t('已保存到风格串')} className="gallery-card-badge flex items-center gap-0.5 rounded-full bg-emerald-50 px-1.5 py-0.5 text-micro font-semibold text-emerald-600 dark:bg-emerald-950/50 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
-              <Check className="h-2.5 w-2.5" />
-              <span>{t('已保存')}</span>
-            </span>
-          )}
-          <span className="gallery-card-meta font-mono text-micro text-gray-400">#{index}</span>
         </div>
       </div>
     </PressRevealSurface>;
