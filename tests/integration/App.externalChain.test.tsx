@@ -10,7 +10,7 @@ import { consumeEditorSessionDiscarded } from '../../services/labWorkspace';
 import type { ConfirmDialogOptions } from '../../components/ConfirmDialog';
 
 const mocks = vi.hoisted(() => ({
-  getMe: vi.fn(), getAllChains: vi.fn(), getAllArtists: vi.fn(), getAllInspirations: vi.fn(),
+  getMe: vi.fn(), getAllChains: vi.fn(), getAllInspirations: vi.fn(),
   createChain: vi.fn(), createChainWithData: vi.fn(), deleteChain: vi.fn(),
   confirm: vi.fn(), save: vi.fn(), canSave: true, bulkProgress: vi.fn(), bulkResult: vi.fn(),
 }));
@@ -19,7 +19,7 @@ vi.mock('../../services/collectorAppearance', () => ({ useCollectorAppearance: (
 vi.mock('../../components/ConfirmDialog', () => ({ useConfirmDialog: () => mocks.confirm }));
 vi.mock('../../components/Layout', () => ({ Layout: ({ children, onNavigate, currentView, toast }: any) => <>
   <div data-testid="view">{currentView}</div>
-  {['aitag', 'inspiration', 'list', 'roll'].map(view => <button key={view} onClick={() => onNavigate(view)}>{view}</button>)}
+  {['aitag', 'inspiration', 'list', 'roll', 'library'].map(view => <button key={view} onClick={() => onNavigate(view)}>{view}</button>)}
   {toast && <div role="status" data-type={toast.type}>{toast.message}</div>}{children}
 </> }));
 vi.mock('../../components/ChainList', () => ({ ChainList: ({ chains, onDelete, onBulkDelete, onReloadTags, onSelect, notify }: { chains: PromptChain[]; onDelete: (id: string) => Promise<void>; onBulkDelete?: (ids: string[], onProgress: (completed: number) => void) => Promise<unknown>; onReloadTags?: () => Promise<void>; onSelect: (id: string) => void; notify: (message: string, type?: string) => void }) => <div data-testid="list">{chains.map(chain => chain.id).join(',')}{onReloadTags && <button onClick={async () => {
@@ -52,13 +52,14 @@ const ExternalGallery = ({ onCreateArtistChain, onImportRefresh, notify }: any) 
   catch (error: any) { notify(error.message, 'error'); }
 }}>回读合成导入图片</button>}</>;
 vi.mock('../../components/AitagGallery', () => ({ AitagGallery: (props: any) => <ExternalGallery {...props} /> }));
+vi.mock('../../components/ArtistLibrary', () => ({ ArtistLibrary: (props: any) => <div data-testid="artist-library" data-legacy-prop={String(Object.hasOwn(props, 'artistsData'))}>画师词库</div> }));
 vi.mock('../../components/InspirationGallery', () => ({ InspirationGallery: (props: any) => <><div data-testid="collection-items" data-module-order={JSON.stringify(props.labModuleOrder)}>{(props.inspirationsData || []).filter((item: any) => !item.archived).map((item: any) => item.title).join(',')}</div><ExternalGallery {...props} /></> }));
 vi.mock('../../components/StyleRollPage', () => ({ StyleRollPage: ({ onSaveChain, onNavigateToPlayground, chains }: any) => <div><span data-testid="roll-chains">{chains.map((chain: PromptChain) => chain.id).join(',')}</span><button onClick={() => void onSaveChain(source)}>保存 Roll 候选</button><button onClick={onNavigateToPlayground}>Roll 送往实验室</button></div> }));
 
 beforeEach(() => {
   vi.clearAllMocks(); localStorage.clear(); sessionStorage.clear();
   mocks.getMe.mockResolvedValue({ id: 'owner', username: '合成用户', role: 'admin' });
-  mocks.getAllChains.mockResolvedValue([]); mocks.getAllArtists.mockResolvedValue([]); mocks.getAllInspirations.mockResolvedValue([]);
+  mocks.getAllChains.mockResolvedValue([]); mocks.getAllInspirations.mockResolvedValue([]);
   mocks.createChain.mockResolvedValue(saved.id); mocks.createChainWithData.mockResolvedValue(saved);
   mocks.deleteChain.mockResolvedValue(undefined);
   mocks.canSave = true;
@@ -76,6 +77,16 @@ const setup = async (entry = 'aitag') => {
   fireEvent.click(screen.getByRole('button', { name: entry }));
   await screen.findByRole('button', { name: '保存合成作品' });
 };
+
+it('进入画师库和资料变更刷新不读取旧artists表，也不向页面传入旧画师资料', async () => {
+  await setup();
+  fireEvent.click(screen.getByRole('button', { name: 'library' }));
+  expect((await screen.findByTestId('artist-library')).getAttribute('data-legacy-prop')).toBe('false');
+  expect(screen.queryByText('画师库加载失败，请稍后重试')).toBeNull();
+  await act(async () => window.dispatchEvent(new Event('nai-project-data-changed')));
+  await waitFor(() => expect(mocks.getAllChains).toHaveBeenCalledTimes(2));
+  expect(screen.queryByText('画师库加载失败，请稍后重试')).toBeNull();
+});
 
 it('Roll 页面保存加入同一风格串列表并停留原页，实验室返回可回到 Roll', async () => {
   await setup(); fireEvent.click(screen.getByRole('button', { name: 'roll' }));

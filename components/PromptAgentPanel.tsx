@@ -60,7 +60,9 @@ const toolLabels: Record<string, string> = {
   search_aitag: '搜索 AITag', get_aitag_work: '读取 AITag 作品',
   update_vibe: '更新 Vibe', update_character_reference: '更新角色参考', save_vibe_group: '保存 Vibe 组合', request_vibe_encoding: '准备 Vibe 编码',
   get_project_settings: '读取项目设置', set_anlas_budget: '设置 Anlas 预算', set_cloud_queue: '设置拼车队列',
-  update_tag_dictionary: '更新 Tag 词库', manage_aitag: '管理 AITag', set_client_preferences: '调整界面偏好', manage_artist_favorite: '管理画师收藏', navigate_view: '切换页面', set_chain_cover_from_history: '设置风格串封面',
+  update_tag_dictionary: '更新 Tag 词库', manage_aitag: '管理 AITag', set_client_preferences: '调整界面偏好', navigate_view: '切换页面', set_chain_cover_from_history: '设置风格串封面',
+  // 仅供旧会话回执显示，运行时不再提供此工具。
+  manage_artist_favorite: '管理画师收藏',
 };
 
 const renderInlineMarkdown = (value: string, keyPrefix: string): React.ReactNode[] => {
@@ -690,13 +692,11 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
     const controller = new AbortController();
     try {
       const imageDisplay = getMobileImageDisplayPreferences();
-      let artistFavorites: string[] = [];
-      try { artistFavorites = JSON.parse(localStorage.getItem('nai_fav_artists') || '[]'); } catch { /* ignore damaged browser preference */ }
       await promptAgentCoordinator.run({ apiKey: props.apiKey, sessionId: activeSessionId, message: prompt, mode: effectiveMode, images: effectiveMode === 'prompt' ? attachments.map(({ data, mimeType }) => ({ data, mimeType })) : [], draft: props.draft, context: { clientSettings: {
         language: getLanguage(),
         currentPage: (() => { const page = readAgentPage(); return { view: page.view, title: page.title, snapshotId: page.snapshotId, capturedAt: page.capturedAt }; })(),
         themeMode: localStorage.getItem('nai_theme') || 'system', safeMode: localStorage.getItem('nai_safe_mode') === 'true', safeModeStartup: localStorage.getItem('nai_safe_mode_startup') !== 'false',
-        imageLayout: imageDisplay.layout, imageColumns: imageDisplay.columns, mobileCache: getMobileCacheStats(), novelAiKeyConfigured: Boolean(props.apiKey), artistFavorites: Array.isArray(artistFavorites) ? artistFavorites.slice(0, 2000) : [],
+        imageLayout: imageDisplay.layout, imageColumns: imageDisplay.columns, mobileCache: getMobileCacheStats(), novelAiKeyConfigured: Boolean(props.apiKey),
         timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         autoShowGenerated: displayPreferences.autoShowGenerated,
         tagAssistEnabled: props.tagAssistEnabled, splitPromptFields: props.splitPromptFields ?? false,
@@ -737,13 +737,6 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
             }
             if (patch.mobileCacheLimit !== undefined) setMobileCacheLimitMb(patch.mobileCacheLimit);
             window.dispatchEvent(new CustomEvent('nai-agent-ui-preferences', { detail: patch }));
-          } else if (event.action.kind === 'manage_artist_favorite') {
-            let favorites: string[] = [];
-            try { favorites = JSON.parse(localStorage.getItem('nai_fav_artists') || '[]'); } catch { /* ignore damaged browser preference */ }
-            const next = new Set(Array.isArray(favorites) ? favorites : []);
-            if (event.action.patch.favorite) next.add(event.action.patch.name); else next.delete(event.action.patch.name);
-            localStorage.setItem('nai_fav_artists', JSON.stringify([...next]));
-            window.dispatchEvent(new CustomEvent('nai-agent-artist-favorites-change'));
           } else if (event.action.kind === 'navigate_view') {
             navigationTarget = event.action.patch;
           } else {

@@ -792,6 +792,7 @@ test('prompt agent exposes project settings without exposing API keys', async ()
   assert.deepEqual(calls, ['/api/anlas-budget']);
   assert.equal('benchmarkConfig' in payload, false);
   assert.equal(tools.some(item => item.name === 'set_artist_benchmark_config'), false);
+  assert.equal(tools.some(item => item.name === 'manage_artist_favorite'), false);
 });
 
 test('NovelAI generation uses the computer outbound proxy transport', async () => {

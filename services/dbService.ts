@@ -1,5 +1,5 @@
 
-import { PromptChain, Artist, Inspiration, InspirationBoard, User, ChainType } from '../types';
+import { PromptChain, Inspiration, InspirationBoard, User, ChainType } from '../types';
 import { api } from './api';
 import { normalizeChainTags } from './chainTags';
 import { normalizeCollectionTagNames } from './inspirationUtils';
@@ -77,19 +77,6 @@ class DBService {
 
   async deleteChain(id: string): Promise<void> {
     await api.delete(`/chains/${id}`);
-  }
-
-  // --- Artists ---
-  async getAllArtists(): Promise<Artist[]> {
-    return await api.get('/artists');
-  }
-
-  async saveArtist(artist: Artist): Promise<void> {
-    await api.post('/artists', artist);
-  }
-
-  async deleteArtist(id: string): Promise<void> {
-    await api.delete(`/artists/${id}`);
   }
 
   // --- Inspirations ---

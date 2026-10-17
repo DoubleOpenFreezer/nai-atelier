@@ -112,8 +112,10 @@ it('自定义角色图片操作不选择或打开条目，手机与桌面预览�
 });
 const entriesFor = (kind: Kind) => kind === 'artist' ? fixtures.artists : fixtures.characters;
 const getEntriesFor = (kind: Kind) => kind === 'artist' ? getArtistDictionaryEntriesAt : getCharacterDictionaryEntriesAt;
-const favoritesKey = (kind: Kind) => kind === 'artist' ? 'nai_fav_artists' : 'nai_character_favorites';
-const favoriteId = (kind: Kind, name: string) => kind === 'artist' ? name : `catalog:${name}`;
+const seedFavorites = (kind: Kind, names: string[]) => {
+  if (kind === 'character') localStorage.setItem('nai_character_favorites', JSON.stringify(names.map(name => `catalog:${name}`)));
+  else names.forEach(name => fixtures.favorites.set(`artist:${name}`, { sourceType: 'artist', sourceId: name, archived: false }));
+};
 
 function renderLibrary(kind: Kind, width = 1280, chains: PromptChain[] = [], selectionFocusEnabled = true) {
   vi.stubGlobal('innerWidth', width);
@@ -124,7 +126,7 @@ function renderLibrary(kind: Kind, width = 1280, chains: PromptChain[] = [], sel
   const onUpdateChain = vi.fn();
   const onDelete = vi.fn(async (_id: string) => {});
   const view = kind === 'artist'
-    ? render(<ArtistLibrary artistsData={[]} selectionFocusEnabled={selectionFocusEnabled} notify={notify} onNavigateToPlayground={navigate} />)
+    ? render(<ArtistLibrary selectionFocusEnabled={selectionFocusEnabled} notify={notify} onNavigateToPlayground={navigate} />)
     : render(<CharacterLibrary chains={chains} selectionFocusEnabled={selectionFocusEnabled} onCreate={onCreate} onSelect={onSelect} onDelete={onDelete} onUpdateChain={onUpdateChain} onNavigateToPlayground={navigate} notify={notify} />);
   return { ...view, navigate, onCreate, onSelect, onUpdateChain, onDelete, notify };
 }
@@ -331,7 +333,7 @@ describe.each<Kind>(['artist', 'character'])('%s 目录只负责 Tag 取用', ki
 
   it('抽卡后收藏筛选退出抽卡，并显示完整收藏清单', async () => {
     const entry = entriesFor(kind)[0];
-    localStorage.setItem(favoritesKey(kind), JSON.stringify([favoriteId(kind, entry.name)]));
+    seedFavorites(kind, [entry.name]);
     renderLibrary(kind);
     await screen.findByTestId(`cover-${entry.name}`);
     fireEvent.click(screen.getByRole('button', { name: '随机抽卡' }));
@@ -351,7 +353,7 @@ describe.each<Kind>(['artist', 'character'])('%s 目录只负责 Tag 取用', ki
 
   it('收藏的名称与热度排序作用于实际卡片', async () => {
     const entries = entriesFor(kind);
-    localStorage.setItem(favoritesKey(kind), JSON.stringify(entries.map(entry => favoriteId(kind, entry.name))));
+    seedFavorites(kind, entries.map(entry => entry.name));
     renderLibrary(kind);
     await screen.findByTestId(`cover-${entries[0].name}`);
     fireEvent.click(screen.getByRole('button', { name: '筛选' }));

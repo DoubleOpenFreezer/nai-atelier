@@ -69,7 +69,7 @@ afterEach(() => {
 
 describe('资料目录工具栏行为', () => {
   it('画师排序仍作用于目录，测试与管理入口已移除', async () => {
-    render(<ArtistLibrary artistsData={[]} notify={vi.fn()} />);
+    render(<ArtistLibrary notify={vi.fn()} />);
     await waitFor(() => expect(getArtistDictionaryPage).toHaveBeenCalledWith(0, 'popular'));
     fireEvent.click(screen.getByRole('button', { name: '筛选' }));
     fireEvent.change(screen.getByRole('combobox', { name: '画师排序' }), { target: { value: 'name-desc' } });

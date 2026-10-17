@@ -6,7 +6,6 @@ import { useImageRatios } from './useImageRatios';
 import { appearanceScrollBehavior } from '../services/appearancePreferences';
 
 import React, { useContext, useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { Artist } from '../types';
 import { compareLibraryTags } from '../services/tagLibrary';
 import { IMPORT_SESSION_KEY } from '../services/metadataService';
 import { TagSelectionBar } from './TagSelectionBar';
@@ -32,15 +31,13 @@ interface CartItem {
 
 interface ArtistLibraryProps {
     selectionFocusEnabled?: boolean;
-    // 既有画师资料保留；指定模型的样张由本地图包与自建资料提供。
-    artistsData: Artist[] | null;
     notify: (msg: string, type?: 'success' | 'error') => void;
     onNavigateToPlayground?: () => void;
 }
 
 type ArtistGachaMode = 'mixed' | 'uniform' | 'popular';
 
-export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, notify, onNavigateToPlayground, selectionFocusEnabled = true }) => {
+export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ notify, onNavigateToPlayground, selectionFocusEnabled = true }) => {
   useLanguage();
     const [samplePack, setSamplePack] = useState<ArtistSamplePack>(() => localStorage.getItem('nai_artist_sample_pack') === 'v5' ? 'v5' : 'v45');
     const [sampleSettings, setSampleSettings] = useState<{ tag: string; pack: ArtistSamplePack; enterAfterSave: boolean } | null>(null);
@@ -76,7 +73,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, notif
     const [artistRatios, updateImageRatio] = useImageRatios();
     const frostedCaption = useGalleryFrostedCaption();
     const estimateArtistCardHeight = React.useCallback((artist: (typeof filteredArtists)[number], columnWidth: number) => {
-      const ratio = artistRatios[artist.id] || 2 / 3;
+      const ratio = artistRatios[artist.name] || 2 / 3;
       const imageHeight = Math.max(1, columnWidth) / Math.max(0.1, ratio);
       return imageHeight + (frostedCaption ? 2 : 78);
     }, [artistRatios, frostedCaption]);
@@ -87,7 +84,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, notif
 
                             return (
                                 <PressRevealSurface
-                                    key={artist.id}
+                                    key={artist.name}
                                     data-gallery-work-id={artist.name}
                                     data-safe-mode-work="true"
                                     role="button"
@@ -102,20 +99,19 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, notif
                                         event.preventDefault(); toggleCart(artist.name);
                                     }}
                                 >
-                                    <div className={`${hasSample ? 'mobile-gallery-frame md:aspect-[2/3]' : 'h-32'} relative overflow-hidden bg-gray-200 dark:bg-gray-900`} style={{ '--mobile-image-ratio': artistRatios[artist.id] ? `${Math.round(artistRatios[artist.id] * 1000)} / 1000` : '2 / 3' } as React.CSSProperties}>
+                                    <div className={`${hasSample ? 'mobile-gallery-frame md:aspect-[2/3]' : 'h-32'} relative overflow-hidden bg-gray-200 dark:bg-gray-900`} style={{ '--mobile-image-ratio': artistRatios[artist.name] ? `${Math.round(artistRatios[artist.name] * 1000)} / 1000` : '2 / 3' } as React.CSSProperties}>
                                         <ArtistSampleCover
                                             tag={artist.name}
                                             pack={samplePack}
                                             revision={sampleCatalog?.pack === samplePack ? sampleCatalog.revision : ''}
                                             hasPackSample={packArtistNames.has(artist.name)}
                                             ownSamples={artistOwnSamples}
-                                            alt={artist.chineseName || artist.name}
+                                            alt={artist.chinese || artist.name}
                                             onSupplement={() => supplementSample(artist.name)}
                                             onSettings={() => setSampleSettings({ tag: artist.name, pack: samplePack, enterAfterSave: false })}
                                             imageClassName={imageDisplay.layout === 'masonry' ? 'h-full w-full object-contain' : undefined}
                                             notify={notify}
-                                            onFavoriteChange={() => toggleFav(artist, undefined, collectionSnapshot().some(item => item.sourceType === 'artist' && item.sourceId === artist.name && !item.archived))}
-                                            onImageLoad={(width, height) => updateImageRatio(artist.id, width, height)}
+                                            onImageLoad={(width, height) => updateImageRatio(artist.name, width, height)}
                                         />
                                         {isSelected && (
                                             <div className="absolute inset-0 border-4 border-indigo-500/80 pointer-events-none" />
@@ -123,7 +119,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, notif
                                     </div>
                                     <div className="gallery-card-caption p-2 md:p-3 bg-white dark:bg-gray-800 text-center border-t border-gray-100 dark:border-gray-700">
                                         <div data-safe-mode-title="true" className={`text-xs md:text-sm font-bold truncate ${isSelected ? 'text-indigo-600' : 'text-gray-700 dark:text-gray-300'}`}>{isSelected && <Check aria-hidden="true" className="mr-1 inline h-3 w-3" strokeWidth={4} />}{artist.name}</div>
-                                        {artist.chineseName && <div data-safe-mode-title="true" className="mt-0.5 truncate text-micro text-gray-400" title={artist.chineseName}>{artist.chineseName}</div>}
+                                        {artist.chinese && <div data-safe-mode-title="true" className="mt-0.5 truncate text-micro text-gray-400" title={artist.chinese}>{artist.chinese}</div>}
                                         {typeof artist.postCount === 'number' && <div className="gallery-card-meta mt-0.5 text-micro font-mono text-gray-500" title={t("Danbooru 关联作品数")}>{t("作品 {0}", [artist.postCount.toLocaleString(getLanguage())])}</div>}
                                     </div>
                                 </PressRevealSurface>
@@ -134,12 +130,6 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, notif
     const [cart, setCart] = useState<CartItem[]>([]);
     const [focusedName, setFocusedName] = useState<string | null>(null);
     const [favorites, setFavorites] = useState<Set<string>>(new Set());
-    // 收藏画师的展示快照（中文名/作品数）：词库画师是无限分页加载的，"只看收藏"若只在
-    // 已加载子集里过滤，未加载页的收藏将永远不可见。收藏时落一份快照，筛选时按收藏清单渲染。
-    const [favoriteArtistDetails, setFavoriteArtistDetails] = useState<Record<string, { name?: string; chinese?: string; postCount?: number }>>(() => {
-        try { return JSON.parse(localStorage.getItem('nai_artist_favorite_details') || '{}'); }
-        catch { return {}; }
-    });
     const [showFavOnly, setShowFavOnly] = useState(false);
     const [usePrefix, setUsePrefix] = useState(true);
     const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -220,30 +210,8 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, notif
     // View Settings
     const gridCols = useMasonryColumnCount(imageDisplay, undefined, scrollContainerRef);
     useEffect(() => {
-        const syncAgentFavorites = () => {
-            try {
-                const saved = JSON.parse(localStorage.getItem('nai_fav_artists') || '[]');
-                setFavorites(new Set(Array.isArray(saved) ? saved : []));
-            } catch { setFavorites(new Set()); }
-        };
-        window.addEventListener('nai-agent-artist-favorites-change', syncAgentFavorites);
-        return () => window.removeEventListener('nai-agent-artist-favorites-change', syncAgentFavorites);
-    }, []);
-
-    // 只读取浏览偏好；本页不读取 Key 或生成配置。
-    useEffect(() => {
-        // localStorage 可能被并发写入损坏（如 Agent 面板写 nai_fav_artists），解析失败时回退为空
-        const savedFav = localStorage.getItem('nai_fav_artists');
-        if (savedFav) {
-            try {
-                const parsed = JSON.parse(savedFav);
-                setFavorites(new Set(Array.isArray(parsed) ? parsed : []));
-            } catch { setFavorites(new Set()); }
-        }
-
         const savedPrefix = localStorage.getItem('nai_use_prefix');
         if (savedPrefix !== null) setUsePrefix(savedPrefix === 'true');
-
     }, []);
 
     const loadNextCatalogPage = useCallback(async () => {
@@ -303,7 +271,7 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, notif
     }, [artistSort]);
 
     useEffect(() => {
-        const query = onlySamples ? '' : searchTerm.trim();
+        const query = onlySamples || showFavOnly ? '' : searchTerm.trim();
         const requestId = ++catalogSearchRequestRef.current;
         if (!query) {
             setCatalogSearchResults([]);
@@ -327,49 +295,19 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, notif
                 });
         }, 180);
         return () => window.clearTimeout(timer);
-    }, [artistSort, searchTerm, onlySamples]);
+    }, [artistSort, searchTerm, onlySamples, showFavOnly]);
 
     const hasMoreSamples = (showFavOnly ? sampledArtists.filter(entry => favorites.has(entry.name)).length : sampledArtists.length) > sampleLimit;
-    const hasMoreVisible = onlySamples ? hasMoreSamples : hasMoreCatalog;
+    const hasMoreVisible = onlySamples ? hasMoreSamples : !showFavOnly && hasMoreCatalog;
     const loadMore = () => { if (onlySamples) setSampleLimit(current => current + 100); else void loadNextCatalogPage(); };
     useGalleryLoadMore(scrollContainerRef, catalogSentinelRef, !searchTerm.trim() && !gachaArtists && hasMoreVisible, loadMore, '800px 0px');
 
-  useEffect(() => {
-    const sync = () => setFavorites(previous => {
-      const next = new Set(previous);
-      const groups = new Map<string, boolean>();
-      for (const item of collectionSnapshot()) {
-        if (!["artist"].includes(item.sourceType || '') || !item.sourceId) continue;
-        const id = item.sourceId!;
-        groups.set(id, Boolean(groups.get(id) || !item.archived));
-      }
-      groups.forEach((active, id) => active ? next.add(id) : next.delete(id));
-      return next;
-    });
-    sync(); return subscribeCollection(sync);
-  }, []);
-
-    const toggleFav = (artist: Artist, e?: React.MouseEvent, active?: boolean) => {
-        e?.stopPropagation();
-        const wasFavorite = !(active ?? !favorites.has(artist.name));
-        const newFav = new Set(favorites);
-        if (wasFavorite) newFav.delete(artist.name);
-        else newFav.add(artist.name);
-        setFavorites(newFav);
-        localStorage.setItem('nai_fav_artists', JSON.stringify(Array.from(newFav)));
-        setFavoriteArtistDetails(previous => {
-            if (wasFavorite) {
-                if (!(artist.name in previous)) return previous;
-                const next = { ...previous };
-                delete next[artist.name];
-                try { localStorage.setItem('nai_artist_favorite_details', JSON.stringify(next)); } catch { /* 配额满时保留会话内状态 */ }
-                return next;
-            }
-            const next = { ...previous, [artist.name]: { name: artist.name, chinese: artist.chineseName, postCount: artist.postCount } };
-            try { localStorage.setItem('nai_artist_favorite_details', JSON.stringify(next)); } catch { /* 配额满时保留会话内状态 */ }
-            return next;
-        });
-    };
+    useEffect(() => {
+        const sync = () => setFavorites(new Set(collectionSnapshot()
+            .filter(item => item.sourceType === 'artist' && !item.archived && item.sourceId)
+            .map(item => item.sourceId!)));
+        sync(); return subscribeCollection(sync);
+    }, []);
 
     const toggleCart = (name: string, e?: React.MouseEvent) => {
         if (e) e.stopPropagation();
@@ -405,127 +343,21 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, notif
         onNavigateToPlayground?.();
     };
 
-    const catalogArtistId = (name: string) => {
-        let hash = 2166136261;
-        for (let index = 0; index < name.length; index++) {
-            hash ^= name.charCodeAt(index);
-            hash = Math.imul(hash, 16777619);
-        }
-        return `catalog-${(hash >>> 0).toString(16)}`;
-    };
-
     const availableArtists = useMemo(() => {
-        const catalogEntries = onlySamples
-            ? (gachaArtists || sampledArtists.filter(entry => (!showFavOnly || favorites.has(entry.name)) && (!searchTerm.trim() || entry.name.toLowerCase().includes(searchTerm.trim().toLowerCase()) || entry.chinese?.toLowerCase().includes(searchTerm.trim().toLowerCase())))).slice().sort((left, right) => compareLibraryTags(left, right, artistSort)).slice(0, gachaArtists ? gachaArtists.length : searchTerm.trim() ? 200 : sampleLimit)
-            : searchTerm.trim() ? catalogSearchResults : (gachaArtists || loadedCatalogArtists);
-        const persistedByName = new Map((artistsData || []).map(artist => [artist.name.toLowerCase(), artist]));
-        const included = new Set<string>();
-        const result: Artist[] = [];
+        if (onlySamples) return (gachaArtists || sampledArtists)
+            .filter(entry => (!showFavOnly || favorites.has(entry.name)) && (!searchTerm.trim() || entry.name.toLowerCase().includes(searchTerm.trim().toLowerCase()) || entry.chinese?.toLowerCase().includes(searchTerm.trim().toLowerCase())))
+            .slice().sort((left, right) => compareLibraryTags(left, right, artistSort))
+            .slice(0, gachaArtists ? gachaArtists.length : searchTerm.trim() ? 200 : sampleLimit);
+        // 收藏只筛选真实词库，全目录已读取，不从旧收藏快照补造条目或受已展示分页限制。
+        if (showFavOnly) return sampleDictionary.slice().sort((left, right) => compareLibraryTags(left, right, artistSort));
+        return searchTerm.trim() ? catalogSearchResults : (gachaArtists || loadedCatalogArtists);
+    }, [catalogSearchResults, gachaArtists, loadedCatalogArtists, searchTerm, onlySamples, sampledArtists, sampleDictionary, artistSort, showFavOnly, favorites, sampleLimit]);
 
-        for (const entry of catalogEntries) {
-            const key = entry.name.toLowerCase();
-            const persisted = persistedByName.get(key);
-            included.add(key);
-            result.push({
-                id: persisted?.id || catalogArtistId(entry.name),
-                name: entry.name,
-                imageUrl: persisted?.imageUrl || '',
-                previewUrl: persisted?.previewUrl,
-                benchmarks: persisted?.benchmarks || [],
-                chineseName: entry.chinese,
-                postCount: entry.postCount,
-                catalogOnly: !persisted
-            });
-        }
-
-        if (!gachaArtists && !onlySamples) {
-            for (const artist of [...(artistsData || [])].sort((a, b) => a.name.localeCompare(b.name))) {
-                const key = artist.name.toLowerCase();
-                if (included.has(key)) continue;
-                result.push({
-                    ...artist,
-                    catalogOnly: false
-                });
-            }
-        }
-
-        return result;
-    }, [artistsData, catalogSearchResults, gachaArtists, loadedCatalogArtists, searchTerm, onlySamples, sampledArtists, artistSort, showFavOnly, favorites, sampleLimit]);
-
-    // "只看收藏"（无搜索词、非抽卡）按收藏清单渲染：词库画师是无限分页加载的，
-    // 按"已加载子集"过滤会让未加载页的收藏永远显示不出来。优先取本地已保存画师，
-    // 其次取已加载词库条目，最后取收藏时落下的展示快照。
-    const favoriteArtists = useMemo(() => {
-        if (onlySamples || !showFavOnly || searchTerm.trim() || gachaArtists) return null;
-        const persistedByName = new Map((artistsData || []).map(artist => [artist.name.toLowerCase(), artist]));
-        const loadedByName = new Map(loadedCatalogArtists.map(entry => [entry.name, entry]));
-        const result: Artist[] = [];
-        for (const name of favorites) {
-            const key = name.toLowerCase();
-            const persisted = persistedByName.get(key);
-            const entry = loadedByName.get(name);
-            const snapshot = favoriteArtistDetails[name];
-            result.push({
-                id: persisted?.id || catalogArtistId(name),
-                name,
-                imageUrl: persisted?.imageUrl || '',
-                previewUrl: persisted?.previewUrl,
-                benchmarks: persisted?.benchmarks || [],
-                chineseName: entry?.chinese ?? snapshot?.chinese ?? persisted?.chineseName,
-                postCount: entry?.postCount ?? snapshot?.postCount ?? persisted?.postCount,
-                catalogOnly: !persisted,
-            });
-        }
-        return result.sort((left, right) => compareLibraryTags(left, right, artistSort));
-    }, [artistSort, artistsData, favoriteArtistDetails, gachaArtists, loadedCatalogArtists, searchTerm, showFavOnly, favorites, onlySamples]);
-
-    // 筛选结果保持稳定，收藏不受分页加载范围限制。
-    const filteredArtists = useMemo(() => {
-        if (favoriteArtists) return favoriteArtists;
-        return availableArtists.filter(a => {
-            if (showFavOnly && !favorites.has(a.name)) return false;
-            if (searchTerm) {
-                const query = searchTerm.toLowerCase();
-                return a.name.toLowerCase().includes(query) || a.chineseName?.toLowerCase().includes(query);
-            }
-            return true;
-        });
-    }, [availableArtists, favoriteArtists, showFavOnly, favorites, searchTerm]);
-
-    // 旧收藏没有展示快照：进入"只看收藏"时按名字向本地词库逐个检索补齐（串行 + 间隔，避免压垮词库读取）。
-    // 词库中已查不到的记一个仅含名字的快照，避免每次进入都重复检索。
-    useEffect(() => {
-        if (!showFavOnly || searchTerm.trim() || gachaArtists) return;
-        const missing = Array.from(favorites).filter(name => !favoriteArtistDetails[name]);
-        if (!missing.length) return;
-        let cancelled = false;
-        void (async () => {
-            for (const name of missing) {
-                if (cancelled) return;
-                try {
-                    const results = await searchArtistDictionary(name, 5, artistSort);
-                    if (cancelled) return;
-                    const entry = results.find(item => item.name === name)
-                        ?? results.find(item => item.name.toLowerCase() === name.toLowerCase());
-                    setFavoriteArtistDetails(previous => {
-                        if (previous[name] || cancelled) return previous;
-                        const next = {
-                            ...previous,
-                            [name]: entry
-                                ? { name: entry.name, chinese: entry.chinese, postCount: entry.postCount }
-                                : { name },
-                        };
-                        try { localStorage.setItem('nai_artist_favorite_details', JSON.stringify(next)); } catch { /* 配额满时保留会话内状态 */ }
-                        return next;
-                    });
-                } catch {
-                    return; // 词库检索失败：中止本轮，下次进入筛选时继续补
-                }
-                await new Promise(resolve => window.setTimeout(resolve, 120));
-            }
-        })();
-        return () => { cancelled = true; };
-    }, [showFavOnly, searchTerm, gachaArtists, favorites, favoriteArtistDetails, artistSort]);
+    const filteredArtists = useMemo(() => availableArtists.filter(artist => {
+        if (showFavOnly && !favorites.has(artist.name)) return false;
+        const query = searchTerm.toLowerCase();
+        return !query || artist.name.toLowerCase().includes(query) || artist.chinese?.toLowerCase().includes(query);
+    }), [availableArtists, showFavOnly, favorites, searchTerm]);
 
     // 抽卡只读取本地 Tag 目录，不触发生图。
 
@@ -638,11 +470,11 @@ export const ArtistLibrary: React.FC<ArtistLibraryProps> = ({ artistsData, notif
             <div ref={scrollContainerRef} onScroll={() => { selectionAnchor.onScroll(); onScrollRestore(); }} className="flex-1 overflow-y-auto p-4 md:p-6 pb-40 bg-gray-50 dark:bg-gray-900 scroll-smooth relative">
                 {onlySamples && !filteredArtists.length && <div role="status" className="py-12 text-center text-sm text-gray-400">{!sampleError && !sampleLoading && currentPackStatus?.phase === 'ready' && (!download || ['missing', 'ready'].includes(download.stage)) ? t('没有匹配的画师样张') : sampleStatusText}{sampleError && <button type="button" className="mobile-touch ml-2 rounded border border-gray-300 px-2 py-1 dark:border-gray-700" onClick={() => setSampleRefresh(current => current + 1)}>{t('重试')}</button>}</div>}
                 {imageDisplay.layout === 'masonry' ? (
-                    <ShortestColumnMasonry<Artist>
+                    <ShortestColumnMasonry<ArtistDictionaryEntry>
                         stableColumns
                         items={filteredArtists}
                         columns={gridCols}
-                        getItemKey={artist => String(artist.id)}
+                        getItemKey={artist => artist.name}
                         estimateItemHeight={estimateArtistCardHeight}
                         renderItem={renderArtistCard}
                     />

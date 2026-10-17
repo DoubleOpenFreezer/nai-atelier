@@ -18,7 +18,7 @@ import {
   saveAppearancePreferences,
   ThemeMode,
 } from './services/appearancePreferences';
-import { PromptChain, User, Artist, Inspiration, ChainType } from './types';
+import { PromptChain, User, Inspiration, ChainType } from './types';
 
 const ChainEditor = lazy(() => import('./components/ChainEditor').then(module => ({ default: module.ChainEditor })));
 const ArtistLibrary = lazy(() => import('./components/ArtistLibrary').then(module => ({ default: module.ArtistLibrary })));
@@ -68,12 +68,10 @@ const App = () => {
   const [editorAgentOpenToken, setEditorAgentOpenToken] = useState(0);
 
   // Data Cache State
-  const [artistsCache, setArtistsCache] = useState<Artist[] | null>(null);
   const [inspirationsCache, setInspirationsCache] = useState<Inspiration[] | null>(null);
 
   // Cache Timestamps
   const [lastChainFetch, setLastChainFetch] = useState(0);
-  const [lastArtistFetch, setLastArtistFetch] = useState(0);
   const [lastInspirationFetch, setLastInspirationFetch] = useState(0);
 
   // Dirty State for Navigation Guard
@@ -203,18 +201,6 @@ const App = () => {
     }
   };
 
-  const loadArtists = async (force = false) => {
-    if (!force && artistsCache && Date.now() - lastArtistFetch < CACHE_TTL) return;
-    try {
-      const data = await db.getAllArtists();
-      setArtistsCache(data.sort((a, b) => a.name.localeCompare(b.name)));
-      setLastArtistFetch(Date.now());
-    } catch (e) {
-      console.error('加载画师库失败', e);
-      notify('画师库加载失败，请稍后重试', 'error');
-    }
-  };
-
   const loadInspirations = async (force = false) => {
     if (!force && inspirationsCache && Date.now() - lastInspirationFetch < CACHE_TTL) return;
     try {
@@ -237,7 +223,6 @@ const App = () => {
     const unsubscribe = subscribeCollection(updateCollectionSnapshot);
     const refreshAgentChanges = () => {
       void refreshData(true);
-      void loadArtists(true);
       void loadInspirations(true);
     };
     window.addEventListener('nai-project-data-changed', refreshAgentChanges);
@@ -509,7 +494,6 @@ const App = () => {
 
     // Auto-load data based on view, respecting cache
     if ((newView === 'list' || newView === 'characters') && options.refreshData !== false) refreshData();
-    if (newView === 'library') loadArtists();
     if (newView === 'inspiration') loadInspirations();
 
   };
@@ -697,7 +681,6 @@ const App = () => {
         />;
       case 'library':
         return <ArtistLibrary
-          artistsData={artistsCache}
           selectionFocusEnabled={appearancePreferences.gallerySelectionFocus}
           notify={notify}
           onNavigateToPlayground={() => handleNavigate('playground', undefined, { externalImport: true })}

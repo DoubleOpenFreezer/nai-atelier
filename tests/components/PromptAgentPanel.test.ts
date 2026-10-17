@@ -282,6 +282,24 @@ describe('PromptAgentPanel 顶栏前端布局规范', () => {
     await waitFor(() => expect(apply).toHaveBeenCalledWith(expect.objectContaining({ basePrompt: 'new prompt' }), true));
     expect(run.mock.calls[0][0].context.clientSettings?.autoShowGenerated).toBe(false);
   });
+  it('助手运行不读取或注入旧画师收藏名册，保留旧存储内容', async () => {
+    stubServices();
+    const legacy = JSON.stringify(['legacy_artist']);
+    localStorage.setItem('nai_fav_artists', legacy);
+    const read = vi.spyOn(Storage.prototype, 'getItem');
+    const run = vi.spyOn(promptAgentService, 'run').mockImplementation(async (input, onEvent) => {
+      onEvent({ type: 'done', draft: input.draft, message: '已读取', provider: 'deepseek', model: 'deepseek-chat' });
+    });
+    renderPanel();
+    const box = screen.getByRole('textbox', { name: '任务要求' });
+    await waitFor(() => expect((box as HTMLTextAreaElement).disabled).toBe(false));
+    fireEvent.change(box, { target: { value: '查看当前页面' } });
+    fireEvent.click(screen.getByRole('button', { name: '执行' }));
+    await waitFor(() => expect(run).toHaveBeenCalledOnce());
+    expect(run.mock.calls[0][0].context.clientSettings).not.toHaveProperty('artistFavorites');
+    expect(read.mock.calls.some(([key]) => key === 'nai_fav_artists')).toBe(false);
+    expect(localStorage.getItem('nai_fav_artists')).toBe(legacy);
+  });
   it('附件拒绝原因可见，格式错误不会消失在后台', async () => {
     stubServices({ imageInput: true }); renderPanel();
     const chooser = await screen.findByLabelText('选择图片附件');

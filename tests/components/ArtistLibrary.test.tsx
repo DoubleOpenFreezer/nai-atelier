@@ -5,13 +5,13 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { ArtistLibrary } from '../../components/ArtistLibrary';
 import { ARTIST_SAMPLES_CHANGED } from '../../services/artistSamples';
 import { clearImageDisplayPageOverride, getMobileImageDisplayPreferences, setMobileImageDisplayPreferences } from '../../services/imageDisplayPreferences';
-const mocks = vi.hoisted(() => ({ status: vi.fn(), catalog: vi.fn(), dictionary: vi.fn(), data: vi.fn(), prepare: vi.fn(), page: vi.fn(), search: vi.fn(), focus: vi.fn(), control: vi.fn() }));
+const mocks = vi.hoisted(() => ({ status: vi.fn(), catalog: vi.fn(), dictionary: vi.fn(), data: vi.fn(), prepare: vi.fn(), page: vi.fn(), search: vi.fn(), focus: vi.fn(), control: vi.fn(), collection: [] as { sourceType: string; sourceId: string; archived?: boolean }[], collectionListeners: new Set<() => void>() }));
 const originalScrollTo = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollTo');
 vi.mock('../../services/artistSamples', async original => ({ ...await original<typeof import('../../services/artistSamples')>(), getArtistSampleStatus: mocks.status, getArtistSampleCatalog: mocks.catalog, getArtistSampleDictionary: mocks.dictionary, controlArtistSamplePack: mocks.control }));
 vi.mock('../../services/artistSampleDrafts', async original => ({ ...await original<typeof import('../../services/artistSampleDrafts')>(), getArtistSampleData: mocks.data, prepareArtistSampleImport: mocks.prepare }));
 vi.mock('../../components/ArtistSampleSettingsDialog', () => ({ ArtistSampleSettingsDialog: ({ tag, pack, enterAfterSave, onSaved, onClose }: any) => <div role="dialog" aria-label="补图生成设置"><span>{tag} {pack}</span><button onClick={() => onSaved({ prompt: 'artist:{artist}', negativePrompt: '', params: { model: pack === 'v45' ? 'nai-diffusion-4-5-full' : 'nai-diffusion-5-full', seed: 1 } })}>{enterAfterSave ? '保存并进入实验室' : '保存配置'}</button><button onClick={onClose}>取消</button></div> }));
 vi.mock('../../services/tagDictionary', async original => ({ ...await original<typeof import('../../services/tagDictionary')>(), getArtistDictionaryPage: mocks.page, searchArtistDictionary: mocks.search }));
-vi.mock('../../services/collectionFavorites', () => ({ collectionSnapshot: () => [], subscribeCollection: () => () => {} }));
+vi.mock('../../services/collectionFavorites', () => ({ collectionSnapshot: () => mocks.collection, subscribeCollection: (listener: () => void) => { mocks.collectionListeners.add(listener); return () => { mocks.collectionListeners.delete(listener); }; } }));
 vi.mock('../../components/ArtistSampleCover', () => ({ ArtistSampleCover: ({ tag, pack, hasPackSample, ownSamples, onSupplement, onSettings, imageClassName }: any) => <div data-testid={'cover-' + tag} data-pack={pack} data-own={ownSamples.length} data-image-class={imageClassName}>{(hasPackSample || ownSamples.length > 0) && <><img alt={tag} src={'/synthetic-' + pack + '.png'} /><div data-card-action="true" onClick={event => event.stopPropagation()}><button aria-label="收藏">收藏</button></div></>}{!hasPackSample && !ownSamples.length && <button data-card-action="true" onClick={event => { event.stopPropagation(); onSupplement(); }}>补充样张</button>}{!hasPackSample && !ownSamples.length && <button data-card-action="true" aria-label="补图生成设置" onClick={event => { event.stopPropagation(); onSettings(); }}>设置</button>}</div> }));
 vi.mock('../../components/ShortestColumnMasonry', async original => ({ ...await original<typeof import('../../components/ShortestColumnMasonry')>(), ShortestColumnMasonry: ({ items, columns, renderItem }: any) => <div data-testid="masonry" data-columns={columns}>{items.map(renderItem)}</div> }));
 vi.mock('../../components/useGallerySelectionAnchor', () => ({ useGallerySelectionAnchor: (_a: unknown, _b: unknown, focused: string | null) => { mocks.focus(focused); return { hasAnchor: false, onScroll: () => {} }; } }));
@@ -25,6 +25,7 @@ const template = { prompt: 'artist:{artist}', negativePrompt: '', params: { mode
 const status = (phase = 'ready', error?: string) => ({ available: true, canManage: true, packs: ['v45', 'v5'].map(id => ({ id, label: id, filename: id + '.tar', phase, progress: 25, count: 2, revision: id + '-one', error })) });
 beforeEach(() => {
   vi.resetAllMocks(); localStorage.clear(); sessionStorage.clear();
+  mocks.collection = []; mocks.collectionListeners.clear();
   mocks.status.mockResolvedValue(status());
   mocks.catalog.mockImplementation(async (pack: string) => ({ pack, revision: pack + '-one', tags: pack === 'v45' ? ['alpha_artist', 'unknown archive key'] : ['alpha_artist', 'beta artist'] }));
   mocks.dictionary.mockResolvedValue(entries); mocks.data.mockResolvedValue({ templates: {}, samples: [] });
@@ -37,9 +38,45 @@ beforeEach(() => {
   Object.defineProperty(HTMLElement.prototype, 'scrollTo', { configurable: true, value: vi.fn() });
 });
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); if (originalScrollTo) Object.defineProperty(HTMLElement.prototype, 'scrollTo', originalScrollTo); else delete (HTMLElement.prototype as Partial<HTMLElement>).scrollTo; });
-const setup = () => { const notify = vi.fn(), navigate = vi.fn(); const view = render(<ArtistLibrary artistsData={[]} notify={notify} onNavigateToPlayground={navigate} />); return { ...view, notify, navigate }; };
+const setup = () => { const notify = vi.fn(), navigate = vi.fn(); const view = render(<ArtistLibrary notify={notify} onNavigateToPlayground={navigate} />); return { ...view, notify, navigate }; };
 const sampleCards = () => screen.queryAllByRole('button', { name: /^选择画师：/ });
 const disableSampleFilter = () => { fireEvent.click(screen.getByRole('button', { name: /^筛选/ })); fireEvent.click(screen.getByRole('checkbox', { name: '只看有样张' })); fireEvent.keyDown(window, { key: 'Escape' }); };
+
+it('收藏只筛选真实词库，未展示页的收藏仍可找到；旧收藏与快照不读取、不写入或删除', async () => {
+  const late = { name: 'late artist', chinese: '后页画师', postCount: 5 };
+  mocks.dictionary.mockResolvedValue([...entries, late]);
+  const oldFavorites = JSON.stringify(['missing artist', 'legacy-only']);
+  const oldDetails = JSON.stringify({ 'legacy-only': { name: 'legacy-only', chinese: '旧快照' } });
+  localStorage.setItem('nai_fav_artists', oldFavorites); localStorage.setItem('nai_artist_favorite_details', oldDetails);
+  const get = vi.spyOn(Storage.prototype, 'getItem'), set = vi.spyOn(Storage.prototype, 'setItem'), remove = vi.spyOn(Storage.prototype, 'removeItem');
+  mocks.collection = [
+    { sourceType: 'artist', sourceId: 'alpha artist' }, { sourceType: 'artist', sourceId: late.name },
+    { sourceType: 'artist', sourceId: 'legacy-only' }, { sourceType: 'artist', sourceId: 'beta artist', archived: true },
+    { sourceType: 'danbooru', sourceId: 'missing artist' },
+  ];
+  setup(); await screen.findByTestId('cover-alpha artist'); disableSampleFilter();
+  fireEvent.click(screen.getByRole('button', { name: /^筛选/ }));
+  fireEvent.click(screen.getByRole('checkbox', { name: '只看收藏' })); fireEvent.keyDown(window, { key: 'Escape' });
+  expect(sampleCards().map(card => card.getAttribute('aria-label'))).toEqual(['选择画师：alpha artist', '选择画师：late artist']);
+  expect(screen.getByText('后页画师')).toBeTruthy();
+  fireEvent.change(screen.getByRole('searchbox'), { target: { value: '后页' } });
+  expect(sampleCards()).toHaveLength(1); expect(screen.getByTestId('cover-late artist')).toBeTruthy();
+  act(() => {
+    mocks.collection = [{ sourceType: 'artist', sourceId: late.name, archived: true }, { sourceType: 'artist', sourceId: late.name }];
+    mocks.collectionListeners.forEach(listener => listener());
+  });
+  expect(sampleCards()).toHaveLength(1);
+  act(() => {
+    mocks.collection = mocks.collection.map(item => ({ ...item, archived: true }));
+    mocks.collectionListeners.forEach(listener => listener());
+  });
+  expect(sampleCards()).toHaveLength(0);
+  const legacyKeys = ['nai_fav_artists', 'nai_artist_favorite_details'];
+  for (const spy of [get, set, remove]) expect(spy.mock.calls.filter(([key]) => legacyKeys.includes(key))).toEqual([]);
+  get.mockRestore();
+  expect(localStorage.getItem('nai_fav_artists')).toBe(oldFavorites);
+  expect(localStorage.getItem('nai_artist_favorite_details')).toBe(oldDetails);
+});
 
 it.each(['masonry', 'portrait', 'square'] as const)('%s画师布局跟随全局5列，角色覆盖不串页，自己的覆盖可清除', async layout => {
   setMobileImageDisplayPreferences({ layout, columns: 3, desktopColumns: 5 });

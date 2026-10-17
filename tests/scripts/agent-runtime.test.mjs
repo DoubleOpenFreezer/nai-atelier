@@ -99,6 +99,7 @@ test('工具分组只提供能力目录，思考输出预算保留原有边界',
   assert.ok(AGENT_TOOL_GROUPS.creative.includes('update_prompts'));
   assert.ok(AGENT_TOOL_GROUPS.maintenance.includes('request_clear_history'));
   assert.ok(AGENT_TOOL_GROUPS.local_files.includes('save_project_image_to_folder'));
+  assert.equal(AGENT_TOOL_GROUPS.library.includes('manage_artist_favorite'), false);
   assert.equal(agentOutputLimit('off'), 2048); assert.equal(agentOutputLimit('medium'), 4096); assert.equal(agentOutputLimit('max'), 8192);
 });
 test('真实时区与夏令时偏移按日期计算', () => {

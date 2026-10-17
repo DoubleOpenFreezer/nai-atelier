@@ -1583,7 +1583,6 @@ export class PromptAgentService {
       else if (action === 'delete_history' && resourceId) await project.requestJson(`/api/local-history/${encodedId}`, { method: 'DELETE' });
       else if (action === 'delete_vibe' && resourceId) await project.requestJson(`/api/vibes/${encodedId}/archive`, { method: 'POST', body: {} });
       else if (action === 'delete_vibe_group' && resourceId) await project.requestJson(`/api/vibe-groups/${encodedId}`, { method: 'DELETE' });
-      else if (action === 'delete_artist' && resourceId) await project.requestJson(`/api/artists/${encodedId}`, { method: 'DELETE' });
       else if (action === 'delete_character_reference' && resourceId) await project.requestJson(`/api/character-references/${encodedId}/archive`, { method: 'POST', body: {} });
       else if (action === 'clear_history') await project.requestJson('/api/local-history', { method: 'DELETE' });
       else if (action === 'cleanup_history') {
@@ -2928,18 +2927,6 @@ export class PromptAgentService {
         name: 'set_client_preferences', label: '调整界面偏好', description: '调整当前设备的主题、安全模式、启动时是否自动开启安全模式、手机图片布局/列数与小图缓存上限。只传需要修改的字段。',
         parameters: Type.Object({ themeMode: Type.Optional(Type.Union([Type.Literal('light'), Type.Literal('dark'), Type.Literal('system')])), safeMode: Type.Optional(Type.Boolean()), safeModeStartup: Type.Optional(Type.Boolean()), imageLayout: Type.Optional(Type.Union([Type.Literal('masonry'), Type.Literal('portrait'), Type.Literal('square')])), imageColumns: Type.Optional(Type.Union([Type.Literal('auto'), Type.Literal(1), Type.Literal(2), Type.Literal(3)])), mobileCacheLimit: Type.Optional(Type.Union([Type.Literal(0), Type.Literal(25), Type.Literal(50), Type.Literal(100)])) }),
         execute: async (_id, args) => apply('set_client_preferences', args),
-      },
-      {
-        name: 'manage_artist_favorite', label: '管理画师收藏', description: '在当前设备的画师Tag页面收藏或取消收藏指定画师。画师名应来自Tag搜索结果。',
-        parameters: Type.Object({ name: Type.String(), favorite: Type.Boolean() }),
-        execute: async (_id, args) => {
-          const name = text(args.name).trim().slice(0, 160);
-          if (!name) throw new Error('画师名称不能为空');
-          const favorites = new Set(Array.isArray(contextData.clientSettings?.artistFavorites) ? contextData.clientSettings.artistFavorites.map(value => text(value).slice(0, 160)) : []);
-          if (args.favorite) favorites.add(name); else favorites.delete(name);
-          contextData.clientSettings.artistFavorites = [...favorites].slice(0, 2000);
-          return apply('manage_artist_favorite', { name, favorite: args.favorite });
-        },
       },
       {
         name: 'navigate_view', label: '切换项目页面', description: '完成当前任务后切换到指定项目页面。',
