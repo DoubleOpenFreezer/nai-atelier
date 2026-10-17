@@ -9,6 +9,7 @@ import type { GenerationPlacement } from './generationTask';
 import { localHistory } from './localHistory';
 import { NOVELAI_USAGE_REFRESH_EVENT } from './naiUsage';
 import { emitCloudQueueStatus, getCurrentCloudQueueStatus, isCloudQueueTaskActive } from './cloudQueue';
+import { recordUsageEvent } from './usageEvents';
 
 export interface GenerationSeriesProgress { current: number; total: number; stopping: boolean; position?: number }
 
@@ -19,6 +20,8 @@ export interface GenerationSeriesSession {
     token: string;
     count: number;
     steps: number;
+    model?: string;
+    operation?: string;
     agent: boolean;
     placement?: GenerationPlacement;
     progress: GenerationSeriesProgress;
@@ -164,6 +167,20 @@ const failureReceipt = (session: GenerationSeriesSession, error: unknown): Promp
 /** 结束本地归属并交出本请求的独立回执。 */
 const settleSeries = (entry: SupervisedSeries, result: PromptAgentGenerationResult) => {
     entry.wake = null;
+    if (!result.success) {
+        // 失败/取消不会进入历史；只写轻量事件，供足迹页统计，不记录 Prompt。
+        recordUsageEvent({
+            category: 'generation',
+            action: result.outcome || 'failed',
+            target: entry.session.scope,
+            amount: result.requestedCount,
+            meta: {
+                agent: entry.session.agent,
+                model: entry.session.model,
+                operation: entry.session.operation,
+            },
+        });
+    }
     const queue = getCurrentCloudQueueStatus();
     if (queue && queue.taskId === entry.session.cloudQueueTaskId && isCloudQueueTaskActive(queue)) {
         emitCloudQueueStatus({ ...queue, phase: result.success ? 'completed' : result.outcome === 'cancelled' ? 'cancelled' : 'error',
@@ -257,7 +274,9 @@ export const beginGenerationSeries = (options: {
     if (!key) throw agentOperationError('请先配置 NovelAI API Key', 'missing_key');
     if (!options.placement && (groups.get(options.scope) || []).length > 0) throw agentOperationError('已有图片正在生成，请等待完成', 'generation_busy');
     const session: GenerationSeriesSession = {
-        scope: options.scope, key, token: crypto.randomUUID(), count: options.count, steps: options.descriptor.history.params.steps ?? 0, agent: options.agent,
+        scope: options.scope, key, token: crypto.randomUUID(), count: options.count, steps: options.descriptor.history.params.steps ?? 0,
+        model: options.descriptor.history.params.model, operation: options.descriptor.history.edit?.operation || 'text-to-image',
+        agent: options.agent,
         ...(options.placement ? { placement: options.placement } : {}),
         progress: { current: 0, total: options.count, stopping: false }, stopped: false,
         queued: Boolean(options.placement), state: options.placement ? 'waiting' : 'preparing', historyIds: [],

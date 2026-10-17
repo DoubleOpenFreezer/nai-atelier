@@ -20,10 +20,10 @@ const params = (model: string, steps: number, operation?: string) => JSON.string
   model, width: 832, height: 1216, steps, scale: 5,
   ...(operation ? { _local_edit: { operation } } : {}),
 });
-const invoke = async (path: string, userId = 'owner') => {
-  const request = new Request(`http://localhost${path}`, { method: 'GET' });
+const invoke = async (path: string, method = 'GET', body?: unknown) => {
+  const request = new Request(`http://localhost${path}`, { method, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
   const url = new URL(request.url);
-  const context = { request, url, path: url.pathname, method: 'GET', db, env, currentUser: { id: userId, username: userId, role: 'admin' } } as RouteContext;
+  const context = { request, url, path: url.pathname, method, db, env, currentUser: { id: 'owner', username: 'owner', role: 'admin' } } as RouteContext;
   return (await handleHistoryRoute(context))!;
 };
 const insert = (id: string, userId: string, createdAt: number, prompt: string, options: { chain?: string; name?: string; favorite?: number; params?: string } = {}) => {
@@ -109,6 +109,57 @@ it('自由实验室与导入文件名不进入风格串排行', async () => {
   expect(payload.chains.map((row: { id: string }) => row.id)).toEqual(['chain-a']);
   expect(payload.uniqueChains).toBe(1);
   expect(payload.artists.map((row: { name: string }) => row.name).sort()).toEqual(['alpha_artist', 'beta_artist', 'gamma_artist']);
+});
+
+it('失败与取消事件写入轻量账本并按范围聚合', async () => {
+  const saved = await invoke('/api/local-usage/events', 'POST', { events: [
+    { category: 'generation', action: 'failed', amount: 2, meta: { model: 'nai-diffusion-4-5-full' } },
+    { category: 'generation', action: 'cancelled', amount: 1 },
+  ] });
+  expect(saved.status).toBe(200);
+  const payload = await (await invoke('/api/local-usage/stats?days=30&tzOffset=480')).json();
+  expect(payload.totals).toEqual([
+    { category: 'generation', action: 'cancelled', count: 1, amount: 1, value: 0 },
+    { category: 'generation', action: 'failed', count: 1, amount: 2, value: 0 },
+  ]);
+  expect(payload.daily).toHaveLength(2);
+});
+
+it('结构化角色从 params.characters 派生，缺少角色库来源时也能排行', async () => {
+  insert('character', 'owner', TO, 'solo, artist:alpha_artist', {
+    chain: 'chain-a', name: '厚涂冷色',
+    params: JSON.stringify({ model: 'nai-diffusion-4-5-full', width: 832, height: 1216, steps: 28, characters: [{ id: 'c1', prompt: 'girl, red hair' }] }),
+  });
+  const payload = await (await invoke(`/api/local-history/stats?days=30&tzOffset=480&to=${TO}`)).json();
+  expect(payload.characters).toEqual([{ id: 'girl, red hair', name: 'girl, red hair', images: 1, lastAt: TO }]);
+  expect(payload.uniqueCharacters).toBe(1);
+  expect(payload.characterUsage).toEqual({ images: 1, slots: 1 });
+});
+
+it('按月范围只统计所选月份', async () => {
+  insert('october', 'owner', TO, 'artist:alpha_artist');
+  insert('september', 'owner', Date.UTC(2026, 8, 30, 12), 'artist:beta_artist');
+  const payload = await (await invoke(`/api/local-history/stats?days=month&month=2026-10&tzOffset=480&to=${TO + 86400000}`)).json();
+  expect(payload.totals.images).toBe(1);
+  expect(payload.artists.map((row: { name: string }) => row.name)).toEqual(['alpha_artist']);
+});
+
+it('年份筛选只统计所选年份', async () => {
+  insert('this-year', 'owner', TO, 'artist:alpha_artist');
+  insert('last-year', 'owner', Date.UTC(2025, 11, 30, 12), 'artist:beta_artist');
+  const payload = await (await invoke(`/api/local-history/stats?days=all&year=2026&tzOffset=480&to=${TO}`)).json();
+  expect(payload.totals.images).toBe(1);
+  expect(payload.artists.map((row: { name: string }) => row.name)).toEqual(['alpha_artist']);
+});
+
+it('显式 from/to 优先于 days，用于周视图', async () => {
+  insert('in-week', 'owner', TO, 'artist:alpha_artist');
+  insert('before-week', 'owner', TO - 8 * 86400000, 'artist:beta_artist');
+  const from = TO - 6 * 86400000;
+  const to = TO + 3600000;
+  const payload = await (await invoke(`/api/local-history/stats?days=7&from=${from}&to=${to}&tzOffset=480`)).json();
+  expect(payload.totals.images).toBe(1);
+  expect(payload.artists.map((row: { name: string }) => row.name)).toEqual(['alpha_artist']);
 });
 
 it('没有历史时返回空聚合而不是错误', async () => {

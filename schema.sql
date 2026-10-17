@@ -166,3 +166,20 @@ CREATE TABLE IF NOT EXISTS character_reference_assets (
 -- 延迟创建的表（结构以 worker/index.ts 的 ensure* 函数为准）：
 --   settings、vibe_assets、vibe_encodings、vibe_groups、character_reference_assets、
 --   aitag_cache_*、local_generation_history（含 external_source/external_id 唯一索引）
+
+CREATE TABLE IF NOT EXISTS local_usage_events (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  category TEXT NOT NULL,
+  action TEXT NOT NULL,
+  target TEXT,
+  amount INTEGER NOT NULL DEFAULT 0,
+  value REAL,
+  meta TEXT DEFAULT '{}',
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_local_usage_events_user_created
+  ON local_usage_events(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_local_usage_events_category
+  ON local_usage_events(user_id, category, action, created_at);
+

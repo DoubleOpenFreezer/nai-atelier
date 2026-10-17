@@ -244,4 +244,19 @@ export const INIT_SQL = `
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
   );
+  CREATE TABLE IF NOT EXISTS local_usage_events (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    category TEXT NOT NULL,
+    action TEXT NOT NULL,
+    target TEXT,
+    amount INTEGER NOT NULL DEFAULT 0,
+    value REAL,
+    meta TEXT DEFAULT '{}',
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_local_usage_events_user_created
+    ON local_usage_events(user_id, created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_local_usage_events_category
+    ON local_usage_events(user_id, category, action, created_at);
 `;

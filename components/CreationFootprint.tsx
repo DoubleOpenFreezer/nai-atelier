@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import {
-  Activity, ArrowRight, BarChart3, Brush, CalendarDays, Flame, Footprints,
-  Heart, Image as ImageIcon, LoaderCircle, Palette, RefreshCw, Sparkles,
+  Activity, ArrowRight, BarChart3, Brush, CalendarDays, Download,
+  Flame, Footprints, Heart, Image as ImageIcon, LoaderCircle, Palette, RefreshCw, Sparkles,
 } from 'lucide-react';
 import { EmptyState, ToolbarButton, WorkspaceToolbar } from './DesignSystem';
 import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
@@ -9,20 +9,31 @@ import { collectionRevision, collectionSnapshot, ensureCollection, subscribeColl
 import { getNaiModelDisplayLabel } from '../services/naiModels';
 import { getLanguage, t, useLanguage } from '../services/i18n';
 import { getUsageStats, type UsageChainRow, type UsageRange, type UsageStats } from '../services/usageStats';
+import { getUsageEventStats, type UsageEventStats } from '../services/usageEvents';
+import { useAnlasBudget } from '../services/anlasBudget';
+import { loadRollExperiments } from '../services/styleRollApi';
+import { vibeService } from '../services/vibeService';
+import { promptAgentService, type PromptAgentSession } from '../services/promptAgent';
+import { sourceLabel } from '../services/inspirationUtils';
+import type { RollExperiment } from '../services/styleRoll';
+import type { PromptChain, VibeAsset, VibeGroup } from '../types';
 import type { HistoryBrowseQuery } from '../services/historyBrowse';
+import type { InspirationSourceType } from '../types';
 
 interface CreationFootprintProps {
   active?: boolean;
+  chains: PromptChain[];
   onOpenHistory: (query?: HistoryBrowseQuery) => void;
   onOpenCollection: () => void;
   onOpenLab: () => void;
+  onOpenRoll: () => void;
 }
 
-const RANGES: { id: UsageRange; label: string }[] = [
-  { id: '7', label: '近 7 天' },
-  { id: '30', label: '近 30 天' },
-  { id: '365', label: '近一年' },
-  { id: 'all', label: '全部' },
+type Granularity = 'week' | 'month' | 'year';
+const GRANULARITIES: { id: Granularity; label: string }[] = [
+  { id: 'week', label: '周' },
+  { id: 'month', label: '月' },
+  { id: 'year', label: '年' },
 ];
 
 const dayKey = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
@@ -34,6 +45,21 @@ const formatDay = (timestamp: number) => {
 };
 const formatNumber = (value: number) => value.toLocaleString(getLanguage());
 const formatMonth = (date: Date) => new Intl.DateTimeFormat(getLanguage(), { month: 'short' }).format(date);
+const formatYearMonth = (value: string) => {
+  const [year, month] = value.split('-').map(Number);
+  return new Intl.DateTimeFormat(getLanguage(), { year: 'numeric', month: 'long' }).format(new Date(year, month - 1, 1));
+};
+const currentMonthKey = () => {
+  const date = new Date();
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+};
+const startOfWeek = (time: number) => {
+  const date = new Date(time);
+  date.setHours(0, 0, 0, 0);
+  date.setDate(date.getDate() - ((date.getDay() + 6) % 7));
+  return date.getTime();
+};
+const endOfWeek = (time: number) => startOfDay(new Date(startOfWeek(time) + 6 * 86400000)) + 86400000 - 1;
 const dayKeyToTime = (key: string) => {
   const [year, month, day] = key.split('-').map(Number);
   return new Date(year, month - 1, day).getTime();
@@ -96,22 +122,49 @@ const SectionCard: React.FC<{ title: string; hint?: string; action?: React.React
   </section>
 );
 
-export const CreationFootprint: React.FC<CreationFootprintProps> = ({ active = true, onOpenHistory, onOpenCollection, onOpenLab }) => {
+const SmallMetric: React.FC<{ label: string; value: React.ReactNode; detail?: React.ReactNode }> = ({ label, value, detail }) => (
+  <div className="rounded-xl bg-gray-50 p-3 dark:bg-gray-800/60">
+    <span className="block text-micro text-gray-400 dark:text-gray-500">{label}</span>
+    <span className="mt-1 block text-lg font-bold tabular-nums text-gray-800 dark:text-gray-100">{value}</span>
+    {detail && <span className="mt-0.5 block truncate text-micro text-gray-400">{detail}</span>}
+  </div>
+);
+
+export const CreationFootprint: React.FC<CreationFootprintProps> = ({ active = true, chains, onOpenHistory, onOpenCollection, onOpenLab, onOpenRoll }) => {
   const language = useLanguage();
-  const [range, setRange] = useState<UsageRange>(() => {
-    const saved = localStorage.getItem('nai_footprint_range');
-    return saved === '7' || saved === '30' || saved === '365' || saved === 'all' ? saved : '30';
+  const [granularity, setGranularity] = useState<Granularity>(() => {
+    const saved = localStorage.getItem('nai_footprint_granularity_v2');
+    return saved === 'week' || saved === 'month' || saved === 'year' ? saved : 'year';
   });
+  const [weekStart, setWeekStart] = useState(() => startOfWeek(Date.now()));
+  const range: UsageRange = granularity === 'week' ? '7' : granularity === 'month' ? 'month' : 'all';
   const [stats, setStats] = useState<UsageStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [reload, setReload] = useState(0);
+  const [assets, setAssets] = useState<{ roll?: RollExperiment[]; vibes?: VibeAsset[]; vibeGroups?: VibeGroup[]; agent?: PromptAgentSession[] }>({});
+  const [assetsLoading, setAssetsLoading] = useState(true);
+  const [eventStats, setEventStats] = useState<UsageEventStats | null>(null);
+  const [selectedYear, setSelectedYear] = useState(() => {
+    const saved = localStorage.getItem('nai_footprint_year');
+    const current = String(new Date().getFullYear());
+    if (saved === null) return current;
+    if (saved === '') return '';
+    return /^\d{4}$/.test(saved) && Number(saved) <= Number(current) ? saved : current;
+  });
+  const [selectedMonth, setSelectedMonth] = useState(() => {
+    const saved = localStorage.getItem('nai_footprint_month');
+    return saved && /^\d{4}-\d{2}$/.test(saved) && saved <= currentMonthKey() ? saved : currentMonthKey();
+  });
   const requestRef = useRef(0);
   const scrollRef = useRef<HTMLDivElement>(null);
   const onScrollRestore = useKeepAliveScrollRestore(scrollRef, 'footprint');
   const collectionRevisionValue = useSyncExternalStore(subscribeCollection, collectionRevision, collectionRevision);
+  const budget = useAnlasBudget();
 
-  useEffect(() => { localStorage.setItem('nai_footprint_range', range); }, [range]);
+  useEffect(() => { localStorage.setItem('nai_footprint_granularity_v2', granularity); }, [granularity]);
+  useEffect(() => { localStorage.setItem('nai_footprint_month', selectedMonth); }, [selectedMonth]);
+  useEffect(() => { localStorage.setItem('nai_footprint_year', selectedYear); }, [selectedYear]);
   useEffect(() => { void ensureCollection().catch(() => { /* 收藏读取失败不阻断足迹统计。 */ }); }, []);
 
   useEffect(() => {
@@ -119,7 +172,7 @@ export const CreationFootprint: React.FC<CreationFootprintProps> = ({ active = t
     const controller = new AbortController();
     const request = ++requestRef.current;
     setLoading(true); setError('');
-    void getUsageStats(range, controller.signal)
+    void getUsageStats(range, controller.signal, selectedMonth, range === 'all' ? selectedYear || undefined : undefined, range === '7' ? { start: weekStart, end: endOfWeek(weekStart) } : undefined)
       .then(data => { if (request === requestRef.current) setStats(data); })
       .catch(cause => {
         if (request !== requestRef.current || controller.signal.aborted) return;
@@ -127,29 +180,184 @@ export const CreationFootprint: React.FC<CreationFootprintProps> = ({ active = t
       })
       .finally(() => { if (request === requestRef.current) setLoading(false); });
     return () => controller.abort();
-  }, [active, range, reload]);
+  }, [active, range, selectedMonth, selectedYear, weekStart, reload]);
 
-  const collectionCounts = useMemo(() => {
-    const items = collectionSnapshot().filter(item => !item.archived);
+  useEffect(() => {
+    if (!active) return;
+    let cancelled = false;
+    setAssetsLoading(true);
+    void Promise.allSettled([
+      loadRollExperiments(),
+      vibeService.list('', false),
+      vibeService.listGroups(),
+      promptAgentService.listSessions(),
+    ]).then(([roll, vibes, groups, agent]) => {
+      if (cancelled) return;
+      setAssets({
+        roll: roll.status === 'fulfilled' ? roll.value : undefined,
+        vibes: vibes.status === 'fulfilled' ? vibes.value : undefined,
+        vibeGroups: groups.status === 'fulfilled' ? groups.value : undefined,
+        agent: agent.status === 'fulfilled' ? agent.value : undefined,
+      });
+    }).finally(() => { if (!cancelled) setAssetsLoading(false); });
+    return () => { cancelled = true; };
+  }, [active, reload]);
+
+  useEffect(() => {
+    if (!active) return;
+    const controller = new AbortController();
+    void getUsageEventStats(range, controller.signal, selectedMonth, range === 'all' ? selectedYear || undefined : undefined, range === '7' ? { start: weekStart, end: endOfWeek(weekStart) } : undefined).then(setEventStats).catch(() => { /* 事件账本缺失不影响主统计。 */ });
+    return () => controller.abort();
+  }, [active, range, selectedMonth, selectedYear, weekStart, reload]);
+
+  const monthBounds = useMemo(() => {
+    const [year, month] = selectedMonth.split('-').map(Number);
     return {
+      start: new Date(year, month - 1, 1).getTime(),
+      end: new Date(year, month, 1).getTime() - 1,
+      days: new Date(year, month, 0).getDate(),
+    };
+  }, [selectedMonth]);
+  const yearBounds = useMemo(() => {
+    const year = Number(selectedYear) || new Date().getFullYear();
+    return {
+      start: new Date(year, 0, 1).getTime(),
+      end: new Date(year, 11, 31, 23, 59, 59, 999).getTime(),
+    };
+  }, [selectedYear]);
+  const rangeStart = range === '7'
+    ? weekStart
+    : range === 'month' ? monthBounds.start : selectedYear ? yearBounds.start : 0;
+  const rangeEnd = range === '7'
+    ? endOfWeek(weekStart)
+    : range === 'month' ? monthBounds.end : selectedYear ? yearBounds.end : Date.now();
+  const inRange = React.useCallback((time?: number) => range === 'all' && !selectedYear ? true : time === undefined || (time >= rangeStart && time <= rangeEnd), [range, selectedYear, rangeStart, rangeEnd]);
+
+  const collectionStats = useMemo(() => {
+    const items = collectionSnapshot().filter(item => !item.archived);
+    const bySource = new Map<string, number>();
+    const boards = new Set<string>();
+    for (const item of items) {
+      const source = item.sourceType || 'other';
+      bySource.set(source, (bySource.get(source) || 0) + 1);
+      if (item.boardId) boards.add(item.boardId);
+    }
+    return {
+      total: items.length,
       chains: items.filter(item => item.sourceType === 'chain').length,
       artists: items.filter(item => item.sourceType === 'artist').length,
-      images: items.length,
+      boards: boards.size,
+      bySource: [...bySource].sort((left, right) => right[1] - left[1]),
     };
   }, [collectionRevisionValue]);
 
-  const heatmap = useMemo(() => {
+  const chainStats = useMemo(() => ({
+    style: chains.filter(chain => chain.type === 'style').length,
+    character: chains.filter(chain => chain.type === 'character').length,
+  }), [chains]);
+
+  const rollStats = useMemo(() => {
+    const experiments = (assets.roll || []).filter(experiment => !experiment.archived && inRange(experiment.updatedAt));
+    const candidates = experiments.flatMap(experiment => experiment.candidates).filter(candidate => inRange(candidate.createdAt));
+    const rounds = experiments.flatMap(experiment => experiment.rounds).filter(round => inRange(round.createdAt));
+    const top = experiments.map(experiment => {
+      const scoped = experiment.candidates.filter(candidate => inRange(candidate.createdAt));
+      return { id: experiment.id, name: experiment.name, candidates: scoped.length, saved: scoped.filter(candidate => candidate.savedChainId).length };
+    }).sort((left, right) => right.candidates - left.candidates).slice(0, 5);
+    return {
+      experiments: experiments.length,
+      candidates: candidates.length,
+      saved: candidates.filter(candidate => candidate.savedChainId).length,
+      archived: candidates.filter(candidate => candidate.archived).length,
+      rounds: rounds.length,
+      top,
+    };
+  }, [assets.roll, inRange]);
+
+  const vibeStats = useMemo(() => {
+    const vibeAssets = (assets.vibes || []).filter(asset => !asset.archived && inRange(asset.createdAt));
+    const encodings = vibeAssets.flatMap(asset => asset.encodings).filter(encoding => inRange(encoding.createdAt));
+    const models = new Map<string, number>();
+    for (const encoding of encodings) models.set(encoding.model, (models.get(encoding.model) || 0) + 1);
+    return {
+      assets: vibeAssets.length,
+      encodings: encodings.length,
+      groups: (assets.vibeGroups || []).filter(group => inRange(group.createdAt)).length,
+      models: [...models].sort((left, right) => right[1] - left[1]).slice(0, 5),
+    };
+  }, [assets.vibes, assets.vibeGroups, inRange]);
+
+  const agentStats = useMemo(() => {
+    const sessions = (assets.agent || []).filter(session => inRange(session.updatedAt));
+    const models = new Map<string, number>();
+    for (const session of sessions) if (session.model) models.set(session.model, (models.get(session.model) || 0) + 1);
+    return {
+      sessions: sessions.length,
+      messages: sessions.reduce((sum, session) => sum + (session.messageCount || 0), 0),
+      models: [...models].sort((left, right) => right[1] - left[1]).slice(0, 5),
+    };
+  }, [assets.agent, inRange]);
+
+  const generationOutcomes = useMemo(() => {
+    const value = (action: string) => eventStats?.totals.find(row => row.category === 'generation' && row.action === action)?.count || 0;
+    return { failed: value('failed'), cancelled: value('cancelled'), blocked: value('blocked') };
+  }, [eventStats]);
+
+  const groupedChains = useMemo(() => {
+    const map = new Map<string, UsageChainRow>();
+    for (const chain of stats?.chains || []) {
+      const key = chain.name || chain.id;
+      const current = map.get(key);
+      if (current) {
+        current.images += chain.images;
+        current.lastAt = Math.max(current.lastAt, chain.lastAt);
+      } else map.set(key, { ...chain });
+    }
+    return [...map.values()].sort((left, right) => right.images - left.images || right.lastAt - left.lastAt);
+  }, [stats?.chains]);
+
+  const availableYears = useMemo(() => [...new Set((stats?.daily || []).map(point => point.date.slice(0, 4)))].filter(year => Number(year) <= new Date().getFullYear()).sort().reverse(), [stats?.daily]);
+  const activeYear = availableYears.includes(selectedYear) ? selectedYear : availableYears[0] || String(new Date().getFullYear());
+
+  const compactDays = useMemo(() => {
     const counts = new Map((stats?.daily || []).map(point => [point.date, point.images]));
     const today = new Date();
-    const end = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-    const gridStart = new Date(end);
-    gridStart.setDate(gridStart.getDate() - 364 - gridStart.getDay());
+    const todayKey = dayKey(today);
+    if (range === '7') {
+      return Array.from({ length: 7 }, (_, index) => {
+        const date = new Date(weekStart);
+        date.setDate(date.getDate() + index);
+        const key = dayKey(date);
+        return { key, count: counts.get(key) || 0, today: key === todayKey, future: date > today };
+      });
+    }
+    if (range === 'month') {
+      const [year, month] = selectedMonth.split('-').map(Number);
+      return Array.from({ length: monthBounds.days }, (_, index) => {
+        const date = new Date(year, month - 1, index + 1);
+        const key = dayKey(date);
+        return { key, count: counts.get(key) || 0, today: key === todayKey, future: date > today };
+      });
+    }
+    return [];
+  }, [range, weekStart, selectedMonth, monthBounds.days, stats?.daily]);
+
+  const heatmap = useMemo(() => {
+    if (range !== 'all') return { weeks: [], labels: [], startKey: '', endKey: '' };
+    const counts = new Map((stats?.daily || []).map(point => [point.date, point.images]));
+    const today = new Date();
+    const end = new Date(Number(activeYear), 11, 31);
+    const start = new Date(Number(activeYear), 0, 1);
+    const gridStart = new Date(start);
+    gridStart.setDate(gridStart.getDate() - gridStart.getDay());
+    const todayKey = dayKey(today);
     const weeks: { key: string; count: number; today: boolean; future: boolean }[][] = [];
     let week: { key: string; count: number; today: boolean; future: boolean }[] = [];
     for (let cursor = new Date(gridStart); cursor <= end; cursor.setDate(cursor.getDate() + 1)) {
       const date = new Date(cursor);
       const key = dayKey(date);
-      week.push({ key, count: counts.get(key) || 0, today: key === dayKey(end), future: false });
+      const hidden = date < start || date > today;
+      week.push({ key, count: hidden ? 0 : counts.get(key) || 0, today: key === todayKey, future: hidden });
       if (week.length === 7) { weeks.push(week); week = []; }
     }
     if (week.length) {
@@ -158,27 +366,41 @@ export const CreationFootprint: React.FC<CreationFootprintProps> = ({ active = t
     }
     const labels: { label: string; monthKey: string; weekIndex: number }[] = [];
     weeks.forEach((days, weekIndex) => {
-      const first = days.find(day => day.key && !day.future);
+      const first = days.find(day => day.key && day.key >= dayKey(start));
       if (!first) return;
       const [year, month] = first.key.split('-').map(Number);
       const monthKey = `${year}-${month}`;
       if (labels.at(-1)?.monthKey === monthKey) return;
       labels.push({ label: formatMonth(new Date(year, month - 1, 1)), monthKey, weekIndex });
     });
-    return { weeks, labels, startKey: weeks[0]?.find(day => day.key)?.key || '' };
-  }, [stats?.daily, language]);
+    return { weeks, labels, startKey: dayKey(start), endKey: dayKey(end) };
+  }, [range, activeYear, stats?.daily, language]);
 
   const trend = useMemo(() => {
     const counts = new Map((stats?.daily || []).map(point => [point.date, point.images]));
-    const days: { key: string; count: number }[] = [];
-    const today = new Date();
-    for (let index = 29; index >= 0; index--) {
-      const date = new Date(today.getFullYear(), today.getMonth(), today.getDate() - index);
-      const key = dayKey(date);
-      days.push({ key, count: counts.get(key) || 0 });
+    if (range === '7') {
+      return Array.from({ length: 7 }, (_, index) => {
+        const date = new Date(weekStart);
+        date.setDate(date.getDate() + index);
+        const key = dayKey(date);
+        return { key, count: counts.get(key) || 0 };
+      });
     }
-    return days;
-  }, [stats?.daily]);
+    if (range === 'month') {
+      const [year, month] = selectedMonth.split('-').map(Number);
+      return Array.from({ length: monthBounds.days }, (_, index) => {
+        const date = new Date(year, month - 1, index + 1);
+        const key = dayKey(date);
+        return { key, count: counts.get(key) || 0 };
+      });
+    }
+    const year = Number(activeYear);
+    const monthly = Array.from({ length: 12 }, () => 0);
+    for (const point of stats?.daily || []) {
+      if (point.date.startsWith(`${year}-`)) monthly[Number(point.date.slice(5, 7)) - 1] += point.images;
+    }
+    return monthly.map((count, index) => ({ key: `${year}-${String(index + 1).padStart(2, '0')}`, count }));
+  }, [range, weekStart, selectedMonth, monthBounds.days, activeYear, stats?.daily]);
 
   const openDay = (key: string) => {
     if (!key) return;
@@ -186,14 +408,22 @@ export const CreationFootprint: React.FC<CreationFootprintProps> = ({ active = t
     const from = new Date(year, month - 1, day).getTime();
     onOpenHistory({ from, to: startOfDay(new Date(year, month - 1, day + 1)) - 1, sort: 'newest' });
   };
-  const openChain = (id: string) => onOpenHistory({ source: id, sort: 'newest' });
+  const openTrend = (key: string) => {
+    if (key.length === 7) {
+      const [year, month] = key.split('-').map(Number);
+      onOpenHistory({ from: new Date(year, month - 1, 1).getTime(), to: new Date(year, month, 1).getTime() - 1, sort: 'newest' });
+      return;
+    }
+    openDay(key);
+  };
+  const openChain = (chain: UsageChainRow) => onOpenHistory({ ...(chain.name ? { search: chain.name } : { source: chain.id }), sort: 'newest' });
   const openArtist = (name: string) => onOpenHistory({ search: `artist:${name}`, sort: 'newest' });
   const openModel = (model: string) => onOpenHistory({ model, sort: 'newest' });
   const openOperation = (operation: string) => onOpenHistory({ operation, sort: 'newest' });
   const chainLabel = (chain: UsageChainRow) => chain.name || (chain.id === 'playground' ? t('生图实验室') : t('已移除的预设'));
 
   const totals = stats?.totals;
-  const topChain = stats?.chains[0];
+  const topChain = groupedChains[0];
   const topArtist = stats?.artists[0];
   const topModel = stats?.models[0];
   const topSize = stats?.sizes[0];
@@ -202,8 +432,68 @@ export const CreationFootprint: React.FC<CreationFootprintProps> = ({ active = t
   const maxTrend = Math.max(1, ...trend.map(point => point.count));
   const hasData = Boolean(totals && totals.images > 0);
 
+  const exportCsv = () => {
+    if (!stats) return;
+    const rows: string[][] = [['category', 'name', 'count', 'recent']];
+    const push = (category: string, name: string, count: number, recent?: number) => rows.push([category, name, String(count), recent ? new Date(recent).toISOString() : '']);
+    push('summary', 'works', stats.totals.images, stats.totals.lastAt || undefined);
+    push('summary', 'active_days', stats.totals.activeDays);
+    push('summary', 'streak', stats.totals.currentStreak);
+    push('summary', 'history_favorites', stats.totals.favoriteImages);
+    stats.chains.forEach(row => push('style_chain', chainLabel(row), row.images, row.lastAt));
+    stats.artists.forEach(row => push('artist', row.name, row.images, row.lastAt));
+    stats.characters.forEach(row => push('character', row.name, row.images, row.lastAt));
+    stats.tags.forEach(row => push('tag', row.name, row.images));
+    stats.models.forEach(row => push('model', getNaiModelDisplayLabel(row.model), row.images));
+    stats.sizes.forEach(row => push('size', `${row.width}x${row.height}`, row.images));
+    stats.steps.forEach(row => push('steps', String(row.steps), row.images));
+    stats.operations.forEach(row => push('operation', t(OPERATION_LABELS[row.operation] || row.operation), row.images));
+    collectionStats.bySource.forEach(([source, count]) => push('collection_source', sourceLabel(source as InspirationSourceType), count));
+    rollStats.top.forEach(row => push('roll', row.name, row.candidates));
+    vibeStats.models.forEach(([model, count]) => push('vibe_model', getNaiModelDisplayLabel(model), count));
+    agentStats.models.forEach(([model, count]) => push('agent_model', model, count));
+    const csv = '\uFEFF' + rows.map(row => row.map(cell => `"${cell.replaceAll('"', '""')}"`).join(',')).join('\r\n');
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `creation-footprint-${new Date().toISOString().slice(0, 10)}.csv`;
+    anchor.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
+  const weekLabel = `${formatDay(weekStart)}–${formatDay(endOfWeek(weekStart))}`;
+  const weekOptions = useMemo(() => {
+    const current = startOfWeek(Date.now());
+    const earliest = stats?.daily?.[0]?.date ? dayKeyToTime(stats.daily[0].date) : current;
+    const first = Math.min(startOfWeek(earliest), current - 11 * 7 * 86400000);
+    const values: number[] = [];
+    for (let time = current; time >= first; time -= 7 * 86400000) values.push(time);
+    if (weekStart <= current && !values.includes(weekStart)) values.push(weekStart);
+    return [...new Set(values)].sort((left, right) => right - left);
+  }, [stats?.daily, weekStart]);
+  const monthOptions = useMemo(() => {
+    const now = new Date();
+    const current = new Date(now.getFullYear(), now.getMonth(), 1);
+    const earliest = stats?.daily?.[0]?.date ? new Date(dayKeyToTime(stats.daily[0].date)) : current;
+    const fallback = new Date(current.getFullYear(), current.getMonth() - 11, 1);
+    const first = new Date(Math.min(new Date(earliest.getFullYear(), earliest.getMonth(), 1).getTime(), fallback.getTime()));
+    const values: string[] = [];
+    for (const cursor = new Date(current); cursor >= first; cursor.setMonth(cursor.getMonth() - 1)) {
+      values.push(`${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}`);
+    }
+    if (selectedMonth <= currentMonthKey() && !values.includes(selectedMonth)) values.push(selectedMonth);
+    return [...new Set(values)].sort().reverse();
+  }, [stats?.daily, selectedMonth]);
+  const yearOptions = useMemo(() => {
+    const current = new Date().getFullYear();
+    const years = new Set(availableYears.map(Number));
+    years.add(current);
+    if (selectedYear) years.add(Number(selectedYear));
+    return [...years].filter(year => year <= current).sort((left, right) => right - left);
+  }, [availableYears, selectedYear]);
+
   return (
-    <div className="flex h-full flex-1 flex-col overflow-hidden bg-gray-50 dark:bg-gray-900">
+    <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-gray-50 dark:bg-gray-900">
       <WorkspaceToolbar>
         <div className="flex min-w-0 flex-1 items-center gap-2.5">
           <span className="flex h-8 w-8 flex-none items-center justify-center rounded-xl bg-indigo-50 text-indigo-500 dark:bg-indigo-950/50 dark:text-indigo-300"><Footprints className="h-4 w-4" /></span>
@@ -213,17 +503,20 @@ export const CreationFootprint: React.FC<CreationFootprintProps> = ({ active = t
           </div>
         </div>
         <div className="flex max-w-[52vw] flex-none items-center gap-1 overflow-x-auto rounded-xl border border-gray-200 bg-gray-100 p-0.5 dark:border-gray-700 dark:bg-gray-950 md:max-w-none">
-          {RANGES.map(item => <button key={item.id} type="button" aria-pressed={range === item.id} onClick={() => setRange(item.id)} className={`mobile-touch whitespace-nowrap rounded-lg px-2 py-1.5 text-xs font-bold transition ${range === item.id ? 'bg-white text-indigo-600 shadow-sm dark:bg-gray-800 dark:text-indigo-300' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'}`}>{t(item.label)}</button>)}
+          {GRANULARITIES.map(item => <button key={item.id} type="button" aria-pressed={granularity === item.id} onClick={() => setGranularity(item.id)} className={`mobile-touch whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-bold transition ${granularity === item.id ? 'bg-white text-indigo-600 shadow-sm dark:bg-gray-800 dark:text-indigo-300' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'}`}>{t(item.label)}</button>)}
         </div>
         <ToolbarButton aria-label={t('刷新统计')} title={t('刷新统计')} onClick={() => setReload(value => value + 1)} disabled={loading} className="!px-2.5">
           {loading ? <LoaderCircle className="animate-spin" /> : <RefreshCw />}<span className="hidden lg:inline">{t('刷新')}</span>
+        </ToolbarButton>
+        <ToolbarButton aria-label={t('导出 CSV')} title={t('导出 CSV')} onClick={exportCsv} disabled={!stats} className="!px-2.5">
+          <Download /><span className="hidden xl:inline">CSV</span>
         </ToolbarButton>
         <ToolbarButton onClick={() => onOpenHistory({ sort: 'newest' })} className="!px-2.5">
           <CalendarDays /><span className="hidden sm:inline">{t('打开历史')}</span>
         </ToolbarButton>
       </WorkspaceToolbar>
 
-      <div ref={scrollRef} onScroll={onScrollRestore} className="flex-1 overflow-y-auto p-4 pb-28 md:p-6 md:pb-10">
+      <div ref={scrollRef} onScroll={onScrollRestore} className="min-h-0 flex-1 overflow-y-scroll overscroll-contain p-4 pb-28 md:p-6 md:pb-10">
         <div className="mx-auto w-full max-w-6xl space-y-4">
           {loading && !stats && <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{[0, 1, 2, 3].map(item => <div key={item} className="h-24 animate-pulse rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900" />)}</div>}
 
@@ -245,25 +538,52 @@ export const CreationFootprint: React.FC<CreationFootprintProps> = ({ active = t
               <StatCard label={t('最常用画师')} value={topArtist ? topArtist.name : t('暂无')} detail={topArtist ? t('{0} 张', [formatNumber(topArtist.images)]) : undefined} icon={<Brush />} title={topArtist?.name} />
             </div>
 
-            <SectionCard title={t('创作活动')} hint={t('近一年每天生成的作品数；点击某天查看当天作品')} action={<span className="hidden items-center gap-1.5 text-micro text-gray-400 sm:flex">{t('少')}<span className="h-2.5 w-2.5 rounded-[2px] bg-gray-200 dark:bg-gray-800" /><span className="h-2.5 w-2.5 rounded-[2px] bg-indigo-300 dark:bg-indigo-800" /><span className="h-2.5 w-2.5 rounded-[2px] bg-indigo-400 dark:bg-indigo-700" /><span className="h-2.5 w-2.5 rounded-[2px] bg-indigo-500 dark:bg-indigo-600" /><span className="h-2.5 w-2.5 rounded-[2px] bg-indigo-600 dark:bg-indigo-500" />{t('多')}</span>}>
-              <div className="overflow-x-auto pb-1">
-                <div className="w-full min-w-[840px]">
-                  <div aria-hidden="true" className="mb-1 grid gap-1" style={{ gridTemplateColumns: `repeat(${heatmap.weeks.length}, minmax(0, 1fr))` }}>
-                    {heatmap.labels.map(label => <span key={label.monthKey} style={{ gridColumnStart: label.weekIndex + 1, gridColumnEnd: `span ${Math.min(4, heatmap.weeks.length - label.weekIndex)}`, gridRowStart: 1 }} className="truncate text-micro text-gray-400 dark:text-gray-500">{label.label}</span>)}
-                  </div>
-                  <div className="flex w-full gap-1" role="grid" aria-label={t('近一年创作热力图')}>
-                    {heatmap.weeks.map((week, weekIndex) => <div key={weekIndex} role="row" className="flex min-w-0 flex-1 flex-col gap-1">
-                      {week.map((day, dayIndex) => <button key={dayIndex} type="button" role="gridcell" disabled={day.future} onClick={() => openDay(day.key)} title={day.future ? '' : t('{0} · {1} 张', [day.key, formatNumber(day.count)])} aria-label={day.future ? t('未来') : t('{0} · {1} 张', [day.key, formatNumber(day.count)])} className={`aspect-square w-full rounded-[2px] transition hover:ring-2 hover:ring-indigo-300 disabled:cursor-default disabled:opacity-0 dark:hover:ring-indigo-600 ${heatClass(day.count)} ${day.today ? 'ring-1 ring-indigo-500 ring-offset-1 dark:ring-offset-gray-900' : ''}`} />)}
-                    </div>)}
+            <SectionCard
+              title={granularity === 'week' ? t('创作活动 · {0}', [weekLabel]) : granularity === 'month' ? t('创作活动 · {0}', [formatYearMonth(selectedMonth)]) : t('创作活动 · {0}', [selectedYear || t('全部年份')])}
+              hint={granularity === 'week'
+                ? t('所选周每天生成的作品数；点击某天查看当天作品')
+                : granularity === 'month'
+                  ? t('所选月份每天生成的作品数；点击某天查看当天作品')
+                  : (selectedYear ? t('所选年份每天生成的作品数；点击某天查看当天作品') : t('全部年份统计；热力图显示最近一年'))}
+              action={<div className="flex flex-wrap items-center gap-2">
+                {granularity === 'week' && <select aria-label={t('选择周')} value={String(weekStart)} onChange={event => setWeekStart(Number(event.target.value))} className="mobile-touch h-8 rounded-lg border border-gray-200 bg-white px-2 text-xs font-semibold text-gray-600 outline-none focus:border-indigo-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300">
+                  {weekOptions.map(time => <option key={time} value={time}>{formatDay(time)}–{formatDay(endOfWeek(time))}</option>)}
+                </select>}
+                {granularity === 'month' && <select aria-label={t('选择月份')} value={selectedMonth} onChange={event => { if (event.target.value) setSelectedMonth(event.target.value); }} className="mobile-touch h-8 rounded-lg border border-gray-200 bg-white px-2 text-xs font-semibold text-gray-600 outline-none focus:border-indigo-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300">
+                  {monthOptions.map(month => <option key={month} value={month}>{formatYearMonth(month)}</option>)}
+                </select>}
+                {granularity === 'year' && <select aria-label={t('选择年份')} value={selectedYear} onChange={event => setSelectedYear(event.target.value)} className="mobile-touch h-8 rounded-lg border border-gray-200 bg-white px-2 text-xs font-semibold text-gray-600 outline-none focus:border-indigo-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300">
+                  <option value="">{t('全部年份')}</option>
+                  {yearOptions.map(year => <option key={year} value={year}>{year}</option>)}
+                </select>}
+                <span className="hidden items-center gap-1.5 text-micro text-gray-400 sm:flex">{t('少')}<span className="h-2.5 w-2.5 rounded-[2px] bg-gray-200 dark:bg-gray-800" /><span className="h-2.5 w-2.5 rounded-[2px] bg-indigo-300 dark:bg-indigo-800" /><span className="h-2.5 w-2.5 rounded-[2px] bg-indigo-400 dark:bg-indigo-700" /><span className="h-2.5 w-2.5 rounded-[2px] bg-indigo-500 dark:bg-indigo-600" /><span className="h-2.5 w-2.5 rounded-[2px] bg-indigo-600 dark:bg-indigo-500" />{t('多')}</span>
+              </div>}
+            >
+              {compactDays.length > 0 ? <>
+                <div className="grid w-max grid-cols-7 gap-1.5" role="grid" aria-label={t('创作活动热力图')}>
+                  {compactDays.map(day => <button key={day.key} type="button" role="gridcell" disabled={day.future} onClick={() => openDay(day.key)} title={day.future ? '' : t('{0} · {1} 张', [day.key, formatNumber(day.count)])} aria-label={day.future ? t('未来') : t('{0} · {1} 张', [day.key, formatNumber(day.count)])} className={`mobile-touch h-8 w-8 rounded-[3px] transition hover:ring-2 hover:ring-indigo-300 disabled:cursor-default disabled:opacity-0 dark:hover:ring-indigo-600 ${heatClass(day.count)} ${day.today ? 'ring-1 ring-indigo-500 ring-offset-1 dark:ring-offset-gray-900' : ''}`} />)}
+                </div>
+                <div className="mt-2 flex justify-between text-micro text-gray-400 dark:text-gray-500"><span>{formatDay(dayKeyToTime(compactDays[0].key))}</span><span>{granularity === 'week' ? formatDay(endOfWeek(weekStart)) : formatDay(monthBounds.end)}</span></div>
+              </> : <>
+                <div className="overflow-x-auto pb-1">
+                  <div className="w-full min-w-[760px]">
+                    <div aria-hidden="true" className="mb-1 grid gap-1" style={{ gridTemplateColumns: `repeat(${heatmap.weeks.length}, minmax(0, 1fr))` }}>
+                      {heatmap.labels.map(label => <span key={label.monthKey} style={{ gridColumnStart: label.weekIndex + 1, gridColumnEnd: `span ${Math.min(4, heatmap.weeks.length - label.weekIndex)}`, gridRowStart: 1 }} className="truncate text-micro text-gray-400 dark:text-gray-500">{label.label}</span>)}
+                    </div>
+                    <div className="flex w-full gap-1" role="grid" aria-label={t('创作活动热力图')}>
+                      {heatmap.weeks.map((week, weekIndex) => <div key={weekIndex} role="row" className="flex min-w-0 flex-1 flex-col gap-1">
+                        {week.map((day, dayIndex) => <button key={dayIndex} type="button" role="gridcell" disabled={day.future} onClick={() => openDay(day.key)} title={day.future ? '' : t('{0} · {1} 张', [day.key, formatNumber(day.count)])} aria-label={day.future ? t('未来') : t('{0} · {1} 张', [day.key, formatNumber(day.count)])} className={`aspect-square w-full rounded-[2px] transition hover:ring-2 hover:ring-indigo-300 disabled:cursor-default disabled:opacity-0 dark:hover:ring-indigo-600 ${heatClass(day.count)} ${day.today ? 'ring-1 ring-indigo-500 ring-offset-1 dark:ring-offset-gray-900' : ''}`} />)}
+                      </div>)}
+                    </div>
                   </div>
                 </div>
-              </div>
-              <div className="mt-2 flex justify-between text-micro text-gray-400 dark:text-gray-500"><span>{heatmap.startKey ? formatDay(dayKeyToTime(heatmap.startKey)) : ''}</span><span>{t('今天')}</span></div>
+                <div className="mt-2 flex justify-between text-micro text-gray-400 dark:text-gray-500"><span>{heatmap.startKey ? formatDay(dayKeyToTime(heatmap.startKey)) : ''}</span><span>{range === 'all' ? formatDay(dayKeyToTime(heatmap.endKey)) : t('今天')}</span></div>
+              </>}
             </SectionCard>
 
             <div className="grid gap-4 lg:grid-cols-2">
               <SectionCard title={t('风格串使用排行')} hint={t('按由该风格串生成的作品数排序')} action={<button type="button" onClick={() => onOpenHistory({ sort: 'newest' })} className="text-xs font-semibold text-indigo-600 dark:text-indigo-300">{t('打开历史')}</button>}>
-                {stats.chains.length ? <div className="space-y-0.5">{stats.chains.slice(0, 8).map(chain => <RankingRow key={chain.id} name={chainLabel(chain)} images={chain.images} lastAt={chain.lastAt} onClick={() => openChain(chain.id)} />)}</div> : <p className="py-8 text-center text-sm text-gray-400">{t('暂无')}</p>}
+                {groupedChains.length ? <div className="space-y-0.5">{groupedChains.slice(0, 8).map(chain => <RankingRow key={chain.name || chain.id} name={chainLabel(chain)} images={chain.images} lastAt={chain.lastAt} onClick={() => openChain(chain)} />)}</div> : <p className="py-8 text-center text-sm text-gray-400">{t('暂无')}</p>}
               </SectionCard>
               <SectionCard title={t('画师使用排行')} hint={t('按历史 Prompt 中的 artist: 标签统计')}>
                 {stats.artists.length ? <div className="space-y-0.5">{stats.artists.slice(0, 8).map(artist => <RankingRow key={artist.name} name={artist.name} images={artist.images} lastAt={artist.lastAt} onClick={() => openArtist(artist.name)} accent="rose" />)}</div> : <p className="py-8 text-center text-sm text-gray-400">{t('暂无')}</p>}
@@ -272,18 +592,18 @@ export const CreationFootprint: React.FC<CreationFootprintProps> = ({ active = t
             </div>
 
             <div className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
-              <SectionCard title={t('最近 30 天趋势')} hint={t('每天生成的作品数')}>
-                <div className="flex h-28 items-end gap-1" role="img" aria-label={t('最近 30 天趋势')}>
-                  {trend.map(day => <button key={day.key} type="button" onClick={() => openDay(day.key)} title={t('{0} · {1} 张', [day.key, formatNumber(day.count)])} className="mobile-touch flex h-full flex-1 items-end rounded-t focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"><span className={`w-full rounded-t transition-colors ${day.count ? 'bg-indigo-500/85 hover:bg-indigo-500 dark:bg-indigo-400/80' : 'bg-gray-100 dark:bg-gray-800'}`} style={{ height: `${Math.max(3, day.count / maxTrend * 100)}%` }} /></button>)}
+              <SectionCard title={granularity === 'week' ? t('所选周趋势') : granularity === 'month' ? t('所选月份趋势') : (selectedYear ? t('年度月度趋势') : t('最近一年月度趋势'))} hint={granularity === 'year' ? t('每月生成的作品数') : t('每天生成的作品数')}>
+                <div className="flex h-28 items-end gap-1" role="img" aria-label={granularity === 'year' ? t('每月生成的作品数') : t('每天生成的作品数')}>
+                  {trend.map(day => <button key={day.key} type="button" onClick={() => openTrend(day.key)} title={t('{0} · {1} 张', [day.key, formatNumber(day.count)])} className="mobile-touch flex h-full flex-1 items-end rounded-t focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"><span className={`w-full rounded-t transition-colors ${day.count ? 'bg-indigo-500/85 hover:bg-indigo-500 dark:bg-indigo-400/80' : 'bg-gray-100 dark:bg-gray-800'}`} style={{ height: `${Math.max(3, day.count / maxTrend * 100)}%` }} /></button>)}
                 </div>
-                <div className="mt-2 flex justify-between text-micro text-gray-400"><span>{formatDay(Date.now() - 29 * 86400000)}</span><span>{t('今天')}</span></div>
+                <div className="mt-2 flex justify-between text-micro text-gray-400"><span>{granularity === 'year' ? formatMonth(new Date(Number(activeYear), 0, 1)) : trend[0] ? formatDay(dayKeyToTime(trend[0].key)) : ''}</span><span>{granularity === 'year' ? formatMonth(new Date(Number(activeYear), 11, 1)) : granularity === 'week' ? formatDay(endOfWeek(weekStart)) : formatDay(monthBounds.end)}</span></div>
               </SectionCard>
 
-              <SectionCard title={t('收藏概览')} action={<button type="button" onClick={onOpenCollection} className="text-xs font-semibold text-indigo-600 dark:text-indigo-300">{t('打开收藏库')}</button>}>
+              <SectionCard title={t('收藏概览')} hint={t('全部收藏，不随上方范围变化')} action={<button type="button" onClick={onOpenCollection} className="text-xs font-semibold text-indigo-600 dark:text-indigo-300">{t('打开收藏库')}</button>}>
                 <div className="grid grid-cols-3 gap-2">
-                  <button type="button" onClick={onOpenCollection} className="mobile-touch rounded-xl bg-gray-50 p-3 text-left dark:bg-gray-800/60"><span className="block text-lg font-bold tabular-nums text-gray-800 dark:text-gray-100">{formatNumber(collectionCounts.chains)}</span><span className="mt-0.5 block text-micro text-gray-400">{t('收藏的风格串')}</span></button>
-                  <button type="button" onClick={onOpenCollection} className="mobile-touch rounded-xl bg-gray-50 p-3 text-left dark:bg-gray-800/60"><span className="block text-lg font-bold tabular-nums text-gray-800 dark:text-gray-100">{formatNumber(collectionCounts.artists)}</span><span className="mt-0.5 block text-micro text-gray-400">{t('收藏的画师')}</span></button>
-                  <button type="button" onClick={onOpenCollection} className="mobile-touch rounded-xl bg-gray-50 p-3 text-left dark:bg-gray-800/60"><span className="block text-lg font-bold tabular-nums text-gray-800 dark:text-gray-100">{formatNumber(collectionCounts.images)}</span><span className="mt-0.5 block text-micro text-gray-400">{t('收藏的图片')}</span></button>
+                  <button type="button" onClick={onOpenCollection} className="mobile-touch rounded-xl bg-gray-50 p-3 text-left dark:bg-gray-800/60"><span className="block text-lg font-bold tabular-nums text-gray-800 dark:text-gray-100">{formatNumber(collectionStats.chains)}</span><span className="mt-0.5 block text-micro text-gray-400">{t('收藏的风格串')}</span></button>
+                  <button type="button" onClick={onOpenCollection} className="mobile-touch rounded-xl bg-gray-50 p-3 text-left dark:bg-gray-800/60"><span className="block text-lg font-bold tabular-nums text-gray-800 dark:text-gray-100">{formatNumber(collectionStats.artists)}</span><span className="mt-0.5 block text-micro text-gray-400">{t('收藏的画师')}</span></button>
+                  <button type="button" onClick={onOpenCollection} className="mobile-touch rounded-xl bg-gray-50 p-3 text-left dark:bg-gray-800/60"><span className="block text-lg font-bold tabular-nums text-gray-800 dark:text-gray-100">{formatNumber(collectionStats.total)}</span><span className="mt-0.5 block text-micro text-gray-400">{t('收藏的图片')}</span></button>
                 </div>
                 <p className="mt-3 text-micro leading-5 text-gray-400">{t('收藏是作品级记录；这里只汇总数量，不改变收藏内容。')}</p>
               </SectionCard>
@@ -301,6 +621,73 @@ export const CreationFootprint: React.FC<CreationFootprintProps> = ({ active = t
                 <span className="rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-xs font-semibold text-gray-600 dark:border-gray-700 dark:bg-gray-800/60 dark:text-gray-300">{t('使用风格串')} · {formatNumber(stats.uniqueChains)}</span>
               </div>
             </SectionCard>
+
+            <div className="grid gap-4 lg:grid-cols-2">
+              <SectionCard title={t('角色使用排行')} hint={t('按历史中的角色提示词统计')}>
+                {stats.characters.length ? <div className="space-y-0.5">{stats.characters.slice(0, 8).map(character => <RankingRow key={character.id} name={character.name || t('未命名角色')} images={character.images} lastAt={character.lastAt} onClick={() => onOpenHistory({ search: character.name, sort: 'newest' })} accent="rose" />)}</div> : <p className="py-8 text-center text-sm text-gray-400">{t('暂无')}</p>}
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <span className="rounded-full bg-gray-50 px-2.5 py-1 text-micro text-gray-500 dark:bg-gray-800/60 dark:text-gray-400">{t('带角色 {0} 张 · {1} 个槽', [formatNumber(stats.characterUsage.images), formatNumber(stats.characterUsage.slots)])}</span>
+                  <span className="rounded-full bg-gray-50 px-2.5 py-1 text-micro text-gray-500 dark:bg-gray-800/60 dark:text-gray-400">{t('Vibe {0} 张 · {1} 个槽', [formatNumber(stats.vibeUsage.images), formatNumber(stats.vibeUsage.slots)])}</span>
+                  <span className="rounded-full bg-gray-50 px-2.5 py-1 text-micro text-gray-500 dark:bg-gray-800/60 dark:text-gray-400">{t('角色参考 {0} 张 · {1} 个槽', [formatNumber(stats.referenceUsage.images), formatNumber(stats.referenceUsage.slots)])}</span>
+                  <span className="rounded-full bg-gray-50 px-2.5 py-1 text-micro text-gray-500 dark:bg-gray-800/60 dark:text-gray-400">{t('角色库')} · {formatNumber(chainStats.character)}</span>
+                </div>
+              </SectionCard>
+              <SectionCard title={t('常用标签')} hint={t('从 Prompt 与角色内容归纳')}>
+                {stats.tags.length ? <div className="flex flex-wrap gap-1.5">{stats.tags.slice(0, 12).map(tag => <button key={tag.name} type="button" onClick={() => onOpenHistory({ search: tag.name, sort: 'newest' })} className="mobile-touch rounded-full border border-gray-200 bg-gray-50 px-2.5 py-1 text-xs font-semibold text-gray-600 hover:border-indigo-300 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-800/60 dark:text-gray-300">{tag.name} · {formatNumber(tag.images)}</button>)}</div> : <p className="py-8 text-center text-sm text-gray-400">{t('暂无')}</p>}
+                <div className="mt-3 flex flex-wrap gap-2 text-micro text-gray-400 dark:text-gray-500">
+                  <span>{t('探索画师')} {formatNumber(stats.uniqueArtists)}</span>
+                  <span>·</span>
+                  <span>{t('使用角色')} {formatNumber(stats.uniqueCharacters)}</span>
+                </div>
+              </SectionCard>
+            </div>
+
+            <SectionCard title={t('创作资产')} hint={t('本地保存的配方、参考与实验')} action={<button type="button" onClick={onOpenRoll} className="text-xs font-semibold text-indigo-600 dark:text-indigo-300">{t('打开 Roll 串')}</button>}>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-8">
+                <SmallMetric label={t('风格串')} value={formatNumber(chainStats.style)} />
+                <SmallMetric label={t('角色库')} value={formatNumber(chainStats.character)} />
+                <SmallMetric label={t('Vibe 资产')} value={formatNumber(vibeStats.assets)} detail={t('编码 {0}', [formatNumber(vibeStats.encodings)])} />
+                <SmallMetric label={t('Vibe 分组')} value={formatNumber(vibeStats.groups)} />
+                <SmallMetric label={t('Roll 实验')} value={formatNumber(rollStats.experiments)} />
+                <SmallMetric label={t('Roll 候选')} value={formatNumber(rollStats.candidates)} />
+                <SmallMetric label={t('已保存组合')} value={formatNumber(rollStats.saved)} />
+                <SmallMetric label={t('收藏夹')} value={formatNumber(collectionStats.boards)} detail={t('收藏 {0}', [formatNumber(collectionStats.total)])} />
+              </div>
+              <div className="mt-4 grid gap-4 lg:grid-cols-2">
+                <div>
+                  <p className="mb-2 text-xs font-semibold text-gray-500 dark:text-gray-400">{t('Roll 实验排行')}</p>
+                  {rollStats.top.length ? <div className="space-y-0.5">{rollStats.top.map(row => <button key={row.id} type="button" onClick={onOpenRoll} className="mobile-touch flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-800/70"><span className="min-w-0 flex-1 truncate text-sm text-gray-700 dark:text-gray-200">{row.name}</span><span className="flex-none text-micro text-gray-400">{t('{0} 候选 · {1} 保存', [formatNumber(row.candidates), formatNumber(row.saved)])}</span></button>)}</div> : <p className="py-4 text-center text-sm text-gray-400">{t('暂无')}</p>}
+                </div>
+                <div>
+                  <p className="mb-2 text-xs font-semibold text-gray-500 dark:text-gray-400">{t('素材与收藏来源')}</p>
+                  {collectionStats.bySource.length ? <div className="space-y-1">{collectionStats.bySource.slice(0, 6).map(([source, count]) => <div key={source} className="flex items-center justify-between gap-3 px-3 py-1.5 text-sm"><span className="min-w-0 truncate text-gray-600 dark:text-gray-300">{sourceLabel(source as InspirationSourceType)}</span><span className="flex-none text-micro tabular-nums text-gray-400">{formatNumber(count)}</span></div>)}</div> : <p className="py-4 text-center text-sm text-gray-400">{t('暂无')}</p>}
+                </div>
+              </div>
+            </SectionCard>
+
+            <div className="grid gap-4 lg:grid-cols-2">
+              <SectionCard title={t('创作助手')} hint={t('会话与消息元数据，不读取聊天内容')}>
+                {assetsLoading && !assets.agent ? <p className="py-6 text-center text-sm text-gray-400">{t('正在读取…')}</p> : !assets.agent ? <p className="py-6 text-center text-sm text-gray-400">{t('助手服务未连接')}</p> : <div className="grid grid-cols-2 gap-2">
+                  <SmallMetric label={t('会话')} value={formatNumber(agentStats.sessions)} />
+                  <SmallMetric label={t('消息')} value={formatNumber(agentStats.messages)} />
+                </div>}
+                {agentStats.models.length > 0 && <div className="mt-3 flex flex-wrap gap-1.5">{agentStats.models.map(([model, count]) => <span key={model} className="rounded-full bg-gray-50 px-2.5 py-1 text-micro text-gray-500 dark:bg-gray-800/60 dark:text-gray-400">{model} · {formatNumber(count)}</span>)}</div>}
+              </SectionCard>
+              <SectionCard title={t('成本与边界')} hint={t('本地估算，不代表官方结算')}>
+                <div className="grid grid-cols-3 gap-2">
+                  <SmallMetric label={t('本地预算剩余')} value={formatNumber(budget.remaining)} />
+                  <SmallMetric label={t('本机累计 Anlas')} value={formatNumber(budget.personal?.anlasSpent || 0)} />
+                  <SmallMetric label={t('本机 Opus 图片')} value={formatNumber(budget.personal?.opusImages || 0)} />
+                </div>
+                <div className="mt-3 grid grid-cols-3 gap-2">
+                  <SmallMetric label={t('失败')} value={formatNumber(generationOutcomes.failed)} />
+                  <SmallMetric label={t('取消')} value={formatNumber(generationOutcomes.cancelled)} />
+                  <SmallMetric label={t('受阻')} value={formatNumber(generationOutcomes.blocked)} />
+                </div>
+                <p className="mt-3 text-micro leading-5 text-gray-400 dark:text-gray-500">{t('预算与用量按当前 Key 的本地记录汇总；官方余额与结算仍以 NovelAI 为准。')}</p>
+                <p className="mt-1 text-micro leading-5 text-gray-400 dark:text-gray-500">{t('失败、取消与受阻自本版本起记录；历史只保留成功保存的作品。')}</p>
+              </SectionCard>
+            </div>
           </>}
         </div>
       </div>

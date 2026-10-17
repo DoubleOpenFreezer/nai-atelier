@@ -750,9 +750,11 @@ const App = () => {
       case 'footprint':
         return <CreationFootprint
           active={view === 'footprint'}
+          chains={chains}
           onOpenHistory={openHistory}
           onOpenCollection={() => void handleNavigate('inspiration')}
           onOpenLab={() => void handleNavigate('playground')}
+          onOpenRoll={() => void handleNavigate('roll')}
         />;
       case 'history':
         return <GenHistory currentUser={currentUser} chains={chains} notify={notify} initialQuery={historyEntry} onOpenFootprint={() => void handleNavigate('footprint')} onNavigateToPlayground={() => handleNavigate('playground', undefined, { externalImport: true })} onRefreshInspiration={() => loadInspirations(true)} />;

@@ -111,6 +111,21 @@ export async function ensureLocalHistorySchema(db: D1Database) {
     ON local_generation_history(user_id, external_source, external_id)`).run();
   await db.prepare(`CREATE INDEX IF NOT EXISTS idx_local_history_user_favorite_created
     ON local_generation_history(user_id, is_favorite, created_at DESC)`).run();
+  await db.prepare(`CREATE TABLE IF NOT EXISTS local_usage_events (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    category TEXT NOT NULL,
+    action TEXT NOT NULL,
+    target TEXT,
+    amount INTEGER NOT NULL DEFAULT 0,
+    value REAL,
+    meta TEXT DEFAULT '{}',
+    created_at INTEGER NOT NULL
+  )`).run();
+  await db.prepare(`CREATE INDEX IF NOT EXISTS idx_local_usage_events_user_created
+    ON local_usage_events(user_id, created_at DESC)`).run();
+  await db.prepare(`CREATE INDEX IF NOT EXISTS idx_local_usage_events_category
+    ON local_usage_events(user_id, category, action, created_at)`).run();
   // Rows written before structured history existed have migration defaults
   // (empty strings and []).  They must continue to import their full prompt.
   // Preserve any older row that demonstrably contains structured information.
@@ -304,6 +319,86 @@ export async function handleHistoryRoute(ctx: RouteContext): Promise<Response | 
     return json({ enabled });
   }
 
+  if (path === '/api/local-usage/events' && method === 'POST') {
+    await ensureLocalHistorySchema(db);
+    const body = await request.json().catch(() => null) as any;
+    const list = Array.isArray(body?.events) ? body.events : body && typeof body === 'object' ? [body] : [];
+    if (!list.length || list.length > 50) return error('Invalid usage events', 400);
+    const now = Date.now();
+    const statements = [];
+    for (const item of list) {
+      const category = String(item?.category || '').trim().slice(0, 32);
+      const action = String(item?.action || '').trim().slice(0, 32);
+      if (!category || !action) return error('Invalid usage event category', 400);
+      const amount = Math.max(0, Math.min(1_000_000, Math.trunc(Number(item?.amount) || 0)));
+      const parsedValue = Number(item?.value);
+      const value = Number.isFinite(parsedValue) ? Math.max(0, parsedValue) : null;
+      const target = item?.target ? String(item.target).slice(0, 200) : null;
+      const meta = item?.meta && typeof item.meta === 'object' ? JSON.stringify(item.meta).slice(0, 2000) : '{}';
+      statements.push(db.prepare(`INSERT INTO local_usage_events
+        (id, user_id, category, action, target, amount, value, meta, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        .bind(crypto.randomUUID(), currentUser.id, category, action, target, amount, value, meta, now));
+    }
+    for (const statement of statements) await statement.run();
+    return json({ success: true, inserted: statements.length });
+  }
+
+  if (path === '/api/local-usage/stats' && method === 'GET') {
+    await ensureLocalHistorySchema(db);
+    const tzOffsetMinutes = Math.max(-840, Math.min(840, Math.trunc(Number(url.searchParams.get('tzOffset')) || 0)));
+    const offsetSeconds = tzOffsetMinutes * 60;
+    const rawDays = url.searchParams.get('days') || '30';
+    const monthParam = url.searchParams.get('month') || '';
+    const yearParam = url.searchParams.get('year') || '';
+    const monthMatch = /^(\d{4})-(\d{2})$/.exec(monthParam);
+    const yearMatch = /^(\d{4})$/.exec(yearParam);
+    const isMonth = rawDays === 'month' && Boolean(monthMatch);
+    const isYear = Boolean(yearMatch);
+    const now = Math.trunc(Number(url.searchParams.get('to')) || Date.now());
+    let from = 0;
+    let to = now;
+    if (isYear) {
+      const year = Number(yearMatch![1]);
+      from = Date.UTC(year, 0, 1) - offsetSeconds * 1000;
+      to = Math.min(now, Date.UTC(year + 1, 0, 1) - offsetSeconds * 1000 - 1);
+    } else if (isMonth) {
+      const year = Number(monthMatch![1]);
+      const month = Number(monthMatch![2]);
+      if (month < 1 || month > 12) return error('Invalid usage month', 400);
+      from = Date.UTC(year, month - 1, 1) - offsetSeconds * 1000;
+      to = Math.min(now, Date.UTC(year, month, 1) - offsetSeconds * 1000 - 1);
+    } else {
+      const days = rawDays === 'all' ? null : [7, 30, 365].includes(Number(rawDays)) ? Number(rawDays) : 30;
+      from = days === null ? 0 : now - days * 86400000;
+    }
+    const where = 'user_id = ? AND created_at >= ? AND created_at <= ?';
+    const rawFrom = url.searchParams.get('from');
+    if (rawFrom !== null) {
+      const parsedFrom = Number(rawFrom);
+      const parsedTo = Number(url.searchParams.get('to'));
+      from = Number.isFinite(parsedFrom) ? Math.max(0, Math.trunc(parsedFrom)) : 0;
+      to = Number.isFinite(parsedTo) && parsedTo > 0 ? Math.trunc(parsedTo) : now;
+    }
+    const [totals, daily] = await Promise.all([
+      db.prepare(`SELECT category, action, COUNT(*) AS count,
+        COALESCE(SUM(amount), 0) AS amount, COALESCE(SUM(value), 0) AS value
+        FROM local_usage_events WHERE ${where}
+        GROUP BY category, action ORDER BY category, action`)
+        .bind(currentUser.id, from, to).all<{ category: string; action: string; count: number; amount: number; value: number }>(),
+      db.prepare(`SELECT date(created_at / 1000 + ?, 'unixepoch') AS day, category, action,
+        COUNT(*) AS count, COALESCE(SUM(amount), 0) AS amount, COALESCE(SUM(value), 0) AS value
+        FROM local_usage_events WHERE ${where}
+        GROUP BY day, category, action ORDER BY day`)
+        .bind(offsetSeconds, currentUser.id, from, to).all<{ day: string; category: string; action: string; count: number; amount: number; value: number }>(),
+    ]);
+    return json({
+      totals: totals.results.map(row => ({ category: row.category, action: row.action, count: Number(row.count) || 0, amount: Number(row.amount) || 0, value: Number(row.value) || 0 })),
+      daily: daily.results.map(row => ({ date: row.day, category: row.category, action: row.action, count: Number(row.count) || 0, amount: Number(row.amount) || 0, value: Number(row.value) || 0 })),
+      generatedAt: now,
+    });
+  }
+
   if (path.startsWith('/api/local-history')) {
     if (!localHistoryEnabled(env)) return error('Local history is disabled', 404);
     if (!env.BUCKET) return error('Local history storage is unavailable', 503);
@@ -344,48 +439,81 @@ export async function handleHistoryRoute(ctx: RouteContext): Promise<Response | 
       const tzOffsetMinutes = Math.max(-840, Math.min(840, Math.trunc(Number(url.searchParams.get('tzOffset')) || 0)));
       const offsetSeconds = tzOffsetMinutes * 60;
       const rawDays = url.searchParams.get('days') || '30';
-      const days = rawDays === 'all' ? null : [7, 30, 365].includes(Number(rawDays)) ? Number(rawDays) : 30;
+      const monthParam = url.searchParams.get('month') || '';
+      const yearParam = url.searchParams.get('year') || '';
+      const monthMatch = /^(\d{4})-(\d{2})$/.exec(monthParam);
+      const yearMatch = /^(\d{4})$/.exec(yearParam);
+      const isMonth = rawDays === 'month' && Boolean(monthMatch);
+      const isYear = Boolean(yearMatch);
       const now = Math.trunc(Number(url.searchParams.get('to')) || Date.now());
-      const from = days === null ? 0 : now - days * 86400000;
+      let from = 0;
+      let to = now;
+      if (isYear) {
+        const year = Number(yearMatch![1]);
+        from = Date.UTC(year, 0, 1) - offsetSeconds * 1000;
+        to = Math.min(now, Date.UTC(year + 1, 0, 1) - offsetSeconds * 1000 - 1);
+      } else if (isMonth) {
+        const year = Number(monthMatch![1]);
+        const month = Number(monthMatch![2]);
+        if (month < 1 || month > 12) return error('Invalid history month', 400);
+        from = Date.UTC(year, month - 1, 1) - offsetSeconds * 1000;
+        to = Math.min(now, Date.UTC(year, month, 1) - offsetSeconds * 1000 - 1);
+      } else {
+        const days = rawDays === 'all' ? null : [7, 30, 365].includes(Number(rawDays)) ? Number(rawDays) : 30;
+        from = days === null ? 0 : now - days * 86400000;
+      }
       const dayExpr = "date(created_at / 1000 + ?, 'unixepoch')";
       const rangeWhere = 'user_id = ? AND created_at >= ? AND created_at <= ?';
+      const rawFrom = url.searchParams.get('from');
+      if (rawFrom !== null) {
+        const parsedFrom = Number(rawFrom);
+        const parsedTo = Number(url.searchParams.get('to'));
+        from = Number.isFinite(parsedFrom) ? Math.max(0, Math.trunc(parsedFrom)) : 0;
+        to = Number.isFinite(parsedTo) && parsedTo > 0 ? Math.trunc(parsedTo) : now;
+      }
       // 画师样张补全是辅助生成，不参与“最常用风格串/画师”，避免把补图当成创作配方。
       const creativeWhere = `${rangeWhere} AND COALESCE(source_chain_id, '') NOT LIKE 'artist-sample:%'`;
       // 风格串排行只承认真正的风格串来源：自由实验室（playground）和导入文件名不是配方。
       const chainWhere = `${creativeWhere}
         AND COALESCE(NULLIF(source_chain_id, ''), 'playground') <> 'playground'
+        AND COALESCE(source_chain_type, '') <> 'playground'
+        AND COALESCE(source_chain_id, '') NOT LIKE 'roll:%'
         AND COALESCE(source_chain_name, '') NOT LIKE '%.png'
         AND COALESCE(source_chain_name, '') NOT LIKE '%.jpg'
         AND COALESCE(source_chain_name, '') NOT LIKE '%.jpeg'
         AND COALESCE(source_chain_name, '') NOT LIKE '%.webp'
         AND COALESCE(source_chain_name, '') NOT LIKE '%.gif'`;
-      const rangeValues = [currentUser.id, from, now];
+      const rangeValues = [currentUser.id, from, to];
       const modelExpr = "CASE WHEN json_valid(params) THEN json_extract(params, '$.model') END";
       const widthExpr = "CASE WHEN json_valid(params) THEN CAST(json_extract(params, '$.width') AS INTEGER) END";
       const heightExpr = "CASE WHEN json_valid(params) THEN CAST(json_extract(params, '$.height') AS INTEGER) END";
       const stepsExpr = "CASE WHEN json_valid(params) THEN CAST(json_extract(params, '$.steps') AS INTEGER) END";
       const operationExpr = "COALESCE(CASE WHEN json_valid(params) THEN json_extract(params, '$._local_edit.operation') END, 'text-to-image')";
+      const characterCountExpr = "CASE WHEN json_valid(params) THEN json_array_length(params, '$.characters') ELSE 0 END";
+      const vibeCountExpr = "CASE WHEN json_valid(params) THEN json_array_length(params, '$.vibes.slots') ELSE 0 END";
+      const referenceCountExpr = "CASE WHEN json_valid(params) THEN json_array_length(params, '$.characterReferences.slots') ELSE 0 END";
 
-      const [totals, dailyResult, chainsResult, uniqueChains, models, sizes, steps, operations, artistRows] = await Promise.all([
+      const [totals, dailyResult, chainsResult, uniqueChains, models, sizes, steps, operations, characterUsage, vibeUsage, referenceUsage, artistRows] = await Promise.all([
         db.prepare(`SELECT COUNT(*) AS images,
           COUNT(DISTINCT ${dayExpr}) AS activeDays,
           COALESCE(SUM(CASE WHEN is_favorite = 1 THEN 1 ELSE 0 END), 0) AS favoriteImages,
           MIN(created_at) AS firstAt, MAX(created_at) AS lastAt
           FROM local_generation_history WHERE ${creativeWhere}`)
           .bind(offsetSeconds, ...rangeValues).first<any>(),
+        // 足迹页需要跨年切换；日报返回全部日期，前端按 7/30/365/年份截取。
         db.prepare(`SELECT ${dayExpr} AS day, COUNT(*) AS images
           FROM local_generation_history
-          WHERE user_id = ? AND created_at >= ? AND created_at <= ?
+          WHERE user_id = ? AND created_at <= ?
           AND COALESCE(source_chain_id, '') NOT LIKE 'artist-sample:%'
           GROUP BY day ORDER BY day`)
-          .bind(offsetSeconds, currentUser.id, now - 365 * 86400000, now).all<{ day: string; images: number }>(),
+          .bind(offsetSeconds, currentUser.id, now).all<{ day: string; images: number }>(),
         db.prepare(`SELECT COALESCE(NULLIF(source_chain_id, ''), 'playground') AS id,
           COALESCE(MAX(NULLIF(source_chain_name, '')), '') AS name,
           COUNT(*) AS images, MAX(created_at) AS lastAt
           FROM local_generation_history WHERE ${chainWhere}
           GROUP BY COALESCE(NULLIF(source_chain_id, ''), 'playground') ORDER BY images DESC, lastAt DESC LIMIT 12`)
           .bind(...rangeValues).all<{ id: string; name: string; images: number; lastAt: number }>(),
-        db.prepare(`SELECT COUNT(DISTINCT COALESCE(NULLIF(source_chain_id, ''), 'playground')) AS count
+        db.prepare(`SELECT COUNT(DISTINCT COALESCE(NULLIF(source_chain_name, ''), COALESCE(NULLIF(source_chain_id, ''), 'playground'))) AS count
           FROM local_generation_history WHERE ${chainWhere}`)
           .bind(...rangeValues).first<{ count: number }>(),
         db.prepare(`SELECT ${modelExpr} AS model, COUNT(*) AS images
@@ -404,12 +532,22 @@ export async function handleHistoryRoute(ctx: RouteContext): Promise<Response | 
           FROM local_generation_history WHERE ${creativeWhere}
           GROUP BY operation ORDER BY images DESC`)
           .bind(...rangeValues).all<{ operation: string; images: number }>(),
+        db.prepare(`SELECT COUNT(*) AS images, COALESCE(SUM(${characterCountExpr}), 0) AS slots
+          FROM local_generation_history WHERE ${creativeWhere} AND ${characterCountExpr} > 0`)
+          .bind(...rangeValues).first<{ images: number; slots: number }>(),
+        db.prepare(`SELECT COUNT(*) AS images, COALESCE(SUM(${vibeCountExpr}), 0) AS slots
+          FROM local_generation_history WHERE ${creativeWhere} AND json_valid(params)
+          AND json_extract(params, '$.vibes.enabled') = 1`)
+          .bind(...rangeValues).first<{ images: number; slots: number }>(),
+        db.prepare(`SELECT COUNT(*) AS images, COALESCE(SUM(${referenceCountExpr}), 0) AS slots
+          FROM local_generation_history WHERE ${creativeWhere} AND json_valid(params)
+          AND json_extract(params, '$.characterReferences.enabled') = 1`)
+          .bind(...rangeValues).first<{ images: number; slots: number }>(),
         // 画师使用量从完整 Prompt 派生；限制扫描最近 4000 张，避免一次性拉取整段历史。
-        db.prepare(`SELECT prompt, base_prompt, subject_prompt, created_at
+        db.prepare(`SELECT prompt, base_prompt, subject_prompt, params, created_at
           FROM local_generation_history WHERE ${creativeWhere}
-          AND (prompt LIKE '%artist:%' OR base_prompt LIKE '%artist:%' OR subject_prompt LIKE '%artist:%')
           ORDER BY created_at DESC LIMIT 4000`)
-          .bind(...rangeValues).all<{ prompt: string | null; base_prompt: string | null; subject_prompt: string | null; created_at: number }>(),
+          .bind(...rangeValues).all<{ prompt: string | null; base_prompt: string | null; subject_prompt: string | null; params: string | null; created_at: number }>(),
       ]);
 
       const artistPattern = /(?:^|[\s,])artist:([^\s,}]+)/gi;
@@ -418,7 +556,7 @@ export async function handleHistoryRoute(ctx: RouteContext): Promise<Response | 
         const text = [row.prompt, row.base_prompt, row.subject_prompt].filter(Boolean).join(' ');
         const seen = new Set<string>();
         for (const match of text.matchAll(artistPattern)) {
-          const name = match[1].replace(/[.,;]+$/, '').toLowerCase();
+          const name = match[1].replace(/^[\{\[]+/, '').replace(/^[:]+|[:.,;]+$/g, '').trim().toLowerCase();
           if (!name || seen.has(name)) continue;
           seen.add(name);
           const current = artistMap.get(name);
@@ -430,6 +568,50 @@ export async function handleHistoryRoute(ctx: RouteContext): Promise<Response | 
         }
       }
       const artists = [...artistMap.values()]
+        .sort((left, right) => right.images - left.images || right.lastAt - left.lastAt)
+        .slice(0, 12);
+      const tagMap = new Map<string, { name: string; images: number }>();
+      for (const row of artistRows.results) {
+        const text = [row.prompt, row.base_prompt, row.subject_prompt].filter(Boolean).join('\n');
+        const seen = new Set<string>();
+        for (const raw of text.split(/[,\n]/)) {
+          let tag = raw.trim().toLowerCase();
+          tag = tag.replace(/^[\{\[]+/, '').replace(/[\}\]]+$/, '');
+          tag = tag.replace(/^[\d.]+::/, '').replace(/::$/, '').trim();
+          if (!tag || tag.startsWith('artist:') || tag.length > 80 || seen.has(tag)) continue;
+          seen.add(tag);
+          const current = tagMap.get(tag);
+          if (current) current.images += 1;
+          else tagMap.set(tag, { name: tag, images: 1 });
+        }
+      }
+      const tags = [...tagMap.values()]
+        .sort((left, right) => right.images - left.images || left.name.localeCompare(right.name))
+        .slice(0, 12);
+
+      // 结构化角色存在 params.characters；按角色提示词派生，不依赖历史来源是否为角色库。
+      const characterMap = new Map<string, { id: string; name: string; images: number; lastAt: number }>();
+      for (const row of artistRows.results) {
+        let params: any = null;
+        try { params = JSON.parse(row.params || '{}'); } catch { params = null; }
+        const characters = Array.isArray(params?.characters) ? params.characters : [];
+        const seen = new Set<string>();
+        for (const character of characters) {
+          if (!character || character.enabled === false) continue;
+          const prompt = String(character.prompt || '').trim();
+          if (!prompt) continue;
+          const name = prompt.replace(/\s+/g, ' ').trim().slice(0, 100);
+          if (!name || seen.has(name)) continue;
+          seen.add(name);
+          const createdAt = Number(row.created_at) || 0;
+          const current = characterMap.get(name);
+          if (current) {
+            current.images += 1;
+            current.lastAt = Math.max(current.lastAt, createdAt);
+          } else characterMap.set(name, { id: name, name, images: 1, lastAt: createdAt });
+        }
+      }
+      const derivedCharacters = [...characterMap.values()]
         .sort((left, right) => right.images - left.images || right.lastAt - left.lastAt)
         .slice(0, 12);
 
@@ -460,6 +642,12 @@ export async function handleHistoryRoute(ctx: RouteContext): Promise<Response | 
           lastAt: Number(row.lastAt) || 0,
         })),
         artists,
+        characters: derivedCharacters,
+        tags,
+        characterUsage: { images: Number(characterUsage?.images || 0), slots: Number(characterUsage?.slots || 0) },
+        vibeUsage: { images: Number(vibeUsage?.images || 0), slots: Number(vibeUsage?.slots || 0) },
+        referenceUsage: { images: Number(referenceUsage?.images || 0), slots: Number(referenceUsage?.slots || 0) },
+        uniqueCharacters: characterMap.size,
         models: models.results.map(row => ({ model: row.model, images: Number(row.images) || 0 })),
         sizes: sizes.results.map(row => ({ width: Number(row.width), height: Number(row.height), images: Number(row.images) || 0 })),
         steps: steps.results.map(row => ({ steps: Number(row.steps), images: Number(row.images) || 0 })),

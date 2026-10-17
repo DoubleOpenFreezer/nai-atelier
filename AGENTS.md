@@ -122,10 +122,12 @@ AI 不得只机械修改用户明确指出的单个位置。开始实现前，�
 | --- | --- |
 | `feat:`（新功能） | minor |
 | `fix:` / `perf:` / `refactor:` / `style:` / `docs:` / `chore:` | patch |
-| 破坏性变更，或涉及 `schema.sql` / `migration_*.sql` 的数据迁移 | major |
+| 破坏性变更，或涉及不兼容／需人工干预的 `schema.sql` / `migration_*.sql` 变更 | major |
 
-- 命令：`node scripts/bump-version.mjs minor`（或 `patch` / `major` / `set:X.Y.Z`），脚本自动同步 package.json、package-lock.json 与 README 版本徽章；版本变更与代码改动进同一个提交。
+- 向后兼容的 schema 变更（新增表、列、索引等，旧数据仍可读、无需人工备份或迁移）按功能类型递增，不单独因为改动了 `schema.sql` 就升 major。
+- 只有删除／重命名表或列、修改列类型、重写旧数据、变更存储键／binding，或导致旧备份无法恢复等不兼容变更，才按 major 递增。
 - 同一提交包含多种类型时按最高级别递增。
+- 命令：`node scripts/bump-version.mjs minor`（或 `patch` / `major` / `set:X.Y.Z`），脚本自动同步 package.json、package-lock.json 与 README 版本徽章；版本变更与代码改动进同一个提交。
 - 电脑端迭代不得跳过递增；仅 Android 迭代按上述独立构建号规则执行，不得手工散改项目版本号。
 
 ## CHANGELOG 规则
