@@ -109,11 +109,11 @@ describe('抽取方式', () => {
     e.rules = { ...e.rules, minArtists: 3 };
     expect(() => rollCandidates(e, 1, { blockedTags: blocked })).toThrow('可用画师不足');
   });
-  it('固定权重要求最低与最高权重相同，固定画师要求 1～16 个不重复 Tag', () => {
+  it('固定权重要求最低与最高权重相同，固定画师要求 1～64 个不重复 Tag', () => {
     const e = rollFixture();
     expect(() => rollCandidates(e, 1, { plan: { mode: 'fixedWeight' } })).toThrow('固定权重需要最低与最高权重相同');
-    expect(() => rollCandidates(e, 1, { plan: { mode: 'pinnedArtists', pinnedArtists: [] } })).toThrow('固定画师需要 1～16 个不重复的画师 Tag');
-    expect(() => rollCandidates(e, 1, { plan: { mode: 'pinnedArtists', pinnedArtists: ['alpha', 'alpha'] } })).toThrow('固定画师需要 1～16 个不重复的画师 Tag');
+    expect(() => rollCandidates(e, 1, { plan: { mode: 'pinnedArtists', pinnedArtists: [] } })).toThrow('固定画师需要 1～64 个不重复的画师 Tag');
+    expect(() => rollCandidates(e, 1, { plan: { mode: 'pinnedArtists', pinnedArtists: ['alpha', 'alpha'] } })).toThrow('固定画师需要 1～64 个不重复的画师 Tag');
   });
 });
 

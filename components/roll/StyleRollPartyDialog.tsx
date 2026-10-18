@@ -1,16 +1,17 @@
-import React, { useEffect, useState } from 'react';
-import { Ban, Plus, RotateCcw, Search, Shuffle, X } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { ArrowLeftRight, Ban, Plus, RotateCcw, Search, Shuffle, X } from 'lucide-react';
 import { t, useLanguage } from '../../services/i18n';
 import { searchArtistDictionary, type ArtistDictionaryEntry } from '../../services/tagDictionary';
 import { normalizeArtistSampleTag } from '../../services/artistSamples';
 import { loadArtistSampleUrls } from '../../services/artistSampleUrls';
+import { ROLL_MAX_ARTISTS } from '../../services/styleRoll';
 import { ImagePreviewPortal } from '../ImagePreviewPortal';
 import { IconButton, ToolbarButton } from '../DesignSystem';
 import { SmartImage } from '../SmartImage';
 import { isTopmostModal, useModalA11y } from '../useModalA11y';
 import { useMobileHistoryLayer } from '../MobileUI';
 
-const PARTY_LIMIT = 16;
+const PARTY_LIMIT = ROLL_MAX_ARTISTS;
 const key = (tag: string) => tag.trim().replaceAll('_', ' ').replace(/\s+/g, ' ').toLowerCase();
 const field = 'mobile-touch min-w-0 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-500 dark:border-gray-700 dark:bg-gray-950';
 
@@ -35,6 +36,8 @@ const PartyForm: React.FC<Props> = ({ library, count, initial, blocked, sampledO
   const [sampleUrls, setSampleUrls] = useState<Map<string, string>>(new Map());
   const [samplesLoading, setSamplesLoading] = useState(true);
   const [undoBlock, setUndoBlock] = useState<{ blocked: string[]; picked: string[] } | null>(null);
+  const [replaceTarget, setReplaceTarget] = useState<string | null>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
   const dialog = useModalA11y<HTMLDivElement>(true);
   const close = useMobileHistoryLayer(true, () => { if (busy) return false; onClose(); }, 'roll-party');
 
@@ -63,16 +66,23 @@ const PartyForm: React.FC<Props> = ({ library, count, initial, blocked, sampledO
     const pool = available();
     const next = [...picked];
     while (next.length < Math.min(size, PARTY_LIMIT) && pool.length) next.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
-    setPicked(next); setError('');
+    setPicked(next); setError(''); setReplaceTarget(null);
   };
   const redraw = () => {
     const pool = available();
     if (!pool.length) { setError(t('没有可重新选择的画师')); return; }
     const next: string[] = [];
     while (next.length < Math.min(count, PARTY_LIMIT) && pool.length) next.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
-    setPicked(next); setError(''); setUndoBlock(null);
+    setPicked(next); setError(''); setUndoBlock(null); setReplaceTarget(null);
   };
   const add = (tag: string) => {
+    if (replaceTarget) {
+      const target = key(replaceTarget), nextKey = key(tag);
+      if (nextKey === target) { setReplaceTarget(null); setSearch(''); return; }
+      if (blockedKeys.has(nextKey) || (pickedKeys.has(nextKey) && nextKey !== target)) { setError(t('这位画师已经在固定列表里，或已被屏蔽')); return; }
+      setPicked(current => current.map(item => key(item) === target ? tag : item));
+      setReplaceTarget(null); setSearch(''); setError(''); return;
+    }
     if (picked.length >= PARTY_LIMIT || pickedKeys.has(key(tag)) || blockedKeys.has(key(tag))) return;
     setPicked([...picked, tag]); setError('');
   };
@@ -86,6 +96,7 @@ const PartyForm: React.FC<Props> = ({ library, count, initial, blocked, sampledO
     }
     if (!next.length) { setError('没有识别到画师 Tag'); return; }
     if (next.length > PARTY_LIMIT) { setError(`最多固定 ${PARTY_LIMIT} 位画师`); return; }
+    if (replaceTarget) { add(next[0]); setManual(''); return; }
     setPicked(next); setManual(''); setError('');
   };
   const blockPicked = async () => {
@@ -95,7 +106,7 @@ const PartyForm: React.FC<Props> = ({ library, count, initial, blocked, sampledO
       const previous = blockedTags, previousPicked = picked;
       const next = [...blockedTags];
       for (const tag of picked) if (!next.some(item => key(item) === key(tag))) next.push(tag);
-      await onBlock(next); setBlockedTags(next); setPicked([]); setUndoBlock({ blocked: previous, picked: previousPicked });
+      await onBlock(next); setBlockedTags(next); setPicked([]); setUndoBlock({ blocked: previous, picked: previousPicked }); setReplaceTarget(null);
     } catch (cause) { setError((cause as Error).message); }
     finally { setBusy(false); }
   };
@@ -134,6 +145,7 @@ const PartyForm: React.FC<Props> = ({ library, count, initial, blocked, sampledO
               <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/40 to-transparent px-2 pb-1.5 pt-8">
                 <span className="block truncate text-xs font-medium text-white" title={tag}>{tag}</span>
               </div>
+              <button type="button" aria-label={t('替换 {0}', [tag])} title={t('替换')} disabled={busy} onClick={() => { setReplaceTarget(tag); setSearch(''); setError(''); requestAnimationFrame(() => searchRef.current?.focus()); }} className="mobile-size-locked absolute left-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-black/50 text-white backdrop-blur-md transition hover:bg-indigo-600 disabled:opacity-40"><ArrowLeftRight className="h-3.5 w-3.5" /></button>
               <button type="button" aria-label={t('移除 {0}', [tag])} title={t('移除')} disabled={busy} onClick={() => setPicked(picked.filter(item => item !== tag))} className="mobile-size-locked absolute right-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-black/50 text-white backdrop-blur-md transition hover:bg-rose-600 disabled:opacity-40"><X className="h-3.5 w-3.5" /></button>
             </div>;
           })}
@@ -150,11 +162,16 @@ const PartyForm: React.FC<Props> = ({ library, count, initial, blocked, sampledO
         </div>
         <div className="grid items-start gap-2.5 sm:grid-cols-2">
           <div className="min-w-0">
+            {replaceTarget && <div className="mb-2 flex items-center gap-2 rounded-lg bg-indigo-50 px-2.5 py-1.5 text-xs text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300">
+              <ArrowLeftRight className="h-3.5 w-3.5 shrink-0" />
+              <span className="min-w-0 flex-1 truncate">{t('正在替换 {0}', [replaceTarget])}</span>
+              <button type="button" className="mobile-touch shrink-0 font-semibold underline" onClick={() => { setReplaceTarget(null); setSearch(''); }}>{t('取消替换')}</button>
+            </div>}
             <div className="relative">
               <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-gray-400" />
-              <input aria-label={t('从画师库添加')} className={`${field} !pl-9`} value={search} onChange={event => setSearch(event.target.value)} placeholder={t('从画师库添加')} disabled={busy} />
+              <input ref={searchRef} aria-label={replaceTarget ? t('搜索替换画师') : t('从画师库添加')} className={`${field} !pl-9`} value={search} onChange={event => setSearch(event.target.value)} placeholder={replaceTarget ? t('搜索替换画师') : t('从画师库添加')} disabled={busy} />
             </div>
-            {!!suggestions.length && <div className="mt-1.5 flex max-h-24 flex-wrap gap-1.5 overflow-y-auto">{suggestions.map(artist => <button key={artist.name} type="button" className="mobile-touch rounded-lg border border-gray-200 px-2 py-1 text-xs hover:border-indigo-400 disabled:opacity-40 dark:border-gray-700" disabled={busy || pickedKeys.has(key(artist.name)) || blockedKeys.has(key(artist.name))} onClick={() => add(artist.name)}>{artist.name}</button>)}</div>}
+            {!!suggestions.length && <div className="mt-1.5 flex max-h-24 flex-wrap gap-1.5 overflow-y-auto">{suggestions.map(artist => <button key={artist.name} type="button" className="mobile-touch rounded-lg border border-gray-200 px-2 py-1 text-xs hover:border-indigo-400 disabled:opacity-40 dark:border-gray-700" disabled={busy || blockedKeys.has(key(artist.name)) || (pickedKeys.has(key(artist.name)) && key(artist.name) !== key(replaceTarget || ''))} onClick={() => add(artist.name)}>{artist.name}</button>)}</div>}
           </div>
           <div className="min-w-0">
             <div className="flex items-start gap-2">

@@ -6,6 +6,9 @@
 
 ## 2026-10-18
 
+- **DeepSeek Harness（deepseek-flash）**：修复 Roll 命名统一后没同步的组件测试：画师库与角色库的抽卡入口、收藏筛选已分别改叫「随机选画师／再选一批／只看收藏画师」和「随机抽卡／再抽一批／只看收藏」，测试改为按目录取文案；补齐角色编辑器在 Medium 模型下正负词清空按钮的可用性断言（每个角色两个按钮，负词那半随区域锁定）；修正「更多操作」里第二次点击翻译需计两次调用的断言。另把单测超时放宽到 15 秒，修掉整套并发跑满时重测试被默认 5 秒误杀的偶发失败。`npm run test -- tests/components/` 连续两次 1637 项全绿。
+- **DeepSeek Harness（deepseek-flash）**：按设计讨论重做 Roll 候选卡片的画师占比色带：低饱和 12 色（等色相间隔、等明度）、按权重降序铺开、段间 1px 缝隙并垫暗槽，颜色锚定画师原串位置以便和详情面板对号，超过 12 位画师时尾部合并为中性灰；抽出 `components/roll/rollPalette.ts` 统一色带与详情面板配色，修掉两处第 6 色不一致；新增 `tests/components/rollPalette.test.ts` 覆盖排序、颜色归属与溢出合并。
+- **DeepSeek Harness（deepseek-flash）**：按需求把 Roll 每串画师上限从 16 位提升到 64 位，统一校验、候选、固定画师、配置弹层、从风格串开始与提示文案；现有记录无需迁移。此前同一轮已给 Roll 串增加「从已有风格串开始」，并修复有画师 Tag 却不可用：兼容裸画师名、`@`／`by` 署名、`artist:`／`Artists:` 大小写与复数、异常括号／权重、缺失模型与 32 位 Seed；列表显示封面、画师数量与不可用原因。同步服务、弹层、页面、五语文案、决策文档、README、CHANGELOG 与回归测试。
 - **DeepSeek Harness（deepseek-flash）**：按产品／UI 体验审视结论重整 Roll 串与画师库：Roll 顶栏记录名、主操作固定、张数／人数／费用摘要、本轮设置分组、容量与轮次角标、未出图禁存、永久清理已归档候选、中文名搜索、详情样张与画师库互跳；画师库无样张回退全目录、样张筛选记忆、收藏画师标记、图包入口、随机选画师与窄屏工具栏滚动；统一「画风记录／候选／选择固定画师／随机选择」命名并补齐五语文案、决策文档、README、CHANGELOG 与定向测试。
 - **DeepSeek Harness（deepseek-flash）**：按反馈把抽取方式分成两层：新建/编辑记录的配置弹层里设「默认抽取方式」，本轮设置里改的是临时覆盖，只写入轮次快照、不再改写记录默认；同时让「本轮设置」按钮显示文字（原来只有一个箭头，找不到入口）（feat: separate default and per-round draw modes）。
 - **DeepSeek Harness（deepseek-flash）**：按需求给 Roll 候选加「新建记录 · 只抽权重」：复制当前模板、固定 Seed、画师覆盖项与权重范围，新记录的抽取方式设为固定该候选的画师集合，后续每轮只随机权重；补译文与页面断言（feat: create a weights-only record from a roll candidate）。

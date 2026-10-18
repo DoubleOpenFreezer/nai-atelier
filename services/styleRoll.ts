@@ -56,6 +56,8 @@ export const DEFAULT_ROLL_NEGATIVE = 'worst quality, lowres, bad quality, jpeg a
 /** 历史默认模板：仍原样保存且没有候选时升级为新默认，用户改过的内容不动。 */
 export const LEGACY_ROLL_PROMPTS = ['{style}, 1girl, solo, upper body, simple background, looking at viewer'];
 export const ROLL_CANDIDATE_LIMIT = 240;
+/** 单条 Roll 配方最多包含的画师数；足够覆盖较长的风格串，同时保留数据与界面安全边界。 */
+export const ROLL_MAX_ARTISTS = 64;
 const tenth = (value: number) => Math.round(value * 10) / 10;
 const tagKey = (tag: string) => tag.trim().replaceAll('_', ' ').replace(/\s+/g, ' ').toLowerCase();
 const validTag = (tag: unknown): tag is string => typeof tag === 'string' && tag.trim().length > 0 && tag.length <= 200 && !/[,\n\r:{}\[\]<>]/.test(tag);
@@ -66,7 +68,7 @@ export function parseRollArtists(text: string): RollArtist[] {
   const result: RollArtist[] = [], seen = new Set<string>();
   for (const part of text.split(/[,，\n\r]+/).map(value => value.trim()).filter(Boolean)) {
     const weighted = part.match(/^([\d.]+)::\s*(.*?)\s*::$/);
-    const tag = (weighted ? weighted[2] : part).replace(/^artist\s*:\s*/i, '').trim();
+    const tag = (weighted ? weighted[2] : part).replace(/^artists?\s*:\s*/i, '').trim();
     const weight = weighted ? Number(weighted[1]) : 1;
     if (!validTag(tag) || !validWeight(weight)) throw new Error('请填写画师 Tag，权重使用 0.1～3.0 的一位小数');
     if (!seen.has(tagKey(tag))) { seen.add(tagKey(tag)); result.push({ tag, weight, locked: false, excluded: false }); }
@@ -118,7 +120,7 @@ export function validateRollTemplate(template: RollTemplate): void {
 
 function validateRuleRanges(rules: RollRules): void {
   if (!rules || !Number.isSafeInteger(rules.minArtists) || !Number.isSafeInteger(rules.maxArtists) ||
-    rules.minArtists < 1 || rules.maxArtists > 16 || rules.minArtists > rules.maxArtists ||
+    rules.minArtists < 1 || rules.maxArtists > ROLL_MAX_ARTISTS || rules.minArtists > rules.maxArtists ||
     !validWeight(rules.minWeight) || !validWeight(rules.maxWeight) || rules.minWeight > rules.maxWeight) throw new Error('请检查画师数量和权重范围');
 }
 
@@ -133,9 +135,9 @@ export function validateRollDrawPlan(plan: RollDrawPlan | undefined, rules: Roll
   if (plan === undefined) return;
   if (!plan || !['random', 'pinnedArtists', 'fixedWeight'].includes(plan.mode)) throw new Error('抽取方式无效');
   if (plan.mode === 'pinnedArtists') {
-    if (!Array.isArray(plan.pinnedArtists) || !plan.pinnedArtists.length || plan.pinnedArtists.length > 16 ||
+    if (!Array.isArray(plan.pinnedArtists) || !plan.pinnedArtists.length || plan.pinnedArtists.length > ROLL_MAX_ARTISTS ||
       plan.pinnedArtists.some(tag => !validTag(tag)) ||
-      new Set(plan.pinnedArtists.map(tagKey)).size !== plan.pinnedArtists.length) throw new Error('固定画师需要 1～16 个不重复的画师 Tag');
+      new Set(plan.pinnedArtists.map(tagKey)).size !== plan.pinnedArtists.length) throw new Error(`固定画师需要 1～${ROLL_MAX_ARTISTS} 个不重复的画师 Tag`);
   } else if (plan.pinnedArtists !== undefined) throw new Error('当前抽取方式不接受固定画师');
   if (plan.mode === 'fixedWeight' && rules.minWeight !== rules.maxWeight) throw new Error('固定权重需要最低与最高权重相同');
 }
@@ -165,7 +167,7 @@ export function validateRollExperiment(value: unknown): asserts value is RollExp
   validateRollDrawPlan(e.drawPlan, e.rules);
   const ids = new Set<string>();
   for (const candidate of e.candidates) {
-    if (!candidate || !validId(candidate.id) || ids.has(candidate.id) || !Array.isArray(candidate.tags) || !candidate.tags.length || candidate.tags.length > 16 ||
+    if (!candidate || !validId(candidate.id) || ids.has(candidate.id) || !Array.isArray(candidate.tags) || !candidate.tags.length || candidate.tags.length > ROLL_MAX_ARTISTS ||
       !candidate.tags.every(tag => tag && validTag(tag.tag) && validWeight(tag.weight)) || new Set(candidate.tags.map(tag => tagKey(tag.tag))).size !== candidate.tags.length ||
       !Number.isFinite(candidate.createdAt) || typeof candidate.archived !== 'boolean' ||
       (candidate.savedChainId !== undefined && !validId(candidate.savedChainId))) throw new Error('候选串资料无效');

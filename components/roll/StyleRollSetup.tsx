@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Dice5, LockKeyhole, Plus, Search, Sparkles, Users, X } from 'lucide-react';
 import type { PromptChain } from '../../types';
 import { t, useLanguage } from '../../services/i18n';
-import { mergeRollArtists, parseRollArtists, validateRollExperiment, DEFAULT_ROLL_NEGATIVE, DEFAULT_ROLL_PROMPT, LEGACY_ROLL_PROMPTS, type RollDrawMode, type RollExperiment } from '../../services/styleRoll';
+import { mergeRollArtists, parseRollArtists, validateRollExperiment, DEFAULT_ROLL_NEGATIVE, DEFAULT_ROLL_PROMPT, LEGACY_ROLL_PROMPTS, ROLL_MAX_ARTISTS, type RollDrawMode, type RollExperiment } from '../../services/styleRoll';
 import { StyleRollPartyDialog } from './StyleRollPartyDialog';
 import { compilePrompt } from '../../services/promptUtils';
 import { parsePromptTags, removePromptTagTokens } from '../../services/tagTranslations';
@@ -104,7 +104,7 @@ const SetupForm: React.FC<Props> = ({ initial, chains, library = [], libraryCoun
             <p className="text-xs text-gray-400">{t('之后每轮默认使用；在「本轮设置」里可以临时改。')}</p>
           </div>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            {([['minArtists', '最少画师'], ['maxArtists', '最多画师']] as const).map(([key, label]) => <label key={key} className="text-xs font-semibold">{t(label)}<input type="number" className={`${field} mt-1 tabular-nums`} value={draft.rules[key]} min={1} max={16} step={1} disabled={busy || plan.mode === 'pinnedArtists'} onChange={event => setDraft({ ...draft, rules: { ...draft.rules, [key]: Number(event.target.value) } })} /></label>)}
+            {([['minArtists', '最少画师'], ['maxArtists', '最多画师']] as const).map(([key, label]) => <label key={key} className="text-xs font-semibold">{t(label)}<input type="number" className={`${field} mt-1 tabular-nums`} value={draft.rules[key]} min={1} max={ROLL_MAX_ARTISTS} step={1} disabled={busy || plan.mode === 'pinnedArtists'} onChange={event => setDraft({ ...draft, rules: { ...draft.rules, [key]: Number(event.target.value) } })} /></label>)}
             {plan.mode === 'fixedWeight'
               ? <label className="text-xs font-semibold">{t('固定权重')}<input aria-label={t('固定权重')} type="number" className={`${field} mt-1 tabular-nums`} value={draft.rules.minWeight} min={0.1} max={3} step={0.1} disabled={busy} onChange={event => { const value = Number(event.target.value); setDraft({ ...draft, rules: { ...draft.rules, minWeight: value, maxWeight: value } }); }} /></label>
               : ([['minWeight', '最低权重'], ['maxWeight', '最高权重']] as const).map(([key, label]) => <label key={key} className="text-xs font-semibold">{t(label)}<input type="number" className={`${field} mt-1 tabular-nums`} value={draft.rules[key]} min={0.1} max={3} step={0.1} disabled={busy} onChange={event => setDraft({ ...draft, rules: { ...draft.rules, [key]: Number(event.target.value) } })} /></label>)}

@@ -3,6 +3,7 @@ import { Check, Dice5, RotateCcw, Save, Trash2 } from 'lucide-react';
 import type { LocalGenItem } from '../../types';
 import { t } from '../../services/i18n';
 import { type RollCandidate, type RollExperiment } from '../../services/styleRoll';
+import { buildRollWeightBand, rollChipColor } from './rollPalette';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../../services/imageDisplayPreferences';
 import { useGalleryFrostedCaption } from '../../services/appearancePreferences';
 import { ShortestColumnMasonry, useMasonryColumnCount } from '../ShortestColumnMasonry';
@@ -26,15 +27,6 @@ interface Props {
   notify: (message: string, type?: 'success' | 'error') => void;
 }
 
-const ACCENT_COLORS = [
-  'bg-indigo-500 text-indigo-700 dark:text-indigo-300',
-  'bg-emerald-500 text-emerald-700 dark:text-emerald-300',
-  'bg-purple-500 text-purple-700 dark:text-purple-300',
-  'bg-amber-500 text-amber-700 dark:text-amber-300',
-  'bg-rose-500 text-rose-700 dark:text-rose-300',
-  'bg-cyan-500 text-cyan-700 dark:text-cyan-300',
-];
-
 export const StyleRollGallery: React.FC<Props> = ({ experiment, candidates, images, selectedId, selectionFocusEnabled, historyReady, historyLoading, selecting, selectedIds, onSelect, onToggle, onSave, onArchive, busy, preview, roundNumbers, generatingId, scrollRef, onScroll, notify }) => {
   const display = useMobileImageDisplayPreferences('roll');
   const requestedColumns = useMasonryColumnCount(display, undefined, scrollRef, 220);
@@ -49,8 +41,8 @@ export const StyleRollGallery: React.FC<Props> = ({ experiment, candidates, imag
     const selected = selecting ? selectedIds.has(candidate.id) : selectedId === candidate.id;
     const activate = () => { if (selecting) { if (!busy) onToggle(candidate.id); } else onSelect(selectedId === candidate.id ? '' : candidate.id); };
 
-    // 计算总权重以便展示多彩权重条
-    const totalWeight = candidate.tags.reduce((sum, tag) => sum + Math.max(0.1, tag.weight), 0) || 1;
+    // 权重色带：颜色跟画师走，宽度按占比，整体按权重降序铺开
+    const band = buildRollWeightBand(candidate.tags);
 
     return <PressRevealSurface key={candidate.id} pressDisabled={selecting} role={selecting ? 'checkbox' : 'button'} tabIndex={0}
       data-agent-action="select" data-gallery-work-id={candidate.id} data-safe-mode-work="true"
@@ -104,16 +96,12 @@ export const StyleRollGallery: React.FC<Props> = ({ experiment, candidates, imag
           </>
         )}
 
-        {/* 底部微型画师权重渐变色带 */}
-        {candidate.tags.length > 0 && (
-          <div className="absolute inset-x-0 bottom-0 z-10 flex h-1 w-full overflow-hidden opacity-80 group-hover:opacity-100 transition-opacity">
-            {candidate.tags.map((entry, entryIndex) => {
-              const pct = (Math.max(0.1, entry.weight) / totalWeight) * 100;
-              const colorClass = ACCENT_COLORS[entryIndex % ACCENT_COLORS.length].split(' ')[0];
-              return (
-                <div key={entry.tag} className={`${colorClass} h-full transition-all`} style={{ width: `${pct}%` }} title={`${entry.tag}: ${entry.weight.toFixed(1)}`} />
-              );
-            })}
+        {/* 底部微型画师权重色带：颜色锚定画师位置，按权重降序铺开 */}
+        {band.length > 0 && (
+          <div className="absolute inset-x-0 bottom-0 z-10 flex h-1 w-full gap-px overflow-hidden bg-black/30 opacity-80 transition-opacity group-hover:opacity-100">
+            {band.map(segment => (
+              <span key={segment.key} title={segment.label} className="h-full shrink-0" style={{ flexGrow: segment.pct, flexBasis: 0, backgroundColor: segment.color }} />
+            ))}
           </div>
         )}
       </div>
@@ -125,7 +113,7 @@ export const StyleRollGallery: React.FC<Props> = ({ experiment, candidates, imag
         <div className="flex flex-wrap items-center gap-1 overflow-hidden min-w-0 flex-1" title={candidate.tags.map(entry => `${entry.tag} (${entry.weight.toFixed(1)})`).join(', ')}>
           {candidate.tags.slice(0, 6).map((entry, entryIndex) => (
             <span key={entry.tag} className="gallery-card-badge inline-flex items-center gap-1 rounded-md bg-gray-100 dark:bg-gray-800 px-1 py-0.5 text-micro font-medium text-gray-700 dark:text-gray-200 truncate max-w-[96px] border border-gray-200/50 dark:border-gray-700/50">
-              <span className={`inline-block h-1 w-1 shrink-0 rounded-full ${ACCENT_COLORS[entryIndex % ACCENT_COLORS.length].split(' ')[0]}`} />
+              <span className="inline-block h-1 w-1 shrink-0 rounded-full" style={{ backgroundColor: rollChipColor(entryIndex) }} />
               <span className="truncate">{entry.tag}</span>
               <span className="font-mono text-micro opacity-60 font-semibold">{entry.weight.toFixed(1)}</span>
             </span>
