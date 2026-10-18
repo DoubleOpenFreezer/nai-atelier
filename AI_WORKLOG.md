@@ -4,6 +4,10 @@
 
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
+## 2026-10-19
+
+- **Claude Code (Claude Opus 5.5)**：第三方生图网关兼容：成员网关的角色参考改写为附原图的 `director_reference_images_cached`，网关缺少额度接口（404／405／501）时后台连续生成按保守价降级继续而非中止；补单元与 HTTP 集成测试并更新 README／决策记录（feat: improve third-party gateway compatibility for references and quota）。
+
 ## 2026-10-18
 
 - **DeepSeek Harness（deepseek-flash）**：按界面反馈把 Roll 串卡片的丢弃／恢复按钮从图片左下角移到左上角编号下方，避免遮挡底部画师与权重标签；补位置断言并重建前端产物（style: move roll discard action under the card number）。
