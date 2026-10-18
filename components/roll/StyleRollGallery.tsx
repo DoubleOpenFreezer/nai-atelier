@@ -96,9 +96,9 @@ export const StyleRollGallery: React.FC<Props> = ({ experiment, candidates, imag
           </>
         )}
 
-        {/* 底部微型画师权重色带：颜色锚定画师位置，按权重降序铺开 */}
+        {/* 底部微型画师权重色带：颜色锚定画师位置，按权重降序铺开，段与段直接相接 */}
         {band.length > 0 && (
-          <div className="absolute inset-x-0 bottom-0 z-10 flex h-1 w-full gap-px overflow-hidden bg-black/30 opacity-80 transition-opacity group-hover:opacity-100">
+          <div className="absolute inset-x-0 bottom-0 z-10 flex h-1 w-full overflow-hidden bg-black/30 opacity-80 transition-opacity group-hover:opacity-100">
             {band.map(segment => (
               <span key={segment.key} title={segment.label} className="h-full shrink-0" style={{ flexGrow: segment.pct, flexBasis: 0, backgroundColor: segment.color }} />
             ))}
