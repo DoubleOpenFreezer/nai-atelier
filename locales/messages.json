@@ -20252,5 +20252,7 @@
   "仅角色": ["仅角色","Character only","キャラのみ","캐릭터만"],
   "仅场景与镜头": ["仅场景与镜头","Scene and camera only","シーンとカメラのみ","장면과 카메라만"],
   "所有启用角色": ["所有启用角色","All enabled characters","有効なキャラ全部","활성 캐릭터 전체"],
-  "选择抽取范围": ["选择抽取范围","Choose the roll scope","抽選範囲を選択","추첨 범위 선택"]
+  "选择抽取范围": ["选择抽取范围","Choose the roll scope","抽選範囲を選択","추첨 범위 선택"],
+  "Roll 场景 / 镜头": ["Roll 场景 / 镜头","Roll scene / camera","シーン / カメラをロール","장면 / 카메라 롤"],
+  "Roll 当前角色": ["Roll 当前角色","Roll this character","このキャラをロール","이 캐릭터 롤"]
 }

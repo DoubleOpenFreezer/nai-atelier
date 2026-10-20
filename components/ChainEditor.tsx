@@ -67,6 +67,9 @@ interface ChainEditorProps {
     externalImportToken?: number;
   /** 外部页面（一键 Roll）写入 params 后的版本号：变化时重新同步编辑区，避免旧草稿盖住新内容 */
   sectionsRevision?: number;
+  /** 实验室就地发起一键 Roll：'character' 只滚角色四类，'global' 只滚场景与镜头 */
+  onContentRollForRole?: (index: number) => void;
+  onContentRollForGlobal?: () => void;
     agentOpenToken?: number;
     tagAssistEnabled: boolean;
     onTagAssistEnabledChange: (enabled: boolean) => void;
@@ -82,7 +85,7 @@ interface ChainEditorProps {
     onBack: () => void | Promise<void>;
 }
 
-export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUpdateChain, onFork, onCreateCharacter, setIsDirty, saveRef, notify, externalImportToken, sectionsRevision, agentOpenToken, tagAssistEnabled, onTagAssistEnabledChange, generationStreamPreview, forceEmptySeed = false, onForceEmptySeedChange, enforceFreeStepLimit = true, continuousGenerationEnabled = true, rememberGenerationSettings = true, generationMemory = DEFAULT_GENERATION_MEMORY_PREFERENCES, labPageLayouts, safeMode, onBack }) => {
+export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUpdateChain, onFork, onCreateCharacter, setIsDirty, saveRef, notify, externalImportToken, sectionsRevision, agentOpenToken, tagAssistEnabled, onTagAssistEnabledChange, generationStreamPreview, forceEmptySeed = false, onForceEmptySeedChange, enforceFreeStepLimit = true, continuousGenerationEnabled = true, rememberGenerationSettings = true, generationMemory = DEFAULT_GENERATION_MEMORY_PREFERENCES, labPageLayouts, safeMode, onBack, onContentRollForRole, onContentRollForGlobal }) => {
   useLanguage();
     const negativeClearActionSlotRef = useRef<HTMLSpanElement>(null);
     const [keyboardOffset, setKeyboardOffset] = useState(0);
@@ -2117,6 +2120,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                             prompt={basePrompt}
                             setPrompt={setBasePrompt}
                             sections={params._promptSections}
+        onContentRollForGlobal={onContentRollForGlobal}
                             setSections={next => setParams(previous => ({ ...previous, _promptSections: next }))}
                             supplementPrompt={subjectPrompt}
                             setSupplementPrompt={setSubjectPrompt}
@@ -2147,7 +2151,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                             notify={notify}
                             markPresetSectionModified={markPresetSectionModified}
                             markChange={markChange}
-                            addCharacter={addCharacter}
+                            onContentRollForRole={onContentRollForRole}
+      addCharacter={addCharacter}
                             updateCharacter={updateCharacter}
                             removeCharacter={removeCharacter}
                             activeLabLayout={activeLabLayout}

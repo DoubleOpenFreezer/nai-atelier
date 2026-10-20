@@ -22,6 +22,9 @@ interface ContentRollWorkspaceProps {
   onApplyRoll?: (plan: ContentRollApplyPlan) => Promise<boolean>;
   /** 撤销上一次填入（App 用改动前的快照恢复） */
   onUndoApply?: () => Promise<boolean>;
+  /** 从实验室就地发起：范围与目标由调用方指定（消费一次） */
+  scopeRequest?: { scope: ContentRollScope; targetId?: string; key: number } | null;
+  onScopeRequestConsumed?: () => void;
   /** 是否有可撤销的填入 */
   canUndo?: boolean;
   /** 存为 Roll 内容（App 负责按白名单构造快照并落库），返回新记录 id */
@@ -69,7 +72,7 @@ const shortText = (value: string, max = 48): string => {
  * 全部随机与证据逻辑在 services/contentRoll（快照/约束）与 services/contentRollDraw（池子/随机流），
  * 本组件只负责界面与本地草稿，不写库、不触发生成。
  */
-export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ active, chains, notify, playgroundRoles = [], playgroundParams = null, onApplyRoll, onUndoApply, canUndo = false, onSaveRoll, seedRecord = null, onSeedConsumed }) => {
+export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ active, chains, notify, playgroundRoles = [], playgroundParams = null, onApplyRoll, onUndoApply, canUndo = false, onSaveRoll, seedRecord = null, onSeedConsumed, scopeRequest = null, onScopeRequestConsumed }) => {
   const [initial] = useState(readStore);
   const [history, setHistory] = useState<RollRecord[]>(initial.history);
   const [cursor, setCursor] = useState(initial.cursor);
@@ -88,6 +91,17 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ acti
   const [savedId, setSavedId] = useState('');
 
   const current = cursor >= 0 ? history[cursor] : null;
+
+  /* 实验室就地发起：直接切到指定范围与目标 */
+  useEffect(() => {
+    if (!scopeRequest) return;
+    setRange(scopeRequest.scope);
+    if (scopeRequest.targetId) {
+      targetTouched.current = true;
+      setTargetId(scopeRequest.targetId);
+    }
+    onScopeRequestConsumed?.();
+  }, [scopeRequest, onScopeRequestConsumed]);
 
   /* 默认目标＝当前启用角色；用户手动改过就不再覆盖 */
   useEffect(() => {

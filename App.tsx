@@ -68,6 +68,8 @@ const App = () => {
   const [contentRollSeed, setContentRollSeed] = useState<{ picks: Record<string, unknown>; seed: string; seeds: Record<string, string> } | null>(null);
   /* 一键 Roll 写入 params 的次数：让实验室按这个版本号重新同步编辑区 */
   const [contentRollRevision, setContentRollRevision] = useState(0);
+  /* 实验室就地发起一键 Roll 的范围/目标请求（工作区消费一次） */
+  const [contentRollScopeRequest, setContentRollScopeRequest] = useState<{ scope: 'all' | 'character' | 'global'; targetId?: string; key: number } | null>(null);
   const viewSessionRef = useRef({ view });
   if (viewSessionRef.current.view !== view) viewSessionRef.current = { view };
   useEffect(() => { window.dispatchEvent(new Event('nai-workspace-changed')); }, [view]);
@@ -604,6 +606,17 @@ const App = () => {
     setView('content-roll');
   };
 
+  /* 实验室里就地发起：只滚角色四类（并可指定目标角色）或只滚场景镜头 */
+  const handleContentRollForRole = (index: number) => {
+    const character = (playgroundChain?.params?.characters || [])[index];
+    setContentRollScopeRequest({ scope: 'character', targetId: character ? String(character.id) : undefined, key: Date.now() });
+    setView('content-roll');
+  };
+  const handleContentRollForGlobal = () => {
+    setContentRollScopeRequest({ scope: 'global', key: Date.now() });
+    setView('content-roll');
+  };
+
   const handleUndoContentRoll = async (): Promise<boolean> => {
     if (!contentRollUndo) return false;
     const restored = undoContentRollApply(playgroundChain?.params, contentRollUndo.params, contentRollUndo.createdRoleId);
@@ -906,6 +919,8 @@ const App = () => {
           canUndo={!!contentRollUndo}
           onApplyRoll={handleApplyContentRoll}
           onUndoApply={handleUndoContentRoll}
+          scopeRequest={contentRollScopeRequest}
+          onScopeRequestConsumed={() => setContentRollScopeRequest(null)}
           onSaveRoll={handleSaveContentRoll}
           seedRecord={contentRollSeed}
           onSeedConsumed={() => setContentRollSeed(null)}
@@ -922,6 +937,8 @@ const App = () => {
           notify={notify}
           externalImportToken={playgroundImportToken}
           sectionsRevision={contentRollRevision}
+          onContentRollForRole={handleContentRollForRole}
+          onContentRollForGlobal={handleContentRollForGlobal}
           agentOpenToken={playgroundAgentOpenToken}
           tagAssistEnabled={appearancePreferences.tagAssistEnabled}
           onTagAssistEnabledChange={enabled => setAppearancePreferences(current => ({ ...current, tagAssistEnabled: enabled }))}

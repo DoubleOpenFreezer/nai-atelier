@@ -49,6 +49,8 @@ export interface ChainEditorCharactersProps {
     markPresetSectionModified: (section: PresetSection) => void;
     markChange: () => void;
     addCharacter: () => void;
+    /** 就地发起「Roll 当前角色」 */
+    onContentRollForRole?: (index: number) => void;
     updateCharacter: (idx: number, updates: Partial<CharacterParams>, useCoords?: boolean) => void;
     removeCharacter: (idx: number) => void;
     activeLabLayout: LabPageLayout;
@@ -75,6 +77,7 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
     markPresetSectionModified,
     markChange,
     addCharacter,
+    onContentRollForRole,
     updateCharacter,
     removeCharacter,
     activeLabLayout,
@@ -230,7 +233,15 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
                                 <div className="rounded border border-dashed border-gray-300 p-2 dark:border-gray-600">
                                     <div className="mb-1 flex items-center justify-between gap-2">
                                         <span className="text-micro font-bold text-gray-500">{t("分栏内容")}</span>
-                                        <span className="text-[10px] text-gray-400">{t("请求时与正文合并")}</span>
+                                        <span className="flex items-center gap-2">
+                                            <span className="text-[10px] text-gray-400">{t("请求时与正文合并")}</span>
+                                            {onContentRollForRole && canEdit ? (
+                                                <button type="button" onClick={() => onContentRollForRole(idx)}
+                                                    className="rounded border border-dashed border-indigo-300 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-600 hover:bg-indigo-50 dark:border-indigo-800 dark:text-indigo-300 dark:hover:bg-indigo-950/40">
+                                                    {t("Roll 当前角色")}
+                                                </button>
+                                            ) : null}
+                                        </span>
                                     </div>
                                     <div className="grid grid-cols-2 gap-2">
                                         {CHARACTER_SECTION_KEYS.map(key => (

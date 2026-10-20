@@ -55,6 +55,8 @@ export interface ChainEditorPromptInputsProps {
     prompt: string;
     setPrompt: (value: string) => void;
     sections?: PromptSections | null;
+    /** 就地发起「Roll 场景 / 镜头」 */
+    onContentRollForGlobal?: () => void;
     setSections?: (sections: PromptSections) => void;
     supplementPrompt?: string;
     setSupplementPrompt?: (value: string) => void;
@@ -69,7 +71,7 @@ export interface ChainEditorPromptInputsProps {
 }
 
 export const ChainEditorPromptInputs: React.FC<ChainEditorPromptInputsProps> = ({
-    prompt, setPrompt, sections, setSections, supplementPrompt = '', setSupplementPrompt,
+    prompt, setPrompt, sections, setSections, supplementPrompt = '', setSupplementPrompt, onContentRollForGlobal,
     presetSources, tagAssistEnabled, canEdit, copyPromptToClipboard,
     markPresetSectionModified, markChange, activeLabLayout, mobileEditorTab,
 }) => {
@@ -91,6 +93,14 @@ export const ChainEditorPromptInputs: React.FC<ChainEditorPromptInputsProps> = (
                     .filter((entry): entry is [string, PresetSource] => Boolean(entry[1])))} />
             </div>
             <div className="flex flex-col gap-3">
+                {onContentRollForGlobal ? (
+                    <div className="flex justify-end">
+                        <button type="button" onClick={onContentRollForGlobal}
+                            className="rounded border border-dashed border-indigo-300 px-2 py-1 text-[11px] font-semibold text-indigo-600 hover:bg-indigo-50 dark:border-indigo-800 dark:text-indigo-300 dark:hover:bg-indigo-950/40">
+                            {t('Roll 场景 / 镜头')}
+                        </button>
+                    </div>
+                ) : null}
                 <PromptField label="画师串" value={prompt} placeholder="画师标签与固定画风" disabled={!canEdit}
                     tagAssistEnabled={tagAssistEnabled} onCopy={copyPromptToClipboard} onChange={value => {
                         setPrompt(value); markPresetSectionModified('base'); markChange();
