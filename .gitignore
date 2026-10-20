@@ -87,3 +87,6 @@ local-cache.atelier-preserved-*/
 
 docs/db-field-addition-guide.md
 public/tag-data/
+
+# 源码版真机验收用的临时 persist（wrangler pages dev）
+.verify-persist/
