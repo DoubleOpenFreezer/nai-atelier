@@ -3,6 +3,7 @@ import { parseErrorResponse } from './api';
 import { isAgentImagePath } from './agentMedia';
 import { agentConnectionEndpoint } from './agentConnection.mjs';
 import { getAgentPageClientId, type AgentPageOperation } from './agentWorkspace';
+import { stableOperationId } from './operationId';
 
 
 const agentAuthHeaders = (): Record<string, string> => {
@@ -322,17 +323,37 @@ export const promptAgentService = {
     return response.json();
   },
   /* ---------- 提示词库：与创作助手共用模型，做一次性非流式补全 ---------- */
+  /**
+   * 提示词库生成。
+   *
+   * **结果未知时的处理**：只在「连接级失败」（fetch 抛错、根本没拿到响应）时用**同一个操作标识**重试一次；
+   * 服务器已经应答的错误（4xx/5xx）一律不重试 —— 那种情况结果确定，重试只会白花一次模型调用。
+   * 请求体带 `operationId`，服务端可据此做幂等（重复到达也只当一次）。
+   */
   generateLibraryPrompt: async (input: {
     kind: PromptLibraryKind;
     brief: string;
     count?: number;
     [facet: string]: unknown;
   }): Promise<PromptLibraryResult> => {
-    const response = await fetch('/api/prompt-agent/library', {
+    const operationId = stableOperationId('library-generate', input);
+    const body = JSON.stringify({ ...input, operationId });
+    const send = () => fetch('/api/prompt-agent/library', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(input),
+      body,
     });
+    let response: Response;
+    try {
+      response = await send();
+    } catch (error) {
+      /* 连接级失败：结果未知。先用同一 operationId 重试一次，仍失败才把错误抛给调用方。 */
+      if ((error as { name?: string })?.name !== 'AbortError') {
+        response = await send();
+      } else {
+        throw error;
+      }
+    }
     if (!response.ok) return readError(response) as never;
     return response.json();
   },
