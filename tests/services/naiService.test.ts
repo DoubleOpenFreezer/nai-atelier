@@ -80,6 +80,15 @@ beforeEach(() => {
 });
 
 describe('文生图描述符', () => {
+  it.each(['text-to-image', 'image-to-image', 'inpaint', 'outpaint'] as const)('%s 分栏只在请求中编译，历史保留可继续编辑的原始分栏', async operation => {
+    const role = { ...character, prompt: 'manual text', sections: { wardrobe: 'white dress' }, sectionNegatives: { wardrobe: 'coat' } };
+    const params = { ...baseParams(), characters: [role] };
+    const descriptor = operation === 'text-to-image' ? await textDescriptor({ params }) : await editDescriptor(operation, { params });
+    expect(readParameters(descriptor).v4_prompt.caption.char_captions[0].char_caption).toBe('white dress, manual text');
+    expect(readParameters(descriptor).v4_negative_prompt.caption.char_captions[0].char_caption).toBe('coat, red hair');
+    expect(descriptor.history.params.characters![0]).toMatchObject({ prompt: 'manual text', sections: { wardrobe: 'white dress' }, sectionNegatives: { wardrobe: 'coat' } });
+    expect(params.characters[0]).toEqual(role);
+  });
   it('按模型设置构建生成 payload，并原样带上历史来源与授权费用', async () => {
     const draft = { ...baseParams(), characters: [positionedCharacter, pausedCharacter, emptyCharacter] };
     const snapshot = structuredClone(draft);

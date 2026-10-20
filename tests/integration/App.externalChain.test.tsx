@@ -13,6 +13,8 @@ const mocks = vi.hoisted(() => ({
   getMe: vi.fn(), getAllChains: vi.fn(), getAllInspirations: vi.fn(),
   createChain: vi.fn(), createChainWithData: vi.fn(), deleteChain: vi.fn(),
   updateChain: vi.fn(),
+  editorDraft: null as PromptChain | null,
+  updatePlayground: null as ((id: string, updates: Partial<PromptChain>) => Promise<void>) | null,
   confirm: vi.fn(), save: vi.fn(), canSave: true, bulkProgress: vi.fn(), bulkResult: vi.fn(),
 }));
 vi.mock('../../services/dbService', () => ({ db: mocks }));
@@ -20,7 +22,7 @@ vi.mock('../../services/collectorAppearance', () => ({ useCollectorAppearance: (
 vi.mock('../../components/ConfirmDialog', () => ({ useConfirmDialog: () => mocks.confirm }));
 vi.mock('../../components/Layout', () => ({ Layout: ({ children, onNavigate, currentView, toast }: any) => <>
   <div data-testid="view">{currentView}</div>
-  {['aitag', 'inspiration', 'list', 'prompts', 'roll', 'library'].map(view => <button key={view} onClick={() => onNavigate(view)}>{view}</button>)}
+  {['aitag', 'inspiration', 'list', 'prompts', 'roll', 'library', 'playground', 'content-roll', 'content-roll-library'].map(view => <button key={view} onClick={() => onNavigate(view)}>{view}</button>)}
   {toast && <div role="status" data-type={toast.type}>{toast.message}</div>}{children}
 </> }));
 vi.mock('../../components/ChainList', () => ({ ChainList: ({ chains, onDelete, onBulkDelete, onReloadTags, onSelect, returnTargetId, notify }: { chains: PromptChain[]; onDelete: (id: string) => Promise<void>; onBulkDelete?: (ids: string[], onProgress: (completed: number) => void) => Promise<unknown>; onReloadTags?: () => Promise<void>; onSelect: (id: string) => void; returnTargetId?: string; notify: (message: string, type?: string) => void }) => <div data-testid="list" data-return-target={returnTargetId}>{chains.map(chain => chain.id).join(',')}{onReloadTags && <button onClick={async () => {
@@ -34,6 +36,8 @@ vi.mock('../../components/ChainList', () => ({ ChainList: ({ chains, onDelete, o
   catch { notify('合成删除失败', 'error'); }
 }}>删除合成风格串</button><button onClick={() => onSelect(chains[0].id)}>编辑合成风格串</button></>}</div> }));
 vi.mock('../../components/ChainEditor', () => ({ ChainEditor: ({ chain, onUpdateChain, onBack, onFork, saveRef, setIsDirty }: any) => {
+  mocks.editorDraft = chain;
+  mocks.updatePlayground = onUpdateChain;
   React.useImperativeHandle(saveRef, () => ({ canSave: mocks.canSave, save: mocks.save }));
   return <div data-testid="editor">{chain.id}|{chain.basePrompt}|{chain.previewImage}<button onClick={onBack}>返回资料库</button><button onClick={() => { void Promise.resolve(onUpdateChain(chain.id, { basePrompt: 'edited style', previewImage: '/api/assets/covers/edited.png', tags: [] })).catch(() => {}); }}>保存合成内容及封面</button><button onClick={() => setIsDirty(true)}>修改合成草稿</button><button onClick={() => void onFork(chain, 'style')}>另存为新串</button><button onClick={() => void onFork(chain, 'character')}>另存为角色</button></div>;
 } }));
@@ -83,6 +87,29 @@ const setup = async (entry = 'aitag') => {
   fireEvent.click(screen.getByRole('button', { name: entry }));
   await screen.findByRole('button', { name: entry === 'prompts' ? '新建合成服饰' : '保存合成作品' });
 };
+
+it('内容 Roll 保留旧手写正文与参数，实际填入后可完整撤销并返回 Roll 页', async () => {
+  mocks.getAllChains.mockResolvedValue([{ ...saved, id: 'scene', type: 'scene', basePrompt: 'night', negativePrompt: 'day' }]);
+  await setup();
+  fireEvent.click(screen.getByRole('button', { name: 'playground' }));
+  await screen.findByTestId('editor');
+  await act(async () => { await mocks.updatePlayground!('playground', { variableValues: { subject: 'legacy_subject' }, params: { ...source.params, seed: 42 } }); });
+  fireEvent.click(screen.getByRole('button', { name: 'content-roll' }));
+  fireEvent.click(await screen.findByRole('button', { name: '抽一次' }));
+  fireEvent.change(screen.getByRole('combobox', { name: '选择抽取范围' }), { target: { value: 'global' } });
+  fireEvent.click(screen.getByRole('button', { name: '抽一次' }));
+  fireEvent.click(screen.getByRole('button', { name: '填入实验室…' }));
+  fireEvent.click(screen.getByRole('button', { name: '确认填入' }));
+  await waitFor(() => expect(mocks.editorDraft?.variableValues?.subject).toBe('night, legacy_subject'));
+  expect(mocks.editorDraft?.params).toMatchObject({ seed: 42, _promptSections: { extra: 'legacy_subject', scene: 'night', sectionNegatives: { scene: 'day' } } });
+  fireEvent.click(screen.getByRole('button', { name: '撤销上次填入' }));
+  await waitFor(() => expect(mocks.editorDraft?.variableValues?.subject).toBe('legacy_subject'));
+  expect(mocks.editorDraft?.params.seed).toBe(42);
+  expect(mocks.editorDraft?.params._promptSections?.scene).toBeUndefined();
+  fireEvent.click(screen.getByRole('button', { name: 'playground' }));
+  fireEvent.click(await screen.findByRole('button', { name: '返回资料库' }));
+  await waitFor(() => expect(screen.getByTestId('view').textContent).toBe('content-roll'));
+});
 
 it('提示词库创建使用完整回执并留在当前库，不重新下载整库或打开实验室', async () => {
   await setup('prompts');

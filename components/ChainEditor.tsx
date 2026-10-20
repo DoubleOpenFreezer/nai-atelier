@@ -36,10 +36,11 @@ import { DEFAULT_GENERATION_MEMORY_PREFERENCES, type GenerationMemoryPreferences
 import { isActiveOpusSubscription, useNovelaiUsage } from '../services/naiUsage';
 import { applyNaiModelSettings, getRuntimeNaiModelInfo, isNaiMediumModel } from '../services/naiModels';
 import { estimateImageEditCost, estimateV45GenerationCost, applyEstimatorRuntime, formatGenerationCostLabel, useAnlasBudget } from '../services/anlasBudget';
-import { cleanupLabWorkspaceAssets, consumeEditorSessionDiscarded, createLabImageEditDraft, createLabWorkspaceSession, dataUrlToWorkspaceAsset, deleteLabWorkspaceAsset, getLabWorkspaceAssetId, getLabWorkspaceSessionKey, LAB_DEFAULT_PARAMS, openLabWorkspaceSession, readLabWorkspaceAsset, saveLabWorkspaceSession, saveLabWorkspaceAsset, blobToDataUrl, getLabModeLabel, normalizeParams } from '../services/labWorkspace';
+import { cleanupLabWorkspaceAssets, consumeEditorSessionDiscarded, createLabImageEditDraft, createLabWorkspaceSession, dataUrlToWorkspaceAsset, deleteLabWorkspaceAsset, getLabWorkspaceAssetId, getLabWorkspaceSessionKey, LAB_DEFAULT_PARAMS, mergePromptSections, openLabWorkspaceSession, readLabWorkspaceAsset, saveLabWorkspaceSession, saveLabWorkspaceAsset, blobToDataUrl, getLabModeLabel, normalizeParams } from '../services/labWorkspace';
 import { DEFAULT_NAI_RUNTIME, useNaiRuntime, isNaiRuntimeSyncUnhealthy, describeNaiRuntimeSyncProblem } from '../services/naiRuntime';
 import { splitNovelAiPrompt } from '../services/promptImport';
 import { decideCurrentPreviewCover } from '../services/chainCover';
+import { compileCharacterContent } from '../services/characterPrompts';
 import { LabModuleSection } from './LabModuleSection';
 import { FileDown } from 'lucide-react';
 import { parsePromptTags, resolvePromptTranslations, translateMissingPromptTags } from '../services/tagTranslations';
@@ -65,6 +66,11 @@ interface ChainEditorProps {
     saveRef?: React.Ref<ChainEditorSaveHandle>;
     notify: (msg: string, type?: 'success' | 'error') => void;
     externalImportToken?: number;
+  /** 外部页面（一键 Roll）写入 params 后的版本号：变化时重新同步编辑区，避免旧草稿盖住新内容 */
+  sectionsRevision?: number;
+  /** 实验室就地发起一键 Roll：'character' 只滚角色四类，'global' 只滚场景与镜头 */
+  onContentRollForRole?: (index: number) => void;
+  onContentRollForGlobal?: () => void;
     agentOpenToken?: number;
     tagAssistEnabled: boolean;
     onTagAssistEnabledChange: (enabled: boolean) => void;
@@ -80,7 +86,7 @@ interface ChainEditorProps {
     onBack: () => void | Promise<void>;
 }
 
-export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUpdateChain, onFork, onCreateCharacter, setIsDirty, saveRef, notify, externalImportToken, agentOpenToken, tagAssistEnabled, onTagAssistEnabledChange, generationStreamPreview, forceEmptySeed = false, onForceEmptySeedChange, enforceFreeStepLimit = true, continuousGenerationEnabled = true, rememberGenerationSettings = true, generationMemory = DEFAULT_GENERATION_MEMORY_PREFERENCES, labPageLayouts, safeMode, onBack }) => {
+export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUpdateChain, onFork, onCreateCharacter, setIsDirty, saveRef, notify, externalImportToken, sectionsRevision, agentOpenToken, tagAssistEnabled, onTagAssistEnabledChange, generationStreamPreview, forceEmptySeed = false, onForceEmptySeedChange, enforceFreeStepLimit = true, continuousGenerationEnabled = true, rememberGenerationSettings = true, generationMemory = DEFAULT_GENERATION_MEMORY_PREFERENCES, labPageLayouts, safeMode, onBack, onContentRollForRole, onContentRollForGlobal }) => {
   useLanguage();
     const negativeClearActionSlotRef = useRef<HTMLSpanElement>(null);
     const [keyboardOffset, setKeyboardOffset] = useState(0);
@@ -467,6 +473,16 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         }
     };
 
+    /* 实验室伪链把编辑区状态回推给 App：一键 Roll 的默认目标 / 写入基底与这里保持一致。
+       其它真实链路（保存动作）仍按各自流程提交，这里只在 playground 上做轻量同步。 */
+    useEffect(() => {
+        if (chain.id !== 'playground') return;
+        void onUpdateChain(chain.id, {
+            params,
+            variableValues: { ...(chain.variableValues || {}), subject: subjectPrompt },
+        });
+    }, [chain.id, params, subjectPrompt]);
+
     useEffect(() => {
         // Only reset state if Chain ID changes.
         // This prevents resetting unsaved work when only metadata (like cover image) updates.
@@ -545,6 +561,13 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         void reloadPreviewHistory(sourceChainId);
     }, [chain.id, chain.basePrompt, chain.negativePrompt, chain.modules, chain.params, chain.name, chain.description, chain.variableValues]);
     // Dependency note: we still list props to satisfy linter, but the guard 'if (prevChainId === chain.id) return' blocks re-execution.
+
+    // 外部填入优先于重挂载恢复的旧草稿；正文为空也要同步。
+    useEffect(() => {
+        if (!sectionsRevision || !chain.params) return;
+        setParams(normalizeParams(chain.params));
+        setSubjectPrompt(chain.variableValues?.subject ?? mergePromptSections(chain.params._promptSections));
+    }, [sectionsRevision]);
 
     // --- sessionStorage 侦听：接收来自历史/灵感页面的一键导入数据 ---
     useEffect(() => {
@@ -1472,8 +1495,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 name,
                 description: '',
                 tags: [],
-                basePrompt: character.prompt,
-                negativePrompt: character.negativePrompt || '',
+                basePrompt: compileCharacterContent(character).prompt,
+                negativePrompt: compileCharacterContent(character).negativePrompt || '',
                 modules: [],
                 params: { ...roleParams, characters: [], vibes: undefined, characterReferences: undefined },
                 variableValues: { subject: '' },
@@ -2091,6 +2114,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                             prompt={basePrompt}
                             setPrompt={setBasePrompt}
                             sections={params._promptSections}
+                            onContentRollForGlobal={onContentRollForGlobal}
                             setSections={next => setParams(previous => ({ ...previous, _promptSections: next }))}
                             supplementPrompt={subjectPrompt}
                             setSupplementPrompt={setSubjectPrompt}
@@ -2121,6 +2145,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                             notify={notify}
                             markPresetSectionModified={markPresetSectionModified}
                             markChange={markChange}
+                            onContentRollForRole={onContentRollForRole}
                             addCharacter={addCharacter}
                             updateCharacter={updateCharacter}
                             removeCharacter={removeCharacter}

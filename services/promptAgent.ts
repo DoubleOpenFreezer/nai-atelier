@@ -3,6 +3,7 @@ import { parseErrorResponse } from './api';
 import { isAgentImagePath } from './agentMedia';
 import { agentConnectionEndpoint } from './agentConnection.mjs';
 import { getAgentPageClientId, type AgentPageOperation } from './agentWorkspace';
+import { stableOperationId } from './operationId';
 
 
 const agentAuthHeaders = (): Record<string, string> => {
@@ -259,7 +260,7 @@ export const formatModelOptionTitle = (
 
 
 /* ---------- 提示词库（人物形象 / 服饰 / 姿势 / 场景） ---------- */
-export type PromptLibraryKind = 'appearance' | 'wardrobe' | 'pose' | 'scene';
+export type PromptLibraryKind = 'appearance' | 'wardrobe' | 'pose' | 'expression' | 'scene' | 'camera';
 
 /** 一次生成产出的单条方案。 */
 export interface PromptLibraryItem {
@@ -291,7 +292,9 @@ export const PROMPT_LIBRARY_KIND_LABELS: Record<PromptLibraryKind, string> = {
   appearance: '人物形象',
   wardrobe: '服饰',
   pose: '姿势',
+  expression: '表情状态',
   scene: '场景',
+  camera: '镜头画面',
 };
 
 export const promptAgentService = {
@@ -338,16 +341,23 @@ export const promptAgentService = {
     return response.json();
   },
   /* ---------- 提示词库：与创作助手共用模型，做一次性非流式补全 ---------- */
+  /**
+   * 提示词库生成。
+   *
+   * 请求体带 `operationId`，但**不在客户端自动重发**：服务端目前没有按该 id 去重/查询的入口，
+   * 连接中断时「结果未知」，自动重发等于可能重复消耗模型调用。等网关侧提供幂等查询后再打开重试。
+   */
   generateLibraryPrompt: async (input: {
     kind: PromptLibraryKind;
     brief: string;
     count?: number;
     [facet: string]: unknown;
   }): Promise<PromptLibraryResult> => {
+    const operationId = stableOperationId('library-generate', input);
     const response = await fetch('/api/prompt-agent/library', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(input),
+      body: JSON.stringify({ ...input, operationId }),
     });
     if (!response.ok) return readError(response) as never;
     return response.json();

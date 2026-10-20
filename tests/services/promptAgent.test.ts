@@ -19,7 +19,8 @@ it('新会话和模型切换只发送原生会话参数，不再提供预设客�
   await promptAgentService.updateSession('s', { model: 'a', thinkingLevel: 'high' });
   expect(JSON.parse(fetch.mock.calls[0][1]!.body as string)).toEqual({ title: '创作' });
   expect(JSON.parse(fetch.mock.calls[1][1]!.body as string)).toEqual({ model: 'a', thinkingLevel: 'high' });
-  expect(Object.keys(promptAgentService).some(name => /Creative|Preset|Injection/.test(name))).toBe(false);
+  expect(Object.keys(promptAgentService).filter(name => /Creative|Preset|Injection/.test(name)))
+    .toEqual(['setCreativeDirect', 'setCreativeDirectRules']);
 });
 
 it.each(['请求未响应', '响应正文未读完'])('会话设置保存%s时超时退出，而不是一直占用发送状态', async phase => {

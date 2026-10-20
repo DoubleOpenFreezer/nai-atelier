@@ -390,10 +390,14 @@ test('历史读取只提供历史来源，复用遇到人工切换目标不覆�
 
 test('模型业务参数可直接切换现役模型，保留角色状态并拒绝退役模型', () => isolated(async service => {
   const draft = { params: { model: 'nai-diffusion-4-5-full', characters: [{ id: 'c', name: '角色', enabled: false, prompt: 'blue hair', negativePrompt: 'red hair', x: .2, y: .3 }], seed: 789 } };
+  Object.assign(draft.params.characters[0], { sections: { wardrobe: 'dress' }, sectionNegatives: { wardrobe: 'coat' }, sectionMeta: { wardrobe: { entryId: 'entry', entryName: '服饰', source: 'roll' } } });
   const tools = service.createTools(draft, {}, () => {});
   const params = tools.find(t => t.name === 'set_generation_params');
   await params.execute('t', { model: 'nai-diffusion-5-full' });
   assert.equal(draft.params.model, 'nai-diffusion-5-full'); assert.equal(draft.params.seed, 789); assert.equal(draft.params.characters[0].enabled, false);
+  assert.deepEqual(draft.params.characters[0].sections, { wardrobe: 'dress' });
+  assert.deepEqual(draft.params.characters[0].sectionNegatives, { wardrobe: 'coat' });
+  assert.equal(draft.params.characters[0].sectionMeta.wardrobe.entryId, 'entry');
   const before = structuredClone(draft);
   await assert.rejects(params.execute('t', { model: 'nai-diffusion-3' }), /现役/); assert.deepEqual(draft, before);
   await tools.find(t => t.name === 'set_characters').execute('t', { characters: before.params.characters });

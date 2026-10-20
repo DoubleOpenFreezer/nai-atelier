@@ -30,6 +30,43 @@ describe('lab workspace session', () => {
   beforeEach(() => { sessionStorage.clear(); localStorage.clear(); });
   afterEach(() => vi.restoreAllMocks());
 
+  it.each([false, true])('角色分栏重启恢复，参数记忆开启时也不绕过文字选择（记词=%s）', rememberText => {
+    const session = privateDraft();
+    for (const draft of [session.textToImage, ...Object.values(session.edits)]) {
+      draft.params.characters![0].sections = { appearance: 'private-section-positive' };
+      draft.params.characters![0].sectionMeta = { appearance: { entryName: 'private-source' } };
+      draft.params.characters![0].sectionNegatives = { appearance: 'private-section-negative' };
+      draft.params._promptSections = { scene: 'private-scene', sectionNegatives: { scene: 'private-scene-negative' } };
+    }
+    const memory = { ...noMemory, parameters: true, globalPrompt: rememberText, negativePrompt: rememberText,
+      characterPrompt: rememberText, characterNegativePrompt: rememberText };
+    saveLabWorkspaceSession('playground', session, true, memory);
+    const raw = localStorage.getItem('nai-lab-workspace-v1:playground')!;
+    expect(raw.includes('private-section-positive')).toBe(rememberText);
+    expect(raw.includes('private-section-negative')).toBe(rememberText);
+    expect(raw.includes('private-source')).toBe(rememberText);
+    expect(raw.includes('private-scene-negative')).toBe(rememberText);
+    sessionStorage.clear();
+    const restored = openLabWorkspaceSession('playground', createLabWorkspaceSession('', '', '', params, {}), true, memory);
+    for (const draft of [restored.textToImage, ...Object.values(restored.edits)]) {
+      expect(draft.params.characters![0].sections).toEqual(rememberText ? { appearance: 'private-section-positive' } : undefined);
+      expect(draft.params.characters![0].sectionNegatives).toEqual(rememberText ? { appearance: 'private-section-negative' } : undefined);
+      expect(draft.params._promptSections?.sectionNegatives).toEqual(rememberText ? { scene: 'private-scene-negative' } : undefined);
+    }
+  });
+
+  it('只记正向分栏时不保存分类负面，旧全量副本也按当前范围读取', () => {
+    const session = privateDraft();
+    session.textToImage.params._promptSections = { scene: 'night', sectionNegatives: { scene: 'private-scene-negative' } };
+    const memory = { ...noMemory, globalPrompt: true };
+    saveLabWorkspaceSession('playground', session, true, memory);
+    expect(localStorage.getItem('nai-lab-workspace-v1:playground')).not.toContain('private-scene-negative');
+    sessionStorage.clear();
+    localStorage.setItem('nai-lab-workspace-v1:playground', JSON.stringify(session));
+    expect(openLabWorkspaceSession('playground', createLabWorkspaceSession('', '', '', params, {}), true, memory)
+      .textToImage.params._promptSections?.sectionNegatives).toBeUndefined();
+  });
+
   it('只记参数时四模式不存任何提示词、主体或模块启用，保留角色参数与模式', () => {
     const session = privateDraft();
     const fallback = createLabWorkspaceSession('', '', '', params, {});

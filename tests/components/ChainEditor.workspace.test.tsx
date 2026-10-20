@@ -208,6 +208,44 @@ const setup = (entry: PromptChain = chain, rememberGenerationSettings = true, ge
 };
 const textPrompt = () => screen.getByRole('textbox', { name: '画师串' }) as HTMLTextAreaElement;
 
+it('Roll 填入后编辑器重新挂载，外部内容优先于旧会话草稿', async () => {
+  const initial = { ...chain, id: 'playground', variableValues: { subject: 'old_subject' } };
+  const view = setup(initial);
+  await waitFor(() => expect((screen.getByRole('textbox', { name: '补充' }) as HTMLTextAreaElement).value).toBe('old_subject'));
+  view.unmount();
+  const applied = { ...initial, variableValues: { subject: 'new_scene' }, params: { ...initial.params, _promptSections: { scene: 'new_scene' } } };
+  render(<ChainEditor {...view.props} chain={applied} sectionsRevision={1} />);
+  await waitFor(() => expect((screen.getByRole('textbox', { name: '场景' }) as HTMLTextAreaElement).value).toBe('new_scene'));
+  expect((screen.getByRole('textbox', { name: '补充' }) as HTMLTextAreaElement).value).toBe('');
+  expect(loadLabWorkspaceSession('playground', fallback()).textToImage.subjectPrompt).toBe('new_scene');
+});
+
+it.each([
+  { name: '空正文', subject: '', sections: {}, expected: '' },
+  { name: '旧版手写正文', subject: 'legacy_subject', sections: {}, expected: 'legacy_subject' },
+  { name: '只有分栏的旧记录', subject: undefined, sections: { scene: 'restored_scene' }, expected: 'restored_scene' },
+])('Roll 撤销恢复$name后，编辑框、草稿回写与生成请求一致', async ({ subject, sections, expected }) => {
+  sessionStorage.setItem('nai_api_key', 'synthetic-key');
+  const initial = { ...chain, id: 'playground', variableValues: { subject: '' }, params: { ...chain.params, _promptSections: {} } };
+  const view = setup(initial);
+  const applied = { ...initial, variableValues: { subject: 'new_scene' }, params: { ...initial.params, _promptSections: { scene: 'new_scene' } } };
+  view.rerender(<ChainEditor {...view.props} chain={applied} sectionsRevision={1} />);
+  await waitFor(() => expect((screen.getByRole('textbox', { name: '场景' }) as HTMLTextAreaElement).value).toBe('new_scene'));
+
+  view.props.onUpdateChain.mockClear();
+  const restored: PromptChain = { ...initial, variableValues: subject === undefined ? {} : { subject }, params: { ...initial.params, _promptSections: sections } };
+  view.rerender(<ChainEditor {...view.props} chain={restored} sectionsRevision={2} />);
+  await waitFor(() => expect((screen.getByRole('textbox', { name: '场景' }) as HTMLTextAreaElement).value).toBe(sections.scene || ''));
+  expect((screen.getByRole('textbox', { name: '补充' }) as HTMLTextAreaElement).value).toBe(subject === 'legacy_subject' ? subject : '');
+  await waitFor(() => expect(view.props.onUpdateChain).toHaveBeenLastCalledWith('playground', expect.objectContaining({ variableValues: { subject: expected } })));
+  expect(loadLabWorkspaceSession('playground', fallback()).textToImage.subjectPrompt).toBe(expected);
+
+  fireEvent.click(screen.getByRole('button', { name: '生成合成文生图' }));
+  await waitFor(() => expect(state.buildDescriptor).toHaveBeenCalledOnce());
+  expect(state.buildDescriptor.mock.calls[0][0].history.subjectPrompt).toBe(expected);
+  expect(state.buildDescriptor.mock.calls[0][0].prompt).not.toContain('new_scene');
+});
+
 it('画师样张取用不自动生成，固定 Seed 不被随机偏好覆盖，保存真实新结果', async () => {
   sessionStorage.setItem('nai_api_key', 'synthetic-key');
   const templateParams = { ...chain.params, seed: 123, characters: [] };
@@ -485,7 +523,9 @@ it.each(['playground', 'style', 'character'] as const)('%s 重启仅带回角色
   expect(restored.textToImage.params.characters![0]).toMatchObject({ id: 'shared', prompt: 'remembered role',
     x: type === 'playground' ? 0.5 : 0.7, y: type === 'playground' ? 0.5 : 0.8 });
   expect(restored.textToImage.params.characters![0].negativePrompt).toBe(type === 'playground' ? undefined : 'preset role negative');
-  expect(view.props.onUpdateChain).not.toHaveBeenCalled();
+  if (type === 'playground') {
+    expect(view.props.onUpdateChain).toHaveBeenLastCalledWith('playground', expect.objectContaining({ params: restored.textToImage.params }));
+  } else expect(view.props.onUpdateChain).not.toHaveBeenCalled();
 });
 
 it('Medium 全局负面词禁用，生成的描述符用有效参数，保存的工作台仍保留 High 草稿', async () => {
@@ -559,8 +599,9 @@ it('离开前保存能力跟随模式与忙碌状态，不保存编辑模式或�
   expect(props.saveRef.current).toBeNull();
   const lab = setup({ ...chain, id: 'playground' });
   expect(lab.props.saveRef.current?.canSave).toBe(false);
+  const draftSyncs = lab.props.onUpdateChain.mock.calls.length;
   expect(await lab.props.saveRef.current!.save()).toBe(false);
-  expect(lab.props.onUpdateChain).not.toHaveBeenCalled();
+  expect(lab.props.onUpdateChain).toHaveBeenCalledTimes(draftSyncs);
 });
 
 it('图生图使用缩放副本的实际像素估费并只提交一次后台任务，当前草稿保持原坐标', async () => {

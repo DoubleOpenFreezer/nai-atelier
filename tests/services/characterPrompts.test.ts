@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { clampCharacterCoordinate, getActiveCharacters, moveCharacter, normalizeCharacterCoordinate, withGenerationCharacters } from '../../services/characterPrompts';
+import { CHARACTER_SECTION_KEYS, clampCharacterCoordinate, compileCharacterContent, getActiveCharacters, hasCharacterSections, moveCharacter, normalizeCharacterCoordinate, withGenerationCharacters } from '../../services/characterPrompts';
 
 describe('角色请求与定位规则', () => {
   it('旧版使用官方五等分中心，边界进入后一格；V5 保留自由值', () => {
@@ -36,5 +36,93 @@ describe('角色请求与定位规则', () => {
     expect(characters.map(character => character.id)).toEqual(['a', 'b']);
     expect(moveCharacter(characters, 0, -1)).toBe(characters);
     expect(moveCharacter(characters, 1, 1)).toBe(characters);
+  });
+});
+
+describe('角色分栏编译（本机角色分类模型）', () => {
+  const sectioned = {
+    id: 'sectioned', prompt: 'manual_extra', x: 0.5, y: 0.5,
+    sections: { appearance: 'blonde_hair, blue_eyes', wardrobe: 'white_dress', pose: '', expression: 'smile' },
+    sectionNegatives: { wardrobe: 'coat', appearance: '' },
+  };
+
+  it('只有分栏内容、正文为空的角色同样参与实际请求', () => {
+    const characters = [{ id: 'only-sections', prompt: '', x: 0.5, y: 0.5, sections: { appearance: 'blonde_hair' } }];
+    expect(hasCharacterSections(characters[0])).toBe(true);
+    expect(getActiveCharacters(characters).map(item => item.id)).toEqual(['only-sections']);
+    const request = withGenerationCharacters({ width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler_ancestral', characters }, true);
+    expect(request.characters?.[0]).toMatchObject({ prompt: '', sections: { appearance: 'blonde_hair' } });
+    expect(compileCharacterContent(request.characters![0]).prompt).toBe('blonde_hair');
+  });
+
+  it('正文按「四栏固定顺序 + 手动补充」编译，负面按「分栏内容负面 + 角色负面」编译', () => {
+    const compiled = compileCharacterContent({ ...sectioned, negativePrompt: 'bad_hands' });
+    expect(compiled.prompt).toBe('blonde_hair, blue_eyes, white_dress, smile, manual_extra');
+    expect(compiled.negativePrompt).toBe('coat, bad_hands');
+    expect(CHARACTER_SECTION_KEYS).toEqual(['appearance', 'wardrobe', 'pose', 'expression']);
+  });
+
+  it('旧资料（没有分栏）原样返回，行为与之前完全一致', () => {
+    const legacy = { id: 'legacy', prompt: 'plain_body', negativePrompt: 'neg', x: 0.5, y: 0.5 };
+    expect(compileCharacterContent(legacy)).toBe(legacy);
+    expect(hasCharacterSections(legacy)).toBe(false);
+    expect(getActiveCharacters([legacy]).map(item => item.id)).toEqual(['legacy']);
+  });
+
+  it('停用的分栏角色仍然被过滤掉', () => {
+    const paused = { ...sectioned, id: 'paused', enabled: false };
+    expect(getActiveCharacters([paused])).toHaveLength(0);
+  });
+
+  it('加权分组不拆散去重，空栏不带出残留负面，历史快照保留手写正文', () => {
+    const character = { ...sectioned, sections: { appearance: '1.3::blue hair, blue eyes::', wardrobe: '' },
+      prompt: 'blue eyes, smile', sectionNegatives: { wardrobe: 'stale coat', appearance: 'red hair' } };
+    const params = { width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler_ancestral', characters: [character] };
+    const history = withGenerationCharacters(params, true);
+    expect(history.characters?.[0].prompt).toBe('blue eyes, smile');
+    const compiled = compileCharacterContent(history.characters![0]);
+    expect(compiled.prompt).toBe('1.3::blue hair, blue eyes::, blue eyes, smile');
+    expect(compiled.negativePrompt).toBe('red hair');
+    const edited = { ...history.characters![0], sections: { appearance: 'green hair' } };
+    expect(compileCharacterContent(edited).prompt).toBe('green hair, blue eyes, smile');
+    expect(params.characters[0]).toEqual(character);
+  });
+});
+
+describe('旧格式分类负面（params._characterSectionsNegatives）', () => {
+  it('旧存储格式的负面会进入编译，且新字段优先', () => {
+    const character = {
+      id: 'c9', prompt: '', x: 0.5, y: 0.5,
+      sections: { appearance: 'silver_hair', wardrobe: 'blue_dress' },
+      sectionNegatives: { wardrobe: 'new_coat' },
+    };
+    const legacy = { 'c9::appearance': 'old_hair_negative', 'c9::wardrobe': 'old_coat' };
+    const compiled = compileCharacterContent(character, legacy);
+    expect(compiled.negativePrompt).toBe('old_hair_negative, new_coat');
+    /* 旧格式里的 wardrobe 被新字段覆盖，不会同时出现 */
+    expect(compiled.negativePrompt).not.toContain('old_coat');
+  });
+
+  it('没有旧格式时行为不变', () => {
+    const character = { id: 'c1', prompt: 'body', x: 0.5, y: 0.5, sections: { appearance: 'a' }, sectionNegatives: {} };
+    expect(compileCharacterContent(character, null).negativePrompt).toBeUndefined();
+  });
+
+  it('替换后的新分栏没有负面时，不复活旧格式负面；未替换栏仍兼容读取', () => {
+    const character = { id: 'c1', prompt: '', x: 0.5, y: 0.5,
+      sections: { wardrobe: 'new dress', appearance: 'hair' }, sectionMeta: { wardrobe: { source: 'roll' } } };
+    expect(compileCharacterContent(character, { 'c1::wardrobe': 'old coat', 'c1::appearance': 'old hair' }).negativePrompt).toBe('old hair');
+  });
+});
+
+describe('旧格式负面值为对象时不被拼成 [object Object]', () => {
+  it('取 text 字段；没有 text 时退回 note', () => {
+    const character = { id: 'c1', prompt: '', x: 0.5, y: 0.5, sections: { wardrobe: 'dress' } };
+    expect(compileCharacterContent(character, { 'c1::wardrobe': { text: 'coat_negative', note: '旧备注' } }).negativePrompt)
+      .toBe('coat_negative');
+    expect(compileCharacterContent(character, { 'c1::wardrobe': { note: '只有备注' } }).negativePrompt)
+      .toBe('只有备注');
+    expect(compileCharacterContent(character, { 'c1::wardrobe': { text: 'x' } }).negativePrompt)
+      .not.toContain('[object Object]');
   });
 });

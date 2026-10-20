@@ -10,7 +10,9 @@ const baseParams = {
 describe('NovelAI generation payload', () => {
   it.each(['text-to-image', 'image-to-image', 'inpaint', 'outpaint'] as const)('Medium %s 普通／流式只发送固定预设，保留 High 负面词草稿', operation => {
     const draft = { ...baseParams, model: 'nai-diffusion-5-full-medium', steps: 35, sampler: 'k_euler', cfgRescale: 0.6, ucPresetId: 'none',
-      characters: [{ id: 'c', prompt: 'blue hair', negativePrompt: 'custom character negative', x: 0.2, y: 0.7 }] };
+      _promptSections: { scene: 'night', sectionNegatives: { scene: 'day' } },
+      characters: [{ id: 'c', prompt: 'blue hair', negativePrompt: 'custom character negative', x: 0.2, y: 0.7,
+        sections: { wardrobe: 'dress' }, sectionNegatives: { wardrobe: 'coat' } }] };
     const snapshot = structuredClone(draft);
     for (const stream of [false, true]) {
       const options = { runtime: DEFAULT_NAI_RUNTIME, stream };
@@ -23,10 +25,20 @@ describe('NovelAI generation payload', () => {
       expect(sent).toMatchObject({ steps: 14, sampler: 'k_euler_ancestral', cfg_rescale: 0 });
       expect(sent.negative_prompt).toBe(DEFAULT_NAI_RUNTIME.modelCapabilities[draft.model].ucPresets.find(item => item.id === 'heavy')!.prefix);
       expect(sent.v4_negative_prompt.caption.char_captions[0].char_caption).toBe('');
-      expect(sent.v4_prompt.caption.char_captions[0].char_caption).toBe('blue hair');
+      expect(sent.v4_prompt.caption.char_captions[0].char_caption).toBe('dress, blue hair');
       expect(sent.stream).toBe(stream ? 'sse' : undefined);
     }
     expect(draft).toEqual(snapshot);
+  });
+
+  it('实际请求编译分栏与分类负面，空栏不发送旧负面且不改写草稿', () => {
+    const params = { ...baseParams, _promptSections: { scene: 'night', camera: '', sectionNegatives: { scene: 'day', camera: 'stale camera' } },
+      characters: [{ id: 'c', prompt: 'smile', x: 0.5, y: 0.5, sections: { appearance: 'blue hair' }, sectionNegatives: { appearance: 'red hair' } }] };
+    const payload = buildNaiGenerationPayload('night', 'global negative', params);
+    expect((payload.parameters.v4_prompt as any).caption.char_captions[0].char_caption).toBe('blue hair, smile');
+    expect((payload.parameters.v4_negative_prompt as any).caption.char_captions[0].char_caption).toBe('red hair');
+    expect(payload.parameters.negative_prompt).toBe('global negative, day');
+    expect(params.characters[0].prompt).toBe('smile');
   });
 
   it.each(['nai-diffusion-5-full', 'nai-diffusion-5-curated'])('%s 普通与流式将透明及质量标签放在 Text: 前，并发送同一权重', model => {

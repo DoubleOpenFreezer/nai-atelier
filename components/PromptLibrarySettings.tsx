@@ -3,7 +3,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { PROMPT_LIBRARY_KIND_LABELS, promptAgentService, type PromptLibraryKind } from '../services/promptAgent';
 
 /** 预览可切换的四个库类型，顺序与标签由服务层常量决定。 */
-const libraryKinds: PromptLibraryKind[] = ['appearance', 'wardrobe', 'pose', 'scene'];
+const libraryKinds: PromptLibraryKind[] = ['appearance', 'wardrobe', 'pose', 'expression', 'scene', 'camera'];
 
 const libraryFieldClass = 'w-full resize-y rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs leading-5 text-gray-800 outline-none focus:border-indigo-500 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-100';
 const libraryPrimaryButtonClass = 'mobile-touch rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-indigo-700 disabled:opacity-40';

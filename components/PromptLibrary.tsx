@@ -27,7 +27,9 @@ import {
   LoaderCircle,
   PersonStanding,
   Plus,
+  Aperture,
   Shirt,
+  Smile,
   Sparkles,
   Trash2,
   UserRound,
@@ -49,6 +51,8 @@ import { TOOLBAR_FIELD_CLASS, ToolbarPopover } from './ToolbarPopover';
 import { isTopmostModal, useModalA11y } from './useModalA11y';
 
 import { PROMPT_LIBRARY_KINDS, type PromptLibraryKindConfig } from './promptLibraryConfig';
+import { removePromptTag, tagDetails } from '../services/promptTagFilter';
+import { classifyPromptTags, summarizePromptSources } from '../services/promptProvenance';
 export { PROMPT_LIBRARY_KINDS } from './promptLibraryConfig';
 export type { PromptLibraryFacet, PromptLibraryKindConfig } from './promptLibraryConfig';
 
@@ -57,7 +61,9 @@ const KIND_ICONS: Record<PromptLibraryKind, React.FC<{ className?: string }>> = 
   appearance: UserRound,
   wardrobe: Shirt,
   pose: PersonStanding,
+  expression: Smile,
   scene: Image,
+  camera: Aperture,
 };
 
 /* ---------------- 存储约定 ---------------- */
@@ -80,7 +86,13 @@ type PromptLibraryParams = NAIParams & { _promptLibrary?: PromptLibraryMeta };
 export const promptLibraryHistoryImageUrl = (historyId: string) => `/api/local-history/${encodeURIComponent(historyId)}/image`;
 
 const libraryMeta = (chain?: PromptChain | null): PromptLibraryMeta => {
-  const raw = chain?.params ? (chain.params as PromptLibraryParams)._promptLibrary : undefined;
+  const params = chain?.params as (PromptLibraryParams & { _wardrobe?: unknown }) | undefined;
+  /* 双格式：源码条目写 _promptLibrary；本机旧条目把中文对照 / 参考图 / facets 写在 _wardrobe 里 */
+  const raw = params
+    ? (params._promptLibrary && typeof params._promptLibrary === 'object'
+      ? params._promptLibrary
+      : (params._wardrobe && typeof params._wardrobe === 'object' ? params._wardrobe as PromptLibraryMeta : undefined))
+    : undefined;
   return raw && typeof raw === 'object' ? raw : {};
 };
 
@@ -188,6 +200,9 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
   const [brief, setBrief] = useState('');
   const [facets, setFacets] = useState<Record<string, string | string[]>>({});
   const [count, setCount] = useState(1);
+  /* 详细补全：三档（默认详细）+ 需求未提到的限定项保持留空 */
+  const [detailMode, setDetailMode] = useState<'strict' | 'moderate' | 'detailed'>('detailed');
+  const [keepEmpty, setKeepEmpty] = useState(false);
   const [drafts, setDrafts] = useState<PromptLibraryItem[] | null>(null);
   const [picked, setPicked] = useState<Set<number>>(new Set());
   const [generating, setGenerating] = useState(false);
@@ -458,6 +473,8 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
         kind: config.kind,
         brief: text,
         count,
+        detail: detailMode,
+        keepEmpty,
         ...facetInput,
       });
       const list = (Array.isArray(result?.items) ? result.items : []).filter(item => item && String(item.prompt || '').trim());
@@ -943,6 +960,20 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
                   {COUNT_OPTIONS.map(value => <option key={value} value={value}>{t('{0} 条', [value])}</option>)}
                 </select>
               </label>
+              <label className="block">
+                <span className="text-xs font-semibold text-gray-600 dark:text-gray-300">{t('详细程度')}</span>
+                <select value={detailMode} onChange={event => setDetailMode(event.target.value as 'strict' | 'moderate' | 'detailed')}
+                  aria-label={t('详细程度')} className={TOOLBAR_FIELD_CLASS} data-detail-mode="true">
+                  <option value="strict">{t('严格：只写需求提到的')}</option>
+                  <option value="moderate">{t('适度：少量合理补充')}</option>
+                  <option value="detailed">{t('详细：按常见搭配补齐')}</option>
+                </select>
+              </label>
+              <label className="flex items-center gap-2 self-end pb-1.5 text-xs text-gray-600 dark:text-gray-300">
+                <input type="checkbox" checked={keepEmpty} onChange={event => setKeepEmpty(event.target.checked)}
+                  aria-label={t('未提到的限定项保持留空')} data-keep-empty="true" className="h-3.5 w-3.5 accent-indigo-500" />
+                {t('未提到的限定项保持留空')}
+              </label>
             </div>
 
             <p className="text-micro text-gray-400 dark:text-gray-500">{t(config.generateHint)}</p>
@@ -996,6 +1027,45 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
                         className={`${DETAIL_FIELD_CLASS} h-20 resize-y`}
                       />
                     </label>
+                    {(() => {
+                      const chips = tagDetails(draft.prompt || '', draft.bilingual || '');
+                      const marks = classifyPromptTags(draft.prompt || '', { brief, facets });
+                      const sourceOf = (tag: string) => marks.find(mark => mark.tag === tag)?.source || 'unmarked';
+                      if (!chips.length) return null;
+                      return (
+                        <div className="mt-1 flex flex-wrap items-center gap-1" data-candidate-tags={index}>
+                          <span className="text-micro text-gray-400">{t('逐标签删除')}</span>
+                          {(() => {
+                            const summary = summarizePromptSources(marks);
+                            return (
+                              <span className="text-micro text-gray-400" data-candidate-source-summary={index}>
+                                {t('用户 {0} · AI {1}', [String(summary.user), String(summary.ai)])}
+                              </span>
+                            );
+                          })()}
+                          {chips.map(chip => (
+                            <button key={chip.raw} type="button"
+                              title={chip.weighted ? t('带权重标签默认不拆，先去掉权重再删') : t('删除这个标签')}
+                              onClick={() => {
+                                const next = removePromptTag(draft.prompt || '', draft.bilingual || '', chip.tag);
+                                if (!next.removed) return;
+                                patchDraft(index, { prompt: next.prompt, bilingual: next.bilingual });
+                              }}
+                              className={`inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 font-mono text-micro ${chip.weighted
+                                ? 'border-amber-300 text-amber-600 dark:border-amber-800 dark:text-amber-400'
+                                : 'border-gray-200 text-gray-600 hover:border-red-400 hover:text-red-600 dark:border-gray-700 dark:text-gray-300'}`}
+                              data-candidate-tag-source={sourceOf(chip.tag)}>
+                              <span aria-hidden className={sourceOf(chip.tag) === 'user' ? 'text-emerald-600 dark:text-emerald-400' : sourceOf(chip.tag) === 'ai' ? 'text-indigo-500 dark:text-indigo-300' : 'text-gray-400'}>
+                                {sourceOf(chip.tag) === 'user' ? 'U' : sourceOf(chip.tag) === 'ai' ? 'A' : '·'}
+                              </span>
+                              {chip.tag}
+                              {chip.bilingual ? <span className="font-sans text-gray-400">{chip.bilingual}</span> : null}
+                              <span aria-hidden>×</span>
+                            </button>
+                          ))}
+                        </div>
+                      );
+                    })()}
                     {draft.tags && draft.tags.length > 0 && (
                       <div className="mt-2 flex flex-wrap gap-1">
                         {draft.tags.map(value => <span key={value} className="rounded bg-gray-100 px-1.5 py-0.5 text-micro text-gray-500 dark:bg-gray-800 dark:text-gray-400">{value}</span>)}
@@ -1091,8 +1161,8 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
   );
 };
 
-const ALL_CONFIG: PromptLibraryKindConfig = {...PROMPT_LIBRARY_KINDS.appearance, type: ['appearance','wardrobe','pose','scene'], title:'图片提示词库', itemNoun:'提示词', emptyTitle:'图片提示词库还是空的', hideActions:true, emptyHint:'选择分类后可新建或生成提示词。'};
-const LIBRARY_CATEGORIES = ['all','appearance','wardrobe','pose','scene'] as const;
+const ALL_CONFIG: PromptLibraryKindConfig = {...PROMPT_LIBRARY_KINDS.appearance, type: ['appearance','wardrobe','pose','expression','scene','camera'], title:'图片提示词库', itemNoun:'提示词', emptyTitle:'图片提示词库还是空的', hideActions:true, emptyHint:'选择分类后可新建或生成提示词。'};
+const LIBRARY_CATEGORIES = ['all','appearance','wardrobe','pose','expression','scene','camera'] as const;
 type LibraryCategory = typeof LIBRARY_CATEGORIES[number];
 export const PromptLibraryHub: React.FC<PromptLibraryProps> = props => {
   useLanguage();

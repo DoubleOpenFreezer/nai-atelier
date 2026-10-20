@@ -37,3 +37,21 @@ it('读取失败明确显示错误并允许重试，不把错误伪装为空库'
   fireEvent.click(screen.getByRole('button', { name: '重试' }));
   await screen.findByText('这个提示词库还是空的');
 });
+
+it('提供 onPickEntry 时只走该回调，来源不会被第二次回调覆盖', async () => {
+  const onPick = vi.fn();
+  const onPickEntry = vi.fn();
+  vi.mocked(db.getAllChains).mockResolvedValue([
+    { id: 'w1', name: '蓝裙', type: 'wardrobe', basePrompt: 'blue_dress' },
+  ] as any);
+  render(<PromptLibraryPicker kind="wardrobe" current="blonde_hair" onPick={onPick} onPickEntry={onPickEntry} />);
+  fireEvent.click(screen.getByRole('button', { name: '库导入' }));
+  fireEvent.click(await screen.findByRole('button', { name: /蓝裙/ }));
+  expect(onPick).not.toHaveBeenCalled();
+  expect(onPickEntry).toHaveBeenCalledTimes(1);
+  const payload = onPickEntry.mock.calls[0][0];
+  expect(payload.entryId).toBe('w1');
+  expect(payload.entryName).toBe('蓝裙');
+  expect(payload.mode).toBe('append');
+  expect(payload.prompt).toBe('blonde_hair, blue_dress');
+});

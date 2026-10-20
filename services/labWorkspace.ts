@@ -38,8 +38,32 @@ export const normalizePromptSections = (sections?: Partial<PromptSections> | nul
         appearance: String(sections.appearance ?? ''),
         wardrobe: String(sections.wardrobe ?? ''),
         pose: String(sections.pose ?? ''),
+        scene: String(sections.scene ?? ''),
+        camera: String(sections.camera ?? ''),
         extra: String(sections.extra ?? ''),
     };
+    /* 分类负面同样只跟随有内容的栏 */
+    const negatives = (sections as { sectionNegatives?: Record<string, unknown> }).sectionNegatives;
+    if (negatives && typeof negatives === 'object') {
+        const keptNegatives: Record<string, string> = {};
+        for (const key of Object.keys(next)) {
+            if (!String(next[key as keyof PromptSections] || '').trim()) continue;
+            const value = String(negatives[key] || '').trim();
+            if (value) keptNegatives[key] = value;
+        }
+        if (Object.keys(keptNegatives).length) next.sectionNegatives = keptNegatives;
+    }
+    /* 来源快照跟着栏位走：内容被清空的栏，其来源也一并丢弃 */
+    const meta = (sections as { sectionMeta?: Record<string, unknown> }).sectionMeta;
+    if (meta && typeof meta === 'object') {
+        const kept: Record<string, unknown> = {};
+        for (const key of Object.keys(next)) {
+            if (!String(next[key as keyof PromptSections] || '').trim()) continue;
+            const entry = meta[key];
+            if (entry && typeof entry === 'object') kept[key] = { ...(entry as Record<string, unknown>) };
+        }
+        if (Object.keys(kept).length) next.sectionMeta = kept as PromptSections['sectionMeta'];
+    }
     return Object.values(next).some(value => String(value).trim()) ? next : undefined;
 };
 
@@ -48,6 +72,8 @@ export const mergePromptSections = (sections?: Partial<PromptSections> | null): 
     sections?.appearance,
     sections?.wardrobe,
     sections?.pose,
+    sections?.scene,
+    sections?.camera,
     sections?.extra,
 ].map(value => String(value || '').trim()).filter(Boolean).join(', ');
 
@@ -55,7 +81,7 @@ export const mergePromptSections = (sections?: Partial<PromptSections> | null): 
 export const resolvePromptSections = (sections: PromptSections | null | undefined, subject: string): PromptSections => {
     const normalized = normalizePromptSections(sections);
     return normalized && mergePromptSections(normalized) === subject.trim()
-        ? normalized : { appearance: '', wardrobe: '', pose: '', extra: subject };
+        ? normalized : { appearance: '', wardrobe: '', pose: '', scene: '', camera: '', extra: subject };
 };
 
 export const normalizeParams = (params?: Partial<NAIParams> | null): NAIParams => {
@@ -210,13 +236,16 @@ export const serializeLabWorkspaceMemory = (session: LabWorkspaceSession, memory
     const { characters, _promptSections, ...settings } = params;
     return {
       ...(memory.parameters ? settings : {}),
-      ...(memory.globalPrompt ? { _promptSections: normalizePromptSections(_promptSections) } : {}),
+      ...((memory.globalPrompt || memory.negativePrompt && _promptSections?.sectionNegatives) ? { _promptSections: {
+        ...(memory.globalPrompt ? normalizePromptSections(_promptSections) : {}),
+        sectionNegatives: memory.negativePrompt ? _promptSections?.sectionNegatives : undefined,
+      } } : {}),
       ...((memory.parameters || memory.characterPrompt || memory.characterNegativePrompt) && Array.isArray(characters) ? {
-        characters: characters.map(({ id, prompt, negativePrompt, ...position }) => ({
+        characters: characters.map(({ id, prompt, negativePrompt, sections, sectionMeta, sectionNegatives, ...position }) => ({
           id,
           ...(memory.parameters ? position : {}),
-          ...(memory.characterPrompt ? { prompt } : {}),
-          ...(memory.characterNegativePrompt ? { negativePrompt } : {}),
+          ...(memory.characterPrompt ? { prompt, sections, sectionMeta } : {}),
+          ...(memory.characterNegativePrompt ? { negativePrompt, sectionNegatives } : {}),
         })),
       } : {}),
     };
@@ -247,7 +276,10 @@ const restoreLabWorkspaceMemory = (value: unknown, fallback: LabWorkspaceSession
   const source = value as Partial<LabWorkspaceSession>;
   const restoreParams = (stored: NAIParams | undefined, defaults: NAIParams): NAIParams => {
     const restored = normalizeParams({ ...(memory.parameters ? { ...defaults, ...stored } : defaults),
-      _promptSections: memory.globalPrompt ? stored?._promptSections ?? defaults._promptSections : defaults._promptSections });
+      _promptSections: {
+        ...(memory.globalPrompt ? stored?._promptSections ?? defaults._promptSections : defaults._promptSections),
+        sectionNegatives: memory.negativePrompt ? stored?._promptSections?.sectionNegatives ?? defaults._promptSections?.sectionNegatives : defaults._promptSections?.sectionNegatives,
+      } });
     if (Array.isArray(stored?.characters) && (memory.parameters || memory.characterPrompt || memory.characterNegativePrompt)) {
       restored.characters = stored.characters.map(character => {
         const original = defaults.characters?.find(item => item.id === character.id);
@@ -258,6 +290,9 @@ const restoreLabWorkspaceMemory = (value: unknown, fallback: LabWorkspaceSession
           enabled: memory.parameters && (character.x !== undefined || character.y !== undefined) ? character.enabled : original?.enabled,
           prompt: memory.characterPrompt ? character.prompt ?? original?.prompt ?? '' : original?.prompt ?? '',
           negativePrompt: memory.characterNegativePrompt ? character.negativePrompt ?? original?.negativePrompt : original?.negativePrompt,
+          sections: memory.characterPrompt ? character.sections ?? original?.sections : original?.sections,
+          sectionMeta: memory.characterPrompt ? character.sectionMeta ?? original?.sectionMeta : original?.sectionMeta,
+          sectionNegatives: memory.characterNegativePrompt ? character.sectionNegatives ?? original?.sectionNegatives : original?.sectionNegatives,
         };
       });
     }

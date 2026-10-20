@@ -8,7 +8,8 @@ import { TagAutocompleteTextarea } from '../TagAutocompleteTextarea';
 import { PresetSection, PresetSource, PresetSourceBadges } from './PresetSourceBadges';
 import { compilePrompt, mergePromptFields } from '../../services/promptUtils';
 import { CharacterTaggerReference } from './CharacterTaggerReference';
-import { moveCharacter, normalizeCharacterCoordinate } from '../../services/characterPrompts';
+import { CHARACTER_SECTION_KEYS, hasCharacterSections, moveCharacter, normalizeCharacterCoordinate } from '../../services/characterPrompts';
+import { CharacterSectionSummary } from './CharacterSectionSummary';
 import { CharacterPositionStage } from './CharacterPositionStage';
 import { isNaiMediumModel } from '../../services/naiModels';
 import { ImagePreviewPortal } from '../ImagePreviewPortal';
@@ -32,6 +33,13 @@ const CoordinateInput: React.FC<{ value: number; freeform: boolean; disabled: bo
         className="w-full rounded border bg-gray-50 p-1 text-xs disabled:opacity-40 dark:border-gray-600 dark:bg-gray-900 dark:text-white" />;
 };
 
+const CHARACTER_SECTION_LABELS: Record<(typeof CHARACTER_SECTION_KEYS)[number], string> = {
+    appearance: '形象',
+    wardrobe: '服饰',
+    pose: '动作',
+    expression: '表情',
+};
+
 export interface ChainEditorCharactersProps {
     params: NAIParams;
     setParams: (params: NAIParams) => void;
@@ -42,6 +50,8 @@ export interface ChainEditorCharactersProps {
     markPresetSectionModified: (section: PresetSection) => void;
     markChange: () => void;
     addCharacter: () => void;
+    /** 就地发起「Roll 当前角色」 */
+    onContentRollForRole?: (index: number) => void;
     updateCharacter: (idx: number, updates: Partial<CharacterParams>, useCoords?: boolean) => void;
     removeCharacter: (idx: number) => void;
     activeLabLayout: LabPageLayout;
@@ -68,6 +78,7 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
     markPresetSectionModified,
     markChange,
     addCharacter,
+    onContentRollForRole,
     updateCharacter,
     removeCharacter,
     activeLabLayout,
@@ -186,7 +197,7 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
                             </label>
                             <div className="flex items-center gap-1">
                                 <span ref={positiveSlotRef} />
-                                {canSaveCharacter && onSaveCharacter && <button type="button" aria-label={t("保存到角色库")} title={t("保存到角色库")} disabled={!char.prompt.trim() || savingCharacter} onClick={() => { setCharacterName(''); setActiveAction({ kind: 'save', character: char }); }} className="mobile-touch rounded p-1 text-gray-400 hover:bg-emerald-50 hover:text-emerald-600 disabled:opacity-25 dark:hover:bg-emerald-950/30 dark:hover:text-emerald-300"><Save className="h-4 w-4" /></button>}
+                                {canSaveCharacter && onSaveCharacter && <button type="button" aria-label={t("保存到角色库")} title={t("保存到角色库")} disabled={(!char.prompt.trim() && !hasCharacterSections(char)) || savingCharacter} onClick={() => { setCharacterName(''); setActiveAction({ kind: 'save', character: char }); }} className="mobile-touch rounded p-1 text-gray-400 hover:bg-emerald-50 hover:text-emerald-600 disabled:opacity-25 dark:hover:bg-emerald-950/30 dark:hover:text-emerald-300"><Save className="h-4 w-4" /></button>}
                                 {showCharacterReference && <button type="button" aria-label={t("从角色库引用")} title={t("从角色库引用")} onClick={() => setActiveAction({ kind: 'reference', index: idx })} className="mobile-touch rounded p-1 text-gray-400 hover:bg-indigo-50 hover:text-indigo-600 dark:hover:bg-indigo-950/30 dark:hover:text-indigo-300"><UserRound className="h-4 w-4" /></button>}
                                 <button type="button" title={t("上移")} aria-label={t("上移角色 {0}", [idx + 1])} disabled={!canEdit || idx === 0} onClick={() => reorder(idx, -1)} className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700 disabled:opacity-25 dark:hover:bg-gray-700 dark:hover:text-gray-200"><ArrowUp className="h-4 w-4" /></button>
                                 <button type="button" title={t("下移")} aria-label={t("下移角色 {0}", [idx + 1])} disabled={!canEdit || idx === characters.length - 1} onClick={() => reorder(idx, 1)} className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700 disabled:opacity-25 dark:hover:bg-gray-700 dark:hover:text-gray-200"><ArrowDown className="h-4 w-4" /></button>
@@ -219,6 +230,42 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
                                         placeholder={t("选填")}
                                     />
                                 </div>
+                                {/* 分栏内容：写入 character.sections，实际请求时与正文按固定顺序编译合并 */}
+                                <div className="rounded border border-dashed border-gray-300 p-2 dark:border-gray-600">
+                                    <div className="mb-1 flex items-center justify-between gap-2">
+                                        <span className="text-micro font-bold text-gray-500">{t("分栏内容")}</span>
+                                        <span className="flex items-center gap-2">
+                                            <span className="text-micro text-gray-400">{t("请求时与正文合并")}</span>
+                                            {onContentRollForRole && canEdit ? (
+                                                <button type="button" onClick={() => onContentRollForRole(idx)}
+                                                    className="rounded border border-dashed border-indigo-300 px-1.5 py-0.5 text-micro font-semibold text-indigo-600 hover:bg-indigo-50 dark:border-indigo-800 dark:text-indigo-300 dark:hover:bg-indigo-950/40">
+                                                    {t("Roll 当前角色")}
+                                                </button>
+                                            ) : null}
+                                        </span>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        {CHARACTER_SECTION_KEYS.map(key => (
+                                            <div key={key} className="min-w-0">
+                                                <label className="mb-0.5 block text-micro font-semibold text-gray-500" htmlFor={`char-section-${idx}-${key}`}>
+                                                    {t(CHARACTER_SECTION_LABELS[key])}
+                                                </label>
+                                                <TagAutocompleteTextarea
+                                                    id={`char-section-${idx}-${key}`}
+                                                    tagAssistEnabled={tagAssistEnabled}
+                                                    disabled={!canEdit}
+                                                    value={char.sections?.[key] || ''}
+                                                    onValueChange={nextValue => updateCharacter(idx, {
+                                                        sections: { ...(char.sections || {}), [key]: nextValue },
+                                                    })}
+                                                    className="h-10 w-full resize-none rounded border border-gray-300 bg-gray-50 p-1.5 text-xs text-gray-800 outline-none focus:ring-1 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200"
+                                                    placeholder={t("留空则不参与")}
+                                                />
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                                <CharacterSectionSummary character={char} />
                             </div>
                             <div className="order-3 grid w-full grid-cols-2 items-start gap-3 sm:order-none sm:flex sm:w-28 sm:shrink-0 sm:flex-col">
                               <div className="w-full space-y-2">
@@ -251,7 +298,7 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
             </form> : <>
                 <div className="mb-3 flex items-center justify-between"><h2 className="text-base font-bold">{t("选择角色库角色")}</h2><button type="button" onClick={() => setActiveAction(null)} className="mobile-touch rounded px-2 py-1 text-gray-500">{t("关闭")}</button></div>
                 <div className="space-y-2">{allChains.filter(item => item.type === 'character').map(item => <button key={item.id} type="button" onClick={() => {
-                    if (activeAction.kind === 'reference') updateCharacter(activeAction.index, { prompt: compilePrompt(item, item.variableValues?.subject || ''), negativePrompt: item.negativePrompt || '' });
+                    if (activeAction.kind === 'reference') updateCharacter(activeAction.index, { prompt: compilePrompt(item, item.variableValues?.subject || ''), negativePrompt: item.negativePrompt || '', sections: undefined, sectionNegatives: undefined, sectionMeta: undefined });
                     setActiveAction(null);
                 }} className="mobile-touch flex w-full items-center gap-3 rounded-xl border border-gray-200 p-2 text-left hover:border-indigo-400 dark:border-gray-700 dark:hover:border-indigo-500">
                     {item.previewImage ? <SmartImage src={item.previewImage} alt="" className="h-12 w-12 flex-none rounded-lg object-cover" /> : <span className="flex h-12 w-12 flex-none items-center justify-center rounded-lg bg-gray-100 text-gray-500 dark:bg-gray-800"><UserRound className="h-5 w-5" /></span>}

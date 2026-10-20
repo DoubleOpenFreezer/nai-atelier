@@ -19,6 +19,14 @@ export interface PromptModule {
   group?: string; // New: Group for mutual exclusion (N choose 1)
 }
 
+/** 角色分栏内容：与全局四类内容同名；prompt 保留为手动补充正文。 */
+export interface CharacterSectionContent {
+  appearance?: string;
+  wardrobe?: string;
+  pose?: string;
+  expression?: string;
+}
+
 export interface CharacterParams {
   id: string;
   enabled?: boolean; // 临时停用不删除内容；旧资料未记录时默认启用
@@ -26,6 +34,12 @@ export interface CharacterParams {
   negativePrompt?: string; // New: Per-character negative prompt
   x: number; // 0.0 to 1.0
   y: number; // 0.0 to 1.0
+  /** 分栏内容（本机角色分类模型）。存在时与 prompt 编译成实际请求正文，编辑区仍按分栏显示。 */
+  sections?: CharacterSectionContent;
+  /** 每栏的内容负面，编译成角色负面；与风格全局负面无关。 */
+  sectionNegatives?: Partial<Record<keyof CharacterSectionContent, string>>;
+  /** 每栏来源快照（条目 id / 名称 / 约束备注 / 来源），只用于展示与还原，不进入请求。 */
+  sectionMeta?: Partial<Record<keyof CharacterSectionContent, { entryId?: string; entryName?: string; notes?: string; source?: string }>>;
 }
 
 export interface VibeEncodingVariant {
@@ -139,11 +153,30 @@ export interface NAIParams {
 }
 
 /** 实验室提示词分栏原文；缺省或全为空表示尚未使用分栏（旧数据）。 */
+/** 一栏内容的来源快照（追溯用，不进入请求）。 */
+export interface PromptSectionSource {
+  entryId?: string;
+  entryName?: string;
+  notes?: string;
+  /** library = 从词库选入；roll = 一键 Roll 填入；manual = 手动填写 */
+  source?: 'library' | 'roll' | 'manual';
+  /** 选入时用的应用模式 */
+  mode?: 'replace' | 'append' | 'fill-missing';
+}
+
 export interface PromptSections {
   appearance?: string;
   wardrobe?: string;
   pose?: string;
+  /** 场景环境（独立栏位；早期版本并进 extra） */
+  scene?: string;
+  /** 镜头画面（独立栏位；早期版本并进 extra） */
+  camera?: string;
   extra?: string;
+  /** 每栏的来源快照，键与上面各栏一致；只用于界面追溯 */
+  sectionMeta?: Record<string, PromptSectionSource>;
+  /** 每栏的内容负面（与上面各栏同名键）；只属于这一栏的内容，不混进风格全局负面 */
+  sectionNegatives?: Record<string, string>;
 }
 
 export type ImageEditOperation = 'image-to-image' | 'inpaint' | 'outpaint';
@@ -260,7 +293,7 @@ export type PromptAgentAction =
   | { kind: 'navigate_view'; patch: { view: 'list' | 'characters' | 'prompts' | 'library' | 'aitag' | 'inspiration' | 'history' | 'playground'; id?: string } }
   | { kind: 'request_project_action'; patch: { action: string; resourceId?: string; title: string; consequence: string; payload?: Record<string, unknown>; requestId?: string } };
 
-export type ChainType = 'style' | 'character' | 'appearance' | 'wardrobe' | 'pose' | 'scene';
+export type ChainType = 'style' | 'character' | 'appearance' | 'wardrobe' | 'pose' | 'expression' | 'scene' | 'camera' | 'preset';
 
 // Flattened Chain Structure (No more separate versions table)
 export interface PromptChain {

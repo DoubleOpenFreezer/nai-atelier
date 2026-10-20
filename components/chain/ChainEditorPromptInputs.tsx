@@ -4,15 +4,20 @@ import { LabPageLayout } from '../../services/appearancePreferences';
 import { mergePromptSections, resolvePromptSections } from '../../services/labWorkspace';
 import { LabModuleSection } from '../LabModuleSection';
 import { TagAutocompleteTextarea } from '../TagAutocompleteTextarea';
-import { appendPromptText, PromptLibraryPicker } from '../PromptLibraryPicker';
+import { PromptLibraryPicker } from '../PromptLibraryPicker';
 import { PresetSection, PresetSource, PresetSourceBadges, PromptCopyButton } from './PresetSourceBadges';
 import type { PromptLibraryKind } from '../../services/promptAgent';
-import type { PromptSections } from '../../types';
+import type { PromptSectionSource, PromptSections } from '../../types';
 
-const SECTION_FIELDS: { key: keyof PromptSections; label: string; library: PromptLibraryKind; placeholder: string }[] = [
+/** 文本型栏位（排除只用于追溯的 sectionMeta） */
+type SectionKey = Exclude<keyof PromptSections, 'sectionMeta' | 'sectionNegatives'>;
+
+const SECTION_FIELDS: { key: SectionKey; label: string; library: PromptLibraryKind; placeholder: string }[] = [
     { key: 'appearance', label: '人物', library: 'appearance', placeholder: '外貌特征，如发色、瞳色与体型' },
     { key: 'wardrobe', label: '服饰', library: 'wardrobe', placeholder: '服装、鞋袜与配饰' },
     { key: 'pose', label: '姿势', library: 'pose', placeholder: '姿态、动作与视角' },
+    { key: 'scene', label: '场景', library: 'scene', placeholder: '地点、时间、天气与氛围' },
+    { key: 'camera', label: '镜头', library: 'camera', placeholder: '景别、视角、构图与成像效果' },
     { key: 'extra', label: '补充', library: 'scene', placeholder: '人数、场景、构图与光线等补充' },
 ];
 
@@ -23,19 +28,25 @@ interface PromptFieldProps {
     library?: PromptLibraryKind;
     disabled: boolean;
     tagAssistEnabled: boolean;
-    onChange: (value: string) => void;
+    onChange: (value: string, source?: PromptSectionSource) => void;
     onCopy: (value: string, label: string) => void;
+    /** 该栏现有来源（条目名），显示在标签旁做追溯 */
+    sourceName?: string;
 }
 
-const PromptField: React.FC<PromptFieldProps> = ({ label, value, placeholder, library, disabled, tagAssistEnabled, onChange, onCopy }) => {
+const PromptField: React.FC<PromptFieldProps> = ({ label, value, placeholder, library, disabled, tagAssistEnabled, onChange, onCopy, sourceName }) => {
     const id = useId();
     const clearSlot = useRef<HTMLSpanElement>(null);
     return <div role="group" aria-label={t(label)} className="flex min-w-0 flex-col gap-2">
         <div className="flex min-w-0 items-center justify-between gap-2">
-            <label htmlFor={id} className="truncate text-sm font-semibold text-gray-800 dark:text-gray-100">{t(label)}</label>
+            <label htmlFor={id} className="min-w-0 truncate text-sm font-semibold text-gray-800 dark:text-gray-100">
+                {t(label)}
+                {sourceName ? <span className="ml-1 text-micro font-normal text-gray-400">{t('来源：{0}', [sourceName])}</span> : null}
+            </label>
             <div className="flex shrink-0 items-center gap-1">
-                {library && <PromptLibraryPicker kind={library} disabled={disabled}
-                    onPick={picked => onChange(appendPromptText(value, picked))} />}
+                {library && <PromptLibraryPicker kind={library} disabled={disabled} targetKind={library} current={value}
+                    onPick={picked => onChange(picked, { source: 'library' })}
+                    onPickEntry={result => onChange(result.prompt, { entryId: result.entryId, entryName: result.entryName, source: 'library', mode: result.mode })} />}
                 <span ref={clearSlot} />
                 <PromptCopyButton onClick={() => onCopy(value, label)} title={t('复制{0}', [t(label)])} />
             </div>
@@ -53,6 +64,8 @@ export interface ChainEditorPromptInputsProps {
     prompt: string;
     setPrompt: (value: string) => void;
     sections?: PromptSections | null;
+    /** 就地发起「Roll 场景 / 镜头」 */
+    onContentRollForGlobal?: () => void;
     setSections?: (sections: PromptSections) => void;
     supplementPrompt?: string;
     setSupplementPrompt?: (value: string) => void;
@@ -67,14 +80,18 @@ export interface ChainEditorPromptInputsProps {
 }
 
 export const ChainEditorPromptInputs: React.FC<ChainEditorPromptInputsProps> = ({
-    prompt, setPrompt, sections, setSections, supplementPrompt = '', setSupplementPrompt,
+    prompt, setPrompt, sections, setSections, supplementPrompt = '', setSupplementPrompt, onContentRollForGlobal,
     presetSources, tagAssistEnabled, canEdit, copyPromptToClipboard,
     markPresetSectionModified, markChange, activeLabLayout, mobileEditorTab,
 }) => {
     useLanguage();
     const current = resolvePromptSections(sections, supplementPrompt);
-    const writeSection = (key: keyof PromptSections, value: string) => {
-        const next = { ...current, [key]: value };
+        const writeSection = (key: SectionKey, value: string, source?: PromptSectionSource) => {
+        const meta = { ...(current.sectionMeta || {}) } as Record<string, PromptSectionSource>;
+        if (source) meta[key] = source;
+        else if (String(value || '').trim()) meta[key] = { source: 'manual' };
+        else delete meta[key];
+        const next = { ...current, [key]: value, sectionMeta: meta } as PromptSections;
         setSections?.(next);
         setSupplementPrompt?.(mergePromptSections(next));
         markPresetSectionModified('subject');
@@ -89,14 +106,23 @@ export const ChainEditorPromptInputs: React.FC<ChainEditorPromptInputsProps> = (
                     .filter((entry): entry is [string, PresetSource] => Boolean(entry[1])))} />
             </div>
             <div className="flex flex-col gap-3">
+                {onContentRollForGlobal ? (
+                    <div className="flex justify-end">
+                        <button type="button" onClick={onContentRollForGlobal}
+                            className="rounded border border-dashed border-indigo-300 px-2 py-1 text-meta font-semibold text-indigo-600 hover:bg-indigo-50 dark:border-indigo-800 dark:text-indigo-300 dark:hover:bg-indigo-950/40">
+                            {t('Roll 场景 / 镜头')}
+                        </button>
+                    </div>
+                ) : null}
                 <PromptField label="画师串" value={prompt} placeholder="画师标签与固定画风" disabled={!canEdit}
                     tagAssistEnabled={tagAssistEnabled} onCopy={copyPromptToClipboard} onChange={value => {
                         setPrompt(value); markPresetSectionModified('base'); markChange();
                     }} />
                 {SECTION_FIELDS.map(field => <PromptField key={field.key} label={field.label} library={field.library}
-                    value={current[field.key] || ''} placeholder={field.placeholder} disabled={!canEdit}
+                    value={String(current[field.key] || '')} placeholder={field.placeholder} disabled={!canEdit}
+                    sourceName={current.sectionMeta?.[field.key]?.entryName}
                     tagAssistEnabled={tagAssistEnabled} onCopy={copyPromptToClipboard}
-                    onChange={value => writeSection(field.key, value)} />)}
+                    onChange={(value, source) => writeSection(field.key, value, source)} />)}
             </div>
         </section>
     </LabModuleSection>;

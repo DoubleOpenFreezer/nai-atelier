@@ -2,7 +2,7 @@ import { ImageEditOperation, NAIParams } from '../types';
 import { applyNaiModelSettings, DEFAULT_NAI_MODEL, getNaiModelFixedSettings, getRuntimeNaiModelInfo } from './naiModels';
 import { buildImageEditParameters, resolveImageEditModel, validateImageEditSampler } from './imageEdit';
 import { DEFAULT_NAI_RUNTIME, getNaiRuntimeModelCapability, NaiRuntimeConfig } from './naiRuntime';
-import { withGenerationCharacters } from './characterPrompts';
+import { compileCharacterContent, withGenerationCharacters } from './characterPrompts';
 import { joinNaiTextPrompt, splitNaiTextPrompt, withTransparentPromptTags } from './transparentBackground.mjs';
 export { withTransparentPromptTags } from './transparentBackground.mjs';
 
@@ -92,16 +92,26 @@ export const buildNaiGenerationPayload = (
     finalPrompt = appendPromptPart(finalPrompt, presetState.qualityPreset.suffix, 'suffix');
   }
 
-  let finalNegative = getNaiModelFixedSettings(modelId, runtime) ? '' : negative;
+  const negativeLocked = Boolean(getNaiModelFixedSettings(modelId, runtime));
+  let finalNegative = negativeLocked ? '' : negative;
   if (presetState.ucPreset?.prefix) finalNegative = appendPromptPart(finalNegative, presetState.ucPreset.prefix, 'prefix');
+  /* 场景 / 镜头各自的内容负面：只属于那一栏的内容，追加在风格负面之后，不覆盖它 */
+  const sectionNegatives = params._promptSections?.sectionNegatives || {};
+  for (const key of ['scene', 'camera', 'extra']) {
+    const contentNegative = String(sectionNegatives[key] || '').trim();
+    if (!negativeLocked && params._promptSections?.[key as 'scene' | 'camera' | 'extra']?.trim() && contentNegative) {
+      finalNegative = appendPromptPart(finalNegative, contentNegative, 'suffix');
+    }
+  }
 
-  const characters = withGenerationCharacters(params, modelInfo.freeformCharacterPosition).characters || [];
+  const characters = (withGenerationCharacters(params, modelInfo.freeformCharacterPosition).characters || [])
+    .map(character => compileCharacterContent(character, (params as { _characterSectionsNegatives?: Record<string, unknown> })._characterSectionsNegatives));
   const charCaptions = characters.map(character => ({
     char_caption: character.prompt,
     centers: [{ x: character.x, y: character.y }],
   }));
   const charNegativeCaptions = characters.map(character => ({
-    char_caption: character.negativePrompt || '',
+    char_caption: negativeLocked ? '' : character.negativePrompt || '',
     centers: [{ x: character.x, y: character.y }],
   }));
 
