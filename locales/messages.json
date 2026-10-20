@@ -20335,5 +20335,12 @@
   "这只是只读预览，不会改动实验室，也不会消耗额度。": ["这只是只读预览，不会改动实验室，也不会消耗额度。","This is a read-only preview: it does not touch the lab or use any allowance.","これは読み取り専用のプレビューです。ラボも変更せず、クレジットも消費しません。","읽기 전용 미리보기입니다. 랩을 변경하거나 크레딧을 사용하지 않습니다."],
   "处理中…": ["处理中…","Working…","処理中…","처리 중…"],
   "封面已更新：历史图会由 Worker 转成独立资产，不受历史清理影响": ["封面已更新：历史图会由 Worker 转成独立资产，不受历史清理影响","Cover updated: the worker converts the history image into a separate asset that survives history cleanup","表紙を更新しました。履歴画像は Worker が独立アセットに変換するため、履歴整理の影響を受けません","표지를 갱신했습니다. 기록 이미지는 Worker가 별도 자산으로 변환해 기록 정리의 영향을 받지 않습니다"],
-  "设置封面失败：{0}": ["设置封面失败：{0}","Failed to set the cover: {0}","表紙の設定に失敗：{0}","표지 설정 실패: {0}"]
+  "设置封面失败：{0}": ["设置封面失败：{0}","Failed to set the cover: {0}","表紙の設定に失敗：{0}","표지 설정 실패: {0}"],
+  "分栏摘要": ["分栏摘要","Section summary","セクション概要","섹션 요약"],
+  "正文 {0} 字": ["正文 {0} 字","{0} characters","本文 {0} 文字","본문 {0}자"],
+  "收起来源": ["收起来源","Hide source","出典を閉じる","출처 접기"],
+  "展开来源": ["展开来源","Show source","出典を表示","출처 펼치기"],
+  "手动填写": ["手动填写","typed manually","手入力","직접 입력"],
+  "内容负面": ["内容负面","Content negative","内容のネガティブ","내용 네거티브"],
+  "暂无来源记录（手动填写或尚未从一键 Roll 填入）": ["暂无来源记录（手动填写或尚未从一键 Roll 填入）","No source recorded yet (typed manually or not filled from one-click roll)","出典の記録はまだありません（手入力、またはワンクリックロール未使用）","출처 기록이 없습니다(직접 입력 또는 원클릭 롤 미사용)"]
 }

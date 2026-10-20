@@ -9,6 +9,7 @@ import { PresetSection, PresetSource, PresetSourceBadges } from './PresetSourceB
 import { compilePrompt, mergePromptFields } from '../../services/promptUtils';
 import { CharacterTaggerReference } from './CharacterTaggerReference';
 import { CHARACTER_SECTION_KEYS, moveCharacter, normalizeCharacterCoordinate } from '../../services/characterPrompts';
+import { CharacterSectionSummary } from './CharacterSectionSummary';
 import { CharacterPositionStage } from './CharacterPositionStage';
 import { isNaiMediumModel } from '../../services/naiModels';
 import { ImagePreviewPortal } from '../ImagePreviewPortal';
@@ -264,6 +265,7 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
                                         ))}
                                     </div>
                                 </div>
+                                <CharacterSectionSummary character={char} />
                             </div>
                             <div className="order-3 grid w-full grid-cols-2 items-start gap-3 sm:order-none sm:flex sm:w-28 sm:shrink-0 sm:flex-col">
                               <div className="w-full space-y-2">
