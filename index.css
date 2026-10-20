@@ -112,8 +112,11 @@ html:root :is(.media-card, .gallery-image-card) :is(.mobile-gallery-frame, .gall
     top: .5rem;
     bottom: auto;
   }
-  html[data-gallery-frosted-caption='true'] .gallery-chain-status {
-    bottom: 3.75rem;
+  /* 待实测状态已移入标题栏：磨砂标题覆在图上，改用深底亮字保持可读。 */
+  html[data-gallery-frosted-caption='true'] .gallery-card-caption .gallery-chain-status {
+    background: rgb(12 16 24 / .55);
+    border: 1px solid rgb(251 191 36 / .3);
+    color: #fcd34d;
   }
 }
 
@@ -357,26 +360,6 @@ html[data-design-theme='nai-atelier'] ::selection {
 
 @media (min-width: 64rem) {
   .generation-action-button.generation-action-button--workbench { min-width: 0; }
-}
-
-.nai-alpha-checker {
-  background-color: #fff;
-  background-image:
-    linear-gradient(45deg, rgb(148 163 184 / 22%) 25%, transparent 25%),
-    linear-gradient(-45deg, rgb(148 163 184 / 22%) 25%, transparent 25%),
-    linear-gradient(45deg, transparent 75%, rgb(148 163 184 / 22%) 75%),
-    linear-gradient(-45deg, transparent 75%, rgb(148 163 184 / 22%) 75%);
-  background-position: 0 0, 0 10px, 10px -10px, -10px 0;
-  background-size: 20px 20px;
-}
-
-.dark .nai-alpha-checker {
-  background-color: rgb(17 24 39);
-  background-image:
-    linear-gradient(45deg, rgb(148 163 184 / 16%) 25%, transparent 25%),
-    linear-gradient(-45deg, rgb(148 163 184 / 16%) 25%, transparent 25%),
-    linear-gradient(45deg, transparent 75%, rgb(148 163 184 / 16%) 75%),
-    linear-gradient(-45deg, transparent 75%, rgb(148 163 184 / 16%) 75%);
 }
 
 .generation-action-button::before {

@@ -259,7 +259,7 @@ describe('全局外观覆盖审计', () => {
       /(?<![\w:-])(?:dark:)?bg-(?:red|rose|emerald|green|amber|orange|violet|blue|indigo)-\d/.test(text));
     expect(conflicts.map(({ file, text }) => ({ file, text }))).toEqual([]);
   });
-  it('全局背景连续，独立分组承载材质，图片检查板不被改写', () => {
+  it('全局背景连续，独立分组承载材质，作品预览不铺衬底', () => {
     const detailCss = readFileSync(resolve('components/themeDetails.css'), 'utf8');
     const root = "html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-material='frosted'])";
     const surface = declarations(`${root} :is(.appearance-surface, .appearance-group)`, undefined, detailCss);
@@ -278,7 +278,8 @@ describe('全局外观覆盖审计', () => {
       if (rule.selector.includes('appearance-media')) throw new Error('图片和画布衬底不能进入玻璃覆盖选择器');
     });
     const preview = sources.find(source => source.file === 'components/ChainEditorPreview.tsx')!.text;
-    expect(preview).toContain("transparentPreview ? 'nai-alpha-checker' : 'lab-preview-image'");
+    expect(preview).not.toContain('lab-preview-image');
+    expect(preview).not.toContain('nai-alpha-checker');
     for (const file of ['ChainEditor', 'ImageEditPanel', 'ImageEditControls', 'ChainEditorPreview']) {
       expect(sources.find(source => source.file === `components/${file}.tsx`)!.text).toContain('appearance-content chain-editor-');
     }
@@ -422,7 +423,7 @@ describe('全局外观覆盖审计', () => {
       if (rule.selector.includes('data-theme-background')) expect(rule.selector).not.toMatch(/safe-mode|\bimg\b|media-card|gallery-image/);
     });
   });
-  it('四模式共用通透编辑面，空预览开放且中性衬底仅跟随作品', () => {
+  it('四模式共用通透编辑面，空预览开放且作品预览不铺衬底', () => {
     const source = readFileSync(resolve('components/themeDetails.css'), 'utf8');
     const root = "html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-material='frosted'])";
     expect(declarations(`${root} .chain-editor-main`, undefined, source)['background-color']).toBe('transparent');
@@ -434,7 +435,7 @@ describe('全局外观覆盖审计', () => {
     expect(module.overflow).toBe('visible');
     expect(declarations('.lab-preview-stage', undefined, source)['backdrop-filter']).toBe('none');
     expect(declarations('.lab-preview-stage', undefined, source)['background-color']).toBeUndefined();
-    expect(declarations('.lab-preview-image', undefined, source)['background-color']).toBe('var(--nai-preview-surface)');
+    expect(source).not.toContain('.lab-preview-image');
     const nav = declarations("html[data-control-style='filled'] .generation-mode-nav > button[aria-current='page']", undefined, source);
     expect(nav['background-color']).toBe('var(--color-indigo-600)');
     expect(nav.color).toBe('var(--nai-on-accent-600)');

@@ -66,18 +66,18 @@ describe('四模式的分享入口', () => {
     expect(generate).toHaveBeenCalledOnce();
     expect(screen.queryByRole('button', { name: /上一张|下一张/ })).toBeNull();
   });
-  it.each([false, true])('预览画布透明标记为 %s 时保留对应衬底，作品与放大行为不受壁纸影响', transparentPreview => {
+  it('透明底作品直接透出背景，不铺衬底也不画棋盘格', () => {
     const open = vi.fn();
     render(React.createElement(ChainEditorPreview, {
       isGenerating: false, handleGenerate: vi.fn(), errorMsg: null, generatedImage: '/synthetic.png', previewImage: undefined,
       setLightboxImg: open, isOwner: false, isUploading: false, handleSavePreview: vi.fn(), handleUploadCover: vi.fn(),
-      getDownloadFilename: () => 'test.png', generationCostLabel: '免费', transparentPreview,
+      getDownloadFilename: () => 'test.png', generationCostLabel: '免费',
     }));
     const image = screen.getByRole('img');
     const stage = image.closest('.lab-preview-stage')!;
     expect(stage.classList.contains('nai-alpha-checker')).toBe(false);
-    expect(image.classList.contains('nai-alpha-checker')).toBe(transparentPreview);
-    expect(image.classList.contains('lab-preview-image')).toBe(!transparentPreview);
+    expect(image.classList.contains('nai-alpha-checker')).toBe(false);
+    expect(image.classList.contains('lab-preview-image')).toBe(false);
     expect(stage.classList.contains('appearance-group')).toBe(false);
     expect(image.getAttribute('src')).toBe('/synthetic.png');
     expect(image.getAttribute('style')).toBeNull();

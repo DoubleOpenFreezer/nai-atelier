@@ -121,11 +121,8 @@ html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-the
 html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-material='frosted']).dark .chain-editor-main :is(.text-gray-400, .text-gray-500, [class~='dark:text-gray-400'], [class~='dark:text-gray-500']) { color: var(--color-gray-300); }
 html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-material='frosted']) .appearance-reading-surface :is(input, textarea)::placeholder { color: var(--color-gray-600); opacity: 1; }
 html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-material='frosted']).dark .appearance-reading-surface :is(input, textarea)::placeholder { color: var(--color-gray-300); }
-/* 壁纸提供环境色；编辑区薄透承托，中性衬底只跟随实际作品。 */
-html[data-design-theme] { --nai-preview-surface: #e9e9ec; }
-html[data-design-theme].dark { --nai-preview-surface: #19191c; }
+/* 壁纸提供环境色；编辑区薄透承托，作品预览不铺衬底，透明区域直接透出背景。 */
 html[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-material='frosted']) { --nai-scrollbar-track: transparent; }
-.lab-preview-image { background-color: var(--nai-preview-surface); }
 .lab-preview-stage {
   border: 0;
   box-shadow: none;

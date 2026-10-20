@@ -1275,7 +1275,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         if (hasPromptStructure) {
             const importedModules = (data.modules || []).map(module => ({ ...module, position: module.position || 'post' }));
             setBasePrompt(data.basePrompt || '');
-            setSubjectPrompt(data.subjectPrompt || '');
+            // 没有显式主体正文时用四栏合并值兜底：旧串可能只留下 _promptSections。
+            setSubjectPrompt(data.subjectPrompt || mergePromptSections(data.params?._promptSections));
             setModules(importedModules);
             setActiveModules(Object.fromEntries(importedModules.map(module => [module.id, module.isActive])));
         } else {
@@ -2262,7 +2263,6 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                     onRemoveCurrentHistory={handleRemoveCurrentHistory}
                     onClearHistoryGroup={handleClearHistoryGroup}
                     generationCostLabel={generationCostLabel}
-                    transparentPreview={activeModelInfo.supportsTransparentBackground && params.transparent === true}
                     generationProgress={generationProgress}
                     generationCountControl={generationCountControl}
                     notify={notify}

@@ -782,6 +782,7 @@ const App = () => {
           onDelete={handleDelete}
           onBulkDelete={handleBulkDelete}
           onUpdateChain={handleUpdateChain}
+          onNavigateToPlayground={() => handleNavigate('playground', undefined, { externalImport: true })}
           onRefresh={() => refreshData(true)}
           onReloadTags={async () => {
             if (!await refreshData(true)) throw new Error(t('风格串列表加载失败，请稍后重试'));

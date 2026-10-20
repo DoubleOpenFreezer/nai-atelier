@@ -11,7 +11,7 @@ import { IMAGE_CARD_ACTION_CLASS, ImageShareActions } from './ImageShareActions'
 import { getMobileOriginalUrl } from '../services/mobileImageCache';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMasonry';
-import { Check, EyeOff, Filter, FolderUp, Heart, Image, Link2, ListChecks, Pencil, Plus, Tags, Trash2, User, X } from 'lucide-react';
+import { Check, EyeOff, Filter, FlaskConical, FolderUp, Heart, Image, Link2, ListChecks, Pencil, Plus, Tags, Trash2, User, X } from 'lucide-react';
 import { ToolbarButton, ToolbarSearch, WorkspaceChrome, WorkspaceToolbar, isUntestedChain } from './DesignSystem';
 import { DEFAULT_NAI_MODEL, getNaiModelDisplayLabel, getSelectableNaiModels } from '../services/naiModels';
 import { useNaiRuntime } from '../services/naiRuntime';
@@ -31,6 +31,7 @@ import { ChainTagManager } from './chain/ChainTagManager';
 import { getCustomChainTags } from '../services/chainTags';
 import { useConfirmDialog } from './ConfirmDialog';
 import { AnchoredToolbarPopover } from './ToolbarPopover';
+import { IMPORT_SESSION_KEY } from '../services/metadataService';
 
 interface ChainListProps {
   chains: PromptChain[];
@@ -42,6 +43,8 @@ interface ChainListProps {
   onRefresh: () => void;
   onReloadTags?: () => Promise<void>;
   onUpdateChain: UpdateChainInfo;
+  /** 整串送入实验室：复用历史／灵感页的 sessionStorage 导入通道后跳转。 */
+  onNavigateToPlayground?: () => void;
   isLoading: boolean;
   notify: (msg: string, type?: 'success' | 'error') => void;
   isGuest?: boolean;
@@ -56,7 +59,7 @@ const chainPreviewRatio = (chain: PromptChain, measured?: number) => {
   return typeof width === 'number' && typeof height === 'number' && Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0 ? width / height : 4 / 3;
 };
 
-export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, onSelect, onDelete, onBulkDelete, onRefresh, onReloadTags, onUpdateChain, notify, isGuest = false, returnTargetId }) => {
+export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, onSelect, onDelete, onBulkDelete, onRefresh, onReloadTags, onUpdateChain, onNavigateToPlayground, notify, isGuest = false, returnTargetId }) => {
   useLanguage();
   const confirmAction = useConfirmDialog();
   const RENDER_BATCH_SIZE = 60;
@@ -130,6 +133,29 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
     setIsModalOpen(false);
     setNewName('');
     setNewDesc('');
+  };
+
+  /**
+   * 风格串 → 实验室：整串的基础提示词、主体正文、风格模块、角色槽位与生成参数一并投递。
+   * 实验室按临时伪链处理，不改动原串；sessionStorage 通道与历史／灵感页导入一致，
+   * 即使实验室已常驻（keep-alive），externalImportToken 也会触发它重新消费。
+   */
+  const sendToPlayground = (chain: PromptChain) => {
+    try {
+      sessionStorage.setItem(IMPORT_SESSION_KEY, JSON.stringify({
+        targetMode: 'text-to-image',
+        basePrompt: chain.basePrompt || '',
+        subjectPrompt: chain.variableValues?.subject || '',
+        modules: chain.modules || [],
+        negativePrompt: chain.negativePrompt || '',
+        params: chain.params,
+      }));
+    } catch (error) {
+      notify(error instanceof Error ? error.message : t('发送到实验室失败，请重试'), 'error');
+      return;
+    }
+    notify(t('已把「{0}」发送到实验室', [chain.name]));
+    onNavigateToPlayground?.();
   };
 
   const handleDelete = async (chain: PromptChain) => {
@@ -325,17 +351,9 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
           {/* 图片取用与编辑共用透明竖排；无封面时仍保留编辑。 */}
           {!selecting && !syncSelection.open && (chain.previewImage || !isGuest) && <div data-card-action="true" className="absolute right-2 top-2 z-20 flex flex-col items-center gap-2">
             {chain.previewImage && <ImageShareActions variant="card" className="flex-col" imageUrl={getMobileOriginalUrl(chain.previewImage)} filename={`${chain.name || 'cover'}.png`} notify={notify} favorite={{ imageUrl: chain.previewImage, title: chain.name, sourceType: chain.type === 'character' ? 'character' : 'chain', sourceId: chain.id, prompt: chain.basePrompt, negativePrompt: chain.negativePrompt, params: chain.params }} />}
+            {!isGuest && type === 'style' && <button type="button" onClick={event => { event.stopPropagation(); sendToPlayground(chain); }} className={`hover-reveal-md ${IMAGE_CARD_ACTION_CLASS} inline-flex shrink-0 items-center justify-center transition`} title={t("发送到实验室")} aria-label={t("发送到实验室：{0}", [chain.name])}><FlaskConical className="h-4 w-4" /></button>}
             {!isGuest && <button type="button" onClick={event => { event.stopPropagation(); setInfoChain(chain); }} className={`hover-reveal-md ${IMAGE_CARD_ACTION_CLASS} inline-flex shrink-0 items-center justify-center transition`} title={t("编辑信息")} aria-label={t("编辑{0}信息：{1}", [chain.type === 'character' ? t('自定义角色') : t('风格串'), chain.name])}><Pencil className="h-4 w-4" /></button>}
           </div>}
-          {isUntestedChain(chain) && (
-            <div
-              className="gallery-chain-status absolute left-2 bottom-2 z-10 flex items-center gap-1 rounded-md bg-black/65 px-1.5 py-0.5 text-micro font-medium text-amber-300 backdrop-blur-md shadow-sm border border-amber-400/20"
-              title={t("待实测：在此风格串生成后自动去除")}
-            >
-              <EyeOff className="h-3 w-3 text-amber-400 shrink-0" />
-              <span>{t("待实测")}</span>
-            </div>
-          )}
           {chain.previewImage ? (
               <div className="w-full h-full relative group/img">
                   <SmartImage
@@ -361,6 +379,16 @@ export const ChainList: React.FC<ChainListProps> = ({ chains, type, onCreate, on
       </div>
 
       <div className="gallery-card-caption flex h-12 flex-col justify-center px-3">
+        {/* 待实测状态贴着作品名放在标题栏内，不再压在封面底部。 */}
+        {isUntestedChain(chain) && (
+          <div
+            className="gallery-chain-status mb-0.5 flex w-fit max-w-full items-center gap-1 rounded-full bg-amber-100 px-1.5 py-px text-micro font-medium text-amber-700 dark:bg-amber-950/50 dark:text-amber-300"
+            title={t("待实测：在此风格串生成后自动去除")}
+          >
+            <EyeOff aria-hidden="true" className="h-3 w-3 shrink-0 text-amber-500 dark:text-amber-400" />
+            <span>{t("待实测")}</span>
+          </div>
+        )}
         <div className="flex items-center justify-between">
           <h3 data-safe-mode-title="true" className="w-full truncate pr-1 text-sm font-bold text-gray-900 dark:text-gray-100 md:pr-2" title={chain.name}>{chain.name}</h3>
           <span className="gallery-card-badge ml-1 flex-shrink-0 rounded-full border border-violet-200 bg-violet-50 px-1.5 py-0.5 text-micro font-medium text-violet-700 dark:border-violet-500/30 dark:bg-violet-950/40 dark:text-violet-300" title={t("生成模型")}>{getNaiModelDisplayLabel(chain.params?.model)}</span>

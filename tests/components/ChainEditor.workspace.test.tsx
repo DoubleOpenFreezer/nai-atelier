@@ -909,6 +909,19 @@ describe('历史明确指定实验室导入模式', () => {
     expect(saved.edits.inpaint.prompt).toBe('retained edit prompt');
     expect(sessionStorage.getItem('nai_pending_import')).toBeNull();
   });
+  it('没有显式主体正文时用参数里的四栏合并值兜底，剩余导入结构照常恢复', async () => {
+    // 风格串卡片只投递原始数据：旧串可能只留下 params._promptSections，正文为空。
+    sessionStorage.setItem('nai_pending_import', JSON.stringify({ targetMode: 'text-to-image', basePrompt: 'imported base', modules: [],
+      negativePrompt: 'imported negative', params: { ...chain.params, _promptSections: {
+        appearance: '1girl', wardrobe: 'blue dress', pose: '', scene: '', camera: '', extra: '',
+      } } }));
+    setup();
+    await waitFor(() => expect(textPrompt().value).toBe('imported base'));
+    const saved = loadLabWorkspaceSession(chain.id, fallback());
+    expect(saved.activeMode).toBe('text-to-image');
+    expect(saved.textToImage).toMatchObject({ basePrompt: 'imported base', subjectPrompt: '1girl, blue dress', negativePrompt: 'imported negative' });
+    expect(sessionStorage.getItem('nai_pending_import')).toBeNull();
+  });
   it.each(['image-to-image', 'inpaint', 'outpaint'] as const)('%s 载入指定底图，空提示词和负面词保持为空', async operation => {
     sessionStorage.setItem('nai_pending_import', JSON.stringify({ mode: 'image-edit', imageEditOperation: operation,
       baseImageUrl: 'data:image/png;base64,AQID', parentHistoryId: 'synthetic-parent', prompt: '', negativePrompt: '',
