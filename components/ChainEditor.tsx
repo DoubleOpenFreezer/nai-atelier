@@ -36,7 +36,7 @@ import { DEFAULT_GENERATION_MEMORY_PREFERENCES, type GenerationMemoryPreferences
 import { isActiveOpusSubscription, useNovelaiUsage } from '../services/naiUsage';
 import { applyNaiModelSettings, getRuntimeNaiModelInfo, isNaiMediumModel } from '../services/naiModels';
 import { estimateImageEditCost, estimateV45GenerationCost, applyEstimatorRuntime, formatGenerationCostLabel, useAnlasBudget } from '../services/anlasBudget';
-import { cleanupLabWorkspaceAssets, consumeEditorSessionDiscarded, createLabImageEditDraft, createLabWorkspaceSession, dataUrlToWorkspaceAsset, deleteLabWorkspaceAsset, getLabWorkspaceAssetId, getLabWorkspaceSessionKey, LAB_DEFAULT_PARAMS, openLabWorkspaceSession, readLabWorkspaceAsset, saveLabWorkspaceSession, saveLabWorkspaceAsset, blobToDataUrl, getLabModeLabel, normalizeParams } from '../services/labWorkspace';
+import { cleanupLabWorkspaceAssets, consumeEditorSessionDiscarded, createLabImageEditDraft, createLabWorkspaceSession, dataUrlToWorkspaceAsset, deleteLabWorkspaceAsset, getLabWorkspaceAssetId, getLabWorkspaceSessionKey, LAB_DEFAULT_PARAMS, mergePromptSections, openLabWorkspaceSession, readLabWorkspaceAsset, saveLabWorkspaceSession, saveLabWorkspaceAsset, blobToDataUrl, getLabModeLabel, normalizeParams } from '../services/labWorkspace';
 import { DEFAULT_NAI_RUNTIME, useNaiRuntime, isNaiRuntimeSyncUnhealthy, describeNaiRuntimeSyncProblem } from '../services/naiRuntime';
 import { splitNovelAiPrompt } from '../services/promptImport';
 import { decideCurrentPreviewCover } from '../services/chainCover';
@@ -65,6 +65,8 @@ interface ChainEditorProps {
     saveRef?: React.Ref<ChainEditorSaveHandle>;
     notify: (msg: string, type?: 'success' | 'error') => void;
     externalImportToken?: number;
+  /** 外部页面（一键 Roll）写入 params 后的版本号：变化时重新同步编辑区，避免旧草稿盖住新内容 */
+  sectionsRevision?: number;
     agentOpenToken?: number;
     tagAssistEnabled: boolean;
     onTagAssistEnabledChange: (enabled: boolean) => void;
@@ -80,7 +82,7 @@ interface ChainEditorProps {
     onBack: () => void | Promise<void>;
 }
 
-export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUpdateChain, onFork, onCreateCharacter, setIsDirty, saveRef, notify, externalImportToken, agentOpenToken, tagAssistEnabled, onTagAssistEnabledChange, generationStreamPreview, forceEmptySeed = false, onForceEmptySeedChange, enforceFreeStepLimit = true, continuousGenerationEnabled = true, rememberGenerationSettings = true, generationMemory = DEFAULT_GENERATION_MEMORY_PREFERENCES, labPageLayouts, safeMode, onBack }) => {
+export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUpdateChain, onFork, onCreateCharacter, setIsDirty, saveRef, notify, externalImportToken, sectionsRevision, agentOpenToken, tagAssistEnabled, onTagAssistEnabledChange, generationStreamPreview, forceEmptySeed = false, onForceEmptySeedChange, enforceFreeStepLimit = true, continuousGenerationEnabled = true, rememberGenerationSettings = true, generationMemory = DEFAULT_GENERATION_MEMORY_PREFERENCES, labPageLayouts, safeMode, onBack }) => {
   useLanguage();
     const negativeClearActionSlotRef = useRef<HTMLSpanElement>(null);
     const [keyboardOffset, setKeyboardOffset] = useState(0);
@@ -466,6 +468,17 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             notify('清除失败，请稍后重试。', 'error');
         }
     };
+
+    /* 一键 Roll 等外部入口写入 params 后，按版本号重新同步一次编辑区：
+       正文（subject）、分区与角色都取最新 chain.params，避免旧草稿覆盖新内容。 */
+    useEffect(() => {
+        if (!sectionsRevision) return;
+        const incoming = chain.params;
+        if (!incoming) return;
+        setParams(normalizeParams(incoming));
+        const merged = mergePromptSections(incoming._promptSections);
+        if (merged) setSubjectPrompt(merged);
+    }, [sectionsRevision]);
 
     useEffect(() => {
         // Only reset state if Chain ID changes.

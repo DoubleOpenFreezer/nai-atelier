@@ -19,6 +19,14 @@ export interface PromptModule {
   group?: string; // New: Group for mutual exclusion (N choose 1)
 }
 
+/** 角色分栏内容：与全局四类内容同名；prompt 保留为手动补充正文。 */
+export interface CharacterSectionContent {
+  appearance?: string;
+  wardrobe?: string;
+  pose?: string;
+  expression?: string;
+}
+
 export interface CharacterParams {
   id: string;
   enabled?: boolean; // 临时停用不删除内容；旧资料未记录时默认启用
@@ -26,6 +34,12 @@ export interface CharacterParams {
   negativePrompt?: string; // New: Per-character negative prompt
   x: number; // 0.0 to 1.0
   y: number; // 0.0 to 1.0
+  /** 分栏内容（本机角色分类模型）。存在时与 prompt 编译成实际请求正文，编辑区仍按分栏显示。 */
+  sections?: CharacterSectionContent;
+  /** 每栏的内容负面，编译成角色负面；与风格全局负面无关。 */
+  sectionNegatives?: Partial<Record<keyof CharacterSectionContent, string>>;
+  /** 每栏来源快照（条目 id / 名称 / 约束备注 / 来源），只用于展示与还原，不进入请求。 */
+  sectionMeta?: Partial<Record<keyof CharacterSectionContent, { entryId?: string; entryName?: string; notes?: string; source?: string }>>;
 }
 
 export interface VibeEncodingVariant {

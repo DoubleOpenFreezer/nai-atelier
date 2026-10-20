@@ -9,7 +9,7 @@ import { db } from './services/dbService';
 import { collectionRevision, collectionSnapshot, subscribeCollection } from './services/collectionFavorites';
 import { NAI_ACCOUNTING_ERROR_EVENT } from './services/api';
 import { useCollectorAppearance } from './services/collectorAppearance';
-import { LAB_DEFAULT_PARAMS } from './services/labWorkspace';
+import { LAB_DEFAULT_PARAMS, mergePromptSections } from './services/labWorkspace';
 import { deleteLabWorkspaceSession, getLabWorkspaceSessionKey, markEditorSessionDiscarded } from './services/labWorkspace';
 import type { ChainEditorSaveHandle } from './components/ChainEditor';
 import {
@@ -21,7 +21,7 @@ import {
 } from './services/appearancePreferences';
 import { PromptChain, User, Inspiration, ChainType, NAIParams } from './types';
 import { applyContentRollToParams, undoContentRollApply, type ContentRollApplyPlan } from './services/contentRollApply';
-import { contentSnapshotOf } from './services/contentRoll';
+import { contentRead, contentSnapshotOf } from './services/contentRoll';
 import { ContentRollLibrary } from './components/ContentRollLibrary';
 import { createUuid } from './services/id';
 import type { HistoryBrowseQuery } from './services/historyBrowse';
@@ -66,6 +66,8 @@ const App = () => {
   const [contentRollUndo, setContentRollUndo] = useState<{ params: NAIParams; createdRoleId: string } | null>(null);
   /* 从内容库「载入到一键 Roll」带过来的那一组（工作区挂载时消费一次） */
   const [contentRollSeed, setContentRollSeed] = useState<{ picks: Record<string, unknown>; seed: string; seeds: Record<string, string> } | null>(null);
+  /* 一键 Roll 写入 params 的次数：让实验室按这个版本号重新同步编辑区 */
+  const [contentRollRevision, setContentRollRevision] = useState(0);
   const viewSessionRef = useRef({ view });
   if (viewSessionRef.current.view !== view) viewSessionRef.current = { view };
   useEffect(() => { window.dispatchEvent(new Event('nai-workspace-changed')); }, [view]);
@@ -547,7 +549,14 @@ const App = () => {
     const base = playgroundChain?.params || LAB_DEFAULT_PARAMS;
     const result = applyContentRollToParams(base, plan, createUuid);
     setContentRollUndo({ params: result.undoParams, createdRoleId: result.createdRoleId });
-    await handleUpdatePlaygroundChain('playground', { params: result.params });
+    /* 分区与「主体正文」必须一起提交：resolvePromptSections 要求两者一致，否则场景/镜头会被判为不匹配而回落到补充栏 */
+    const merged = mergePromptSections(result.params._promptSections);
+    /* 主体正文在 chain.variableValues.subject 上（分区在 params 上），两者必须一起提交 */
+    await handleUpdatePlaygroundChain('playground', {
+      params: result.params,
+      ...(merged ? { variableValues: { ...(playgroundChain?.variableValues || {}), subject: merged } } : {}),
+    });
+    setContentRollRevision(value => value + 1);
     return true;
   };
   /* 存为 Roll 内容：字段白名单在 contentSnapshotOf 里，这里只负责落库（type='preset'） */
@@ -559,15 +568,37 @@ const App = () => {
     });
     return created;
   };
+  /**
+   * 从内容库载入一组：用**白名单读取**还原（分类负面、约束备注、来源快照都恢复），
+   * 而不是只取第一角色的 sections —— 那样会把负面与约束丢掉。
+   */
   const handleLoadContentRoll = (chain: PromptChain) => {
-    const raw = (chain.params as { _rollContentSnapshot?: { roles?: Array<{ sections?: Record<string, string>; meta?: Record<string, unknown> }>; global?: Record<string, { text?: string }> } } | undefined)?._rollContentSnapshot;
-    const role = raw?.roles?.[0];
-    const picks: Record<string, unknown> = {};
-    for (const [kind, text] of Object.entries(role?.sections || {})) {
-      picks[kind] = { kind, filled: true, text, name: String((role?.meta as Record<string, { entryName?: string }> | undefined)?.[kind]?.entryName || ''), constraints: { notes: '' } };
+    const read = contentRead((chain.params as { _rollContentSnapshot?: unknown } | undefined)?._rollContentSnapshot);
+    if (!read.ok) {
+      notify(t('这条记录不能按纯内容载入'), 'error');
+      return;
     }
-    for (const [kind, item] of Object.entries(raw?.global || {})) {
-      if (item && item.text) picks[kind] = { kind, filled: true, text: item.text, name: '', constraints: { notes: '' } };
+    const picks: Record<string, unknown> = {};
+    const role = read.roles[0];
+    for (const [kind, text] of Object.entries(role?.sections || {})) {
+      const negative = role?.negatives?.[kind];
+      const meta = (role?.meta as Record<string, { entryId?: string; entryName?: string; notes?: string }> | undefined)?.[kind];
+      picks[kind] = {
+        kind, filled: true, text,
+        negative: String(negative?.text || ''),
+        name: String(meta?.entryName || ''),
+        id: String(meta?.entryId || ''),
+        constraints: { notes: [negative?.note, meta?.notes].filter(Boolean).join('；') },
+      };
+    }
+    for (const [kind, item] of Object.entries(read.global || {})) {
+      if (!item?.provided || !item.text) continue;
+      picks[kind] = {
+        kind, filled: true, text: item.text,
+        negative: String(item.negative?.text || ''),
+        name: '',
+        constraints: { notes: String(item.negative?.note || '') },
+      };
     }
     setContentRollSeed({ picks, seed: t('内容库'), seeds: {} });
     setView('content-roll');
@@ -578,6 +609,7 @@ const App = () => {
     const restored = undoContentRollApply(playgroundChain?.params, contentRollUndo.params, contentRollUndo.createdRoleId);
     setContentRollUndo(null);
     await handleUpdatePlaygroundChain('playground', { params: restored });
+    setContentRollRevision(value => value + 1);
     return true;
   };
 
@@ -889,6 +921,7 @@ const App = () => {
           setIsDirty={() => { }}
           notify={notify}
           externalImportToken={playgroundImportToken}
+          sectionsRevision={contentRollRevision}
           agentOpenToken={playgroundAgentOpenToken}
           tagAssistEnabled={appearancePreferences.tagAssistEnabled}
           onTagAssistEnabledChange={enabled => setAppearancePreferences(current => ({ ...current, tagAssistEnabled: enabled }))}

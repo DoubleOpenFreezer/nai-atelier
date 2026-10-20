@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { clampCharacterCoordinate, getActiveCharacters, moveCharacter, normalizeCharacterCoordinate, withGenerationCharacters } from '../../services/characterPrompts';
+import { CHARACTER_SECTION_KEYS, clampCharacterCoordinate, compileCharacterContent, getActiveCharacters, hasCharacterSections, moveCharacter, normalizeCharacterCoordinate, withGenerationCharacters } from '../../services/characterPrompts';
 
 describe('角色请求与定位规则', () => {
   it('旧版使用官方五等分中心，边界进入后一格；V5 保留自由值', () => {
@@ -36,5 +36,40 @@ describe('角色请求与定位规则', () => {
     expect(characters.map(character => character.id)).toEqual(['a', 'b']);
     expect(moveCharacter(characters, 0, -1)).toBe(characters);
     expect(moveCharacter(characters, 1, 1)).toBe(characters);
+  });
+});
+
+describe('角色分栏编译（本机角色分类模型）', () => {
+  const sectioned = {
+    id: 'sectioned', prompt: 'manual_extra', x: 0.5, y: 0.5,
+    sections: { appearance: 'blonde_hair, blue_eyes', wardrobe: 'white_dress', pose: '', expression: 'smile' },
+    sectionNegatives: { wardrobe: 'coat', appearance: '' },
+  };
+
+  it('只有分栏内容、正文为空的角色同样参与实际请求', () => {
+    const characters = [{ id: 'only-sections', prompt: '', x: 0.5, y: 0.5, sections: { appearance: 'blonde_hair' } }];
+    expect(hasCharacterSections(characters[0])).toBe(true);
+    expect(getActiveCharacters(characters).map(item => item.id)).toEqual(['only-sections']);
+    const request = withGenerationCharacters({ width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler_ancestral', characters }, true);
+    expect(request.characters?.[0].prompt).toBe('blonde_hair');
+  });
+
+  it('正文按「四栏固定顺序 + 手动补充」编译，负面按「分栏内容负面 + 角色负面」编译', () => {
+    const compiled = compileCharacterContent({ ...sectioned, negativePrompt: 'bad_hands' });
+    expect(compiled.prompt).toBe('blonde_hair, blue_eyes, white_dress, smile, manual_extra');
+    expect(compiled.negativePrompt).toBe('coat, bad_hands');
+    expect(CHARACTER_SECTION_KEYS).toEqual(['appearance', 'wardrobe', 'pose', 'expression']);
+  });
+
+  it('旧资料（没有分栏）原样返回，行为与之前完全一致', () => {
+    const legacy = { id: 'legacy', prompt: 'plain_body', negativePrompt: 'neg', x: 0.5, y: 0.5 };
+    expect(compileCharacterContent(legacy)).toBe(legacy);
+    expect(hasCharacterSections(legacy)).toBe(false);
+    expect(getActiveCharacters([legacy]).map(item => item.id)).toEqual(['legacy']);
+  });
+
+  it('停用的分栏角色仍然被过滤掉', () => {
+    const paused = { ...sectioned, id: 'paused', enabled: false };
+    expect(getActiveCharacters([paused])).toHaveLength(0);
   });
 });
