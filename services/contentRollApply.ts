@@ -233,12 +233,14 @@ export const applyContentRollToParams = (
     characters.forEach((character, index) => {
       if (character.enabled === false) return;
       for (const write of plan.roleWrites) {
+        /* 与单目标分支同一规则：新内容没有负面 = 这一栏不再有负面，必须删掉旧值 */
+        const negatives = { ...(characters[index].sectionNegatives || {}) };
+        if (write.negative) negatives[write.kind] = write.negative;
+        else delete negatives[write.kind];
         characters[index] = {
           ...characters[index],
           sections: { ...(characters[index].sections || {}), [write.kind]: write.text },
-          sectionNegatives: write.negative
-            ? { ...(characters[index].sectionNegatives || {}), [write.kind]: write.negative }
-            : characters[index].sectionNegatives,
+          sectionNegatives: negatives,
           sectionMeta: { ...(characters[index].sectionMeta || {}), [write.kind]: { ...write.meta } },
         };
         written.push('character:' + String(character.id) + ':' + write.kind);

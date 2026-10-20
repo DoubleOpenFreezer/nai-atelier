@@ -631,12 +631,13 @@ const App = () => {
   const handleUndoContentRoll = async (): Promise<boolean> => {
     if (!contentRollUndo) return false;
     const restored = undoContentRollApply(playgroundChain?.params, contentRollUndo.params, contentRollUndo.createdRoleId);
-    /* 正文与分区必须一起回滚：resolvePromptSections 要求两者一致，否则场景/镜头会被判为不匹配而回落 */
+    /* 正文与分区必须一起回滚：resolvePromptSections 要求两者一致，否则场景/镜头会被判为不匹配而回落。
+       注意：应用前的正文可能是**空串**，也要照样写回 —— 用真值判断会漏掉这种情况，留下新正文。 */
     const restoredSubject = contentRollUndo.subject;
     setContentRollUndo(null);
     await handleUpdatePlaygroundChain('playground', {
       params: restored,
-      ...(restoredSubject ? { variableValues: { ...(playgroundChain?.variableValues || {}), subject: restoredSubject } } : {}),
+      variableValues: { ...(playgroundChain?.variableValues || {}), subject: restoredSubject },
     });
     setContentRollRevision(value => value + 1);
     return true;

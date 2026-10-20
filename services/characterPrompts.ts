@@ -53,7 +53,14 @@ export const compileCharacterContent = (
     const scoped = legacyNegatives[String(character.id) + '::' + key];
     const direct = legacyNegatives[key];
     const value = scoped != null ? scoped : direct;
-    return String(value || '').trim();
+    if (value == null) return '';
+    /* 旧数据里这一格可能是 { text, note } 这类对象，直接 String() 会变成 [object Object] */
+    if (typeof value === 'object') {
+      const record = value as { text?: unknown; note?: unknown; negative?: unknown };
+      const text = record.text ?? record.negative ?? '';
+      return String(text || '').trim() || String(record.note || '').trim();
+    }
+    return String(value).trim();
   };
   return {
     ...character,

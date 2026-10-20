@@ -93,3 +93,15 @@ describe('旧格式分类负面（params._characterSectionsNegatives）', () => 
     expect(compileCharacterContent(character, null).negativePrompt).toBeUndefined();
   });
 });
+
+describe('旧格式负面值为对象时不被拼成 [object Object]', () => {
+  it('取 text 字段；没有 text 时退回 note', () => {
+    const character = { id: 'c1', prompt: '', x: 0.5, y: 0.5, sections: { wardrobe: 'dress' } };
+    expect(compileCharacterContent(character, { 'c1::wardrobe': { text: 'coat_negative', note: '旧备注' } }).negativePrompt)
+      .toBe('coat_negative');
+    expect(compileCharacterContent(character, { 'c1::wardrobe': { note: '只有备注' } }).negativePrompt)
+      .toBe('只有备注');
+    expect(compileCharacterContent(character, { 'c1::wardrobe': { text: 'x' } }).negativePrompt)
+      .not.toContain('[object Object]');
+  });
+});

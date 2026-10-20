@@ -227,3 +227,20 @@ describe('场景 / 镜头的内容负面', () => {
     expect(next._promptSections?.sectionNegatives?.camera).toBeUndefined();
   });
 });
+
+describe('多人应用：旧分类负面同样清掉', () => {
+  it('新搭配没有负面时，启用角色的旧负面被删除，停用角色不动', () => {
+    const params = {
+      width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler_ancestral',
+      characters: [
+        { id: 'a', prompt: '', x: 0.3, y: 0.5, sections: { wardrobe: 'old' }, sectionNegatives: { wardrobe: 'old_coat' } },
+        { id: 'b', prompt: '', x: 0.7, y: 0.5, enabled: false, sections: { wardrobe: 'keep' }, sectionNegatives: { wardrobe: 'keep_neg' } },
+      ],
+    } as unknown as NAIParams;
+    const plan = planContentRollApply({ wardrobe: row('wardrobe', 'new_dress', true, '') }, params, { mode: 'all-enabled' });
+    const { params: next } = applyContentRollToParams(params, plan, () => 'x');
+    expect(next.characters?.[0].sections?.wardrobe).toBe('new_dress');
+    expect(next.characters?.[0].sectionNegatives?.wardrobe).toBeUndefined();
+    expect(next.characters?.[1].sectionNegatives?.wardrobe).toBe('keep_neg');
+  });
+});

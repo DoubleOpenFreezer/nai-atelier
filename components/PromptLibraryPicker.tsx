@@ -79,8 +79,12 @@ const LibraryOptions: React.FC<PromptLibraryPickerProps & { close: () => void }>
                     return <button type="button" key={item.id} disabled={!prompt}
                         onClick={() => {
                             const next = applyPromptText(current, prompt, mode);
-                            if (onPickEntry) onPickEntry({ prompt: next, mode, entryId: String(item.id), entryName: item.name || t('未命名'), kind });
-                            onPick(next);
+                            if (onPickEntry) {
+                                /* 只走带来源的回调：再调一次 onPick 会把 entryId / entryName 覆盖掉 */
+                                onPickEntry({ prompt: next, mode, entryId: String(item.id), entryName: item.name || t('未命名'), kind });
+                            } else {
+                                onPick(next);
+                            }
                             close();
                         }}
                         className="mobile-touch flex w-full flex-col gap-1 rounded-lg border border-gray-200 px-3 py-2 text-left hover:border-indigo-500 disabled:opacity-40 dark:border-gray-700">
