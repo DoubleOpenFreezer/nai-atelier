@@ -6,6 +6,10 @@
 
 ## 2026-10-21
 
+- **DeepSeek Harness (deepseek-flash)**：修复实验室与风格串编辑页顶栏收起后三分区与顶栏的连续底板丢失：收起时保持顶栏节点身份、只切可见性（避免 React 重建子树），LabEditorTabs 额外观察正文尺寸在就绪后重测；相关顶栏、三分区与外观覆盖 57 项定向测试通过。
+
+- **DeepSeek Harness (deepseek-flash)**：为所有主页面顶栏新增可收起把手：展开时把手位于顶栏上边中央、完全在顶栏内不跨界（悬停／聚焦显示「收起」），收起后留在页面顶边中央并变为向下三角（显示「展开」），不移动顶栏；收起状态跨页面与刷新保留，`--workspace-chrome-height` 同步归零。新增 `services/workspaceTopbar.ts` 与 WorkspaceChrome 折叠回归，补四语词条。相关 225 项定向测试通过。
+
 - **DeepSeek Harness (deepseek-flash)**：按用户确认的透明底图片反馈移除实验室预览的棋盘格与图片衬底，透明区域直接透出背景；删除 `transparentPreview` 分支、`.nai-alpha-checker` 与 `.lab-preview-image` 样式，同步预览／外观覆盖测试及主题、产品决策文档。相关 99 项定向测试通过。
 
 - **DeepSeek Harness (deepseek-flash)**：按用户截图把风格串卡片的「待实测」状态从封面左下角下移到标题栏、作品名正上方，改为贴名浅琥珀胶囊并补齐磨砂标题主题的深底亮字，移除旧的图片内绝对定位规则；新增卡片状态位置回归。列表相关 53 项定向测试通过。

@@ -7,7 +7,7 @@
 
   **[简体中文](./README.md) · [繁體中文](./README.zh-TW.md) · [English](./README.en.md) · [日本語](./README.ja.md) · [한국어](./README.ko.md)**
 
-  [![Version](https://img.shields.io/badge/version-1.99.0-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.100.0-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4%20%7C%20V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据主权与备份)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网创作体验)
@@ -167,6 +167,7 @@ flowchart LR
   - AITag、Pixiv、Danbooru 的作品详情在手机上覆盖当前图库；页面返回与系统返回收起详情并继续原作品位置，多层窗口逐层返回，后台页面保留浏览状态；
   - 实验室四模式在电脑与手机端共用**三段式分区导航**：文生图为「全局／角色／参数」，图片编辑为「底图（画板／画布）／提示／参数」。电脑三分区紧贴主模式顶栏下沿，左右边缘分别对齐「文生图」与「扩图」按钮的选中块边界，三个按钮等宽，选中颜色与顶栏一致；右侧作品预览保留，各分区独立记住本次打开时的滚动位置。
   - 电脑开启 Agent 后，实验室与「试一试」优先保持编辑区、预览区并列，顶栏两排导航留在编辑列上方、操作区保留在右侧；中间可用宽度不足 560px 时，顶栏与预览同步切换为上下排列布局，窄栏内的参数与生成辅助操作自动收纳，各主题规则一致。
+  - 所有主页面顶栏统一提供**可收起把手**：展开时把手位于顶栏上边中央、完全在顶栏内不跨界，描边胶囊内三角向上，悬停／键盘聚焦时显示「收起」，点击收起整条顶栏与状态行；收起后把手留在页面顶边并变为向下三角，提示「展开」。收起状态跨页面保留，刷新后沿用。
 
 ---
 

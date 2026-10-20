@@ -55,7 +55,9 @@ export const LabEditorTabs = <T extends string,>({ value, options, onChange }: {
     };
     measure();
     const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
-    for (const element of [chrome, header, modes, firstMode, lastMode, nav]) observer?.observe(element);
+    // 正文尺寸就绪后再测一次：首次挂载时兄弟节点可能尚无宽度，漏测会让底板停在未连接状态。
+    const body = nav.nextElementSibling as HTMLElement | null;
+    for (const element of [chrome, header, modes, firstMode, lastMode, nav, body]) if (element) observer?.observe(element);
     window.addEventListener('resize', measure);
     return () => {
       observer?.disconnect();

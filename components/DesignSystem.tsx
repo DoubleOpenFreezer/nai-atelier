@@ -2,6 +2,7 @@ import { t, useLanguage } from '../services/i18n';
 import { PressRevealSurface } from './PressRevealSurface';
 import React, { useLayoutEffect, useRef } from 'react';
 import { useGlassRefraction } from './useGlassRefraction';
+import { toggleTopbarCollapsed, useTopbarCollapsed } from '../services/workspaceTopbar';
 import { ArrowLeft, ChevronDown, Inbox, LoaderCircle, Search, X } from 'lucide-react';
 export { UNTESTED_CHAIN_TAG, isUntestedChain } from '../services/chainStatus';
 
@@ -60,12 +61,19 @@ export const EmptyState: React.FC<{ icon?: React.ReactNode; title: string; hint?
 /** 把顶栏及状态行叠在滚动内容上，实际高度同时用于首屏留白和焦点避让。 */
 export const WorkspaceChrome: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const ref = useRef<HTMLDivElement>(null);
+  const collapsed = useTopbarCollapsed();
   useLayoutEffect(() => {
     const chrome = ref.current, host = chrome?.parentElement;
     if (!chrome || !host) return;
     const previous = host.style.getPropertyValue('--workspace-chrome-height');
     let height = 0;
     const measure = () => {
+      // 收起时无论隐藏与否都归零，让滚动内容真正顶到页面边缘。
+      if (collapsed) {
+        height = 0;
+        host.style.setProperty('--workspace-chrome-height', '0px');
+        return;
+      }
       const next = chrome.offsetHeight;
       // 缓存页面隐藏时保留上次高度，重新显示不会先把内容拉到顶栏下面。
       if (next > 0 && next !== height) {
@@ -81,8 +89,24 @@ export const WorkspaceChrome: React.FC<{ children: React.ReactNode }> = ({ child
       if (previous) host.style.setProperty('--workspace-chrome-height', previous);
       else host.style.removeProperty('--workspace-chrome-height');
     };
-  }, []);
-  return <div ref={ref} className="workspace-chrome relative z-30 flex flex-none flex-col">{children}</div>;
+  }, [collapsed]);
+  return <div ref={ref} className="workspace-chrome relative z-30 flex flex-none flex-col">
+    {/* 顶栏把手：始终贴在顶栏上边中央，不跨边界、不移动顶栏。 */}
+    <button
+      type="button"
+      data-workspace-topbar-toggle="true"
+      aria-expanded={!collapsed}
+      aria-label={collapsed ? t('展开顶栏') : t('收起顶栏')}
+      title={collapsed ? t('展开顶栏') : t('收起顶栏')}
+      onClick={() => toggleTopbarCollapsed()}
+      className={`group absolute left-1/2 z-40 flex h-5 min-w-11 -translate-x-1/2 items-center justify-center gap-1 overflow-hidden rounded-full border border-gray-400/80 bg-transparent px-2 text-micro font-semibold text-gray-600 shadow-lg backdrop-blur-[2px] transition-all duration-150 hover:border-indigo-500 hover:bg-indigo-600 hover:text-white focus-visible:border-indigo-500 focus-visible:bg-indigo-600 focus-visible:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 dark:border-gray-400/70 dark:text-gray-100 dark:hover:border-indigo-400 dark:hover:bg-indigo-500 top-0`}
+    >
+      <span aria-hidden="true" className={`block h-0 w-0 shrink-0 border-x-[5px] border-x-transparent ${collapsed ? 'border-t-[6px] border-t-current' : 'border-b-[6px] border-b-current'}`} />
+      <span className="max-w-0 overflow-hidden whitespace-nowrap opacity-0 transition-all duration-150 group-hover:max-w-12 group-hover:opacity-100 group-focus-visible:max-w-12 group-focus-visible:opacity-100">{collapsed ? t('展开') : t('收起')}</span>
+    </button>
+    {/* 收起时只切换可见性：实验室三分区依赖顶栏测量，重建子树会让共用底板丢失。 */}
+    <div className={collapsed ? 'hidden' : 'contents'}>{children}</div>
+  </div>;
 };
 
 export const WorkspaceToolbar: React.FC<{
