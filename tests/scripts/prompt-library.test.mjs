@@ -79,4 +79,12 @@ test('Android 共用的真实路由无需额外全局函数，设置读取、保
   assert.equal((await invoke(directEndpoint, 'PUT', { enabled: 'true' })).status, 400);
   assert.equal((await invoke(directEndpoint, 'POST', { enabled: true })).status, 405);
   assert.equal(service.publicConfig().creativeDirect, false);
+  const rulesEndpoint = '/api/prompt-agent/creative-direct-rules';
+  const rulesDefault = service.publicConfig().creativeDirectRules;
+  assert.equal(service.publicConfig().creativeDirectRulesCustom, false);
+  assert.equal((await invoke(rulesEndpoint, 'PUT', { rules: '自定义规则正文' })).value.creativeDirectRules, '自定义规则正文');
+  assert.equal(service.publicConfig().creativeDirectRulesCustom, true);
+  assert.equal((await invoke(rulesEndpoint, 'PUT', { rules: '' })).value.creativeDirectRules, rulesDefault);
+  assert.equal((await invoke(rulesEndpoint, 'PUT', { rules: 1 })).status, 400);
+  assert.equal((await invoke(rulesEndpoint, 'POST', { rules: 'x' })).status, 405);
 });

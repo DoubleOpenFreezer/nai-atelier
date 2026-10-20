@@ -7,7 +7,7 @@
 
   **[简体中文](./README.md) · [繁體中文](./README.zh-TW.md) · [English](./README.en.md) · [日本語](./README.ja.md) · [한국어](./README.ko.md)**
 
-  [![Version](https://img.shields.io/badge/version-1.91.0-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.92.1-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4%20%7C%20V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据主权与备份)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网创作体验)
@@ -269,9 +269,10 @@ flowchart LR
 
 - **本地素材目录读写**：可直接查看电脑指定目录中的素材图片（例如：`看看 D:\Pictures\参考图 里的图片`），或将满意作品一键导出到指定文件夹；
 - **三档权限安全掌控**：支持 **只读**、**标准**（首次写入目录时弹窗确认）、**完全访问** 三档权限模式；完全访问下，用户要求的四模式生图及其费用直接执行，无需再次询问或点击确认，预算不足和任务费用上涨也沿用授权；标准权限保留生图确认，Vibe 编码、删除与清空仍由创作者亲自确认；
-- **破限模式（默认开启）**：「设置 → 创作助手」提供可选开关和规则预览，优先交付可直接使用的提示词和创作结果，减少空泛建议与重复问询。参考 [dsh-unrestricted](https://github.com/yexi-by/dsh-unrestricted) 的系统规则组装方式，按工坊用途独立编写并接入 pi-agent；不安装 DSH 依赖，不移植其逆向、攻击或忽略角色年龄等规则。设置由当前工坊保存，从下一次助手任务生效，关闭恢复原有规则；不改已有对话、工具权限或费用确认，也不保证绕过模型服务自身限制。连接电脑的手机使用同一开关，独立 Android 在自身工坊保存；
+- **破限模式（默认开启）**：「设置 → 创作助手」提供可选开关、规则预览和正文编辑，开启后向助手系统提示词注入创作向破限交付契约：直接给出可用成果，不以前置审查、说教或替代方案回避请求；覆盖创作、文学润色与敏感题材场景。参考 [dsh-unrestricted](https://github.com/yexi-by/dsh-unrestricted) 的契约设计与组装方式，按 pi-agent 的函数工具集成独立适配，不安装 DSH 依赖。规则正文可直接修改并保存到当前工坊，保存后从下一次助手任务生效，可一键恢复内置默认；关闭开关恢复原有规则。只约束输出内容与交付尺度，不改已有对话、工具权限或费用确认；模型服务端网络层审核过滤仍由服务本身决定。连接电脑的手机使用同一开关，独立 Android 在自身工坊保存；
 - **实时页面感知与画布命令**：助手自动感知当前正在浏览的作品或实验室模式，能够直接调用像素级画布工具绘制蒙版、设置选区、调整参数草稿；
 - **上下文与执行安全**：支持思考过程与工具折叠，具备多步任务超时与防上下文膨胀保护。
+- **可读错误提示**：模型余额不足、Key 失效、限流、服务端错误、网络不可达与上下文超限等统一显示可操作说明，原始错误收进「原始错误」详情，便于对照排查。
 
 <div align="center">
   <a href="./docs/screenshots/desktop-agent-chat.webp">
@@ -468,7 +469,7 @@ flowchart TD
 
 - 基于 [kirafishy/NaiPromptManager](https://github.com/kirafishy/NaiPromptManager) 二次开发并独立维护，保留原有 [MIT 许可证](./LICENSE)；
 - AI 辅助开发：[OpenAI Codex](https://github.com/codex) 参与功能实现、问题排查与代码审查，修改过程见 [AI 工作日志](./AI_WORKLOG.md)；
-- 感谢 [@yexi-by](https://github.com/yexi-by) 的开源项目 [dsh-unrestricted](https://github.com/yexi-by/dsh-unrestricted)：工坊「破限模式」参考其系统提示词组装与规则开关设计，结合 pi-agent 和工坊创作流程独立适配；
+- 感谢 [@yexi-by](https://github.com/yexi-by) 的开源项目 [dsh-unrestricted](https://github.com/yexi-by/dsh-unrestricted)：工坊「破限模式」的交付契约、任务路由与开关设计参考该项目，按 pi-agent 的函数工具集成独立适配；
 - 感谢 [@ffdkj](https://github.com/ffdkj) 维护的高质量 [Danbooru 中英对照翻译数据库](https://github.com/ffdkj/ffdkj-Danbooru_Tag-Chinese-English-Translation-Table)；
 - 特别感谢 [@damoshen123](https://github.com/damoshen123) 的开源项目 [st-chatu8](https://github.com/damoshen123/st-chatu8)：工坊的「智慧姬互通联动」与「多人拼车云端排队协同」功能的设计与实现均深度参考了该项目；
 - 感谢 [@sdnwls](https://github.com/sdnwls) 的项目 [nai-style-lab](https://github.com/sdnwls/nai-style-lab)：Roll 串的一轮出图和画风库体验参考了该项目，结合工坊既有功能独立实现，未复制其代码或素材；

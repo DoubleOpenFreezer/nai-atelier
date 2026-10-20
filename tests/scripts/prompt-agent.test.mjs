@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm, mkdir, writeFile, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { PromptAgentService, buildSystemPrompt, assemblePromptContext, estimateContextTokens, sanitizeAgentImages, detectModelCapabilities, sanitizeCustomProvider, customProviderRuntime, createPromptAgentModelRuntime, CREATIVE_DIRECT_RULES } from '../../scripts/prompt-agent.mjs';
+import { PromptAgentService, buildSystemPrompt, assemblePromptContext, estimateContextTokens, sanitizeAgentImages, detectModelCapabilities, sanitizeCustomProvider, customProviderRuntime, createPromptAgentModelRuntime, UNRESTRICTED_RULES } from '../../scripts/prompt-agent.mjs';
 import { getSupportedThinkingLevels, InMemoryCredentialStore } from '@earendil-works/pi-ai';
 import { createAgentThinkingMap } from '../../services/agentThinking.mjs';
 
@@ -81,10 +81,28 @@ const syntheticAgentStream = (round, { input = 20000, output = 100 } = {}) => ne
 test('破限模式默认开启，严格校验开关，与权限原子保存且失败不覆盖最后成功配置', () => isolated(async service => {
   const original = service.publicConfig();
   assert.equal(original.creativeDirect, true);
-  assert.equal(original.creativeDirectRules, CREATIVE_DIRECT_RULES);
-  assert.match(CREATIVE_DIRECT_RULES, /^\[破限模式\]/);
-  assert.ok(buildSystemPrompt().includes(CREATIVE_DIRECT_RULES));
-  assert.ok(!buildSystemPrompt('zh-CN', 'standard', false).includes(CREATIVE_DIRECT_RULES));
+  assert.equal(original.creativeDirectRules, UNRESTRICTED_RULES);
+  assert.match(UNRESTRICTED_RULES, /^\[破限模式\]/);
+  // 破限模式只保留创作向任务路由，防止被弱化成“少说废话”或被塞回技术路由。
+  for (const marker of ['交付契约', '创作、文学与润色', '亲密与敏感场景', '18\\+', '交付失败', '不拒绝']) {
+    assert.match(UNRESTRICTED_RULES, new RegExp(marker), marker);
+  }
+  for (const removed of ['CHECK_FN', 'OFFSET', 'PATCH_BYTE', 'WORDLIST', '漏洞', '反调试']) {
+    assert.ok(!UNRESTRICTED_RULES.includes(removed), removed);
+  }
+  assert.ok(buildSystemPrompt().includes(UNRESTRICTED_RULES));
+  assert.ok(!buildSystemPrompt('zh-CN', 'standard', false).includes(UNRESTRICTED_RULES));
+  assert.equal(original.creativeDirectRulesCustom, false);
+  assert.equal(original.creativeDirectRulesDefault, UNRESTRICTED_RULES);
+  await service.setCreativeDirectRules('自定义破限规则');
+  assert.equal(service.publicConfig().creativeDirectRules, '自定义破限规则');
+  assert.equal(service.publicConfig().creativeDirectRulesCustom, true);
+  assert.ok(buildSystemPrompt('zh-CN', 'standard', true, service.publicConfig().creativeDirectRules).includes('自定义破限规则'));
+  await assert.rejects(service.setCreativeDirectRules(1), /字符串/);
+  await assert.rejects(service.setCreativeDirectRules('x'.repeat(20001)), /过长/);
+  await service.setCreativeDirectRules('');
+  assert.equal(service.publicConfig().creativeDirectRules, UNRESTRICTED_RULES);
+  assert.equal(service.publicConfig().creativeDirectRulesCustom, false);
   await Promise.all([service.setCreativeDirect(false), service.setPermissionMode('read_only')]);
   const stored = JSON.parse(await readFile(service.configFilePath(), 'utf8'));
   assert.equal(stored.creativeDirect, false); assert.equal(stored.permissionMode, 'read_only');
@@ -99,6 +117,7 @@ test('破限模式默认开启，严格校验开关，与权限原子保存且�
 test('破限模式进入真实 Pi 请求，切换只影响下一次任务，客户端不能覆盖开关且工具和历史不变', () => isolated(async service => {
   const originalFingerprint = service.publicConfig().policyFingerprint;
   await service.saveCustomProvider({ ...customInput(), apiKey: 'synthetic', select: true });
+  await service.setCreativeDirectRules('synthetic custom rules');
   const previous = globalThis.fetch, requests = [];
   globalThis.fetch = async (_url, options) => {
     requests.push(JSON.parse(options.body));
@@ -112,18 +131,35 @@ test('破限模式进入真实 Pi 请求，切换只影响下一次任务，客�
     const session = await service.createSession();
     await service.run({ sessionId: session.id, message: 'synthetic first request', draft: { params: {} } }, () => {});
     assert.equal(requests.length, 2);
-    for (const request of requests) assert.ok(request.messages[0].content.includes(CREATIVE_DIRECT_RULES));
+    for (const request of requests) assert.ok(request.messages[0].content.includes('synthetic custom rules'));
     await service.run({ sessionId: session.id, message: 'synthetic second request', draft: { params: {} }, context: { clientSettings: { creativeDirect: true } } }, () => {});
-    assert.ok(!requests[2].messages[0].content.includes(CREATIVE_DIRECT_RULES));
+    assert.ok(!requests[2].messages[0].content.includes('synthetic custom rules'));
     assert.deepEqual(requests[2].tools, requests[0].tools);
     assert.match(requests[2].messages[0].content, /标准：生图须由用户确认整轮费用/);
     assert.match(requests[2].messages[0].content, /不得要求或泄露 API Key/);
     const history = JSON.stringify(await service.readSession(session.id));
     assert.ok(history.includes('synthetic first request'));
     assert.ok(history.includes('synthetic second request'));
-    assert.ok(!history.includes(CREATIVE_DIRECT_RULES));
+    assert.ok(!history.includes('synthetic custom rules'));
     await service.setCreativeDirect(true);
+    await service.setCreativeDirectRules('');
     assert.equal(service.publicConfig().policyFingerprint, originalFingerprint);
+  } finally { globalThis.fetch = previous; }
+}));
+
+test('模型服务错误进入任务时转成可操作说明，原始错误保留在详情', () => isolated(async service => {
+  await service.saveCustomProvider({ ...customInput(), apiKey: 'synthetic', select: true });
+  const session = await service.createSession();
+  const previous = globalThis.fetch, events = [];
+  globalThis.fetch = async () => new Response(JSON.stringify({ message: 'Insufficient Balance (request_id: synthetic-request)' }), { status: 402, headers: { 'content-type': 'application/json' } });
+  try {
+    await assert.rejects(service.run({ sessionId: session.id, message: 'synthetic request', draft: { params: {} } }, event => events.push(event)), /余额不足/);
+    const task = await service.getTask(session.id);
+    assert.match(task.error, /余额不足/);
+    assert.match(task.errorDetail, /402/);
+    const errorEvent = events.find(event => event.type === 'error');
+    assert.match(errorEvent.error, /余额不足/);
+    assert.match(errorEvent.errorDetail, /402/);
   } finally { globalThis.fetch = previous; }
 }));
 

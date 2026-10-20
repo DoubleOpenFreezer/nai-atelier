@@ -22,6 +22,8 @@ export interface PromptAgentConfig {
   policyFingerprint: string;
   creativeDirect?: boolean;
   creativeDirectRules?: string;
+  creativeDirectRulesDefault?: string;
+  creativeDirectRulesCustom?: boolean;
   runtimeStartedAt: number;
   backendVersion?: string;
   sourceVersion?: string;
@@ -208,8 +210,8 @@ export type PromptAgentEvent = ({ runId?: string; seq?: number } & (
   | { type: 'tool_end'; toolCallId: string; toolName: string; isError: boolean; result?: unknown }
   | { type: 'action'; action: PromptAgentAction; draft?: PromptAgentDraft }
   | { type: 'project_changed'; resource: string }
-  | { type: 'done'; draft: PromptAgentDraft; message: string; provider: string; model: string; status?: string; error?: string; stopReason?: string; draftChanged?: boolean }
-  | { type: 'error'; error: string }));
+  | { type: 'done'; draft: PromptAgentDraft; message: string; provider: string; model: string; status?: string; error?: string; errorDetail?: string; stopReason?: string; draftChanged?: boolean }
+  | { type: 'error'; error: string; errorDetail?: string }));
 
 export interface PromptAgentTask {
   status?: string;
@@ -217,6 +219,7 @@ export interface PromptAgentTask {
   cursor?: number;
   reset?: boolean;
   error?: string;
+  errorDetail?: string;
   stopReason?: string;
   target?: PromptAgentDraft['target'];
   finalDraft?: PromptAgentDraft | null;
@@ -290,6 +293,11 @@ export const promptAgentService = {
   setCreativeDirect: async (enabled: boolean): Promise<PromptAgentConfig> => {
     const response = await fetch('/api/prompt-agent/creative-direct', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled }) });
     if (!response.ok) return readError(response) as never;
+    return response.json();
+  },
+  setCreativeDirectRules: async (rules: string): Promise<PromptAgentConfig> => {
+    const response = await fetch('/api/prompt-agent/creative-direct-rules', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ rules }) });
+    if (!response.ok) throw await parseErrorResponse(response);
     return response.json();
   },
   setPermissionMode: async (mode: AgentPermissionMode): Promise<PromptAgentConfig> => {

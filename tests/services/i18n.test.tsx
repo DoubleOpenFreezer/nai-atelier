@@ -15,13 +15,13 @@ beforeEach(() => { localStorage.clear(); delete window.atelierLanguage; restoreL
 afterEach(() => { cleanup(); delete window.atelierLanguage; setLanguage('zh-CN'); vi.restoreAllMocks(); });
 
 describe('界面语言', () => {
-  it('破限模式名称、规则预览和生效说明具有四种完整译文', () => {
+  it('破限模式名称、规则编辑和生效说明具有四种完整译文', () => {
     for (const [language, name] of [['zh-CN', '破限模式'], ['zh-TW', '破限模式'], ['en', 'Unrestricted mode'], ['ja', '制限解除モード'], ['ko', '제한 해제 모드']] as const) {
       expect(translate(language, '破限模式')).toBe(name);
     }
-    for (const key of ['查看破限规则', '保存破限模式设置失败', '破限模式开关必须是布尔值',
-      '默认开启，优先交付可用的提示词和结果，减少无关说明；工具权限与费用确认照常生效。',
-      '保存后从下一次助手请求生效，不改变正在运行的任务或已有对话；不保证绕过模型服务限制。']) {
+    for (const key of ['查看与编辑破限规则', '破限规则正文', '保存规则', '恢复内置默认', '破限规则已保存', '保存破限规则失败', '已恢复内置默认规则', '当前使用自定义规则', '当前使用内置默认规则', '保存后从下一次助手任务生效。', '保存破限模式设置失败', '破限模式开关必须是布尔值',
+      '默认开启。开启后向助手注入创作向破限交付契约：直接给出可用成果，不以前置审查、说教或替代方案回避请求；工具权限与费用确认照常生效。',
+      '保存后从下一次助手请求生效，不改变正在运行的任务或已有对话；本模式只约束输出内容与交付尺度，不改变工具权限、费用确认或模型服务端的审核过滤。']) {
       expect((messages as Record<string, string[]>)[key], key).toHaveLength(4);
       for (const language of LANGUAGES.filter(item => item.code !== 'zh-CN')) expect(translate(language.code, key), key).not.toBe(key);
     }

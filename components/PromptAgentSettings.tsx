@@ -46,6 +46,8 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
   const [query, setQuery] = useState('');
   const [busy, setBusy] = useState(false);
   const [creativeSaving, setCreativeSaving] = useState(false);
+  const [rulesDraft, setRulesDraft] = useState('');
+  const [rulesSaving, setRulesSaving] = useState(false);
   const [customResult, setCustomResult] = useState<PromptAgentProbeResult | null>(null);
   const [discoveredModels, setDiscoveredModels] = useState<PromptAgentCustomProvider['models']>([]);
   const [customDraft, setCustomDraft] = useState<PromptAgentCustomProvider>(emptyCustomProvider);
@@ -63,6 +65,7 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
   };
 
   useEffect(() => { void reload().catch(() => notify('读取 AI 模型服务失败', 'error')); }, []);
+  useEffect(() => { setRulesDraft(config?.creativeDirectRules || ''); }, [config?.creativeDirectRules]);
   useAgentRuntimeRecheck(setConfig, true, Boolean(config && agentRuntimeWarning(config)));
 
   const filteredModels = useMemo(() => models.filter(model => fuzzyMatch(`${model.name} ${model.id} ${model.provider}`, query)), [models, query]);
@@ -96,6 +99,18 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
     } catch (error) {
       notify(error instanceof Error ? error.message : t('保存破限模式设置失败'), 'error');
     } finally { setCreativeSaving(false); }
+  };
+
+  const saveCreativeDirectRules = async (rules: string) => {
+    setRulesSaving(true);
+    try {
+      const next = await promptAgentService.setCreativeDirectRules(rules);
+      setConfig(next);
+      window.dispatchEvent(new CustomEvent('nai-agent-runtime-changed'));
+      notify(rules.trim() ? t('破限规则已保存') : t('已恢复内置默认规则'));
+    } catch (error) {
+      notify(error instanceof Error ? error.message : t('保存破限规则失败'), 'error');
+    } finally { setRulesSaving(false); }
   };
 
   const openCustom = (provider?: PromptAgentCustomProvider) => {
@@ -220,11 +235,27 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
             onChange={event => { void setCreativeDirect(event.target.checked); }}
             className="h-5 w-5 shrink-0 rounded border-gray-300 accent-indigo-600 disabled:opacity-40" />
         </label>
-        <p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">{t('默认开启，优先交付可用的提示词和结果，减少无关说明；工具权限与费用确认照常生效。')}</p>
-        <p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">{t('保存后从下一次助手请求生效，不改变正在运行的任务或已有对话；不保证绕过模型服务限制。')}</p>
-        {config?.creativeDirectRules && <details className="mt-3">
-          <summary className="mobile-touch cursor-pointer text-xs font-semibold text-indigo-600 dark:text-indigo-300">{t('查看破限规则')}</summary>
-          <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-gray-50 p-3 text-xs leading-5 text-gray-600 dark:bg-gray-950 dark:text-gray-300">{config.creativeDirectRules}</pre>
+        <p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">{t('默认开启。开启后向助手注入创作向破限交付契约：直接给出可用成果，不以前置审查、说教或替代方案回避请求；工具权限与费用确认照常生效。')}</p>
+        <p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">{t('保存后从下一次助手请求生效，不改变正在运行的任务或已有对话；本模式只约束输出内容与交付尺度，不改变工具权限、费用确认或模型服务端的审核过滤。')}</p>
+        {config && <details className="mt-3">
+          <summary className="mobile-touch cursor-pointer text-xs font-semibold text-indigo-600 dark:text-indigo-300">{t('查看与编辑破限规则')}</summary>
+          <textarea
+            value={rulesDraft}
+            onChange={event => setRulesDraft(event.target.value)}
+            disabled={rulesSaving}
+            rows={10}
+            aria-label={t('破限规则正文')}
+            className="mt-2 w-full resize-y rounded-lg border border-gray-200 bg-gray-50 p-3 font-mono text-xs leading-5 text-gray-700 outline-none focus:border-indigo-400 disabled:opacity-50 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-200"
+          />
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <button type="button" onClick={() => { void saveCreativeDirectRules(rulesDraft); }}
+              disabled={rulesSaving || !rulesDraft.trim() || rulesDraft === (config.creativeDirectRules || '')}
+              className="mobile-touch rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-indigo-700 disabled:opacity-40">{t('保存规则')}</button>
+            <button type="button" onClick={() => { void saveCreativeDirectRules(''); }}
+              disabled={rulesSaving || !config.creativeDirectRulesCustom}
+              className="mobile-touch rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-bold text-gray-700 hover:bg-gray-50 disabled:opacity-40 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700">{t('恢复内置默认')}</button>
+          </div>
+          <p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">{config.creativeDirectRulesCustom ? t('当前使用自定义规则') : t('当前使用内置默认规则')}；{t('保存后从下一次助手任务生效。')}</p>
         </details>}
       </section>
     </div>

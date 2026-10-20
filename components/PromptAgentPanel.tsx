@@ -44,7 +44,7 @@ interface PromptAgentPanelProps {
 }
 
 type ToolProgress = { id: string; name: string; state: 'running' | 'done' | 'error' | 'interrupted'; args?: unknown; result?: unknown };
-type PanelMessage = { id: string; role: 'user' | 'agent' | 'error'; text: string; thinking?: string; tools?: ToolProgress[]; model?: string; provider?: string; usage?: PromptAgentUsage; visionUsage?: PromptAgentVisionUsage[]; stopReason?: string; timestamp?: number };
+type PanelMessage = { id: string; role: 'user' | 'agent' | 'error'; text: string; thinking?: string; tools?: ToolProgress[]; model?: string; provider?: string; usage?: PromptAgentUsage; visionUsage?: PromptAgentVisionUsage[]; stopReason?: string; detail?: string; timestamp?: number };
 type AgentAttachment = { data: string; mimeType: string; name: string };
 const toolLabels: Record<string, string> = {
   request_local_image_folder_access: '确认本地目录权限', list_local_images: '浏览本地图片', show_local_image: '展示本地图片', inspect_local_image: '观察本地图片', save_project_image_to_folder: '保存图片到电脑', copy_local_image: '复制本地图片',
@@ -177,6 +177,7 @@ const AgentMessageList = React.memo(({
       </AgentDisclosure>}
       {message.role === 'agent' ? <AgentMarkdown text={message.text || (running && index === visibleMessages.length - 1 && !message.tools?.length && !message.thinking ? t("正在思考…") : '')} /> : message.text}
       {message.tools?.flatMap(tool => extractAgentMedia(tool.result)).filter((image, index, list) => list.findIndex(item => item.path === image.path) === index).slice(0, 4).map(image => <AgentProjectImage key={image.path} image={image} onReady={onMediaReady} />)}
+      {message.role === 'error' && message.detail && <details className="mt-2 text-xs font-normal"><summary className="cursor-pointer select-none opacity-80">{t('原始错误')}</summary><pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-white/60 p-2 text-micro leading-5 dark:bg-black/20">{message.detail}</pre></details>}
       </div>
       {Boolean(message.text || message.model || message.usage || message.visionUsage?.length) && <div className="mt-1 flex min-w-0 items-center gap-0.5 text-xs text-gray-400">
         {!!message.text && <button type="button" onClick={() => onCopy(message)} className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800" title={copiedMessageId === message.id ? t("已复制") : t("复制")} aria-label={copiedMessageId === message.id ? t("已复制") : t("复制")}>{copiedMessageId === message.id ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}</button>}
@@ -430,7 +431,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
         }).join('').trim();
         restored.push({ id: `task-replay-${activeSessionId}`, role: 'agent', text: `任务执行回放（${task.status === 'interrupted' ? '服务中断' : '仍在执行'}）\n\n${replayText || '没有可恢复的文本事件。'}\n\n${task.status === 'interrupted' ? '你可以继续发送要求。' : '当前任务结束或停止后，可发送下一条要求。'}` });
       }
-      if (task.error) restored.push({ id: 'task-error-' + (task.runId || activeSessionId), role: 'error', text: task.error });
+      if (task.error) restored.push({ id: 'task-error-' + (task.runId || activeSessionId), role: 'error', text: task.error, detail: task.errorDetail });
       loadedSessionIdRef.current = activeSessionId;
       setMessages(restored);
     }).catch(() => {});
@@ -465,7 +466,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
           if (task.status !== 'completed') interruptGeneration();
           setRunning(false);
           const history = await promptAgentService.getSession(activeSessionId).catch(() => []);
-          if (!disposed) setMessages([...history.map(item => ({ ...item })), ...(task.error ? [{ id: 'task-error-' + (task.runId || activeSessionId), role: 'error' as const, text: task.error }] : [])]);
+          if (!disposed) setMessages([...history.map(item => ({ ...item })), ...(task.error ? [{ id: 'task-error-' + (task.runId || activeSessionId), role: 'error' as const, text: task.error, detail: task.errorDetail }] : [])]);
           void refreshSessions(activeSessionId);
         }
         wasRunning = isRunning;
@@ -747,10 +748,10 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
             // complete draft is committed atomically in the done event.
           }
         }
-        if (event.type === 'error') throw new Error(event.error);
+        if (event.type === 'error') throw Object.assign(new Error(event.error), { detail: event.errorDetail });
         if (event.type === 'done') {
           const completed = !event.status || event.status === 'completed';
-          setTaskSnapshot(previous => ({ ...previous, status: event.status || 'completed', finalDraft: event.draft, error: event.error, stopReason: event.stopReason }));
+          setTaskSnapshot(previous => ({ ...previous, status: event.status || 'completed', finalDraft: event.draft, error: event.error, errorDetail: event.errorDetail, stopReason: event.stopReason }));
           if ((labChanged || event.draftChanged) && completed) currentPropsRef.current.onFinalDraft(event.draft, !displayPreferences.autoApplyDraft);
           if (navigationTarget) {
             window.dispatchEvent(new CustomEvent('nai-agent-navigate', { detail: navigationTarget }));
@@ -758,7 +759,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
           }
           if (!completed) {
             const reason = event.error || (event.status === 'aborted' ? '任务已停止。' : '任务没有完成，请查看工具回执。');
-            setMessages(previous => [...previous, { id: 'task-error-' + (event.runId || activeSessionId), role: 'error', text: reason }]);
+            setMessages(previous => [...previous, { id: 'task-error-' + (event.runId || activeSessionId), role: 'error', text: reason, detail: event.errorDetail }]);
           } else if (!event.message) setMessages(previous => previous.map(item => item.id === responseId && !item.text ? { ...item, text: labChanged ? (displayPreferences.autoApplyDraft ? '修改已提交；请核对实验室内容。' : '工作草稿已准备好，等待你查看并应用。') : '本轮处理已结束，请核对工具回执。' } : item));
         }
       }, () => currentDraftRef.current);
@@ -766,7 +767,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
       if (controller.signal.aborted) {
         setMessages(previous => previous.map(item => item.id === assistantId && !item.text ? { ...item, text: '已停止。' } : item));
       } else {
-        setMessages(previous => [...previous.filter(item => item.id !== assistantId || item.text || item.tools?.length || item.visionUsage?.length), { id: crypto.randomUUID(), role: 'error', text: error instanceof Error ? error.message : '助手执行失败' }]);
+        setMessages(previous => [...previous.filter(item => item.id !== assistantId || item.text || item.tools?.length || item.visionUsage?.length), { id: crypto.randomUUID(), role: 'error', text: error instanceof Error ? error.message : '助手执行失败', detail: error instanceof Error ? (error as Error & { detail?: string }).detail : undefined }]);
       }
     } finally {
       setRunning(false);

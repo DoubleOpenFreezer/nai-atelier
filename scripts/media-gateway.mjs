@@ -3527,6 +3527,11 @@ const serveDistFile = async (req, res, url) => {
           const body = JSON.parse((await readRequestBody(req, 4096)).toString('utf8') || '{}');
           return sendJson(res, 200, await promptAgent.setCreativeDirect(body?.enabled));
         }
+        if (url.pathname === '/api/prompt-agent/creative-direct-rules') {
+          if (req.method !== 'PUT') return sendJson(res, 405, { error: 'Method not allowed' });
+          const body = JSON.parse((await readRequestBody(req, 65536)).toString('utf8') || '{}');
+          return sendJson(res, 200, await promptAgent.setCreativeDirectRules(body?.rules));
+        }
         if (url.pathname === '/api/prompt-agent/local-image' || url.pathname === '/api/prompt-agent/local-file') {
           if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
           const scope = await getCloudQueueScope(req);
@@ -3681,7 +3686,7 @@ const serveDistFile = async (req, res, url) => {
             });
 
           } catch (error) {
-            if (!terminal) emit({ type: 'error', error: error.message || 'Agent 执行失败' });
+            if (!terminal) emit({ type: 'error', error: error.message || 'Agent 执行失败', ...(error?.detail ? { errorDetail: error.detail } : {}) });
           } finally {
             if (!res.writableEnded) res.end();
           }
