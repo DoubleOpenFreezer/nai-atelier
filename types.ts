@@ -153,6 +153,17 @@ export interface NAIParams {
 }
 
 /** 实验室提示词分栏原文；缺省或全为空表示尚未使用分栏（旧数据）。 */
+/** 一栏内容的来源快照（追溯用，不进入请求）。 */
+export interface PromptSectionSource {
+  entryId?: string;
+  entryName?: string;
+  notes?: string;
+  /** library = 从词库选入；roll = 一键 Roll 填入；manual = 手动填写 */
+  source?: 'library' | 'roll' | 'manual';
+  /** 选入时用的应用模式 */
+  mode?: 'replace' | 'append' | 'fill-missing';
+}
+
 export interface PromptSections {
   appearance?: string;
   wardrobe?: string;
@@ -162,6 +173,8 @@ export interface PromptSections {
   /** 镜头画面（独立栏位；早期版本并进 extra） */
   camera?: string;
   extra?: string;
+  /** 每栏的来源快照，键与上面各栏一致；只用于界面追溯 */
+  sectionMeta?: Record<string, PromptSectionSource>;
 }
 
 export type ImageEditOperation = 'image-to-image' | 'inpaint' | 'outpaint';

@@ -42,6 +42,17 @@ export const normalizePromptSections = (sections?: Partial<PromptSections> | nul
         camera: String(sections.camera ?? ''),
         extra: String(sections.extra ?? ''),
     };
+    /* 来源快照跟着栏位走：内容被清空的栏，其来源也一并丢弃 */
+    const meta = (sections as { sectionMeta?: Record<string, unknown> }).sectionMeta;
+    if (meta && typeof meta === 'object') {
+        const kept: Record<string, unknown> = {};
+        for (const key of Object.keys(next)) {
+            if (!String(next[key as keyof PromptSections] || '').trim()) continue;
+            const entry = meta[key];
+            if (entry && typeof entry === 'object') kept[key] = { ...(entry as Record<string, unknown>) };
+        }
+        if (Object.keys(kept).length) next.sectionMeta = kept as PromptSections['sectionMeta'];
+    }
     return Object.values(next).some(value => String(value).trim()) ? next : undefined;
 };
 
