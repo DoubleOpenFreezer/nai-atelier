@@ -75,6 +75,8 @@ export interface ContentRollApplyPlan {
   globalText: string;
   /** 场景 / 镜头按栏位分好的文本（写入 _promptSections.scene / .camera） */
   globalSections: Record<string, string>;
+  /** 场景 / 镜头各自的内容负面（写入 _promptSections.sectionNegatives） */
+  globalNegatives: Record<string, string>;
   /** 角色四类的分栏写入载荷 */
   roleWrites: ContentRollRoleWrite[];
   /** 实际会改动的落点 */
@@ -137,6 +139,7 @@ export const planContentRollApply = (
   const characterParts: string[] = [];
   const globalParts: string[] = [];
   const globalSections: Record<string, string> = {};
+  const globalNegatives: Record<string, string> = {};
   const written: string[] = [];
   const kept: string[] = [];
 
@@ -155,6 +158,7 @@ export const planContentRollApply = (
       if (isGlobal) {
         globalParts.push(next);
         globalSections[kind] = next;
+        if (negative) globalNegatives[kind] = negative;
       } else {
         characterParts.push(next);
         roleWrites.push({
@@ -188,6 +192,7 @@ export const planContentRollApply = (
     characterText: joinTags(characterParts),
     globalText: joinTags(globalParts),
     globalSections,
+    globalNegatives,
     roleWrites,
     written,
     kept,
@@ -270,11 +275,15 @@ export const applyContentRollToParams = (
   const globalWrites = plan.globalSections || {};
   if (Object.keys(globalWrites).length) {
     const sections: PromptSections = { ...(before._promptSections || {}) };
+    const sectionNegatives = { ...((before._promptSections || {}).sectionNegatives || {}) };
     for (const [kind, text] of Object.entries(globalWrites)) {
       if (!text) continue;
       (sections as Record<string, string>)[kind] = text;
+      const negative = plan.globalNegatives?.[kind];
+      if (negative) sectionNegatives[kind] = negative; else delete sectionNegatives[kind];
       written.push(kind);
     }
+    sections.sectionNegatives = sectionNegatives;
     next._promptSections = sections;
   }
 

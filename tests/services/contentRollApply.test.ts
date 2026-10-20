@@ -214,3 +214,16 @@ describe('分类负面：替换分类时清掉旧值', () => {
     expect(next.characters?.[0].sectionNegatives?.wardrobe).toBeUndefined();
   });
 });
+
+describe('场景 / 镜头的内容负面', () => {
+  it('写入对应栏位并跟着栏位生命周期，不进风格负面', () => {
+    const params = baseParams();
+    const plan = planContentRollApply({ scene: row('scene', 'rain', true, 'forbidden_scene') }, params, { mode: 'existing', id: 'c1' });
+    expect(plan.globalNegatives).toEqual({ scene: 'forbidden_scene' });
+    const { params: next } = applyContentRollToParams(params, plan, () => 'x');
+    expect(next._promptSections?.sectionNegatives?.scene).toBe('forbidden_scene');
+    expect(next._promptSections?.scene).toBe('rain');
+    /* 没有负面的镜头栏不留下旧值 */
+    expect(next._promptSections?.sectionNegatives?.camera).toBeUndefined();
+  });
+});

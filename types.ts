@@ -175,6 +175,8 @@ export interface PromptSections {
   extra?: string;
   /** 每栏的来源快照，键与上面各栏一致；只用于界面追溯 */
   sectionMeta?: Record<string, PromptSectionSource>;
+  /** 每栏的内容负面（与上面各栏同名键）；只属于这一栏的内容，不混进风格全局负面 */
+  sectionNegatives?: Record<string, string>;
 }
 
 export type ImageEditOperation = 'image-to-image' | 'inpaint' | 'outpaint';

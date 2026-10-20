@@ -42,12 +42,30 @@ export const hasCharacterSections = (character: CharacterParams): boolean =>
  * 把分栏内容编译进**实际请求**：正文 = 四栏按固定顺序 + 手动补充正文；负面 = 四栏内容负面 + 角色负面。
  * 旧资料（没有 sections）原样返回，纯正文角色的行为完全不变。
  */
-export const compileCharacterContent = (character: CharacterParams): CharacterParams => {
+export const compileCharacterContent = (
+  character: CharacterParams,
+  legacyNegatives?: Record<string, unknown> | null,
+): CharacterParams => {
   if (!hasCharacterSections(character)) return character;
+  /* 旧格式：params._characterSectionsNegatives['角色id::分类']，新代码没读之前它会被静默丢掉 */
+  const legacyOf = (key: string): string => {
+    if (!legacyNegatives) return '';
+    const scoped = legacyNegatives[String(character.id) + '::' + key];
+    const direct = legacyNegatives[key];
+    const value = scoped != null ? scoped : direct;
+    return String(value || '').trim();
+  };
   return {
     ...character,
     prompt: joinTags([...CHARACTER_SECTION_KEYS.map(key => character.sections?.[key]), character.prompt]),
-    negativePrompt: joinTags([...CHARACTER_SECTION_KEYS.map(key => character.sectionNegatives?.[key]), character.negativePrompt]),
+    ...(() => {
+      /* 没有负面时保持 undefined，不要把空串写进负数提示词字段 */
+      const merged = joinTags([
+        ...CHARACTER_SECTION_KEYS.map(key => character.sectionNegatives?.[key] || legacyOf(key)),
+        character.negativePrompt,
+      ]);
+      return merged ? { negativePrompt: merged } : {};
+    })(),
   };
 };
 
@@ -62,7 +80,7 @@ export const withGenerationCharacters = (params: NAIParams, freeform: boolean): 
   ...params,
   useCoords: params.useCoords === true,
   characters: getActiveCharacters(params.characters).map(character => ({
-    ...compileCharacterContent(character),
+    ...compileCharacterContent(character, (params as { _characterSectionsNegatives?: Record<string, unknown> })._characterSectionsNegatives),
     x: normalizeCharacterCoordinate(character.x, freeform),
     y: normalizeCharacterCoordinate(character.y, freeform),
   })),

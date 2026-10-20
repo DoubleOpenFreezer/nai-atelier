@@ -42,6 +42,17 @@ export const normalizePromptSections = (sections?: Partial<PromptSections> | nul
         camera: String(sections.camera ?? ''),
         extra: String(sections.extra ?? ''),
     };
+    /* 分类负面同样只跟随有内容的栏 */
+    const negatives = (sections as { sectionNegatives?: Record<string, unknown> }).sectionNegatives;
+    if (negatives && typeof negatives === 'object') {
+        const keptNegatives: Record<string, string> = {};
+        for (const key of Object.keys(next)) {
+            if (!String(next[key as keyof PromptSections] || '').trim()) continue;
+            const value = String(negatives[key] || '').trim();
+            if (value) keptNegatives[key] = value;
+        }
+        if (Object.keys(keptNegatives).length) next.sectionNegatives = keptNegatives;
+    }
     /* 来源快照跟着栏位走：内容被清空的栏，其来源也一并丢弃 */
     const meta = (sections as { sectionMeta?: Record<string, unknown> }).sectionMeta;
     if (meta && typeof meta === 'object') {

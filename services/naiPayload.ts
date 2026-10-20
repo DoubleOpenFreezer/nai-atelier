@@ -94,6 +94,12 @@ export const buildNaiGenerationPayload = (
 
   let finalNegative = getNaiModelFixedSettings(modelId, runtime) ? '' : negative;
   if (presetState.ucPreset?.prefix) finalNegative = appendPromptPart(finalNegative, presetState.ucPreset.prefix, 'prefix');
+  /* 场景 / 镜头各自的内容负面：只属于那一栏的内容，追加在风格负面之后，不覆盖它 */
+  const sectionNegatives = params._promptSections?.sectionNegatives || {};
+  for (const key of ['scene', 'camera', 'extra']) {
+    const contentNegative = String(sectionNegatives[key] || '').trim();
+    if (contentNegative) finalNegative = appendPromptPart(finalNegative, contentNegative, 'suffix');
+  }
 
   const characters = withGenerationCharacters(params, modelInfo.freeformCharacterPosition).characters || [];
   const charCaptions = characters.map(character => ({

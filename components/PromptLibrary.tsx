@@ -85,7 +85,13 @@ type PromptLibraryParams = NAIParams & { _promptLibrary?: PromptLibraryMeta };
 export const promptLibraryHistoryImageUrl = (historyId: string) => `/api/local-history/${encodeURIComponent(historyId)}/image`;
 
 const libraryMeta = (chain?: PromptChain | null): PromptLibraryMeta => {
-  const raw = chain?.params ? (chain.params as PromptLibraryParams)._promptLibrary : undefined;
+  const params = chain?.params as (PromptLibraryParams & { _wardrobe?: unknown }) | undefined;
+  /* 双格式：源码条目写 _promptLibrary；本机旧条目把中文对照 / 参考图 / facets 写在 _wardrobe 里 */
+  const raw = params
+    ? (params._promptLibrary && typeof params._promptLibrary === 'object'
+      ? params._promptLibrary
+      : (params._wardrobe && typeof params._wardrobe === 'object' ? params._wardrobe as PromptLibraryMeta : undefined))
+    : undefined;
   return raw && typeof raw === 'object' ? raw : {};
 };
 

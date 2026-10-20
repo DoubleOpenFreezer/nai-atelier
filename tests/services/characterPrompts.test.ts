@@ -73,3 +73,23 @@ describe('角色分栏编译（本机角色分类模型）', () => {
     expect(getActiveCharacters([paused])).toHaveLength(0);
   });
 });
+
+describe('旧格式分类负面（params._characterSectionsNegatives）', () => {
+  it('旧存储格式的负面会进入编译，且新字段优先', () => {
+    const character = {
+      id: 'c9', prompt: '', x: 0.5, y: 0.5,
+      sections: { appearance: 'silver_hair', wardrobe: 'blue_dress' },
+      sectionNegatives: { wardrobe: 'new_coat' },
+    };
+    const legacy = { 'c9::appearance': 'old_hair_negative', 'c9::wardrobe': 'old_coat' };
+    const compiled = compileCharacterContent(character, legacy);
+    expect(compiled.negativePrompt).toBe('old_hair_negative, new_coat');
+    /* 旧格式里的 wardrobe 被新字段覆盖，不会同时出现 */
+    expect(compiled.negativePrompt).not.toContain('old_coat');
+  });
+
+  it('没有旧格式时行为不变', () => {
+    const character = { id: 'c1', prompt: 'body', x: 0.5, y: 0.5, sections: { appearance: 'a' }, sectionNegatives: {} };
+    expect(compileCharacterContent(character, null).negativePrompt).toBeUndefined();
+  });
+});
