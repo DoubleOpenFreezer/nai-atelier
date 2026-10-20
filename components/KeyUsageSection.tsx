@@ -65,7 +65,7 @@ export const KeyUsageSection: React.FC<Props> = ({ rows, period, periodPicker, i
         <span className="key-usage__metric"><small>{opusLabel}</small><strong>{resource(cumulative?.opusImages ?? row.opusImages, Boolean(cumulative) || hasRecords)}</strong></span>
         <ChevronDown aria-hidden="true" className="key-usage__chevron h-4 w-4 text-gray-400 transition-transform group-open:rotate-180" />
       </summary>
-      <div className="key-usage__detail mb-3 grid gap-4 rounded-xl bg-gray-50 p-3 text-xs dark:bg-gray-800/60">
+      <div className="appearance-group key-usage__detail mb-3 grid gap-4 rounded-xl bg-gray-50 p-3 text-xs dark:bg-gray-800/60">
         <div>
           <h3 className="mb-2 font-medium text-gray-500 dark:text-gray-400">{t('模型明细')}</h3>
           {row.models.length ? row.models.map(model => <div key={model.model} className="flex justify-between gap-3 py-1"><span className="min-w-0 break-words text-gray-600 dark:text-gray-300">{getNaiModelDisplayLabel(model.model)}</span><span className="shrink-0 tabular-nums text-gray-800 dark:text-gray-100">{t('{0} 张', [number(model.images)])}</span></div>) : <p className="text-gray-400">{t('暂无')}</p>}
@@ -81,7 +81,7 @@ export const KeyUsageSection: React.FC<Props> = ({ rows, period, periodPicker, i
     </details>;
   });
 
-  return <section aria-label={t('Key 使用量')} className="key-usage rounded-2xl border border-gray-200 bg-white p-4 text-gray-800 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-100">
+  return <section aria-label={t('Key 使用量')} className="appearance-group key-usage rounded-2xl border border-gray-200 bg-white p-4 text-gray-800 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-100">
     <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
       <h2 className="text-sm font-bold text-gray-800 dark:text-gray-100">{t('Key 使用量')}</h2>
       {periodPicker || <span className="text-right text-xs text-gray-500 dark:text-gray-400">{period}</span>}

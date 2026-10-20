@@ -2,6 +2,7 @@ import { t, useLanguage } from '../services/i18n';
 import React, { useEffect } from 'react';
 import { useAgentPopoverPosition } from './useAgentPopoverPosition';
 import { isTopmostModal, useModalA11y } from './useModalA11y';
+import { useGlassRefraction } from './useGlassRefraction';
 
 /** 在 Portal 内容挂载后管理定位、焦点和关闭，不增加原容器高度。 */
 export const InteractionPopover: React.FC<React.PropsWithChildren<{
@@ -16,6 +17,7 @@ export const InteractionPopover: React.FC<React.PropsWithChildren<{
 }>> = ({ id, label, anchorRef, onClose, width = 320, align = 'center', placement = 'auto', className = '', children }) => {
   useLanguage();
   const panel = useModalA11y<HTMLDivElement>(true);
+  useGlassRefraction(panel);
   const position = useAgentPopoverPosition(true, anchorRef, panel, width, align, placement);
   useEffect(() => {
     const outside = (event: PointerEvent) => {
@@ -30,6 +32,6 @@ export const InteractionPopover: React.FC<React.PropsWithChildren<{
   return <>
     <div aria-hidden="true" className="fixed inset-0 z-[1900]" onPointerDown={event => { event.stopPropagation(); onClose(); }} onClick={event => event.stopPropagation()} />
     <div ref={panel} id={id} role="dialog" aria-modal="true" aria-label={t(label)} style={position}
-      onClick={event => event.stopPropagation()} className={`appearance-panel fixed z-[1901] overflow-y-auto rounded-xl border border-gray-200 bg-white shadow-xl dark:border-gray-700 dark:bg-gray-900 ${className}`}>{children}</div>
+      onClick={event => event.stopPropagation()} className={`appearance-panel appearance-popover fixed z-[1901] overflow-y-auto rounded-xl border border-gray-200 bg-white shadow-xl dark:border-gray-700 dark:bg-gray-900 ${className}`}><div className="appearance-popover-content">{children}</div></div>
   </>;
 };

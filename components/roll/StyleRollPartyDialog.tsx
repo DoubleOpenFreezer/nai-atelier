@@ -139,7 +139,7 @@ const PartyForm: React.FC<Props> = ({ library, count, initial, blocked, sampledO
         <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 md:grid-cols-4">
           {picked.map(tag => {
             const url = sampleUrl(tag);
-            return <div key={tag} className="group relative aspect-[2/3] overflow-hidden rounded-xl border border-gray-200 bg-gray-100 dark:border-gray-700 dark:bg-gray-950">
+            return <div key={tag} className="appearance-media group relative aspect-[2/3] overflow-hidden rounded-xl border border-gray-200 bg-gray-100 dark:border-gray-700 dark:bg-gray-950">
               {url ? <SmartImage src={url} alt={tag} previewTransform={url.startsWith('/api/artist-samples/image?') ? 'artist-sample-padding-v1' : undefined} className="h-full w-full object-cover" containerClassName="absolute inset-0" />
                 : <div className="flex h-full w-full items-center justify-center text-xs text-gray-400 dark:text-gray-600">{samplesLoading ? t('正在读取画师样张…') : t('暂无样张')}</div>}
               <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/40 to-transparent px-2 pb-1.5 pt-8">
@@ -158,7 +158,7 @@ const PartyForm: React.FC<Props> = ({ library, count, initial, blocked, sampledO
           <ToolbarButton disabled={busy || !picked.length} onClick={() => void blockPicked()}><Ban />{t('屏蔽这些')}</ToolbarButton>
           <span className="text-xs text-gray-500">{t('已屏蔽 {0} 位', [blockedTags.length])}</span>
           {undoBlock && <button type="button" disabled={busy} onClick={() => void undoBlocked()} className="mobile-touch text-xs font-semibold text-indigo-600 underline dark:text-indigo-300">{t('撤销屏蔽')}</button>}
-          {!!blockedTags.length && <details className="min-w-0"><summary className="mobile-touch cursor-pointer text-xs font-semibold text-gray-500 hover:text-indigo-500">{t('管理屏蔽')}</summary><div className="mt-2 flex max-h-24 flex-wrap gap-1.5 overflow-y-auto">{blockedTags.map(tag => <button key={tag} type="button" aria-label={t('取消屏蔽 {0}', [tag])} disabled={busy} onClick={async () => { const next = blockedTags.filter(item => item !== tag); setBusy(true); try { await onBlock(next); setBlockedTags(next); } finally { setBusy(false); } }} className="mobile-touch inline-flex items-center gap-1 rounded-md bg-gray-100 px-2 py-1 text-xs text-gray-600 hover:text-rose-500 dark:bg-gray-800 dark:text-gray-300">{tag}<X className="h-3 w-3" /></button>)}</div></details>}
+          {!!blockedTags.length && <details className="min-w-0"><summary className="mobile-touch cursor-pointer text-xs font-semibold text-gray-500 hover:text-indigo-500">{t('管理屏蔽')}</summary><div className="mt-2 flex max-h-24 flex-wrap gap-1.5 overflow-y-auto">{blockedTags.map(tag => <button key={tag} type="button" aria-label={t('取消屏蔽 {0}', [tag])} disabled={busy} onClick={async () => { const next = blockedTags.filter(item => item !== tag); setBusy(true); try { await onBlock(next); setBlockedTags(next); } finally { setBusy(false); } }} className="appearance-group mobile-touch inline-flex items-center gap-1 rounded-md bg-gray-100 px-2 py-1 text-xs text-gray-600 hover:text-rose-500 dark:bg-gray-800 dark:text-gray-300">{tag}<X className="h-3 w-3" /></button>)}</div></details>}
         </div>
         <div className="grid items-start gap-2.5 sm:grid-cols-2">
           <div className="min-w-0">

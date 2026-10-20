@@ -85,7 +85,7 @@ export const TagDictionaryUpdater: React.FC<TagDictionaryUpdaterProps> = ({ noti
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h4 className="font-semibold text-gray-900 dark:text-white">{t('Tag 补全词库')}</h4>
         <div className="flex flex-none gap-2">
-          <a href="https://github.com/ffdkj/ffdkj-Danbooru_Tag-Chinese-English-Translation-Table" target="_blank" rel="noreferrer" className="mobile-touch flex items-center gap-1.5 rounded bg-gray-100 px-2 py-1.5 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700" title={t('打开词库 GitHub 原址')}>
+          <a href="https://github.com/ffdkj/ffdkj-Danbooru_Tag-Chinese-English-Translation-Table" target="_blank" rel="noreferrer" className="appearance-group mobile-touch flex items-center gap-1.5 rounded bg-gray-100 px-2 py-1.5 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700" title={t('打开词库 GitHub 原址')}>
             <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5h5v5m-1-4L10 14M19 14v4a1 1 0 01-1 1H6a1 1 0 011-1h4" /></svg>
             <span>{t('词库来源')}</span>
           </a>

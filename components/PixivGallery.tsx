@@ -22,7 +22,7 @@ import { IMPORT_SESSION_KEY, PendingImportData } from '../services/metadataServi
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { Inspiration, NAIParams, User } from '../types';
 import { externalImageAnalysis, externalImageDrafts, type ExternalImageTags } from '../services/externalImageTags';
-import { EmptyState, FilterPill, IconButton, MediaCardShell, PageSpinner, ToolbarButton, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
+import { EmptyState, FilterPill, IconButton, MediaCardShell, PageSpinner, ToolbarButton, ToolbarSearch, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
 import { DetailSidePanel, DetailImageStage, TagChipGroup } from './DetailPanel';
 import { useMobileHistoryLayer } from './MobileUI';
 import { ExternalImageTools } from './ExternalImageTools';
@@ -564,7 +564,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, selectionFoc
     const previewSrc = illust.urls.medium || illust.urls.large || illust.urls.thumb;
     return <MediaCardShell pressReveal key={illust.id} data-gallery-work-id={illust.id} data-safe-mode-work="true" selected={selectedId === illust.id} className={`mobile-gallery-item gallery-image-card group relative flex-col ${selectionFocusEnabled && selectedId !== null && selectedId !== illust.id ? 'brightness-[.7]' : ''}`}>
       <button type="button" onClick={() => openDetail(illust)} className="gallery-card-visual block w-full text-left">
-        <div className="mobile-gallery-frame relative aspect-[3/4] overflow-hidden bg-gray-200 dark:bg-gray-800" style={{ '--mobile-image-ratio': ratio } as React.CSSProperties}>
+        <div className="appearance-media mobile-gallery-frame relative aspect-[3/4] overflow-hidden bg-gray-200 dark:bg-gray-800" style={{ '--mobile-image-ratio': ratio } as React.CSSProperties}>
           <SmartImage
             src={previewSrc}
             alt={title}
@@ -627,7 +627,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, selectionFoc
         }}
         className="gallery-card-visual block w-full text-left"
       >
-        <div className="mobile-gallery-frame relative aspect-[3/4] overflow-hidden bg-gray-200 dark:bg-gray-800">
+        <div className="appearance-media mobile-gallery-frame relative aspect-[3/4] overflow-hidden bg-gray-200 dark:bg-gray-800">
           <SmartImage src={item.previewUrl} alt={item.title} />
         </div>
         <div className="gallery-card-caption p-2.5">
@@ -718,12 +718,14 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, selectionFoc
     const activeLogin = loginSession && isActiveLoginState(loginSession.state) ? loginSession : null;
     const waiting = Boolean(activeLogin) || loginBusy;
     return (
-      <div className="flex min-h-0 flex-1 flex-col bg-gray-50 dark:bg-gray-900">
+      <div className="workspace-canvas flex min-h-0 flex-1 flex-col bg-gray-50 dark:bg-gray-900">
+        <WorkspaceChrome>
         <WorkspaceToolbar>
           <div className="flex min-w-0 flex-1 items-center gap-2 text-sm font-bold text-gray-700 dark:text-gray-200">{t("Pixiv 图库")}</div>
         </WorkspaceToolbar>
-        <div className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto p-6">
-          <div className="w-full max-w-sm rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+        </WorkspaceChrome>
+        <div className="workspace-scroll-viewport flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto p-6">
+          <div className="appearance-group w-full max-w-sm rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-gray-900">
             <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-100 text-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-300">
               <KeyRound className="h-6 w-6" aria-hidden="true" />
             </div>
@@ -788,7 +790,8 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, selectionFoc
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col bg-gray-50 dark:bg-gray-900">
+    <div className="workspace-canvas flex min-h-0 flex-1 flex-col bg-gray-50 dark:bg-gray-900">
+      <WorkspaceChrome>
       <WorkspaceToolbar>
         <div className="flex min-w-0 flex-1 items-center gap-2">
           <form onSubmit={submitSearch} className="flex min-w-0 flex-1 items-center">
@@ -819,7 +822,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, selectionFoc
                   className={`h-10 flex-none whitespace-nowrap rounded-xl border px-3 text-xs font-semibold transition-colors ${
                     active
                       ? 'border-indigo-600 bg-indigo-600 text-white shadow-sm dark:border-indigo-500 dark:bg-indigo-600'
-                      : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:text-gray-900 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-gray-700 dark:hover:text-white'
+                      : 'appearance-group border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:text-gray-900 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-gray-700 dark:hover:text-white'
                   }`}
                 >
                   {t(tab.label)}
@@ -833,7 +836,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, selectionFoc
               className={`h-10 flex-none whitespace-nowrap rounded-xl border px-3 text-xs font-semibold transition-colors ${
                 showHistory
                   ? 'border-indigo-600 bg-indigo-600 text-white shadow-sm dark:border-indigo-500 dark:bg-indigo-600'
-                  : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:text-gray-900 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-gray-700 dark:hover:text-white'
+                  : 'appearance-group border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:text-gray-900 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-gray-700 dark:hover:text-white'
               }`}
             >
               {t("足迹")}</button>
@@ -841,7 +844,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, selectionFoc
               <button
                 type="button"
                 onClick={() => void loadFeed('recommended', {})}
-                className="h-10 flex-none whitespace-nowrap rounded-xl border border-gray-200 bg-white px-3 text-xs font-bold text-indigo-600 hover:bg-indigo-50 dark:border-gray-800 dark:bg-gray-900 dark:text-indigo-300 dark:hover:bg-indigo-950/40"
+                className="appearance-group h-10 flex-none whitespace-nowrap rounded-xl border border-gray-200 bg-white px-3 text-xs font-bold text-indigo-600 hover:bg-indigo-50 dark:border-gray-800 dark:bg-gray-900 dark:text-indigo-300 dark:hover:bg-indigo-950/40"
               >
                 {t("返回推荐")}</button>
             )}
@@ -853,7 +856,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, selectionFoc
       </WorkspaceToolbar>
 
       {/* 移动端独立导航行（搜索与操作按钮保持首行，导航 Tab 单行横向滚动） */}
-      <div className="flex w-full items-center gap-1.5 overflow-x-auto border-b border-gray-200 bg-white px-2 py-1.5 backdrop-blur md:hidden dark:border-gray-800 dark:bg-gray-900/80">
+      <div className="appearance-group flex w-full items-center gap-1.5 overflow-x-auto border-b border-gray-200 bg-white px-2 py-1.5 backdrop-blur md:hidden dark:border-gray-800 dark:bg-gray-900/80">
         {feedTabs.map(tab => {
           const active = !showHistory && mode === tab.id;
           return (
@@ -872,7 +875,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, selectionFoc
               className={`h-9 flex-none whitespace-nowrap rounded-lg border px-2.5 text-meta font-semibold transition-colors ${
                 active
                   ? 'border-indigo-600 bg-indigo-600 text-white shadow-sm dark:border-indigo-500 dark:bg-indigo-600'
-                  : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:text-gray-900 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-gray-700 dark:hover:text-white'
+                  : 'appearance-group border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:text-gray-900 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-gray-700 dark:hover:text-white'
               }`}
             >
               {t(tab.label)}
@@ -886,7 +889,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, selectionFoc
           className={`h-9 flex-none whitespace-nowrap rounded-lg border px-2.5 text-meta font-semibold transition-colors ${
             showHistory
               ? 'border-indigo-600 bg-indigo-600 text-white shadow-sm dark:border-indigo-500 dark:bg-indigo-600'
-              : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:text-gray-900 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-gray-700 dark:hover:text-white'
+              : 'appearance-group border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:text-gray-900 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-gray-700 dark:hover:text-white'
           }`}
         >
           {t("足迹")}</button>
@@ -894,7 +897,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, selectionFoc
           <button
             type="button"
             onClick={() => void loadFeed('recommended', {})}
-            className="h-9 flex-none whitespace-nowrap rounded-lg border border-gray-200 bg-white px-2.5 text-meta font-bold text-indigo-600 hover:bg-indigo-50 dark:border-gray-800 dark:bg-gray-900 dark:text-indigo-300 dark:hover:bg-indigo-950/40"
+            className="appearance-group h-9 flex-none whitespace-nowrap rounded-lg border border-gray-200 bg-white px-2.5 text-meta font-bold text-indigo-600 hover:bg-indigo-50 dark:border-gray-800 dark:bg-gray-900 dark:text-indigo-300 dark:hover:bg-indigo-950/40"
           >
             {t("返回推荐")}</button>
         )}
@@ -902,7 +905,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, selectionFoc
 
       {/* 排行榜二级工具栏（子模式 + 历史日期穿越） */}
       {mode === 'ranking' && !showHistory && (
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 bg-white/80 px-3 py-2 text-xs backdrop-blur dark:border-gray-800 dark:bg-gray-900/80 md:px-5">
+        <div className="appearance-group flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 bg-white/80 px-3 py-2 text-xs backdrop-blur dark:border-gray-800 dark:bg-gray-900/80 md:px-5">
           <div className="flex flex-wrap items-center gap-1.5">
             <span className="flex items-center gap-1 font-semibold text-gray-500 dark:text-gray-400">
               <Flame className="size-3.5 text-orange-500" />{t("榜单:")}</span>
@@ -949,7 +952,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, selectionFoc
 
       {/* 搜索二级筛选栏 */}
       {mode === 'search' && !showHistory && (
-        <div className="flex flex-wrap items-center gap-2 border-b border-gray-200 bg-white/80 px-3 py-2 text-xs backdrop-blur dark:border-gray-800 dark:bg-gray-900/80 md:px-5">
+        <div className="appearance-group flex flex-wrap items-center gap-2 border-b border-gray-200 bg-white/80 px-3 py-2 text-xs backdrop-blur dark:border-gray-800 dark:bg-gray-900/80 md:px-5">
           <span className="flex items-center gap-1 font-semibold text-gray-500 dark:text-gray-400">
             <Filter className="size-3.5 text-indigo-500" />{t("排序:")}</span>
           {[
@@ -992,8 +995,9 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, selectionFoc
         </div>
       )}
 
+      </WorkspaceChrome>
       <div className={`aitag-split relative grid min-h-0 flex-1 grid-cols-1 ${selected ? 'lg:grid-cols-[minmax(0,1fr)_460px]' : ''}`}>
-        <main ref={scrollRef} onScroll={() => { selectionAnchor.onScroll(); onScrollRestore(); }} className={`${selected ? 'hidden lg:block' : 'block'} min-h-0 overflow-y-auto p-3 md:p-5`}>
+        <main ref={scrollRef} onScroll={() => { selectionAnchor.onScroll(); onScrollRestore(); }} className={`${selected ? 'hidden lg:block' : 'block'} workspace-scroll-viewport min-h-0 overflow-y-auto p-3 md:p-5`}>
           <div ref={galleryContentRef}>
           {showHistory ? (
             <div className="mb-3 flex items-center justify-between text-xs text-gray-500">
@@ -1146,7 +1150,7 @@ export const PixivGallery: React.FC<PixivGalleryProps> = ({ active, selectionFoc
                     {relatedItems.slice(0, 9).map(rel => (
                       <PressRevealSurface
                         key={rel.id}
-                        className="group relative aspect-[3/4] overflow-hidden rounded-lg border border-gray-200 bg-gray-100 dark:border-gray-700 dark:bg-gray-800 hover:border-indigo-500"
+                        className="appearance-media group relative aspect-[3/4] overflow-hidden rounded-lg border border-gray-200 bg-gray-100 dark:border-gray-700 dark:bg-gray-800 hover:border-indigo-500"
                       >
                         <button type="button" onClick={() => openDetail(rel)} className="h-full w-full" aria-label={t("查看相关作品 {0}", [rel.title])}>
                           <SmartImage

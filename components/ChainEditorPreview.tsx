@@ -89,11 +89,11 @@ export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
     const queueStatus = useCloudQueueStatus();
 
     return (
-        <div className="chain-editor-preview w-full lg:w-1/2 flex flex-col bg-gray-100 dark:bg-black/20 order-1 lg:order-2 border-b lg:border-b-0 border-gray-200 dark:border-gray-800 lg:shrink-0">
+        <div className="appearance-content chain-editor-preview w-full lg:w-1/2 flex flex-col bg-gray-100 dark:bg-black/20 order-1 lg:order-2 border-b lg:border-b-0 border-gray-200 dark:border-gray-800 lg:shrink-0">
             <div className="flex-1 flex flex-col p-4 md:p-6 overflow-hidden lg:min-h-[400px]">
                 {/* Generated Image */}
                 <PressRevealSurface pressResetKey={generatedImage || previewImage}
-                    className={`flex-1 min-h-0 lg:min-h-[300px] rounded-xl border border-gray-200 dark:border-gray-800 flex items-center justify-center relative group overflow-hidden cursor-zoom-in ${transparentPreview ? 'nai-alpha-checker' : 'bg-white dark:bg-gray-950/50'}`}
+                    className={`appearance-card flex-1 min-h-0 lg:min-h-[300px] rounded-xl border border-gray-200 dark:border-gray-800 flex items-center justify-center relative group overflow-hidden cursor-zoom-in ${transparentPreview ? 'nai-alpha-checker' : generatedImage || previewImage ? 'bg-white dark:bg-gray-950/50' : 'appearance-group bg-white dark:bg-gray-950/50'}`}
                     onClick={() => {
                         const img = generatedImage || previewImage;
                         if (img) setLightboxImg(img);
@@ -149,7 +149,7 @@ export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
                                 </div>
 
                             </>
-                        ) : <div className="rounded-lg border border-dashed border-gray-300 px-4 py-3 text-xs text-gray-500 dark:border-gray-700 dark:text-gray-400">{emptyLabel}</div>
+                        ) : <div className="appearance-reading-surface rounded-lg border border-dashed border-gray-300 px-4 py-3 text-xs text-gray-500 dark:border-gray-700 dark:text-gray-400">{emptyLabel}</div>
                     )}
 
                     {isGenerating && generationProgress && (

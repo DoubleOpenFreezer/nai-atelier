@@ -111,7 +111,7 @@ const SeedForm: React.FC<Props> = ({ chains, knownArtists, createOptions, onClos
             <p className="text-xs">{t('保留提示词、参数、角色与 Seed，只对画师部分重新 Roll。')}</p>
           </div> : <div className="space-y-4">
             <div className="flex items-start gap-3">
-              <div data-safe-mode-work="true" className="relative h-36 w-24 shrink-0 overflow-hidden rounded-xl border border-gray-200 bg-gray-100 dark:border-gray-700 dark:bg-gray-950">
+              <div data-safe-mode-work="true" className="appearance-media relative h-36 w-24 shrink-0 overflow-hidden rounded-xl border border-gray-200 bg-gray-100 dark:border-gray-700 dark:bg-gray-950">
                 {selected.previewImage ? <SmartImage src={selected.previewImage} alt={selected.name} eager className="h-full w-full object-cover" containerClassName="absolute inset-0" />
                   : <div className="flex h-full w-full flex-col items-center justify-center gap-1 text-gray-400 dark:text-gray-500"><ImageIcon className="h-6 w-6" /><span className="text-micro">{t('暂无封面')}</span></div>}
               </div>
@@ -134,7 +134,7 @@ const SeedForm: React.FC<Props> = ({ chains, knownArtists, createOptions, onClos
               </div>
               <div>
                 <p className="mb-1.5 text-xs font-semibold text-gray-600 dark:text-gray-300">{t('公共提示词')}</p>
-                <p className="max-h-28 overflow-y-auto break-words rounded-xl bg-gray-50 p-2.5 font-mono text-xs leading-relaxed text-gray-600 dark:bg-gray-950 dark:text-gray-300">{preview.seed.template.prompt}</p>
+                <p className="appearance-group max-h-28 overflow-y-auto break-words rounded-xl bg-gray-50 p-2.5 font-mono text-xs leading-relaxed text-gray-600 dark:bg-gray-950 dark:text-gray-300">{preview.seed.template.prompt}</p>
               </div>
               <label className="mobile-touch flex items-start gap-2 rounded-xl border border-gray-200 p-3 text-xs dark:border-gray-700">
                 <input type="checkbox" checked={preserveWeights} onChange={event => setPreserveWeights(event.target.checked)} className="mt-0.5 h-4 w-4 accent-indigo-600" />

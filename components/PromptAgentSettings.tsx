@@ -242,7 +242,7 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
               <button
                 type="button"
                 onClick={() => openCustom(provider)}
-                className="mobile-touch rounded-lg border border-gray-200 bg-white px-2.5 py-1 text-xs font-bold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+                className="appearance-group mobile-touch rounded-lg border border-gray-200 bg-white px-2.5 py-1 text-xs font-bold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
               >
                 {t("编辑")}</button>
               <button
@@ -278,7 +278,7 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
           </label>
           <div className="flex flex-wrap items-center gap-2">
             <button type="button" onClick={() => { void saveSearchApi({ baseUrl: searchBaseUrl, apiKey: searchKeyDraft.trim() ? searchKeyDraft : undefined }); }} disabled={searchSaving} className="mobile-touch rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-indigo-700 disabled:opacity-40">{t('保存搜索设置')}</button>
-            {config?.searchApiKeyCustom && <button type="button" onClick={() => { void saveSearchApi({ apiKey: '' }); }} disabled={searchSaving} className="mobile-touch rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-bold text-gray-700 hover:bg-gray-50 disabled:opacity-40 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700">{t('清除已保存 Key')}</button>}
+            {config?.searchApiKeyCustom && <button type="button" onClick={() => { void saveSearchApi({ apiKey: '' }); }} disabled={searchSaving} className="appearance-group mobile-touch rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-bold text-gray-700 hover:bg-gray-50 disabled:opacity-40 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700">{t('清除已保存 Key')}</button>}
           </div>
         </div>
         <p className="mt-2 text-xs leading-5 text-gray-400 dark:text-gray-500">{config?.searchApiKeyCustom ? t('已保存搜索专用 Key。') : config?.searchApiKeyConfigured ? t('将使用同地址的已配置连接。') : t('未检测到可用 Key，开启后仍使用免费搜索。')}</p>
@@ -314,7 +314,7 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
               className="mobile-touch rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-indigo-700 disabled:opacity-40">{t('保存规则')}</button>
             <button type="button" onClick={() => { void saveCreativeDirectRules(''); }}
               disabled={rulesSaving || !config.creativeDirectRulesCustom}
-              className="mobile-touch rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-bold text-gray-700 hover:bg-gray-50 disabled:opacity-40 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700">{t('恢复内置默认')}</button>
+              className="appearance-group mobile-touch rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-bold text-gray-700 hover:bg-gray-50 disabled:opacity-40 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700">{t('恢复内置默认')}</button>
           </div>
           <p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">{config.creativeDirectRulesCustom ? t('当前使用自定义规则') : t('当前使用内置默认规则')}；{t('保存后从下一次助手任务生效。')}</p>
         </details>}
@@ -329,7 +329,7 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
         aria-modal="true"
         aria-label={view === 'model' ? t("选择助手模型") : (customDraft.id ? t("编辑 API 连接") : t("连接 API"))}
         data-agent-surface
-        className="agent-theme appearance-surface agent-settings-subview absolute inset-0 z-[1100] flex flex-col overflow-hidden bg-gray-50 dark:bg-gray-950"
+        className="appearance-group agent-theme agent-settings-subview absolute inset-0 z-[1100] flex flex-col overflow-hidden bg-gray-50 dark:bg-gray-950"
       >
       <header className="workspace-command-bar flex flex-none items-center gap-3 border-b border-gray-200 bg-white px-3 pt-[env(safe-area-inset-top)] dark:border-gray-800 dark:bg-gray-900 md:px-5">
         <button type="button" onClick={requestClose} className="mobile-touch flex items-center justify-center rounded-xl p-1 text-gray-500 transition hover:bg-gray-100 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200" aria-label={t("返回")}><ArrowLeft className="h-5 w-5" /></button>
@@ -339,7 +339,7 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
       <main className="mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col p-3 md:p-5">
         {view === 'model' && <input autoFocus value={query} onChange={event => setQuery(event.target.value)} placeholder={t("搜索模型名称、ID或连接…")} className="mobile-touch w-full rounded-2xl border border-gray-200 bg-white px-4 text-sm outline-none focus:border-indigo-500 dark:border-gray-800 dark:bg-gray-900" />}
         {view === 'custom' ? <CustomProviderForm value={customDraft} onChange={next => { if (next.baseUrl !== customDraft.baseUrl || next.apiKey !== customDraft.apiKey || next.api !== customDraft.api) setDiscoveredModels([]); setCustomDraft(next); setCustomResult(null); }} result={customResult} discovered={discoveredModels} busy={busy} onTest={() => void testCustom()} onFetch={() => void fetchCustom()} onSave={() => void saveCustom()} presets={AGENT_PROVIDER_PRESETS} onSavePreset={(preset, apiKey) => void savePreset(preset, apiKey)} /> :
-          <div className="mt-3 min-h-0 flex-1 overflow-y-auto rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+          <div className="appearance-group mt-3 min-h-0 flex-1 overflow-y-auto rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
             {filteredModels.map(model => <button key={`${model.provider}/${model.id}`} type="button" disabled={busy} onClick={() => void selectModel(model)} className="flex min-h-16 w-full items-center gap-3 border-b border-gray-100 px-4 text-left last:border-0 hover:bg-indigo-50 dark:border-gray-800 dark:hover:bg-indigo-950/20"><span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs ${model.current ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-400 dark:bg-gray-800'}`}>{model.current ? '✓' : '→'}</span><span className="min-w-0 flex-1"><b className="block truncate text-sm text-gray-900 dark:text-white">{formatModelOptionTitle(model, models)}</b><span className="block truncate text-meta text-gray-500">{model.providerName || model.provider}</span></span><span className="hidden shrink-0 text-right text-micro leading-4 text-gray-500 dark:text-gray-400 sm:block">{t("上下文 ")}{formatContext(model.contextWindow)}<br />{model.reasoning ? t("推理") : model.capabilityDetection?.reasoning === 'unknown' ? t("推理未知") : t("普通")}{model.imageInput ? t(" · 图片") : model.capabilityDetection?.imageInput === 'unknown' ? t(" · 图片未知") : ''}</span></button>)}
             {!filteredModels.length && <div className="p-10 text-center text-sm text-gray-500">{query ? t("没有匹配结果") : t("还没有模型，请先连接 API")}</div>}
           </div>}

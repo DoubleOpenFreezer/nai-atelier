@@ -185,7 +185,7 @@ export const DataBackupManager: React.FC<DataBackupManagerProps> = ({ notify }) 
           <button
             type="button"
             onClick={() => void handleOpenFolder(status?.targetDir)}
-            className="mobile-touch flex items-center gap-1.5 rounded-lg bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-700 transition hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+            className="appearance-group mobile-touch flex items-center gap-1.5 rounded-lg bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-700 transition hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
             title={t("在系统文件管理器中打开备份总目录")}
           >
             <FolderOpen className="h-3.5 w-3.5 text-indigo-500" />
@@ -203,7 +203,7 @@ export const DataBackupManager: React.FC<DataBackupManagerProps> = ({ notify }) 
       {/* 源数据与目标位置卡片 */}
       <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
         {/* 源数据 */}
-        <div className="min-w-0 rounded-xl border border-gray-200 bg-gray-50/70 p-3 dark:border-gray-700/80 dark:bg-gray-800/40">
+        <div className="appearance-group min-w-0 rounded-xl border border-gray-200 bg-gray-50/70 p-3 dark:border-gray-700/80 dark:bg-gray-800/40">
           <div className="flex items-center justify-between text-xs font-medium text-gray-500 dark:text-gray-400">
             <span className="flex items-center gap-1.5">
               <HardDrive className="h-3.5 w-3.5 text-indigo-500" />
@@ -221,7 +221,7 @@ export const DataBackupManager: React.FC<DataBackupManagerProps> = ({ notify }) 
         </div>
 
         {/* 目标目录 */}
-        <div className="min-w-0 rounded-xl border border-gray-200 bg-gray-50/70 p-3 dark:border-gray-700/80 dark:bg-gray-800/40">
+        <div className="appearance-group min-w-0 rounded-xl border border-gray-200 bg-gray-50/70 p-3 dark:border-gray-700/80 dark:bg-gray-800/40">
           <div className="flex items-center justify-between text-xs font-medium text-gray-500 dark:text-gray-400">
             <span className="flex items-center gap-1.5">
               <Archive className="h-3.5 w-3.5 text-indigo-500" />
@@ -287,7 +287,7 @@ export const DataBackupManager: React.FC<DataBackupManagerProps> = ({ notify }) 
       </div>
 
       {/* 备份操作控制台 */}
-      <div className="rounded-xl border border-gray-200 bg-white p-3.5 shadow-sm dark:border-gray-700 dark:bg-gray-900">
+      <div className="appearance-group rounded-xl border border-gray-200 bg-white p-3.5 shadow-sm dark:border-gray-700 dark:bg-gray-900">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
           <div className="min-w-0 flex-1">
             <input
@@ -351,7 +351,7 @@ export const DataBackupManager: React.FC<DataBackupManagerProps> = ({ notify }) 
       </div>
 
       {/* 历史备份列表 */}
-      <div className="rounded-xl border border-gray-200 bg-gray-50/60 dark:border-gray-700 dark:bg-gray-800/40">
+      <div className="appearance-group rounded-xl border border-gray-200 bg-gray-50/60 dark:border-gray-700 dark:bg-gray-800/40">
         <button
           type="button"
           onClick={() => setIsHistoryExpanded(expanded => !expanded)}
@@ -385,7 +385,7 @@ export const DataBackupManager: React.FC<DataBackupManagerProps> = ({ notify }) 
                   return (
                     <div
                       key={backup.name}
-                      className="flex items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white p-2.5 text-xs transition hover:border-indigo-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-indigo-700"
+                      className="appearance-group flex items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white p-2.5 text-xs transition hover:border-indigo-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-indigo-700"
                     >
                       <div className="flex min-w-0 items-center gap-3">
                         <div className="flex h-8 w-8 flex-none items-center justify-center rounded-lg bg-indigo-50 text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-300">
@@ -424,7 +424,7 @@ export const DataBackupManager: React.FC<DataBackupManagerProps> = ({ notify }) 
                             <button
                               type="button"
                               onClick={() => void handleOpenFolder(backup.path)}
-                              className="mobile-touch flex items-center gap-1 rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-1 text-meta font-medium text-gray-600 transition hover:border-indigo-300 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:border-indigo-600 dark:hover:text-indigo-300"
+                              className="appearance-group mobile-touch flex items-center gap-1 rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-1 text-meta font-medium text-gray-600 transition hover:border-indigo-300 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:border-indigo-600 dark:hover:text-indigo-300"
                               title={t("在文件资源管理器中打开此备份")}
                             >
                               <ExternalLink className="h-3 w-3" />

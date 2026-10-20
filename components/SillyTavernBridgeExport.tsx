@@ -246,7 +246,7 @@ export const SillyTavernBridgeExport: React.FC<SillyTavernBridgeExportProps> = (
       {preferences.error && <div className="flex items-center gap-2 text-xs text-red-600 dark:text-red-400"><span>{t(preferences.error)}</span><button type="button" onClick={() => { void refreshStChatu8Preferences(); }} disabled={preferences.busy} className="shrink-0 underline">{t("重新读取")}</button></div>}
 
       {preferences.enabled && <>
-        <div className="rounded-xl border border-gray-200 bg-gray-50/70 p-3 text-xs dark:border-gray-700/60 dark:bg-gray-800/50">
+        <div className="appearance-group rounded-xl border border-gray-200 bg-gray-50/70 p-3 text-xs dark:border-gray-700/60 dark:bg-gray-800/50">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             {/* 酒馆根目录 */}
             <div>
@@ -297,7 +297,7 @@ export const SillyTavernBridgeExport: React.FC<SillyTavernBridgeExportProps> = (
             <Info className="mt-0.5 h-3.5 w-3.5 flex-none text-indigo-500" />
             <div className="min-w-0 flex-1">
               <span>{t("安装目标路径（自动补全）：")}</span>
-              <code className="mt-0.5 block truncate rounded bg-gray-200/70 px-1.5 py-0.5 font-mono text-meta text-gray-800 dark:bg-gray-700 dark:text-gray-200" title={currentTargetPath}>
+              <code className="appearance-group mt-0.5 block truncate rounded bg-gray-200/70 px-1.5 py-0.5 font-mono text-meta text-gray-800 dark:bg-gray-700 dark:text-gray-200" title={currentTargetPath}>
                 {currentTargetPath}
               </code>
             </div>
@@ -325,7 +325,7 @@ export const SillyTavernBridgeExport: React.FC<SillyTavernBridgeExportProps> = (
             <button
               type="button"
               onClick={() => void handleOpenFolder()}
-              className="mobile-touch flex items-center gap-1.5 rounded-xl border border-gray-300 bg-white px-3.5 py-2 text-xs font-bold text-gray-700 transition hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+              className="appearance-group mobile-touch flex items-center gap-1.5 rounded-xl border border-gray-300 bg-white px-3.5 py-2 text-xs font-bold text-gray-700 transition hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
               title={t("在系统文件管理器中打开安装目录")}
             >
               <ExternalLink className="h-3.5 w-3.5" />
@@ -337,7 +337,7 @@ export const SillyTavernBridgeExport: React.FC<SillyTavernBridgeExportProps> = (
               type="button"
               onClick={() => void handleExportToDirectory()}
               disabled={exporting}
-              className="mobile-touch flex items-center gap-1.5 rounded-xl border border-gray-300 bg-white px-3.5 py-2 text-xs font-bold text-gray-700 transition hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700 disabled:opacity-50"
+              className="appearance-group mobile-touch flex items-center gap-1.5 rounded-xl border border-gray-300 bg-white px-3.5 py-2 text-xs font-bold text-gray-700 transition hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700 disabled:opacity-50"
               title={t("手动选择本地目录导出（选中酒馆根目录亦可自动补全）")}
             >
               <FolderOutput className="h-3.5 w-3.5" />
@@ -349,7 +349,7 @@ export const SillyTavernBridgeExport: React.FC<SillyTavernBridgeExportProps> = (
             type="button"
             onClick={() => void handleDownloadZip()}
             disabled={exporting}
-            className="mobile-touch flex items-center gap-1.5 rounded-xl border border-gray-300 bg-white px-3.5 py-2 text-xs font-bold text-gray-700 transition hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700 disabled:opacity-50"
+            className="appearance-group mobile-touch flex items-center gap-1.5 rounded-xl border border-gray-300 bg-white px-3.5 py-2 text-xs font-bold text-gray-700 transition hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700 disabled:opacity-50"
             title={t("将完整的扩展文件打包下载为 ZIP 压缩包")}
           >
             <Download className="h-3.5 w-3.5" />

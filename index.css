@@ -1,5 +1,6 @@
 
 @import "tailwindcss";
+@import "./components/themeDetails.css";
 @import "./components/operationDialog.css";
 @import "./components/inputCapabilities.css";
 
@@ -29,10 +30,16 @@
 }
 
 .media-card {
-  box-shadow: 0 1px 2px rgb(15 23 42 / 0.04);
   content-visibility: auto;
   contain-intrinsic-size: auto 320px;
 }
+
+/* 卡片不画装饰边和悬停阴影，仅保留选中及键盘焦点的功能性外圈。 */
+html:root :is(.media-card, .gallery-image-card, .appearance-card, .atelier-theme-card, .appearance-control-panel) {
+  border-width: 0 !important;
+  box-shadow: var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000) !important;
+}
+html:root :is(.media-card, .gallery-image-card) :is(.mobile-gallery-frame, .gallery-card-caption) { border-width: 0 !important; }
 
 @media (prefers-reduced-motion: reduce) {
   .ui-backdrop-enter,
@@ -119,7 +126,6 @@
 @media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
   html[data-gallery-hover-float='true'][data-motion='full'] .gallery-image-card:not([data-press-input='touch']):not([data-press-input='pen']):hover {
     translate: 0 -3px;
-    box-shadow: var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), 0 10px 24px rgb(15 23 42 / .18);
   }
   html[data-gallery-hover-float='true'][data-motion='full'] .gallery-image-card:not([data-press-input='touch']):not([data-press-input='pen']):hover .mobile-gallery-frame img {
     scale: 1.035;
@@ -519,6 +525,19 @@ html[data-design-theme='nai-atelier'] :focus-visible {
 html[data-design-theme='nai-atelier'] .app-workspace {
   background-color: var(--nai-canvas) !important;
 }
+html[data-design-theme='nai-atelier'][data-custom-palette='true'] .workspace-canvas {
+  background-color: var(--nai-canvas) !important;
+}
+/* 背景只铺一次，导航、工具栏与工作区共同透出同一张图，不在各容器重复裁切。 */
+html[data-theme-background='true'] body {
+  background-image: var(--nai-background-image);
+  background-size: var(--nai-background-size);
+  background-repeat: var(--nai-background-repeat);
+  background-position: center;
+}
+html:root[data-theme-background='true'] :is(.workspace-canvas, .app-workspace) {
+  background-color: transparent !important;
+}
 
 html[data-design-theme='nai-atelier'] .app-sidebar {
   background-color: var(--nai-sidebar-surface) !important;
@@ -540,21 +559,6 @@ html[data-design-theme='nai-atelier'] .app-mobile-nav {
 html[data-design-theme='nai-atelier'].dark .workspace-command-bar,
 html[data-design-theme='nai-atelier'].dark .app-mobile-nav {
   box-shadow: 0 1px 0 rgb(255 255 255 / 0.06);
-}
-
-html[data-design-theme='nai-atelier'] .media-card {
-  border-color: var(--nai-panel-border);
-  box-shadow: 0 1px 3px rgb(30 39 73 / 0.06), 0 8px 24px rgb(30 39 73 / 0.025);
-}
-
-html[data-design-theme='nai-atelier'].dark .media-card {
-  border-color: var(--nai-panel-border);
-  box-shadow: 0 2px 6px rgb(0 0 0 / 0.35), 0 8px 24px rgb(0 0 0 / 0.2);
-}
-
-html[data-design-theme='nai-atelier'].dark .media-card:hover {
-  border-color: rgb(255 255 255 / 0.16);
-  box-shadow: 0 4px 12px rgb(0 0 0 / 0.45), 0 12px 32px rgb(0 0 0 / 0.25);
 }
 
 html[data-design-theme='nai-atelier'] .settings-dialog,
@@ -683,6 +687,12 @@ body,
 .ui-backdrop-enter { animation: ui-fade-in 140ms ease-out; }
 .ui-modal-enter { animation: ui-modal-in 180ms cubic-bezier(.2,.8,.2,1); }
 .ui-sheet-enter { animation: ui-sheet-in 180ms cubic-bezier(.2,.8,.2,1); }
+
+/* 原点由锚点定位提供；transform 缩放与工具类的独立 translate 分开。 */
+@media (prefers-reduced-motion: no-preference) {
+  html[data-motion='full'] .appearance-popover { animation: ui-popover-in var(--nai-motion-duration, 160ms) var(--nai-motion-curve, cubic-bezier(.2,.8,.2,1)); }
+}
+@keyframes ui-popover-in { from { opacity: 0; transform: scale(.96); } }
 
 @keyframes ui-fade-in { from { opacity: 0; } }
 @keyframes ui-modal-in { from { opacity: 0; transform: translateY(8px) scale(.992); } }

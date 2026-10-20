@@ -54,7 +54,7 @@ const TemplateEditor: React.FC<{ pack: ArtistSamplePack; value: ArtistSampleTemp
   };
   const patchParams = (patch: Partial<NAIParams>) => update({ ...value, params: { ...value.params, ...patch } });
   const fieldClass = 'mobile-touch min-w-0 w-full rounded-lg border border-gray-300 bg-white px-2.5 py-2 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100';
-  return <div className="mt-3 space-y-3 rounded-xl border border-gray-200 bg-gray-50/70 p-3 dark:border-gray-700 dark:bg-gray-800/40">
+  return <div className="appearance-group mt-3 space-y-3 rounded-xl border border-gray-200 bg-gray-50/70 p-3 dark:border-gray-700 dark:bg-gray-800/40">
     <p className="text-xs leading-5 text-gray-500 dark:text-gray-400">{t('自建配置，用于补充缺失样张。{artist} 会替换为画师 Tag。')}</p>
     <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300">{t('载入风格串')}<select className={`${fieldClass} mt-1`} value="" onChange={event => { const preset = presets.find(item => item.id === event.target.value); if (preset) update(preset.template); }}><option value="">{t('选择已有风格串')}</option>{presets.map(preset => <option key={preset.id} value={preset.id}>{preset.name}</option>)}</select></label>
     <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300">{t('正向提示词')}<textarea className={`${fieldClass} mt-1 min-h-20 resize-y`} value={value.prompt} onChange={event => update({ ...value, prompt: event.target.value })} /></label>

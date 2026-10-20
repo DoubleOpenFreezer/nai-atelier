@@ -1,4 +1,5 @@
 import { t, useLanguage, getLanguage, setLanguage, LANGUAGES, type Language } from '../services/i18n';
+import { BUILTIN_APPEARANCE_PRESETS } from '../services/builtinAppearancePresets';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useModalA11y, isTopmostModal } from './useModalA11y';
 import { TagDictionaryUpdater } from './TagDictionaryUpdater';
@@ -52,11 +53,17 @@ import {
   appearanceValues,
   readAppearancePresetImport,
   serializeAppearancePresets,
+  saveAppearancePreferences,
   SurfaceStyle,
   ThemeMode,
 } from '../services/appearancePreferences';
 import { AppearancePaletteEditor } from './AppearancePaletteEditor';
+import { AppearanceBackgroundEditor } from './AppearanceBackgroundEditor';
 import { AppearancePresetPreview } from './AppearancePresetPreview';
+import { AppearanceDetailEditor } from './AppearanceDetailEditor';
+import { normalizeThemeDetails, resolveThemeDetails } from '../services/themeDetails';
+import { sharedAppearancePresets } from '../services/sharedAppearancePresets';
+import { useSharedAppearancePresets } from './useSharedAppearancePresets';
 import { ArrowDown, ArrowLeft, ArrowUp, Bot, Check, ChevronRight, Copy, Database, Edit2, ExternalLink, Eye, EyeOff, FileDown, FileUp, FolderInput, FolderOutput, GripVertical, KeyRound, Lock, Monitor, Moon, Palette, Plus, RotateCcw, Server, Shield, ShieldCheck, SlidersHorizontal, Smartphone, Sparkles, Sun, Trash2, X } from 'lucide-react';
 
 type SettingsSection = 'appearance' | 'generation' | 'novelai' | 'agent' | 'privacy' | 'maintenance';
@@ -131,11 +138,12 @@ const AppearanceOptionGroup: React.FC<{
   options: AppearanceOption[];
   onChange: (value: string) => void;
 }> = ({ value, options, onChange }) => (
-  <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` }}>
+  <div className="appearance-segmented grid gap-2" style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` }}>
     {options.map(option => (
       <button
         key={option.value}
-        type="button"
+        type="button" data-appearance="control"
+        aria-pressed={value === option.value}
         onClick={() => onChange(option.value)}
         className={`mobile-touch min-w-0 rounded-xl border px-2 py-2 text-center transition md:min-h-10 ${value === option.value ? 'border-indigo-500 bg-indigo-50 text-indigo-700 ring-1 ring-indigo-500/15 dark:bg-indigo-500/10 dark:text-indigo-300' : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-gray-600'}`}
       >
@@ -223,6 +231,8 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
   const [editingPresetId, setEditingPresetId] = useState<string | null>(null);
   const [editingPresetName, setEditingPresetName] = useState('');
   const importFileRef = React.useRef<HTMLInputElement | null>(null);
+  const themeLibrary = useSharedAppearancePresets(open, appearancePreferences, setAppearancePreferences);
+  const themeLibraryBusy = !themeLibrary.ready || themeLibrary.busy;
   // P2-2：Esc 与浏览器手势返回共用 requestClose。移动端关闭走 history.back()（异步），
   // 在 popstate 触发组件卸载前的窗口内再按 Esc 会二次 history.back() 越过标记直接退出页面；
   // 用 closingRef 挡住“关闭动作已在途”的重复触发，重新打开时复位。
@@ -471,7 +481,18 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
   };
 
   const updateAppearance = (patch: Partial<AppearancePreferences>) => {
-    setAppearancePreferences(current => ({ ...current, ...patch }));
+    setAppearancePreferences(current => {
+      if ((!patch.corners && !patch.accentColor) || 'details' in patch || !current.details) return { ...current, ...patch };
+      const details = { ...current.details };
+      if (patch.corners) { delete details.controlRadius; delete details.panelRadius; delete details.cardRadius; }
+      for (const mode of ['light', 'dark'] as const) {
+        const variant = { ...details[mode] };
+        if (patch.corners) { delete variant.controlRadius; delete variant.panelRadius; delete variant.cardRadius; }
+        if (patch.accentColor) delete variant.accentColor;
+        details[mode] = variant;
+      }
+      return { ...current, ...patch, details: normalizeThemeDetails(details) };
+    });
   };
 
   const getLabPageLayout = (pageId: LabPageId): LabPageLayout => appearancePreferences.labPageLayouts[pageId] || DEFAULT_LAB_PAGE_LAYOUTS[pageId];
@@ -531,7 +552,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
   };
 
   const customPresets = appearancePreferences.customPresets || [];
-  const allPresets: AppearancePreset[] = [BUILTIN_APPEARANCE_PRESET, ...customPresets];
+  const allPresets: AppearancePreset[] = [...BUILTIN_APPEARANCE_PRESETS, ...customPresets];
   const activePresetId = appearancePreferences.activePresetId || 'builtin-default';
   const activePreset = allPresets.find(preset => preset.id === activePresetId);
   const appearanceModified = !activePreset || !appearanceMatchesPreset(appearancePreferences, activePreset);
@@ -554,7 +575,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
     notify?.('已应用外观预设「' + preset.name + '」', 'success');
   };
 
-  const handleSaveCurrentPreset = () => {
+  const handleSaveCurrentPreset = async () => {
     const trimmed = newPresetName.trim();
     const finalName = trimmed || `自定义外观 ${customPresets.length + 1}`;
     const newPreset: AppearancePreset = {
@@ -563,10 +584,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
       createdAt: Date.now(),
       ...appearanceValues(appearancePreferences),
     };
-    updateAppearance({
-      customPresets: [...customPresets, newPreset],
-      activePresetId: newPreset.id,
-    });
+    if (!await themeLibrary.change(() => sharedAppearancePresets.add([newPreset]), current => current.activePresetId === appearancePreferences.activePresetId && appearanceMatchesPreset(current, newPreset) ? { activePresetId: newPreset.id } : {})) return;
     setIsCreatingPreset(false);
     setNewPresetName('');
     notify?.('已保存新外观预设「' + newPreset.name + '」', 'success');
@@ -577,28 +595,23 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
     const confirmed = await confirmAction({
       rememberKey: 'appearance-preset.delete',
       title: '删除外观预设',
-      message: `确定要删除外观预设「${preset.isBuiltin ? t(preset.name) : preset.name}」吗？此操作无法撤销。`,
+      message: t('确定要从工坊主题库删除「{0}」吗？所有浏览器都将移除此主题。', [preset.name]),
       confirmLabel: '删除预设',
       tone: 'danger',
     });
     if (confirmed) {
-      setAppearancePreferences(current => ({
-        ...current,
-        customPresets: current.customPresets.filter(p => p.id !== preset.id),
-        ...(current.activePresetId === preset.id ? { ...appearanceValues(BUILTIN_APPEARANCE_PRESET), activePresetId: 'builtin-default' } : {}),
-      }));
+      if (!await themeLibrary.change(() => sharedAppearancePresets.remove(preset.id), current => current.activePresetId === preset.id ? { ...appearanceValues(BUILTIN_APPEARANCE_PRESET), activePresetId: 'builtin-default' } : {})) return;
       notify?.('已删除外观预设「' + preset.name + '」', 'success');
     }
   };
 
-  const handleRenamePreset = (presetId: string) => {
+  const handleRenamePreset = async (presetId: string) => {
     const trimmed = editingPresetName.trim();
     if (!trimmed) {
       setEditingPresetId(null);
       return;
     }
-    const nextPresets = customPresets.map(p => p.id === presetId ? { ...p, name: trimmed.slice(0, 30) } : p);
-    updateAppearance({ customPresets: nextPresets });
+    if (!await themeLibrary.change(() => sharedAppearancePresets.rename(presetId, trimmed.slice(0, 30)))) return;
     setEditingPresetId(null);
     notify?.('已重命名为「' + trimmed + '」', 'success');
   };
@@ -621,21 +634,19 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
 
   const importPresetFile = (file: File) => {
     const reader = new FileReader();
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
       const text = String(e.target?.result || '');
       try {
         const parsed = readAppearancePresetImport(text);
-        setAppearancePreferences(current => {
-          const names = new Set([t(BUILTIN_APPEARANCE_PRESET.name), ...current.customPresets.map(p => p.name)]);
-          const imported = parsed.map(item => {
-            let name = item.name;
-            let suffix = 1;
-            while (names.has(name)) name = `${item.name.slice(0, 22)} (${suffix++})`;
-            names.add(name);
-            return { ...item, id: `preset-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, name, createdAt: Date.now() };
-          });
-          return { ...current, customPresets: [...current.customPresets, ...imported] };
+        const names = new Set(allPresets.map(preset => preset.isBuiltin ? t(preset.name) : preset.name));
+        const imported = parsed.map(item => {
+          let name = item.name;
+          let suffix = 1;
+          while (names.has(name)) name = `${item.name.slice(0, 22)} (${suffix++})`;
+          names.add(name);
+          return { ...item, id: `preset-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, name, createdAt: Date.now() };
         });
+        if (!await themeLibrary.change(() => sharedAppearancePresets.add(imported))) return;
         notify?.(t('成功导入 {0} 个外观预设', [parsed.length]), 'success');
       } catch (error) {
         notify?.(t(error instanceof Error ? error.message : '预设导入失败'), 'error');
@@ -653,6 +664,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
   if (!open) return null;
 
   const activeSectionMeta = activeSection === 'home' ? null : settingsSections.find(section => section.id === activeSection);
+  const effectiveAccent = resolveThemeDetails(appearancePreferences.details, isDark)?.accentColor || appearancePreferences.accentColor;
 
   return (
     <div className="ui-backdrop-enter fixed inset-0 z-[1250] flex items-center justify-center bg-black/55 p-0 md:p-4" onMouseDown={requestClose}>
@@ -683,19 +695,19 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
             {settingsSections.map(item => {
               const SectionIcon = item.icon;
               const active = activeSection === item.id;
-              return <button key={item.id} type="button" onClick={() => setActiveSection(item.id)} className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-left transition ${active ? 'bg-white text-indigo-600 shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:text-indigo-300 dark:ring-gray-700' : 'text-gray-600 hover:bg-white/70 dark:text-gray-300 dark:hover:bg-gray-800/60'}`}>
+              return <button key={item.id} type="button" aria-current={active ? 'page' : undefined} onClick={() => setActiveSection(item.id)} className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-left transition ${active ? 'appearance-group bg-white text-indigo-600 shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:text-indigo-300 dark:ring-gray-700' : 'text-gray-600 hover:bg-white/70 dark:text-gray-300 dark:hover:bg-gray-800/60'}`}>
                 <SectionIcon className="h-4.5 w-4.5 flex-none" />
                 <span className="min-w-0"><b className="block text-sm">{t(item.label)}</b></span>
               </button>;
             })}
           </nav>
-        <div className="min-w-0 flex-1 overflow-y-auto p-3 pb-[max(1rem,env(safe-area-inset-bottom))] md:p-6">
+        <div className="settings-content min-w-0 flex-1 overflow-y-auto p-3 pb-[max(1rem,env(safe-area-inset-bottom))] md:p-6">
           {activeSection === 'home' && <section className="mx-auto max-w-3xl md:hidden">
             <div className="mb-5"><h3 className="text-base font-bold text-gray-900 dark:text-white">{t("选择设置分类")}</h3></div>
             <div className="grid gap-3 sm:grid-cols-2">
               {settingsSections.map(item => {
                 const SectionIcon = item.icon;
-                return <button key={item.id} type="button" onClick={() => setActiveSection(item.id)} className="flex min-h-24 items-center gap-4 rounded-2xl border border-gray-200 bg-white p-4 text-left shadow-sm transition hover:border-indigo-300 hover:bg-indigo-50/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-indigo-700 dark:hover:bg-indigo-950/20">
+                return <button key={item.id} type="button" onClick={() => setActiveSection(item.id)} className="appearance-group flex min-h-24 items-center gap-4 rounded-2xl border border-gray-200 bg-white p-4 text-left shadow-sm transition hover:border-indigo-300 hover:bg-indigo-50/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-indigo-700 dark:hover:bg-indigo-950/20">
                   <span className="flex h-10 w-10 flex-none items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 dark:bg-indigo-500/15 dark:text-indigo-300"><SectionIcon className="h-5 w-5" /></span>
                   <span className="min-w-0 flex-1"><b className="block text-sm text-gray-900 dark:text-white">{t(item.label)}</b></span>
                   <ChevronRight className="h-4 w-4 flex-none text-gray-400" />
@@ -714,8 +726,8 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
               </div>
               <div>
                 <div className="mb-2 text-xs font-bold text-gray-700 dark:text-gray-200">{t("明暗模式")}</div>
-                <div className="grid grid-cols-3 gap-2">
-                  {([{ value: 'system', label: '跟随系统', icon: Monitor }, { value: 'light', label: '浅色', icon: Sun }, { value: 'dark', label: '深色', icon: Moon }] as const).map(option => { const ModeIcon = option.icon; return <button key={option.value} type="button" onClick={() => setThemeMode(option.value)} className={`mobile-touch flex min-w-0 items-center justify-center gap-1.5 rounded-xl border px-2 text-xs font-bold transition md:h-10 ${themeMode === option.value ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-300' : 'border-gray-200 bg-white text-gray-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300'}`}><ModeIcon className="h-3.5 w-3.5 flex-none" /><span className="truncate">{t(option.label)}</span></button>; })}
+                <div className="appearance-segmented grid grid-cols-3 gap-2">
+                  {([{ value: 'system', label: '跟随系统', icon: Monitor }, { value: 'light', label: '浅色', icon: Sun }, { value: 'dark', label: '深色', icon: Moon }] as const).map(option => { const ModeIcon = option.icon; return <button key={option.value} type="button" data-appearance="control" aria-pressed={themeMode === option.value} onClick={() => setThemeMode(option.value)} className={`mobile-touch flex min-w-0 items-center justify-center gap-1.5 rounded-xl border px-2 text-xs font-bold transition md:h-10 ${themeMode === option.value ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-300' : 'border-gray-200 bg-white text-gray-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300'}`}><ModeIcon className="h-3.5 w-3.5 flex-none" /><span className="truncate">{t(option.label)}</span></button>; })}
                 </div>
               </div>
 
@@ -728,13 +740,13 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                     {IMAGE_DISPLAY_PAGES.map(page => <option key={page.id} value={page.id}>{t(page.label)}</option>)}
                   </select>
                 </div>
-                {imageDisplayScope !== 'global' && <button type="button" role="switch" aria-checked={imageDisplayFollowsGlobal} aria-label={t("跟随全局")} onClick={toggleImageDisplayInheritance} className="mb-3 flex w-full items-center justify-between gap-3 rounded-lg border border-gray-200 bg-white px-3 py-2 text-left text-xs transition hover:border-indigo-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-indigo-700">
+                {imageDisplayScope !== 'global' && <button type="button" role="switch" aria-checked={imageDisplayFollowsGlobal} aria-label={t("跟随全局")} onClick={toggleImageDisplayInheritance} className="appearance-group mb-3 flex w-full items-center justify-between gap-3 rounded-lg border border-gray-200 bg-white px-3 py-2 text-left text-xs transition hover:border-indigo-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-indigo-700">
                   <span><span className="block font-semibold text-gray-700 dark:text-gray-200">{t("跟随全局")}</span>{imageDisplayFollowsGlobal && <span className="mt-0.5 block text-gray-500 dark:text-gray-400">{t("当前值继承自全局设置；关闭后可单独调整此页面")}</span>}</span>
                   <span aria-hidden="true" className={`relative h-5 w-9 flex-none rounded-full transition ${imageDisplayFollowsGlobal ? 'bg-indigo-500' : 'bg-gray-300 dark:bg-gray-600'}`}><span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition ${imageDisplayFollowsGlobal ? 'left-[18px]' : 'left-0.5'}`} /></span>
                 </button>}
                 <fieldset aria-labelledby="image-display-heading" disabled={imageDisplayScope !== 'global' && imageDisplayFollowsGlobal} className="min-w-0 disabled:opacity-60">
-                  <div className="grid grid-cols-3 gap-2">
-                    {([['masonry', '瀑布流'], ['portrait', '竖向卡片'], ['square', '方形']] as const).map(([layout, label]) => <button key={layout} type="button" onClick={() => updateImageDisplay({ ...imageDisplay, layout: layout as MobileImageLayout })} className={`mobile-touch md:h-10 rounded-xl border px-2 text-xs font-bold disabled:cursor-not-allowed ${imageDisplay.layout === layout ? 'border-indigo-500 bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-300' : 'border-gray-300 text-gray-600 dark:border-gray-600 dark:text-gray-300'}`}>{t(label)}</button>)}
+                  <div className="appearance-segmented grid grid-cols-3 gap-2">
+                    {([['masonry', '瀑布流'], ['portrait', '竖向卡片'], ['square', '方形']] as const).map(([layout, label]) => <button key={layout} type="button" data-appearance="control" aria-pressed={imageDisplay.layout === layout} onClick={() => updateImageDisplay({ ...imageDisplay, layout: layout as MobileImageLayout })} className={`mobile-touch md:h-10 rounded-xl border px-2 text-xs font-bold disabled:cursor-not-allowed ${imageDisplay.layout === layout ? 'border-indigo-500 bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-300' : 'border-gray-300 text-gray-600 dark:border-gray-600 dark:text-gray-300'}`}>{t(label)}</button>)}
                   </div>
                   <div className="mt-4 grid gap-x-6 gap-y-3 md:grid-cols-2">
                     <div>
@@ -756,7 +768,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
               </div>
 
               {/* 设计主题与预设管理 */}
-              <div className="border-t border-gray-200 pt-3 dark:border-gray-700" onDragOver={event => { if (event.dataTransfer.types.includes('Files')) event.preventDefault(); }} onDrop={event => { event.preventDefault(); const file = event.dataTransfer.files[0]; if (file) importPresetFile(file); }}>
+              <div className="border-t border-gray-200 pt-3 dark:border-gray-700" onDragOver={event => { if (event.dataTransfer.types.includes('Files')) event.preventDefault(); }} onDrop={event => { event.preventDefault(); const file = event.dataTransfer.files[0]; if (file && !themeLibraryBusy) importPresetFile(file); }}>
                 <input
                   type="file"
                   ref={importFileRef} aria-label={t("导入外观预设 JSON")}
@@ -775,7 +787,8 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                     <button
                       type="button"
                       onClick={() => importFileRef.current?.click()}
-                      className="mobile-touch inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-2 py-1 text-meta font-bold text-gray-700 shadow-sm transition hover:bg-gray-50 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800 dark:hover:text-indigo-300"
+                      disabled={themeLibraryBusy}
+                      className="appearance-group mobile-touch inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-2 py-1 text-meta font-bold text-gray-700 shadow-sm transition hover:bg-gray-50 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800 dark:hover:text-indigo-300"
                       title={t("从 JSON 文件导入主题预设")}
                     >
                       <FolderInput className="h-3 w-3" />{t("导入")}</button>
@@ -783,7 +796,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                       <button
                         type="button"
                         onClick={handleExportAllPresets}
-                        className="mobile-touch inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-2 py-1 text-meta font-bold text-gray-700 shadow-sm transition hover:bg-gray-50 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800 dark:hover:text-indigo-300"
+                        className="appearance-group mobile-touch inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-2 py-1 text-meta font-bold text-gray-700 shadow-sm transition hover:bg-gray-50 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800 dark:hover:text-indigo-300"
                         title={t("导出全部自定义主题为 JSON 文件")}
                       >
                         <FolderOutput className="h-3 w-3" />{t("导出全部")}</button>
@@ -797,9 +810,11 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                   </div>
                 </div>
 
+                {!themeLibrary.ready && !themeLibrary.error && <p role="status" className="mb-2 text-meta text-gray-500 dark:text-gray-400">{t('正在同步工坊主题库…')}</p>}
+                {themeLibrary.error && <div role="alert" className="mb-2 flex items-center gap-2 text-meta text-red-600 dark:text-red-300"><span>{t('主题库同步失败，修改尚未保存，请重试')}</span><button type="button" onClick={() => themeLibrary.refresh()} className="mobile-touch rounded px-2 underline">{t('重试')}</button></div>}
                 {appearanceModified && <div className="mb-3 flex flex-wrap items-center gap-2 text-meta">
                   <span role="status" className="text-amber-700 dark:text-amber-300">{t('当前外观已修改')}</span>
-                  {activePreset && !activePreset.isBuiltin && <button type="button" onClick={() => updateAppearance({ customPresets: customPresets.map(preset => preset.id === activePreset.id ? { ...preset, ...appearanceValues(appearancePreferences) } : preset) })} className="mobile-touch rounded-lg px-2 py-1 font-bold text-indigo-600 dark:text-indigo-300">{t('保存修改')}</button>}
+                  {activePreset && !activePreset.isBuiltin && <button type="button" disabled={themeLibraryBusy} onClick={() => themeLibrary.change(() => sharedAppearancePresets.update({ ...activePreset, ...appearanceValues(appearancePreferences) }))} className="mobile-touch rounded-lg px-2 py-1 font-bold text-indigo-600 dark:text-indigo-300">{t('保存修改')}</button>}
                   <button type="button" onClick={() => handleExportSinglePreset({ id: 'current-appearance', name: t('当前外观'), createdAt: Date.now(), ...appearanceValues(appearancePreferences) })} className="mobile-touch rounded-lg px-2 py-1 font-bold text-indigo-600 dark:text-indigo-300">{t('导出当前外观')}</button>
                 </div>}
                 {isCreatingPreset && (
@@ -823,6 +838,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                       <button
                         type="button"
                         onClick={handleSaveCurrentPreset}
+                        disabled={themeLibraryBusy}
                         className="h-8 rounded-lg bg-indigo-600 px-3 text-xs font-bold text-white shadow-sm hover:bg-indigo-500"
                       >
                         {t("保存")}</button>
@@ -832,7 +848,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                           setIsCreatingPreset(false);
                           setNewPresetName('');
                         }}
-                        className="h-8 rounded-lg border border-gray-300 bg-white px-2.5 text-xs font-bold text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300"
+                        className="appearance-group h-8 rounded-lg border border-gray-300 bg-white px-2.5 text-xs font-bold text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300"
                       >
                         {t("取消")}</button>
                     </div>
@@ -843,7 +859,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                   {allPresets.map(preset => {
                     const isSelected = activePresetId === preset.id && !appearanceModified;
                     const isEditing = editingPresetId === preset.id;
-                    const presetAccent = preset.accentColor;
+                    const presetAccent = resolveThemeDetails(preset.details, preset.themeMode === 'system' ? isDark : preset.themeMode === 'dark')?.accentColor || preset.accentColor;
                     return (
                       <div
                         key={preset.id}
@@ -853,7 +869,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                         className={`atelier-theme-card group relative flex flex-col justify-between overflow-hidden rounded-2xl border p-3 text-left transition cursor-pointer ${
                           isSelected
                             ? 'border-indigo-500 bg-indigo-50/40 ring-2 ring-indigo-500/15 dark:border-indigo-500/80 dark:bg-indigo-950/20'
-                            : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50/50 dark:border-gray-800 dark:bg-gray-900/70 dark:hover:border-gray-700'
+                            : 'appearance-group border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50/50 dark:border-gray-800 dark:bg-gray-900/70 dark:hover:border-gray-700'
                         }`}
                       >
                         {isSelected && !isEditing && (
@@ -884,6 +900,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                                 <button
                                   type="button"
                                   onClick={() => handleRenamePreset(preset.id)}
+                                  disabled={themeLibraryBusy}
                                   className="rounded bg-indigo-600 px-2 py-1 text-micro font-bold text-white hover:bg-indigo-500"
                                 >
                                   {t("确定")}</button>
@@ -899,12 +916,12 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                                 <div className="flex items-center gap-1.5">
                                   <b className="truncate text-sm text-gray-900 dark:text-white">{preset.isBuiltin ? t(preset.name) : preset.name}</b>
                                   {preset.isBuiltin && (
-                                    <span className="flex items-center gap-0.5 rounded bg-gray-100 px-1 py-0.2 text-mini font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400" title={t("出厂默认主题（锁定保护不可删除）")}>
-                                      <Lock className="h-2.5 w-2.5" />{t("默认锁定")}</span>
+                                    <span className="flex items-center gap-0.5 rounded bg-gray-100 px-1 py-0.2 text-mini font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400" title={t("内置主题（锁定保护不可删除）")}>
+                                      <Lock className="h-2.5 w-2.5" />{t("内置锁定")}</span>
                                   )}
                                 </div>
                                 <span className="mt-1 block text-xs leading-5 text-gray-500 dark:text-gray-400">
-                                  {preset.isBuiltin ? t("默认出厂外观配置（石墨炭黑 / 晴空蓝）。") : t("{0} · {1}密度 · {2}圆角", [preset.themeMode === 'dark' ? t('深色') : preset.themeMode === 'light' ? t('浅色') : t('跟随系统'), preset.density === 'compact' ? t('紧凑') : preset.density === 'comfortable' ? t('舒展') : t('标准'), preset.corners === 'sharp' ? t('锐利') : preset.corners === 'soft' ? t('柔和') : t('标准')])}
+                                  {preset.id === BUILTIN_APPEARANCE_PRESET.id ? t("默认出厂外观配置（石墨炭黑 / 晴空蓝）。") : t("{0} · {1}密度 · {2}圆角", [preset.themeMode === 'dark' ? t('深色') : preset.themeMode === 'light' ? t('浅色') : t('跟随系统'), preset.density === 'compact' ? t('紧凑') : preset.density === 'comfortable' ? t('舒展') : t('标准'), preset.corners === 'sharp' ? t('锐利') : preset.corners === 'soft' ? t('柔和') : t('标准')])}
                                 </span>
                                 <span className="mt-1 block text-micro font-semibold text-indigo-600 dark:text-indigo-300">
                                   {isSelected ? t("当前使用（{0}）", [isDark ? t('深色版本') : t('浅色版本')]) : t("强调色：{0}", [presetAccent])}
@@ -938,6 +955,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                                     setEditingPresetId(preset.id);
                                     setEditingPresetName(preset.name);
                                   }}
+                                  disabled={themeLibraryBusy}
                                   aria-label={t("重命名「{0}」", [preset.name])}
                                   title={t("重命名")}
                                   className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-indigo-600 dark:hover:bg-gray-800 dark:hover:text-indigo-300"
@@ -947,6 +965,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                                 <button
                                   type="button"
                                   onClick={() => handleDeletePreset(preset)}
+                                  disabled={themeLibraryBusy}
                                   aria-label={t("删除「{0}」", [preset.name])}
                                   title={t("删除")}
                                   className="rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/30 dark:hover:text-red-400"
@@ -967,10 +986,10 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                 <div className="mb-3 flex items-center gap-2"><SlidersHorizontal className="h-4 w-4 text-indigo-500" /><div><h4 className="text-xs font-bold text-gray-800 dark:text-gray-100">{t("个性化")}</h4></div></div>
 
                 <div>
-                  <div className="mb-2 flex items-center justify-between"><span className="text-meta font-bold text-gray-600 dark:text-gray-300">{t("强调色")}</span><span className="font-mono text-micro uppercase text-gray-400">{appearancePreferences.accentColor}</span></div>
+                  <div className="mb-2 flex items-center justify-between"><span className="text-meta font-bold text-gray-600 dark:text-gray-300">{t("强调色")}</span><span className="font-mono text-micro uppercase text-gray-400">{effectiveAccent}</span></div>
                   <div className="flex flex-wrap items-center gap-2">
-                    {ACCENT_PRESETS.map(preset => <button key={preset.color} type="button" onClick={() => updateAppearance({ accentColor: preset.color })} aria-label={t("强调色：{0}", [t(preset.label)])} title={t(preset.label)} className={`mobile-size-locked relative h-8 w-8 rounded-full border-2 transition hover:scale-105 ${appearancePreferences.accentColor === preset.color ? 'border-gray-900 ring-2 ring-gray-900/15 dark:border-white dark:ring-white/20' : 'border-white shadow-sm dark:border-gray-700'}`} style={{ backgroundColor: preset.color }}>{appearancePreferences.accentColor === preset.color && <Check className="absolute inset-0 m-auto h-3.5 w-3.5 text-white drop-shadow" />}</button>)}
-                    <label className="relative flex h-8 min-w-24 cursor-pointer items-center justify-center gap-1.5 rounded-full border border-gray-300 bg-white px-2 text-micro font-bold text-gray-600 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-300"><Palette className="h-3.5 w-3.5" />{t("自定义")}<input type="color" value={appearancePreferences.accentColor} onChange={event => updateAppearance({ accentColor: event.target.value })} className="absolute inset-0 h-full w-full cursor-pointer opacity-0" aria-label={t("自定义强调色")} /></label>
+                    {ACCENT_PRESETS.map(preset => <button key={preset.color} type="button" onClick={() => updateAppearance({ accentColor: preset.color })} aria-label={t("强调色：{0}", [t(preset.label)])} title={t(preset.label)} className={`mobile-size-locked relative h-8 w-8 rounded-full border-2 transition hover:scale-105 ${effectiveAccent === preset.color ? 'border-gray-900 ring-2 ring-gray-900/15 dark:border-white dark:ring-white/20' : 'border-white shadow-sm dark:border-gray-700'}`} style={{ backgroundColor: preset.color }}>{effectiveAccent === preset.color && <Check className="absolute inset-0 m-auto h-3.5 w-3.5 text-white drop-shadow" />}</button>)}
+                    <label className="appearance-group relative flex h-8 min-w-24 cursor-pointer items-center justify-center gap-1.5 rounded-full border border-gray-300 bg-white px-2 text-micro font-bold text-gray-600 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-300"><Palette className="h-3.5 w-3.5" />{t("自定义")}<input type="color" value={effectiveAccent} onChange={event => updateAppearance({ accentColor: event.target.value })} className="absolute inset-0 h-full w-full cursor-pointer opacity-0" aria-label={t("自定义强调色")} /></label>
                   </div>
                 </div>
 
@@ -982,7 +1001,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                   <div className="lg:col-span-2">
                     <div className="mb-2 text-meta font-bold text-gray-600 dark:text-gray-300">{t("动效")}</div>
                     <AppearanceOptionGroup value={appearancePreferences.motion} onChange={value => updateAppearance({ motion: value as MotionStyle })} options={[{ value: 'full', label: t("完整") }, { value: 'reduced', label: t("减少") }, { value: 'off', label: t("关闭动效") }]} />
-                    <button type="button" role="switch" aria-checked={appearancePreferences.gallerySelectionFocus} aria-label={t("选中作品聚焦模式")} onClick={() => updateAppearance({ gallerySelectionFocus: !appearancePreferences.gallerySelectionFocus })} className="mt-3 flex w-full items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-left transition hover:border-indigo-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-indigo-700">
+                    <button type="button" role="switch" aria-checked={appearancePreferences.gallerySelectionFocus} aria-label={t("选中作品聚焦模式")} onClick={() => updateAppearance({ gallerySelectionFocus: !appearancePreferences.gallerySelectionFocus })} className="appearance-group mt-3 flex w-full items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-left transition hover:border-indigo-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-indigo-700">
                       <span><span className="block text-sm font-bold">{t("选中作品聚焦模式")}</span><span className="mt-1 block text-xs text-gray-500 dark:text-gray-400">{t("选中作品时淡化其他作品并垂直居中；居中滚动遵循上方动效设置。")}</span></span>
                       <span aria-hidden="true" className={`relative h-6 w-11 flex-none rounded-full transition-colors ${appearancePreferences.gallerySelectionFocus ? 'bg-indigo-500' : 'bg-gray-300 dark:bg-gray-700'}`}><span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${appearancePreferences.gallerySelectionFocus ? 'translate-x-5' : 'translate-x-0'}`} /></span>
                     </button>
@@ -990,20 +1009,25 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                   {([
                     ['galleryFrostedCaption', '全图磨砂卡片', '图片铺满卡片，名称叠在底部渐变磨砂上；关闭后恢复图下信息栏。'],
                     ['galleryHoverFloat', '卡片悬停浮动', '鼠标经过时轻轻抬起并放大图片；遵循减少或关闭动效设置。'],
-                  ] as const).map(([key, label, description]) => <button key={key} type="button" role="switch" aria-checked={appearancePreferences[key]} aria-label={t(label)} onClick={() => updateAppearance({ [key]: !appearancePreferences[key] })} className="flex w-full items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-left transition hover:border-indigo-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-indigo-700">
+                  ] as const).map(([key, label, description]) => <button key={key} type="button" role="switch" aria-checked={appearancePreferences[key]} aria-label={t(label)} onClick={() => updateAppearance({ [key]: !appearancePreferences[key] })} className="appearance-group flex w-full items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-left transition hover:border-indigo-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-indigo-700">
                     <span><span className="block text-sm font-bold">{t(label)}</span><span className="mt-1 block text-xs text-gray-500 dark:text-gray-400">{t(description)}</span></span>
                     <span aria-hidden="true" className={`relative h-6 w-11 flex-none rounded-full transition-colors ${appearancePreferences[key] ? 'bg-indigo-500' : 'bg-gray-300 dark:bg-gray-700'}`}><span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${appearancePreferences[key] ? 'translate-x-5' : 'translate-x-0'}`} /></span>
                   </button>)}
                 </div>
 
+                <AppearanceBackgroundEditor key={activePresetId} background={appearancePreferences.background} onChange={background => {
+                  if (!saveAppearancePreferences({ ...appearancePreferences, background })) return false;
+                  updateAppearance({ background }); return true;
+                }} />
                 <AppearancePaletteEditor palette={appearancePreferences.palette} onChange={palette => updateAppearance({ palette })} />
-                <button type="button" onClick={resetThemeCustomization} className="mobile-touch mt-4 flex w-full items-center justify-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 text-xs font-bold text-gray-600 transition hover:border-indigo-300 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-indigo-600 dark:hover:text-indigo-300"><RotateCcw className="h-3.5 w-3.5" />{t("恢复 NAI Atelier 默认外观")}</button>
+                <AppearanceDetailEditor details={appearancePreferences.details} onChange={details => updateAppearance({ details, ...(details?.material && details.material !== appearancePreferences.details?.material ? { surfaces: 'translucent' } : {}) })} />
+                <button type="button" onClick={resetThemeCustomization} className="appearance-group mobile-touch mt-4 flex w-full items-center justify-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 text-xs font-bold text-gray-600 transition hover:border-indigo-300 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-indigo-600 dark:hover:text-indigo-300"><RotateCcw className="h-3.5 w-3.5" />{t("恢复 NAI Atelier 默认外观")}</button>
               </div>
             </div>}
           </section>
           <section id={`settings-generation`} className={`rounded-xl border border-gray-200 p-4 dark:border-gray-700 ${activeSection !== 'generation' ? 'hidden' : ''}`}>
             {activeSection === 'generation' && <div className="space-y-3">
-              <div className="rounded-xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900">
+              <div className="appearance-group rounded-xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900">
                 <button type="button" role="switch" aria-checked={appearancePreferences.rememberGenerationSettings} aria-label={t("记住上次生图设置")} onClick={() => updateAppearance({ rememberGenerationSettings: !appearancePreferences.rememberGenerationSettings })} className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left transition hover:text-indigo-700 dark:hover:text-indigo-300">
                   <span className="min-w-0">
                     <b className="block text-xs text-gray-800 dark:text-gray-100">{t("记住上次生图设置")}</b>
@@ -1018,7 +1042,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                     ['negativePrompt', '全局负面提示词'],
                     ['characterPrompt', '角色正向提示词'],
                     ['characterNegativePrompt', '角色负面提示词'],
-                  ] as const).map(([field, label]) => <label key={field} className={`inline-flex w-fit cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 py-2 transition-colors ${appearancePreferences.generationMemory[field] ? 'border-indigo-300 bg-indigo-50 text-indigo-700 dark:border-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-200' : 'border-gray-200 bg-gray-50/70 text-gray-600 hover:border-gray-300 dark:border-gray-700 dark:bg-gray-800/50 dark:text-gray-300 dark:hover:border-gray-600'}`}>
+                  ] as const).map(([field, label]) => <label key={field} className={`inline-flex w-fit cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 py-2 transition-colors ${appearancePreferences.generationMemory[field] ? 'border-indigo-300 bg-indigo-50 text-indigo-700 dark:border-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-200' : 'appearance-group border-gray-200 bg-gray-50/70 text-gray-600 hover:border-gray-300 dark:border-gray-700 dark:bg-gray-800/50 dark:text-gray-300 dark:hover:border-gray-600'}`}>
                     <input type="checkbox" checked={appearancePreferences.generationMemory[field]} onChange={event => updateAppearance({ generationMemory: { ...appearancePreferences.generationMemory, [field]: event.currentTarget.checked } })} className="h-3.5 w-3.5 flex-none rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-800" />
                     <span className="whitespace-nowrap">{t(label)}</span>
                   </label>)}
@@ -1026,11 +1050,11 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                   <p className="mt-2 text-micro leading-4 text-gray-500 dark:text-gray-400">{t("重启后仅恢复勾选的内容。不影响当前输入或已保存的预设。")}</p>
                 </div>}
               </div>
-              <button type="button" onClick={() => updateAppearance({ generationStreamPreview: !appearancePreferences.generationStreamPreview })} aria-pressed={appearancePreferences.generationStreamPreview} className="flex w-full items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-left transition hover:border-indigo-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-indigo-700">
+              <button type="button" onClick={() => updateAppearance({ generationStreamPreview: !appearancePreferences.generationStreamPreview })} aria-pressed={appearancePreferences.generationStreamPreview} className="appearance-group flex w-full items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-left transition hover:border-indigo-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-indigo-700">
                 <span className="min-w-0"><b className="block text-xs text-gray-800 dark:text-gray-100">{t("生成过程预览")}</b></span>
                 <span className={`relative h-6 w-11 flex-none rounded-full transition-colors ${appearancePreferences.generationStreamPreview ? 'bg-indigo-500' : 'bg-gray-300 dark:bg-gray-700'}`}><span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${appearancePreferences.generationStreamPreview ? 'translate-x-5' : 'translate-x-0'}`} /></span>
               </button>
-              <button type="button" onClick={() => updateAppearance({ continuousGenerationEnabled: !appearancePreferences.continuousGenerationEnabled })} aria-pressed={appearancePreferences.continuousGenerationEnabled} className="flex w-full items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-left transition hover:border-indigo-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-indigo-700">
+              <button type="button" onClick={() => updateAppearance({ continuousGenerationEnabled: !appearancePreferences.continuousGenerationEnabled })} aria-pressed={appearancePreferences.continuousGenerationEnabled} className="appearance-group flex w-full items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-left transition hover:border-indigo-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-indigo-700">
                 <span className="min-w-0">
                   <b className="block text-xs text-gray-800 dark:text-gray-100">{t("连续生成与排队")}</b>
                   <span className="mt-0.5 block text-micro leading-4 text-gray-500 dark:text-gray-400">
@@ -1041,7 +1065,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                 </span>
               </button>
 
-              <button type="button" onClick={() => updateAppearance({ forceEmptySeed: !appearancePreferences.forceEmptySeed })} aria-pressed={appearancePreferences.forceEmptySeed} className="flex w-full items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-left transition hover:border-indigo-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-indigo-700">
+              <button type="button" onClick={() => updateAppearance({ forceEmptySeed: !appearancePreferences.forceEmptySeed })} aria-pressed={appearancePreferences.forceEmptySeed} className="appearance-group flex w-full items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-left transition hover:border-indigo-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-indigo-700">
                 <span className="min-w-0">
                   <b className="block text-xs text-gray-800 dark:text-gray-100">{t("强制清空随机种子（始终随机）")}</b>
                   <span className="mt-0.5 block text-micro leading-4 text-gray-500 dark:text-gray-400">
@@ -1052,7 +1076,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                 </span>
               </button>
 
-              <button type="button" onClick={() => updateAppearance({ enforceFreeStepLimit: !appearancePreferences.enforceFreeStepLimit })} aria-pressed={appearancePreferences.enforceFreeStepLimit} className="flex w-full items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-left transition hover:border-indigo-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-indigo-700">
+              <button type="button" onClick={() => updateAppearance({ enforceFreeStepLimit: !appearancePreferences.enforceFreeStepLimit })} aria-pressed={appearancePreferences.enforceFreeStepLimit} className="appearance-group flex w-full items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-left transition hover:border-indigo-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-indigo-700">
                 <span className="min-w-0">
                   <b className="block text-xs text-gray-800 dark:text-gray-100">{t("生成步数锁定在免费额度内")}</b>
                   <span className="mt-0.5 block text-micro leading-4 text-gray-500 dark:text-gray-400">
@@ -1063,7 +1087,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                 </span>
               </button>
 
-              <div className={`rounded-2xl border transition-all ${isLabMobile ? 'border-gray-200 bg-gray-100/70 p-3 dark:border-gray-800 dark:bg-gray-900/40' : 'border-gray-200 bg-gray-50/65 p-3 dark:border-gray-700 dark:bg-gray-950/35'}`}>
+              <div className={`appearance-group rounded-2xl border transition-all ${isLabMobile ? 'border-gray-200 bg-gray-100/70 p-3 dark:border-gray-800 dark:bg-gray-900/40' : 'border-gray-200 bg-gray-50/65 p-3 dark:border-gray-700 dark:bg-gray-950/35'}`}>
                 <div className="mb-3 flex items-start justify-between gap-3">
                   <div>
                     <div className="flex items-center gap-2">
@@ -1079,7 +1103,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                     type="button"
                     disabled={isLabMobile}
                     onClick={resetAllLabPageLayouts}
-                    className="mobile-touch flex flex-none items-center gap-1 rounded-lg border border-gray-200 bg-white px-2 text-micro font-bold text-gray-500 transition hover:border-indigo-300 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-indigo-600"
+                    className="appearance-group mobile-touch flex flex-none items-center gap-1 rounded-lg border border-gray-200 bg-white px-2 text-micro font-bold text-gray-500 transition hover:border-indigo-300 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-indigo-600"
                   >
                     <RotateCcw className="h-3 w-3" />{t("全部推荐")}</button>
                 </div>
@@ -1095,7 +1119,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                       // React 的 currentTarget 只在事件回调执行期间有效；状态更新器可能延迟执行。
                       const expanded = event.currentTarget.open;
                       setExpandedLabPages(current => current[pageId] === expanded ? current : { ...current, [pageId]: expanded });
-                    }} className="group rounded-xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900">
+                    }} className="appearance-group group rounded-xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900">
                       <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2.5 [&::-webkit-details-marker]:hidden">
                         <span className="min-w-0"><span className="flex items-center gap-2 text-xs font-bold text-gray-700 dark:text-gray-200"><span>{t(pageMeta.label)}</span>{isCustom && <span className="rounded-full bg-indigo-50 px-1.5 py-0.5 text-mini font-bold text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-300">{t("已自定义")}</span>}</span><span className="mt-0.5 block truncate text-micro text-gray-400">{t("{0} 个模块", [visibleOrder.length])}</span></span>
                         <ChevronRight className="h-4 w-4 flex-none text-gray-400 transition-transform group-open:rotate-90" />
@@ -1124,11 +1148,11 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                                 event.preventDefault();
                                 dropLabModule(pageId, moduleId);
                               }}
-                              className={`flex items-center gap-2 rounded-xl border bg-gray-50/60 p-2 transition dark:bg-gray-800/50 ${dragging ? 'border-indigo-400 opacity-55 dark:border-indigo-500' : 'border-gray-200 dark:border-gray-700'}`}
+                              className={`appearance-group flex items-center gap-2 rounded-xl border bg-gray-50/60 p-2 transition dark:bg-gray-800/50 ${dragging ? 'border-indigo-400 opacity-55 dark:border-indigo-500' : 'border-gray-200 dark:border-gray-700'}`}
                             >
                               <GripVertical className="h-4 w-4 flex-none cursor-grab text-gray-300 active:cursor-grabbing dark:text-gray-600" aria-hidden="true" />
                               <div className="min-w-0 flex-1"><div className="truncate text-xs font-bold text-gray-700 dark:text-gray-200">{index + 1}. {t(meta.label)}</div></div>
-                              <div className="flex flex-none items-center gap-1"><button type="button" onClick={() => moveLabModule(pageId, moduleId, -1)} disabled={index === 0} aria-label={t("上移{0}", [t(meta.label)])} title={t("上移")} className="mobile-touch flex items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-25 dark:hover:bg-gray-800 dark:hover:text-indigo-300"><ArrowUp className="h-3.5 w-3.5" /></button><button type="button" onClick={() => moveLabModule(pageId, moduleId, 1)} disabled={index === visibleOrder.length - 1} aria-label={t("下移{0}", [meta.label])} title={t("下移")} className="mobile-touch flex items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-25 dark:hover:bg-gray-800 dark:hover:text-indigo-300"><ArrowDown className="h-3.5 w-3.5" /></button><button type="button" onClick={() => toggleLabModuleCollapsed(pageId, moduleId)} aria-pressed={collapsed} className={`ml-1 rounded-full border px-2 py-1 text-micro font-bold transition ${collapsed ? 'border-indigo-300 bg-indigo-50 text-indigo-600 dark:border-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300' : 'border-gray-200 bg-gray-50 text-gray-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400'}`}>{collapsed ? t("默认收起") : t("默认展开")}</button></div>
+                              <div className="flex flex-none items-center gap-1"><button type="button" onClick={() => moveLabModule(pageId, moduleId, -1)} disabled={index === 0} aria-label={t("上移{0}", [t(meta.label)])} title={t("上移")} className="mobile-touch flex items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-25 dark:hover:bg-gray-800 dark:hover:text-indigo-300"><ArrowUp className="h-3.5 w-3.5" /></button><button type="button" onClick={() => moveLabModule(pageId, moduleId, 1)} disabled={index === visibleOrder.length - 1} aria-label={t("下移{0}", [meta.label])} title={t("下移")} className="mobile-touch flex items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-25 dark:hover:bg-gray-800 dark:hover:text-indigo-300"><ArrowDown className="h-3.5 w-3.5" /></button><button type="button" onClick={() => toggleLabModuleCollapsed(pageId, moduleId)} aria-pressed={collapsed} className={`ml-1 rounded-full border px-2 py-1 text-micro font-bold transition ${collapsed ? 'border-indigo-300 bg-indigo-50 text-indigo-600 dark:border-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300' : 'appearance-group border-gray-200 bg-gray-50 text-gray-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400'}`}>{collapsed ? t("默认收起") : t("默认展开")}</button></div>
                             </div>;
                           })}
                         </div>
@@ -1165,7 +1189,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                   && isNovelaiSubscriptionActive(activeKeySubscription!.info) === true
                   && !isActiveOpusSubscription(activeKeySubscription!.info);
                 return (
-                  <div key={entry.id} className={`flex items-center gap-2 rounded-xl border px-3 py-2 ${active ? 'border-indigo-300 bg-indigo-50/70 dark:border-indigo-500/40 dark:bg-indigo-950/30' : 'border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-800/60'}`}>
+                  <div key={entry.id} data-active={active} className={`appearance-group flex items-center gap-2 rounded-xl border px-3 py-2 ${active ? 'border-indigo-300 bg-indigo-50/70 dark:border-indigo-500/40 dark:bg-indigo-950/30' : 'border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-800/60'}`}>
                     {renamingKeyId === entry.id ? (
                       <input
                         autoFocus
@@ -1258,7 +1282,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                 <span className="text-xs leading-5 text-gray-500 dark:text-gray-400">{getCloudQueueGenerationUrl(cloudQueue.serviceUrl) ? t("按 Key 保存，由中转服务排队。") : t("按 Key 保存，同 Key 依次生图。")}</span>
                 <p className="text-xs leading-5 text-amber-600 dark:text-amber-400">{getCloudQueueGenerationUrl(cloudQueue.serviceUrl) ? t("启用中转会发送 Key、提示词及本次参考图；停止等待不保证服务端取消。") : t("不上传 Key、提示词或图片。")}</p>
               </div>
-              <div className="mt-2 flex flex-wrap gap-3 rounded-xl bg-gray-50 p-3 dark:bg-gray-800/70">
+              <div className="appearance-group mt-2 flex flex-wrap gap-3 rounded-xl bg-gray-50 p-3 dark:bg-gray-800/70">
                 <label className="min-w-0 flex-[3_1_20rem]">
                   <span className="mb-1 block text-xs font-bold text-gray-500 dark:text-gray-400">{t("公共队列服务地址")}</span>
                   <input type="url" value={cloudQueue.serviceUrl} onChange={event => { const serviceUrl = event.currentTarget.value; setCloudQueue(value => ({ ...value, serviceUrl })); }} onBlur={event => updateCloudQueueServiceUrl(event.currentTarget.value)} placeholder={t("排队服务或完整的 /ai/generate-image 地址")} className="mobile-touch w-full rounded-xl border border-gray-300 bg-white px-3 text-sm outline-none focus:border-indigo-500 dark:border-gray-600 dark:bg-gray-900" />
@@ -1283,7 +1307,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                 <button type="button" onClick={async () => { const next = await anlasBudgetService.set(Number(anlasInput)); setAnlasInput(String(next.remaining)); notify('Anlas 预算已更新'); }} className="mobile-touch rounded-xl bg-indigo-600 px-4 text-sm font-bold text-white">{t("保存")}</button>
               </div>
               <div className="mt-2 flex items-start justify-between gap-3 text-meta leading-5 text-gray-500 dark:text-gray-400"><button type="button" onClick={async () => { const next = await anlasBudgetService.set(DEFAULT_ANLAS_BUDGET); setAnlasInput(String(next.remaining)); }} className="flex-shrink-0 font-bold text-indigo-600 dark:text-indigo-300">{t("恢复 1666")}</button></div>
-              <div className="mt-3 rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-800/70">
+              <div className="appearance-group mt-3 rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-800/70">
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-xs font-bold text-gray-500 dark:text-gray-400" title={t("仅统计本机操作，按 Key 累计")}>{t("个人使用统计（当前密钥）")}</span>
                   {anlasBudget.personal && (anlasBudget.personal.anlasSpent > 0 || anlasBudget.personal.opusImages > 0) && (
@@ -1310,11 +1334,11 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                   return (
                     <>
                       <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
-                        <div className="rounded-lg bg-white px-3 py-2 dark:bg-gray-900">
+                        <div className="appearance-group rounded-lg bg-white px-3 py-2 dark:bg-gray-900">
                           <div className="text-meta text-gray-500 dark:text-gray-400">{t("个人估算消耗 Anlas")}</div>
                           <div className="mt-0.5 text-lg font-black tabular-nums text-indigo-600 dark:text-indigo-300">{personal.anlasSpent}</div>
                         </div>
-                        <div className="rounded-lg bg-white px-3 py-2 dark:bg-gray-900">
+                        <div className="appearance-group rounded-lg bg-white px-3 py-2 dark:bg-gray-900">
                           <div className="text-meta text-gray-500 dark:text-gray-400" title={t("受限模型的免费生成；不含不限额免费图")}>{t("个人 Opus 免费图")}</div>
                           <div className="mt-0.5 text-lg font-black tabular-nums text-emerald-600 dark:text-emerald-300">{t("{0} 张", [personal.opusImages])}</div>
                           <div className="text-micro text-gray-400">{t("≈ {0}% 额度", [(personal.opusImages / naiRuntimeCoefficient).toFixed(2)])}</div>
@@ -1337,20 +1361,20 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
           <section id="settings-privacy" className={`${activeSection !== 'privacy' ? 'hidden' : 'space-y-4'}`}>
             {activeSection === 'privacy' && <div className="rounded-xl border border-gray-200 p-4 dark:border-gray-700">
               <h3 className="mb-4 text-base font-bold text-gray-900 dark:text-white">{t("安全模式")}</h3>
-              <button type="button" onClick={toggleSafeMode} aria-pressed={safeMode} className={`mobile-touch md:h-10 flex w-full items-center justify-between rounded-xl px-3 text-sm font-bold ${safeMode ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200'}`}><span className="flex items-center gap-2"><Shield className="h-4 w-4" />{t("安全模式（防社死）")}</span><span>{safeMode ? t("已开启") : t("已关闭")}</span></button>
+              <button type="button" onClick={toggleSafeMode} aria-pressed={safeMode} className={`mobile-touch md:h-10 flex w-full items-center justify-between rounded-xl px-3 text-sm font-bold ${safeMode ? 'bg-emerald-600 text-white' : 'appearance-group bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200'}`}><span className="flex items-center gap-2"><Shield className="h-4 w-4" />{t("安全模式（防社死）")}</span><span>{safeMode ? t("已开启") : t("已关闭")}</span></button>
               <p className="mt-2 text-meta leading-5 text-gray-500 dark:text-gray-400">{t("点击图片临时显示")}</p>
-              <button type="button" onClick={() => setSafeModeHideTitles(enabled => !enabled)} aria-pressed={safeModeHideTitles} className="mt-2 flex w-full items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-left transition hover:border-emerald-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-emerald-700">
+              <button type="button" onClick={() => setSafeModeHideTitles(enabled => !enabled)} aria-pressed={safeModeHideTitles} className="appearance-group mt-2 flex w-full items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-left transition hover:border-emerald-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-emerald-700">
                 <span className="min-w-0"><b className="block text-xs text-gray-800 dark:text-gray-100">{t("同时隐藏作品名称")}</b><span className="mt-0.5 block text-micro leading-4 text-gray-500 dark:text-gray-400">{t("点击名称临时显示")}</span></span>
                 <span className={`relative h-6 w-11 flex-none rounded-full transition-colors ${safeModeHideTitles ? 'bg-emerald-500' : 'bg-gray-300 dark:bg-gray-700'}`}><span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${safeModeHideTitles ? 'translate-x-5' : 'translate-x-0'}`} /></span>
               </button>
-              <button type="button" onClick={() => setSafeModeStartup(enabled => !enabled)} aria-pressed={safeModeStartup} className="mt-2 flex w-full items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-left transition hover:border-emerald-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-emerald-700">
+              <button type="button" onClick={() => setSafeModeStartup(enabled => !enabled)} aria-pressed={safeModeStartup} className="appearance-group mt-2 flex w-full items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-left transition hover:border-emerald-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-emerald-700">
                 <span className="min-w-0"><b className="block text-xs text-gray-800 dark:text-gray-100">{t("启动时自动开启安全模式")}</b></span>
                 <span className={`relative h-6 w-11 flex-none rounded-full transition-colors ${safeModeStartup ? 'bg-emerald-500' : 'bg-gray-300 dark:bg-gray-700'}`}><span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${safeModeStartup ? 'translate-x-5' : 'translate-x-0'}`} /></span>
               </button>
             </div>}
             {activeSection === 'privacy' && <div className="rounded-xl border border-gray-200 p-4 dark:border-gray-700">
               <h3 className="mb-4 text-base font-bold text-gray-900 dark:text-white">{t("图片元数据清洗")}</h3>
-              <label className="flex cursor-pointer items-start justify-between gap-4 rounded-xl border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-900">
+              <label className="appearance-group flex cursor-pointer items-start justify-between gap-4 rounded-xl border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-900">
                 <span className="min-w-0"><b className="block text-sm text-gray-900 dark:text-white">{t("分享图片时移除生成信息")}</b><span className="mt-1 block text-xs leading-5 text-gray-500 dark:text-gray-400">{t("复制／下载时移除生成信息；原图与历史保留。")}</span></span>
                 <input type="checkbox" aria-label={t("分享图片时移除生成信息")} checked={cleanSharedImages} onChange={event => {
                   try { setCleanSharedImages(event.target.checked); }
@@ -1435,16 +1459,16 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
               </div>
 
               {/* 手机图片缓存 */}
-              <div className="border-b border-gray-200 pb-5 dark:border-gray-700"><div className="flex items-start justify-between gap-3"><div><h4 className="font-semibold text-gray-900 dark:text-white">{t("手机图片缓存")}</h4><p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">{t("仅缩略图，不影响原图。")}</p></div><Smartphone className="h-4 w-4 flex-none text-indigo-500" /></div><div className="mt-3 grid grid-cols-4 gap-2">{[0, 25, 50, 100].map(value => <button key={value} type="button" onClick={() => { setMobileCacheLimitMb(value); setMobileCacheStats(getMobileCacheStats()); }} className={`rounded-lg border px-2 py-2 text-xs font-medium transition-colors ${getMobileCacheLimitMb() === value ? 'border-indigo-500 bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-300' : 'border-gray-300 text-gray-600 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800'}`}>{value === 0 ? t("关闭") : `${value} MB`}</button>)}</div><div className="mt-3 flex items-center justify-between gap-3 rounded-lg bg-gray-50 px-3 py-2.5 text-xs dark:bg-gray-800/70"><span className="text-gray-500 dark:text-gray-400">{t("已缓存 {0} 张 · {1} MB / {2} MB", [mobileCacheStats.count, (mobileCacheStats.bytes / 1024 / 1024).toFixed(1), mobileCacheStats.limitMb])}</span><button type="button" onClick={async () => { if (!await confirmAction({ rememberKey: 'thumbnail-cache.clear', title: '清空手机小图缓存？', message: '只会清除可重新生成的缩略图，不会影响原图、历史或任何本地数据。', confirmLabel: '清空缓存', tone: 'danger' })) return; await clearMobileThumbnailCache(); setMobileCacheStats(getMobileCacheStats()); notify('手机小图缓存已清空'); }} className="flex-shrink-0 font-medium text-red-500 hover:text-red-600">{t("清空缓存")}</button></div></div>
+              <div className="border-b border-gray-200 pb-5 dark:border-gray-700"><div className="flex items-start justify-between gap-3"><div><h4 className="font-semibold text-gray-900 dark:text-white">{t("手机图片缓存")}</h4><p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">{t("仅缩略图，不影响原图。")}</p></div><Smartphone className="h-4 w-4 flex-none text-indigo-500" /></div><div className="mt-3 grid grid-cols-4 gap-2">{[0, 25, 50, 100].map(value => <button key={value} type="button" onClick={() => { setMobileCacheLimitMb(value); setMobileCacheStats(getMobileCacheStats()); }} className={`rounded-lg border px-2 py-2 text-xs font-medium transition-colors ${getMobileCacheLimitMb() === value ? 'border-indigo-500 bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-300' : 'border-gray-300 text-gray-600 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800'}`}>{value === 0 ? t("关闭") : `${value} MB`}</button>)}</div><div className="appearance-group mt-3 flex items-center justify-between gap-3 rounded-lg bg-gray-50 px-3 py-2.5 text-xs dark:bg-gray-800/70"><span className="text-gray-500 dark:text-gray-400">{t("已缓存 {0} 张 · {1} MB / {2} MB", [mobileCacheStats.count, (mobileCacheStats.bytes / 1024 / 1024).toFixed(1), mobileCacheStats.limitMb])}</span><button type="button" onClick={async () => { if (!await confirmAction({ rememberKey: 'thumbnail-cache.clear', title: '清空手机小图缓存？', message: '只会清除可重新生成的缩略图，不会影响原图、历史或任何本地数据。', confirmLabel: '清空缓存', tone: 'danger' })) return; await clearMobileThumbnailCache(); setMobileCacheStats(getMobileCacheStats()); notify('手机小图缓存已清空'); }} className="flex-shrink-0 font-medium text-red-500 hover:text-red-600">{t("清空缓存")}</button></div></div>
 
               {/* 电脑缩略图缓存 */}
-              <div className="border-b border-gray-200 pb-5 dark:border-gray-700"><div className="flex items-start justify-between gap-3"><div><h4 className="font-semibold text-gray-900 dark:text-white">{t("电脑缩略图缓存")}</h4><p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">{t("自动管理缩略图，不影响原图。")}</p></div><Database className="h-4 w-4 flex-none text-indigo-500" /></div><div className="mt-3 rounded-lg bg-gray-50 px-3 py-2.5 text-xs text-gray-500 dark:bg-gray-800/70 dark:text-gray-400">{maintenanceStatus ? <>{t("已缓存 ")}{maintenanceStatus.thumbnailCache.count} {t(" 张 · ")}{(maintenanceStatus.thumbnailCache.bytes / 1024 / 1024).toFixed(1)} MB / {(maintenanceStatus.thumbnailCache.limitBytes / 1024 / 1024).toFixed(0)} MB<br />{t("固定封面 ")}{maintenanceStatus.thumbnailCache.pinnedCount} {t(" 张 · ")}{(maintenanceStatus.thumbnailCache.pinnedBytes / 1024 / 1024).toFixed(1)} MB / {(maintenanceStatus.thumbnailCache.pinnedLimitBytes / 1024 / 1024).toFixed(0)} MB</> : t("等待读取本地缓存状态…")}</div></div>
+              <div className="border-b border-gray-200 pb-5 dark:border-gray-700"><div className="flex items-start justify-between gap-3"><div><h4 className="font-semibold text-gray-900 dark:text-white">{t("电脑缩略图缓存")}</h4><p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">{t("自动管理缩略图，不影响原图。")}</p></div><Database className="h-4 w-4 flex-none text-indigo-500" /></div><div className="appearance-group mt-3 rounded-lg bg-gray-50 px-3 py-2.5 text-xs text-gray-500 dark:bg-gray-800/70 dark:text-gray-400">{maintenanceStatus ? <>{t("已缓存 ")}{maintenanceStatus.thumbnailCache.count} {t(" 张 · ")}{(maintenanceStatus.thumbnailCache.bytes / 1024 / 1024).toFixed(1)} MB / {(maintenanceStatus.thumbnailCache.limitBytes / 1024 / 1024).toFixed(0)} MB<br />{t("固定封面 ")}{maintenanceStatus.thumbnailCache.pinnedCount} {t(" 张 · ")}{(maintenanceStatus.thumbnailCache.pinnedBytes / 1024 / 1024).toFixed(1)} MB / {(maintenanceStatus.thumbnailCache.pinnedLimitBytes / 1024 / 1024).toFixed(0)} MB</> : t("等待读取本地缓存状态…")}</div></div>
 
               {/* Tag 补全词库 */}
               <div className="border-b border-gray-200 pb-5 dark:border-gray-700"><TagDictionaryUpdater notify={notify} /></div>
 
               {/* 本地服务状态 */}
-              <div className="border-b border-gray-200 pb-5 dark:border-gray-700"><div className="flex items-start justify-between gap-3"><div><h4 className="font-semibold text-gray-900 dark:text-white">{t("本地服务状态")}</h4></div></div>{maintenanceStatusError ? <p className="mt-3 rounded-lg bg-red-50 px-3 py-2.5 text-xs text-red-600 dark:bg-red-950/30 dark:text-red-300">{maintenanceStatusError}</p> : <div className="mt-3 grid gap-2 sm:grid-cols-2"><div className={`rounded-lg px-3 py-2.5 text-xs ${maintenanceStatus?.gatewayReady ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300' : 'bg-gray-50 text-gray-500 dark:bg-gray-800/70 dark:text-gray-400'}`}>{t("媒体网关：{0}", [maintenanceStatus?.gatewayReady ? t("可用") : t("正在检查")])}</div><div className={`rounded-lg px-3 py-2.5 text-xs ${maintenanceStatus?.workerReady ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300' : maintenanceStatus ? 'bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300' : 'bg-gray-50 text-gray-500 dark:bg-gray-800/70 dark:text-gray-400'}`}>{t("核心页面服务：{0}", [maintenanceStatus?.workerReady ? t("可用") : maintenanceStatus ? t("未就绪") : t("正在检查")])}</div></div>}</div>
+              <div className="border-b border-gray-200 pb-5 dark:border-gray-700"><div className="flex items-start justify-between gap-3"><div><h4 className="font-semibold text-gray-900 dark:text-white">{t("本地服务状态")}</h4></div></div>{maintenanceStatusError ? <p className="mt-3 rounded-lg bg-red-50 px-3 py-2.5 text-xs text-red-600 dark:bg-red-950/30 dark:text-red-300">{maintenanceStatusError}</p> : <div className="mt-3 grid gap-2 sm:grid-cols-2"><div className={`rounded-lg px-3 py-2.5 text-xs ${maintenanceStatus?.gatewayReady ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300' : 'appearance-group bg-gray-50 text-gray-500 dark:bg-gray-800/70 dark:text-gray-400'}`}>{t("媒体网关：{0}", [maintenanceStatus?.gatewayReady ? t("可用") : t("正在检查")])}</div><div className={`rounded-lg px-3 py-2.5 text-xs ${maintenanceStatus?.workerReady ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300' : maintenanceStatus ? 'bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300' : 'appearance-group bg-gray-50 text-gray-500 dark:bg-gray-800/70 dark:text-gray-400'}`}>{t("核心页面服务：{0}", [maintenanceStatus?.workerReady ? t("可用") : maintenanceStatus ? t("未就绪") : t("正在检查")])}</div></div>}</div>
 
               <div className="border-b border-gray-200 pb-5 dark:border-gray-700"><AppUpdateManager /></div>
               {/* 关于 NAI Atelier */}

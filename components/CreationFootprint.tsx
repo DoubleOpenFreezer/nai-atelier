@@ -3,7 +3,7 @@ import {
   Activity, ArrowRight, BarChart3, Brush, CalendarDays, Download,
   Flame, Footprints, Heart, Image as ImageIcon, LoaderCircle, Palette, RefreshCw, Sparkles,
 } from 'lucide-react';
-import { EmptyState, ToolbarButton, WorkspaceToolbar } from './DesignSystem';
+import { EmptyState, ToolbarButton, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
 import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
 import { collectionRevision, collectionSnapshot, ensureCollection, subscribeCollection } from '../services/collectionFavorites';
 import { getNaiModelDisplayLabel } from '../services/naiModels';
@@ -83,7 +83,7 @@ const OPERATION_LABELS: Record<string, string> = {
 };
 
 const StatCard: React.FC<{ label: string; value: React.ReactNode; detail?: React.ReactNode; icon?: React.ReactNode; title?: string }> = ({ label, value, detail, icon, title }) => (
-  <div className="rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
+  <div className="appearance-card appearance-group rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
     <div className="flex items-center justify-between gap-2 text-xs font-medium text-gray-500 dark:text-gray-400">
       <span className="truncate">{label}</span>
       {icon && <span className="flex h-7 w-7 flex-none items-center justify-center rounded-lg bg-indigo-50 text-indigo-500 dark:bg-indigo-950/50 dark:text-indigo-300 [&>svg]:h-3.5 [&>svg]:w-3.5">{icon}</span>}
@@ -107,7 +107,7 @@ const RankingRow: React.FC<{ name: string; images: number; lastAt: number; onCli
 );
 
 const SectionCard: React.FC<{ title: string; hint?: string; action?: React.ReactNode; children: React.ReactNode; className?: string }> = ({ title, hint, action, children, className = '' }) => (
-  <section className={`rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900 ${className}`}>
+  <section className={`appearance-card appearance-group rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900 ${className}`}>
     <div className="mb-3 flex items-start justify-between gap-3">
       <div className="min-w-0">
         <h2 className="text-sm font-bold text-gray-800 dark:text-gray-100">{title}</h2>
@@ -120,7 +120,7 @@ const SectionCard: React.FC<{ title: string; hint?: string; action?: React.React
 );
 
 const SmallMetric: React.FC<{ label: string; value: React.ReactNode; detail?: React.ReactNode }> = ({ label, value, detail }) => (
-  <div className="rounded-xl bg-gray-50 p-3 dark:bg-gray-800/60">
+  <div className="appearance-group rounded-xl bg-gray-50 p-3 dark:bg-gray-800/60">
     <span className="block text-micro text-gray-400 dark:text-gray-500">{label}</span>
     <span className="mt-1 block text-lg font-bold tabular-nums text-gray-800 dark:text-gray-100">{value}</span>
     {detail && <span className="mt-0.5 block truncate text-micro text-gray-400">{detail}</span>}
@@ -535,8 +535,9 @@ export const CreationFootprint: React.FC<CreationFootprintProps> = ({ active = t
   const keyUsage = <KeyUsageSection rows={eventStats?.keys || []} period={usagePeriod} includeLifetime={range === 'all' && !selectedYear} periodPicker={!hasData ? periodPicker : undefined} loading={eventsLoading} error={eventsError} onRetry={() => setReload(value => value + 1)} />;
 
   return (
-    <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-gray-50 dark:bg-gray-900">
-      <WorkspaceToolbar>
+    <div className="workspace-canvas flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-gray-50 dark:bg-gray-900">
+      <WorkspaceChrome>
+<WorkspaceToolbar>
         <div className="flex min-w-0 flex-1 items-center gap-2.5">
           <span className="flex h-8 w-8 flex-none items-center justify-center rounded-xl bg-indigo-50 text-indigo-500 dark:bg-indigo-950/50 dark:text-indigo-300"><Footprints className="h-4 w-4" /></span>
           <div className="min-w-0">
@@ -544,8 +545,8 @@ export const CreationFootprint: React.FC<CreationFootprintProps> = ({ active = t
             <p className="hidden truncate text-micro text-gray-400 dark:text-gray-500 sm:block">{t('回看创作节奏、常用资产与收藏')}</p>
           </div>
         </div>
-        <div className="flex max-w-[52vw] flex-none items-center gap-1 overflow-x-auto rounded-xl border border-gray-200 bg-gray-100 p-0.5 dark:border-gray-700 dark:bg-gray-950 md:max-w-none">
-          {GRANULARITIES.map(item => <button key={item.id} type="button" aria-pressed={granularity === item.id} onClick={() => setGranularity(item.id)} className={`mobile-touch whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-bold transition ${granularity === item.id ? 'bg-white text-indigo-600 shadow-sm dark:bg-gray-800 dark:text-indigo-300' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'}`}>{t(item.label)}</button>)}
+        <div className="appearance-group flex max-w-[52vw] flex-none items-center gap-1 overflow-x-auto rounded-xl border border-gray-200 bg-gray-100 p-0.5 dark:border-gray-700 dark:bg-gray-950 md:max-w-none">
+          {GRANULARITIES.map(item => <button key={item.id} type="button" aria-pressed={granularity === item.id} onClick={() => setGranularity(item.id)} className={`appearance-group mobile-touch whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-bold transition ${granularity === item.id ? 'bg-white text-indigo-600 shadow-sm dark:bg-gray-800 dark:text-indigo-300' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'}`}>{t(item.label)}</button>)}
         </div>
         <ToolbarButton aria-label={t('刷新统计')} title={t('刷新统计')} onClick={() => setReload(value => value + 1)} disabled={loading} className="!px-2.5">
           {loading ? <LoaderCircle className="animate-spin" /> : <RefreshCw />}<span className="hidden lg:inline">{t('刷新')}</span>
@@ -558,7 +559,8 @@ export const CreationFootprint: React.FC<CreationFootprintProps> = ({ active = t
         </ToolbarButton>
       </WorkspaceToolbar>
 
-      <div ref={scrollRef} onScroll={onScrollRestore} className="min-h-0 flex-1 overflow-y-scroll overscroll-contain p-4 pb-28 md:p-6 md:pb-10">
+      </WorkspaceChrome>
+      <div ref={scrollRef} onScroll={onScrollRestore} className="workspace-scroll-viewport min-h-0 flex-1 overflow-y-scroll overscroll-contain p-4 pb-28 md:p-6 md:pb-10">
         <div className="mx-auto w-full max-w-6xl space-y-4">
           {loading && !stats && <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{[0, 1, 2, 3].map(item => <div key={item} className="h-24 animate-pulse rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900" />)}</div>}
 
@@ -566,7 +568,7 @@ export const CreationFootprint: React.FC<CreationFootprintProps> = ({ active = t
             <div className="flex flex-wrap items-center gap-3"><span className="min-w-0 flex-1">{error}</span><button type="button" onClick={() => setReload(value => value + 1)} className="mobile-touch rounded-lg border border-current px-3 py-1 text-xs font-semibold">{t('重试')}</button><button type="button" onClick={() => onOpenHistory({ sort: 'newest' })} className="mobile-touch text-xs font-semibold underline">{t('打开历史')}</button></div>
           </div>}
 
-          {!error && !loading && !hasData && <div className="rounded-2xl border border-gray-200 bg-white py-14 dark:border-gray-800 dark:bg-gray-900">
+          {!error && !loading && !hasData && <div className="appearance-group rounded-2xl border border-gray-200 bg-white py-14 dark:border-gray-800 dark:bg-gray-900">
             <EmptyState icon={<Footprints className="h-8 w-8" />} title={t('还没有创作记录')} hint={t('生成并保存作品后，这里会记录你的创作节奏、常用画师与风格串。')} action={<div className="flex flex-wrap items-center justify-center gap-2"><ToolbarButton tone="primary" onClick={onOpenLab}>{t('去实验室创作')}</ToolbarButton><ToolbarButton onClick={() => onOpenHistory({ sort: 'newest' })}>{t('打开历史')}</ToolbarButton></div>} />
           </div>}
           {!hasData && keyUsage}
@@ -636,9 +638,9 @@ export const CreationFootprint: React.FC<CreationFootprintProps> = ({ active = t
 
               <SectionCard title={t('收藏概览')} hint={t('全部收藏，不随上方范围变化')} action={<button type="button" onClick={onOpenCollection} className="text-xs font-semibold text-indigo-600 dark:text-indigo-300">{t('打开收藏库')}</button>}>
                 <div className="grid grid-cols-3 gap-2">
-                  <button type="button" onClick={onOpenCollection} className="mobile-touch rounded-xl bg-gray-50 p-3 text-left dark:bg-gray-800/60"><span className="block text-lg font-bold tabular-nums text-gray-800 dark:text-gray-100">{formatNumber(collectionStats.chains)}</span><span className="mt-0.5 block text-micro text-gray-400">{t('收藏的风格串')}</span></button>
-                  <button type="button" onClick={onOpenCollection} className="mobile-touch rounded-xl bg-gray-50 p-3 text-left dark:bg-gray-800/60"><span className="block text-lg font-bold tabular-nums text-gray-800 dark:text-gray-100">{formatNumber(collectionStats.artists)}</span><span className="mt-0.5 block text-micro text-gray-400">{t('收藏的画师')}</span></button>
-                  <button type="button" onClick={onOpenCollection} className="mobile-touch rounded-xl bg-gray-50 p-3 text-left dark:bg-gray-800/60"><span className="block text-lg font-bold tabular-nums text-gray-800 dark:text-gray-100">{formatNumber(collectionStats.total)}</span><span className="mt-0.5 block text-micro text-gray-400">{t('收藏的图片')}</span></button>
+                  <button type="button" onClick={onOpenCollection} className="appearance-group mobile-touch rounded-xl bg-gray-50 p-3 text-left dark:bg-gray-800/60"><span className="block text-lg font-bold tabular-nums text-gray-800 dark:text-gray-100">{formatNumber(collectionStats.chains)}</span><span className="mt-0.5 block text-micro text-gray-400">{t('收藏的风格串')}</span></button>
+                  <button type="button" onClick={onOpenCollection} className="appearance-group mobile-touch rounded-xl bg-gray-50 p-3 text-left dark:bg-gray-800/60"><span className="block text-lg font-bold tabular-nums text-gray-800 dark:text-gray-100">{formatNumber(collectionStats.artists)}</span><span className="mt-0.5 block text-micro text-gray-400">{t('收藏的画师')}</span></button>
+                  <button type="button" onClick={onOpenCollection} className="appearance-group mobile-touch rounded-xl bg-gray-50 p-3 text-left dark:bg-gray-800/60"><span className="block text-lg font-bold tabular-nums text-gray-800 dark:text-gray-100">{formatNumber(collectionStats.total)}</span><span className="mt-0.5 block text-micro text-gray-400">{t('收藏的图片')}</span></button>
                 </div>
                 <p className="mt-3 text-micro leading-5 text-gray-400">{t('收藏是作品级记录；这里只汇总数量，不改变收藏内容。')}</p>
               </SectionCard>
@@ -652,7 +654,7 @@ export const CreationFootprint: React.FC<CreationFootprintProps> = ({ active = t
                 <div className="rounded-xl border border-gray-100 p-3 dark:border-gray-800"><span className="flex items-center gap-1.5 text-micro text-gray-400"><Palette className="h-3 w-3" />{t('探索画师')}</span><span className="mt-1 block text-sm font-bold text-gray-800 dark:text-gray-100">{formatNumber(stats.uniqueArtists)}</span></div>
               </div>
               <div className="mt-3 flex flex-wrap gap-2">
-                {stats.operations.map(operation => <button key={operation.operation} type="button" onClick={() => openOperation(operation.operation)} className="mobile-touch rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-xs font-semibold text-gray-600 hover:border-indigo-300 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-800/60 dark:text-gray-300">{t(OPERATION_LABELS[operation.operation] || operation.operation)} · {formatNumber(operation.images)}</button>)}
+                {stats.operations.map(operation => <button key={operation.operation} type="button" onClick={() => openOperation(operation.operation)} className="appearance-group mobile-touch rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-xs font-semibold text-gray-600 hover:border-indigo-300 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-800/60 dark:text-gray-300">{t(OPERATION_LABELS[operation.operation] || operation.operation)} · {formatNumber(operation.images)}</button>)}
                 <span className="rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-xs font-semibold text-gray-600 dark:border-gray-700 dark:bg-gray-800/60 dark:text-gray-300">{t('使用风格串')} · {formatNumber(stats.uniqueChains)}</span>
               </div>
             </SectionCard>
@@ -668,7 +670,7 @@ export const CreationFootprint: React.FC<CreationFootprintProps> = ({ active = t
                 </div>
               </SectionCard>
               <SectionCard title={t('常用标签')} hint={t('从 Prompt 与角色内容归纳')}>
-                {stats.tags.length ? <div className="flex flex-wrap gap-1.5">{stats.tags.slice(0, 12).map(tag => <button key={tag.name} type="button" onClick={() => onOpenHistory({ search: tag.name, sort: 'newest' })} className="mobile-touch rounded-full border border-gray-200 bg-gray-50 px-2.5 py-1 text-xs font-semibold text-gray-600 hover:border-indigo-300 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-800/60 dark:text-gray-300">{tag.name} · {formatNumber(tag.images)}</button>)}</div> : <p className="py-8 text-center text-sm text-gray-400">{t('暂无')}</p>}
+                {stats.tags.length ? <div className="flex flex-wrap gap-1.5">{stats.tags.slice(0, 12).map(tag => <button key={tag.name} type="button" onClick={() => onOpenHistory({ search: tag.name, sort: 'newest' })} className="appearance-group mobile-touch rounded-full border border-gray-200 bg-gray-50 px-2.5 py-1 text-xs font-semibold text-gray-600 hover:border-indigo-300 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-800/60 dark:text-gray-300">{tag.name} · {formatNumber(tag.images)}</button>)}</div> : <p className="py-8 text-center text-sm text-gray-400">{t('暂无')}</p>}
                 <div className="mt-3 flex flex-wrap gap-2 text-micro text-gray-400 dark:text-gray-500">
                   <span>{t('探索画师')} {formatNumber(stats.uniqueArtists)}</span>
                   <span>·</span>

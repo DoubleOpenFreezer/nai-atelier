@@ -97,7 +97,7 @@ export const DesktopLauncherManager: React.FC<DesktopLauncherManagerProps> = ({ 
           )}
 
           {/* 状态与路径详情 */}
-          <div className="rounded-lg bg-gray-50 p-3 text-xs text-gray-600 dark:bg-gray-800/70 dark:text-gray-300 space-y-2">
+          <div className="appearance-group rounded-lg bg-gray-50 p-3 text-xs text-gray-600 dark:bg-gray-800/70 dark:text-gray-300 space-y-2">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="min-w-0 flex items-center gap-1.5">
                 <span className="text-gray-400 dark:text-gray-500 flex-none">{t("桌面目录:")}</span>

@@ -40,7 +40,7 @@ import { promptAgentService, type PromptLibraryItem, type PromptLibraryKind } fr
 import { LAB_DEFAULT_PARAMS } from '../services/labWorkspace';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { useConfirmDialog } from './ConfirmDialog';
-import { EmptyState, ToolbarButton, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
+import { EmptyState, ToolbarButton, ToolbarSearch, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
 import { HistoryImagePicker } from './HistoryImagePicker';
 import { ImagePreviewPortal } from './ImagePreviewPortal';
 import { PressRevealSurface } from './PressRevealSurface';
@@ -147,17 +147,19 @@ export interface PromptLibraryProps {
 
 interface PromptLibraryInternalProps extends PromptLibraryProps {
   config: PromptLibraryKindConfig;
+  categoryNavigation?: React.ReactNode;
   registerLeaveGuard?: (guard: () => Promise<boolean>) => () => void;
 }
 
 const DETAIL_FIELD_CLASS = 'mt-1.5 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800 outline-none focus:border-indigo-400 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100';
-const DETAIL_CARD_CLASS = 'rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900';
+const DETAIL_CARD_CLASS = 'appearance-group rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900';
 const DETAIL_LABEL_CLASS = 'text-sm font-semibold text-gray-700 dark:text-gray-200';
 
 /* ---------------- 内部通用组件 ---------------- */
 
 export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
   config,
+  categoryNavigation,
   registerLeaveGuard,
   chains,
   onCreate,
@@ -590,9 +592,9 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
           event.preventDefault();
           setDetail(draftFromChain(chain));
         }}
-        className="gallery-image-card gallery-card-visual group relative flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white transition-[filter,box-shadow,border-color] duration-150 cursor-pointer hover:border-indigo-400 dark:border-gray-800 dark:bg-gray-900 dark:hover:border-indigo-600"
+        className="appearance-group gallery-image-card gallery-card-visual group relative flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white transition-[filter,box-shadow,border-color] duration-150 cursor-pointer hover:border-indigo-400 dark:border-gray-800 dark:bg-gray-900 dark:hover:border-indigo-600"
       >
-        <div className="mobile-gallery-frame relative aspect-[2/3] overflow-hidden bg-gray-200 dark:bg-gray-900">
+        <div className="appearance-media mobile-gallery-frame relative aspect-[2/3] overflow-hidden bg-gray-200 dark:bg-gray-900">
           {chain.previewImage ? (
             <SmartImage src={chain.previewImage} alt={name} className="h-full w-full object-cover" />
           ) : (
@@ -610,7 +612,7 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
               aria-label={t('复制「{0}」的英文提示词', [name])}
               title={t('复制英文提示词')}
               onClick={event => { event.stopPropagation(); void copyText(prompt, t('英文提示词')); }}
-              className="mobile-size-locked inline-flex h-11 w-11 items-center justify-center rounded-full border border-gray-200 bg-white/90 text-gray-600 shadow transition hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-900/90 dark:text-gray-300 md:h-8 md:w-8"
+              className="appearance-group mobile-size-locked inline-flex h-11 w-11 items-center justify-center rounded-full border border-gray-200 bg-white/90 text-gray-600 shadow transition hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-900/90 dark:text-gray-300 md:h-8 md:w-8"
             >
               <Copy className="h-4 w-4" />
             </button>
@@ -692,7 +694,7 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
                     type="button"
                     aria-pressed={selectedTags.has(value)}
                     onClick={() => toggleTag(value)}
-                    className={`mobile-touch max-w-full break-words rounded-full border px-3 py-1.5 text-xs ${selectedTags.has(value) ? 'border-indigo-300 bg-indigo-50 text-indigo-600 dark:border-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300' : 'border-transparent bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300'}`}
+                    className={`mobile-touch max-w-full break-words rounded-full border px-3 py-1.5 text-xs ${selectedTags.has(value) ? 'border-indigo-300 bg-indigo-50 text-indigo-600 dark:border-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300' : 'appearance-group border-transparent bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300'}`}
                   >
                     {t('{0}（{1}）', [value, total])}
                   </button>
@@ -828,7 +830,7 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
               <SmartImage src={detail.cover} alt={t('封面预览')} thumbnailVariant="thumb-640" className="h-full w-full object-cover" containerClassName="relative aspect-[2/3] w-full overflow-hidden bg-gray-100 dark:bg-gray-950" />
             </button>
           ) : (
-            <div className="mt-1.5 flex aspect-[2/3] items-center justify-center rounded-xl bg-gray-100 text-meta text-gray-400 dark:bg-gray-950">{t('暂无封面')}</div>
+            <div className="appearance-media mt-1.5 flex aspect-[2/3] items-center justify-center rounded-xl bg-gray-100 text-meta text-gray-400 dark:bg-gray-950">{t('暂无封面')}</div>
           )}
           <div className="mt-2 flex gap-2">
             <ToolbarButton onClick={() => setPicker('cover')} className="mobile-touch flex-1"><ImagePlus /><span>{t('从历史选图')}</span></ToolbarButton>
@@ -867,7 +869,7 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
               ))}
             </div>
           ) : (
-            <div className="mt-1.5 flex min-h-20 items-center justify-center rounded-xl bg-gray-50 text-meta text-gray-400 dark:bg-gray-950/60">{t('还没有参考图')}</div>
+            <div className="appearance-group mt-1.5 flex min-h-20 items-center justify-center rounded-xl bg-gray-50 text-meta text-gray-400 dark:bg-gray-950/60">{t('还没有参考图')}</div>
           )}
           <ToolbarButton onClick={() => setPicker('reference')} className="mobile-touch mt-2 w-full"><ImagePlus /><span>{t('从历史导入参考图')}</span></ToolbarButton>
           <p className="mt-2 text-micro text-gray-400 dark:text-gray-500">{t('参考图复用本地原件，删除历史后仍保留；点图片可看原图。')}</p>
@@ -1077,9 +1079,9 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
   ) : null;
 
   return (
-    <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-gray-50 dark:bg-gray-900">
-      {detail ? detailToolbar : listToolbar}
-      <div className="relative flex-1 overflow-y-auto p-4 pb-28 md:p-6 md:pb-24">
+    <div className="workspace-canvas relative flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-gray-50 dark:bg-gray-900">
+      <WorkspaceChrome>{categoryNavigation}{detail ? detailToolbar : listToolbar}</WorkspaceChrome>
+      <div className="workspace-scroll-viewport relative flex-1 overflow-y-auto p-4 pb-28 md:p-6 md:pb-24">
         {detail ? detailBody : listBody}
       </div>
       {generator}
@@ -1106,8 +1108,7 @@ export const PromptLibraryHub: React.FC<PromptLibraryProps> = props => {
     setKind(category);
     try { localStorage.setItem('nai-prompt-library-kind', category); } catch { /* 存储受限时仍可切换分类。 */ }
   };
-  return <div className="flex h-full min-h-0 flex-1 flex-col">
-    <div role="tablist" aria-label={t('提示词分类')} className="flex shrink-0 gap-1 overflow-x-auto border-b border-gray-200 bg-white p-2 dark:border-gray-800 dark:bg-gray-900">
+  const categoryNavigation = (<div role="tablist" aria-label={t('提示词分类')} className="appearance-group flex shrink-0 gap-1 overflow-x-auto border-b border-gray-200 bg-white p-2 dark:border-gray-800 dark:bg-gray-900">
       {LIBRARY_CATEGORIES.map(category => {
         const count=props.chains.filter(chain => category==='all' ? LIBRARY_CATEGORIES.includes(chain.type as LibraryCategory) : chain.type===category).length;
         const label=category==='all' ? '全部' : category==='scene' ? '场景' : PROMPT_LIBRARY_KINDS[category].title.replace('库','');
@@ -1115,9 +1116,10 @@ export const PromptLibraryHub: React.FC<PromptLibraryProps> = props => {
           className={`mobile-touch shrink-0 rounded-lg px-3 text-sm ${kind===category ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-200' : 'text-gray-600 dark:text-gray-300'}`}
           onClick={() => { void selectKind(category); }}>{t(label)} {count}</button>;
       })}
-    </div>
+    </div>);
+  return <div className="flex h-full min-h-0 flex-1 flex-col">
     <div className="h-full min-h-0 flex-1">
-      <PromptLibrary key={kind} {...props} config={kind==='all' ? ALL_CONFIG : PROMPT_LIBRARY_KINDS[kind]}
+      <PromptLibrary key={kind} {...props} categoryNavigation={categoryNavigation} config={kind==='all' ? ALL_CONFIG : PROMPT_LIBRARY_KINDS[kind]}
         registerLeaveGuard={guard => { leaveGuards.current[kind] = guard; return () => { delete leaveGuards.current[kind]; }; }} />
     </div>
   </div>;

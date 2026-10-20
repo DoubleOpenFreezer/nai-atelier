@@ -35,7 +35,7 @@ export const CharacterPositionStage: React.FC<CharacterPositionStageProps> = ({ 
     if (dragging.current?.pointerId === event.pointerId) dragging.current = null;
   };
 
-  return <div className="mb-3 space-y-2 rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-900/60">
+  return <div className="appearance-group mb-3 space-y-2 rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-900/60">
     <div className="flex flex-wrap items-center justify-between gap-2 text-micro text-gray-500 dark:text-gray-400">
       <span>{freeform ? t("自由定位") : t("5 × 5 格点")} · {width} × {height}</span>
 
@@ -43,7 +43,7 @@ export const CharacterPositionStage: React.FC<CharacterPositionStageProps> = ({ 
     <div className="flex flex-wrap items-start justify-center gap-3">
       <div
         role="group" aria-label={t("角色定位画布")} title={useCoords ? t("拖动定位 · 方向键微调") : t("拖动切换手动定位")}
-        className="relative isolate touch-none overflow-hidden rounded border border-gray-300 bg-white dark:border-gray-600 dark:bg-gray-800"
+        className="appearance-media relative isolate touch-none overflow-hidden rounded border border-gray-300 bg-white dark:border-gray-600 dark:bg-gray-800"
         style={{ width: Math.min(320, 224 * ratio), maxWidth: '100%', aspectRatio: `${ratio}` }}
         onPointerDown={event => {
           if (!canEdit || !selected || event.button !== 0) return;
@@ -65,7 +65,7 @@ export const CharacterPositionStage: React.FC<CharacterPositionStageProps> = ({ 
           key={character.id} type="button" data-character-id={character.id}
           aria-label={t("定位角色 {0}", [index + 1])} aria-pressed={selected?.character.id === character.id} disabled={!canEdit}
           title={t("角色 {0} · {1}（方向键微调）", [index + 1, character.prompt || '尚未填写'])}
-          className={`absolute flex h-7 w-7 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border text-xs font-bold shadow-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500 disabled:cursor-not-allowed ${selected?.character.id === character.id ? 'z-10 border-indigo-500 bg-indigo-600 text-white' : 'border-gray-300 bg-white text-gray-700 dark:border-gray-500 dark:bg-gray-700 dark:text-gray-100'}`}
+          className={`absolute flex h-7 w-7 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border text-xs font-bold shadow-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500 disabled:cursor-not-allowed ${selected?.character.id === character.id ? 'z-10 border-indigo-500 bg-indigo-600 text-white' : 'appearance-group border-gray-300 bg-white text-gray-700 dark:border-gray-500 dark:bg-gray-700 dark:text-gray-100'}`}
           style={{ left: `clamp(14px, ${normalizeCharacterCoordinate(character.x, freeform) * 100}%, calc(100% - 14px))`, top: `clamp(14px, ${normalizeCharacterCoordinate(character.y, freeform) * 100}%, calc(100% - 14px))` }}
           onClick={() => setSelectedId(character.id)}
           onKeyDown={event => {
@@ -84,7 +84,7 @@ export const CharacterPositionStage: React.FC<CharacterPositionStageProps> = ({ 
         {available.map(({ character, index }) => <button key={character.id} type="button" disabled={!canEdit}
           aria-label={t("选择角色 {0}", [index + 1])} aria-pressed={selected?.character.id === character.id}
           onClick={() => setSelectedId(character.id)} title={character.prompt}
-          className={`max-w-full truncate rounded border px-2 py-1 text-xs disabled:opacity-50 ${selected?.character.id === character.id ? 'border-indigo-300 bg-indigo-50 text-indigo-700 dark:border-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300' : 'border-gray-200 bg-white text-gray-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300'}`}
+          className={`max-w-full truncate rounded border px-2 py-1 text-xs disabled:opacity-50 ${selected?.character.id === character.id ? 'border-indigo-300 bg-indigo-50 text-indigo-700 dark:border-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300' : 'appearance-group border-gray-200 bg-white text-gray-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300'}`}
         >{index + 1} · {character.prompt || t("尚未填写")}</button>)}
         {!available.length && <span className="text-xs text-gray-400">{t("没有已启用的角色")}</span>}
       </div>

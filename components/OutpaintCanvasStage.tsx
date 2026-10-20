@@ -235,7 +235,7 @@ export const OutpaintCanvasStage: React.FC<OutpaintCanvasStageProps> = ({
                 className={`rounded-md border px-2 py-1.5 text-meta font-medium transition disabled:opacity-40 ${
                   isSelected
                     ? 'border-indigo-500 bg-indigo-50 font-bold text-indigo-700 shadow-sm dark:border-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-300'
-                    : 'border-gray-200 bg-gray-50/70 text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-800/70 dark:text-gray-300 dark:hover:bg-gray-800'
+                    : 'appearance-group border-gray-200 bg-gray-50/70 text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-800/70 dark:text-gray-300 dark:hover:bg-gray-800'
                 }`}
               >
                 {preset.ratio} <span className="text-micro opacity-75">{preset.label.split(' ')[1]}</span>
@@ -246,14 +246,14 @@ export const OutpaintCanvasStage: React.FC<OutpaintCanvasStageProps> = ({
       </div>
 
       {/* 模拟画板（“布”）交互区 */}
-      <div className="rounded-xl border border-gray-200 bg-gray-100 p-3 dark:border-gray-800 dark:bg-gray-950/80">
+      <div className="appearance-media rounded-xl border border-gray-200 bg-gray-100 p-3 dark:border-gray-800 dark:bg-gray-950/80">
         <div className="mb-2 flex items-center justify-between text-meta text-gray-500 dark:text-gray-400">
           <span className="font-semibold text-gray-700 dark:text-gray-200" title={t("拖动原图 · 64px 吸附")}>{t("画幅预览")}</span>
         </div>
 
         <div
           ref={containerRef}
-          className="flex h-60 w-full items-center justify-center overflow-hidden rounded-lg bg-gray-200/80 p-2 dark:bg-gray-900/70"
+          className="appearance-media flex h-60 w-full items-center justify-center overflow-hidden rounded-lg bg-gray-200/80 p-2 dark:bg-gray-900/70"
         >
           {/* 目标比例外框（“布”） */}
           <div
@@ -263,7 +263,7 @@ export const OutpaintCanvasStage: React.FC<OutpaintCanvasStageProps> = ({
               width: `${stageDimensions.width}px`,
               height: `${stageDimensions.height}px`,
             }}
-            className="relative cursor-pointer select-none touch-none overflow-hidden rounded-lg border-2 border-dashed border-indigo-500/80 bg-white/95 shadow-md dark:border-indigo-400/70 dark:bg-gray-900"
+            className="appearance-media relative cursor-pointer select-none touch-none overflow-hidden rounded-lg border-2 border-dashed border-indigo-500/80 bg-white/95 shadow-md dark:border-indigo-400/70 dark:bg-gray-900"
           >
             {/* 网格斜纹提示 AI 扩图区域 */}
             <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(var(--nai-accent)_1.2px,transparent_1.2px)] [background-size:12px_12px] opacity-20" />
@@ -329,21 +329,21 @@ export const OutpaintCanvasStage: React.FC<OutpaintCanvasStageProps> = ({
                   type="button"
                   disabled={isBusy}
                   onClick={() => setHorizontalAlign('left')}
-                  className={`rounded border px-1.5 py-1 text-micro font-medium transition ${expansion.left === 0 ? 'border-indigo-500 bg-indigo-50 text-indigo-700 font-bold dark:border-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-300' : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300'}`}
+                  className={`rounded border px-1.5 py-1 text-micro font-medium transition ${expansion.left === 0 ? 'border-indigo-500 bg-indigo-50 text-indigo-700 font-bold dark:border-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-300' : 'appearance-group border-gray-200 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300'}`}
                 >
                   {t("靠左")}</button>
                 <button
                   type="button"
                   disabled={isBusy}
                   onClick={() => setHorizontalAlign('center')}
-                  className={`rounded border px-1.5 py-1 text-micro font-medium transition ${expansion.left > 0 && expansion.right > 0 ? 'border-indigo-500 bg-indigo-50 text-indigo-700 font-bold dark:border-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-300' : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300'}`}
+                  className={`rounded border px-1.5 py-1 text-micro font-medium transition ${expansion.left > 0 && expansion.right > 0 ? 'border-indigo-500 bg-indigo-50 text-indigo-700 font-bold dark:border-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-300' : 'appearance-group border-gray-200 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300'}`}
                 >
                   {t("居中")}</button>
                 <button
                   type="button"
                   disabled={isBusy}
                   onClick={() => setHorizontalAlign('right')}
-                  className={`rounded border px-1.5 py-1 text-micro font-medium transition ${expansion.right === 0 ? 'border-indigo-500 bg-indigo-50 text-indigo-700 font-bold dark:border-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-300' : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300'}`}
+                  className={`rounded border px-1.5 py-1 text-micro font-medium transition ${expansion.right === 0 ? 'border-indigo-500 bg-indigo-50 text-indigo-700 font-bold dark:border-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-300' : 'appearance-group border-gray-200 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300'}`}
                 >
                   {t("靠右")}</button>
               </div>
@@ -361,21 +361,21 @@ export const OutpaintCanvasStage: React.FC<OutpaintCanvasStageProps> = ({
                   type="button"
                   disabled={isBusy}
                   onClick={() => setVerticalAlign('top')}
-                  className={`rounded border px-1.5 py-1 text-micro font-medium transition ${expansion.top === 0 ? 'border-indigo-500 bg-indigo-50 text-indigo-700 font-bold dark:border-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-300' : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300'}`}
+                  className={`rounded border px-1.5 py-1 text-micro font-medium transition ${expansion.top === 0 ? 'border-indigo-500 bg-indigo-50 text-indigo-700 font-bold dark:border-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-300' : 'appearance-group border-gray-200 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300'}`}
                 >
                   {t("靠顶")}</button>
                 <button
                   type="button"
                   disabled={isBusy}
                   onClick={() => setVerticalAlign('center')}
-                  className={`rounded border px-1.5 py-1 text-micro font-medium transition ${expansion.top > 0 && expansion.bottom > 0 ? 'border-indigo-500 bg-indigo-50 text-indigo-700 font-bold dark:border-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-300' : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300'}`}
+                  className={`rounded border px-1.5 py-1 text-micro font-medium transition ${expansion.top > 0 && expansion.bottom > 0 ? 'border-indigo-500 bg-indigo-50 text-indigo-700 font-bold dark:border-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-300' : 'appearance-group border-gray-200 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300'}`}
                 >
                   {t("居中")}</button>
                 <button
                   type="button"
                   disabled={isBusy}
                   onClick={() => setVerticalAlign('bottom')}
-                  className={`rounded border px-1.5 py-1 text-micro font-medium transition ${expansion.bottom === 0 ? 'border-indigo-500 bg-indigo-50 text-indigo-700 font-bold dark:border-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-300' : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300'}`}
+                  className={`rounded border px-1.5 py-1 text-micro font-medium transition ${expansion.bottom === 0 ? 'border-indigo-500 bg-indigo-50 text-indigo-700 font-bold dark:border-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-300' : 'appearance-group border-gray-200 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300'}`}
                 >
                   {t("靠底")}</button>
               </div>

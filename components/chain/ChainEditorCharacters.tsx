@@ -137,9 +137,9 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
                 </div>
                 <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
                     <button type="button" disabled={!characters.length} aria-expanded={positionOpen} title={coordinateHint} onClick={() => setPositionOpen(!positionOpen)}
-                        className="flex items-center gap-1 rounded border border-gray-200 bg-white px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 disabled:opacity-40 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600">
+                        className="appearance-group flex items-center gap-1 rounded border border-gray-200 bg-white px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 disabled:opacity-40 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600">
                         <MapPin className="h-3.5 w-3.5" />{t("角色定位")}</button>
-                    <label className="flex items-center gap-1.5 cursor-pointer bg-white dark:bg-gray-700 px-2 py-1 rounded shadow-sm hover:bg-gray-100 dark:hover:bg-gray-600 border border-transparent dark:border-gray-600">
+                    <label className="appearance-group flex items-center gap-1.5 cursor-pointer bg-white dark:bg-gray-700 px-2 py-1 rounded shadow-sm hover:bg-gray-100 dark:hover:bg-gray-600 border border-transparent dark:border-gray-600">
                         <input
                             type="checkbox"
                             disabled={!canEdit}
@@ -155,7 +155,7 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
                     </label>
 
                     {canEdit && (
-                        <button onClick={addCharacter} className="text-xs flex items-center bg-white dark:bg-gray-700 px-2 py-1 rounded hover:bg-gray-100 dark:hover:bg-gray-600 shadow-sm text-indigo-600 dark:text-indigo-200">
+                        <button onClick={addCharacter} className="appearance-group text-xs flex items-center bg-white dark:bg-gray-700 px-2 py-1 rounded hover:bg-gray-100 dark:hover:bg-gray-600 shadow-sm text-indigo-600 dark:text-indigo-200">
                             {t("+ 添加角色")}</button>
                     )}
                 </div>
@@ -177,7 +177,7 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
                     const positiveSlotRef = clearActionSlot(`${scopeKey}:${char.id}:positive`);
                     const negativeSlotRef = clearActionSlot(`${scopeKey}:${char.id}:negative`);
                     return (
-                    <div key={`${scopeKey}:${char.id}`} className="bg-white dark:bg-gray-800 rounded p-3 border border-gray-200 dark:border-gray-700 shadow-sm relative">
+                    <div key={`${scopeKey}:${char.id}`} className="appearance-group bg-white dark:bg-gray-800 rounded p-3 border border-gray-200 dark:border-gray-700 shadow-sm relative">
                         <div className="mb-2 flex items-center justify-between gap-2">
                             <label className="flex cursor-pointer items-center gap-1.5 text-xs text-gray-600 dark:text-gray-300">
                                 <input type="checkbox" aria-label={t("启用角色 {0}", [idx + 1])} checked={char.enabled !== false} disabled={!canEdit}

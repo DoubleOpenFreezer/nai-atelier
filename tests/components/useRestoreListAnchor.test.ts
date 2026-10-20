@@ -14,6 +14,17 @@ const Harness: React.FC<{ targetId?: string; readyKey?: number; resetKey?: strin
 afterEach(() => cleanup());
 
 describe('useRestoreListAnchor', () => {
+  it('完全藏在悬浮顶栏后的返回目标不算可见，恢复到实际可见区域中央', () => {
+    const { getByTestId, container, rerender } = render(React.createElement(Harness));
+    const root = getByTestId('root');
+    const target = container.querySelector<HTMLElement>('[data-return-item-id="chain-1"]')!;
+    root.scrollTop = 300;
+    root.style.scrollPaddingTop = '100px';
+    root.getBoundingClientRect = () => ({ top: 0, bottom: 500, height: 500 } as DOMRect);
+    target.getBoundingClientRect = () => ({ top: 20, bottom: 80, height: 60 } as DOMRect);
+    rerender(React.createElement(Harness, { targetId: 'chain-1' }));
+    expect(root.scrollTop).toBe(50);
+  });
   it('主动清筛选消费尚未出现的旧目标，异步出现也不拉回；新的详情返回仍定位', () => {
     const { getByTestId, container, rerender } = render(React.createElement(Harness, { targetId: 'chain-1', resetKey: 'favorites', showTarget: false }));
     const root = getByTestId('root');

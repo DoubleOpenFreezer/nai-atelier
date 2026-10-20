@@ -39,7 +39,7 @@ export function AndroidStorageManager({ notify }: { notify: (message: string, ty
       </div>
       <p className="mt-2 text-xs leading-5 text-gray-500 dark:text-gray-400">{t("备份包含原图、资料、设置、Key 与助手会话，使用密码加密；不包含可重新下载的词库、缩略图和反推模型。")}</p>
       {busy&&<p role="status" className="mt-3 text-xs text-indigo-500">{busy}</p>}
-      {backup&&<div className="mt-3 rounded-lg bg-gray-100 p-3 text-xs dark:bg-gray-800">
+      {backup&&<div className="appearance-group mt-3 rounded-lg bg-gray-100 p-3 text-xs dark:bg-gray-800">
         <p>{t("{0} · {1} 个文件 · {2} MB", [new Date(backup.createdAt).toLocaleString(getLanguage()), backup.files, (backup.bytes/1048576).toFixed(1)])}</p>
         <button type="button" disabled={Boolean(busy)} className="mobile-touch mt-2 rounded-lg bg-red-600 px-3 py-2 text-white disabled:opacity-50" onClick={()=>void perform('正在恢复…',async()=>{
           if(!await confirmAction({rememberKey:'android.restore',rememberScope:backup.id,title:'恢复手机工坊？',message:'将使用已验证的备份替换当前手机的资料、原图、设置与凭据。建议先导出当前工坊的备份。',confirmLabel:'恢复备份',tone:'danger'}))return;

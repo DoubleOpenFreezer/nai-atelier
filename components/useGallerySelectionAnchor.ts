@@ -50,7 +50,8 @@ export const useGallerySelectionAnchor = (
     const offset = readOffset();
     if (offset === null) return;
     const cardPosition = root.scrollTop + offset;
-    const targetOffset = anchor.offset ?? root.clientHeight / 2;
+    const style = getComputedStyle(root);
+    const targetOffset = anchor.offset ?? (root.clientHeight + (parseFloat(style.scrollPaddingTop) || 0) - (parseFloat(style.scrollPaddingBottom) || 0)) / 2;
     const clamp = (top: number) => Math.max(0, Math.min(root.scrollHeight - root.clientHeight, top));
     const nextTop = clamp(cardPosition - targetOffset);
     const shift = smoothCardPositionRef.current === null ? 0 : cardPosition - smoothCardPositionRef.current;

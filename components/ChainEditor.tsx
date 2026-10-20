@@ -43,7 +43,7 @@ import { decideCurrentPreviewCover } from '../services/chainCover';
 import { LabModuleSection } from './LabModuleSection';
 import { FileDown } from 'lucide-react';
 import { parsePromptTags, resolvePromptTranslations, translateMissingPromptTags } from '../services/tagTranslations';
-import { UNTESTED_CHAIN_TAG } from './DesignSystem';
+import { UNTESTED_CHAIN_TAG, WorkspaceChrome } from './DesignSystem';
 import { ChainEditorHeader } from './chain/ChainEditorHeader';
 import { ChainEditorPromptInputs } from './chain/ChainEditorPromptInputs';
 import { ChainEditorCharacters } from './chain/ChainEditorCharacters';
@@ -2003,7 +2003,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
 
     return (
         <div
-            className="chain-editor-workspace flex-1 flex flex-col h-full bg-gray-50 dark:bg-gray-900 transition-colors relative"
+            className="workspace-canvas chain-editor-workspace flex-1 flex flex-col h-full bg-gray-50 dark:bg-gray-900 transition-colors relative"
             onDragEnter={handleImportDragEnter}
             onDragOver={handleImportDragOver}
             onDragLeave={handleImportDragLeave}
@@ -2011,7 +2011,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         >
             {isImportDragActive && (
                 <div className="pointer-events-none absolute inset-0 z-[80] flex items-center justify-center bg-indigo-950/55 backdrop-blur-sm">
-                    <div className="mx-4 max-w-sm rounded-lg border-2 border-dashed border-white/80 bg-white/95 px-6 py-5 text-center shadow-2xl dark:bg-gray-900/95 dark:border-indigo-300">
+                    <div className="appearance-group mx-4 max-w-sm rounded-lg border-2 border-dashed border-white/80 bg-white/95 px-6 py-5 text-center shadow-2xl dark:bg-gray-900/95 dark:border-indigo-300">
                         <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-indigo-100 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-300">
                             <FileDown className="h-6 w-6" />
                         </div>
@@ -2021,6 +2021,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 </div>
             )}
             {/* Top Bar */}
+            <WorkspaceChrome>
             <ChainEditorHeader
                 chainId={chain.id}
                 isCharacterMode={isCharacterMode}
@@ -2047,6 +2048,12 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 notify={notify}
             />
 
+            {activeGenerationMode === 'text-to-image' && artistSampleTarget && <div className="flex min-w-0 flex-none items-center justify-between gap-3 border-b border-gray-200 px-4 py-2 text-xs dark:border-gray-800">
+                <span className="min-w-0 truncate text-gray-600 dark:text-gray-300" title={artistSampleTarget.tag}>{t('补充自建样张：{0} · {1}', [artistSampleTarget.tag, artistSampleTarget.pack === 'v45' ? 'V4.5' : 'V5'])}</span>
+                <button type="button" className="mobile-touch shrink-0 text-gray-500 hover:text-indigo-500 dark:text-gray-400" onClick={() => setArtistSampleTarget(null)}>{t('结束补图')}</button>
+            </div>}
+            </WorkspaceChrome>
+
             <PromptAgentOverlayController
                 chainId={chain.id}
                 openToken={agentOpenToken}
@@ -2071,18 +2078,14 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             />
             {agentProposal && <AgentDraftReview current={currentAgentDraft()} proposed={agentProposal} onClose={() => setAgentProposal(null)} onApply={draft => { setAgentUndoSnapshot(currentAgentDraft()); applyAgentDraft(draft); setAgentProposal(null); }}/>}
             {activeGenerationMode === 'text-to-image' ? <>
-            {artistSampleTarget && <div className="flex min-w-0 flex-none items-center justify-between gap-3 border-b border-gray-200 px-4 py-2 text-xs dark:border-gray-800">
-                <span className="min-w-0 truncate text-gray-600 dark:text-gray-300" title={artistSampleTarget.tag}>{t('补充自建样张：{0} · {1}', [artistSampleTarget.tag, artistSampleTarget.pack === 'v45' ? 'V4.5' : 'V5'])}</span>
-                <button type="button" className="mobile-touch shrink-0 text-gray-500 hover:text-indigo-500 dark:text-gray-400" onClick={() => setArtistSampleTarget(null)}>{t('结束补图')}</button>
-            </div>}
-            <nav className="grid h-10 grid-cols-3 border-b border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950 lg:hidden">
+            <nav className="workspace-mode-tabs appearance-group grid h-10 grid-cols-3 border-b border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950 lg:hidden">
                 {([['global', '全局'], ['character', '角色'], ['params', '参数']] as const).map(([value, label]) => <button key={value} onClick={() => setMobileEditorTab(value)} className={`relative min-w-0 text-sm font-bold ${mobileEditorTab === value ? 'text-indigo-600 dark:text-indigo-300' : 'text-gray-500 dark:text-gray-400'}`}>{t(label)}{mobileEditorTab === value && <span className="absolute inset-x-6 bottom-0 h-0.5 rounded-full bg-indigo-500" />}</button>)}
             </nav>
 
             {/* Editor Content */}
-            <div className="chain-editor-body flex-1 flex flex-col lg:flex-row overflow-y-auto lg:overflow-hidden bg-white dark:bg-gray-900">
+            <div className="appearance-content chain-editor-body flex-1 flex flex-col lg:flex-row overflow-y-auto lg:overflow-hidden bg-white dark:bg-gray-900">
                 {/* Left Panel - Editor */}
-                <div className="chain-editor-main flex w-full lg:w-1/2 min-h-full flex-col border-b lg:border-b-0 lg:border-r border-gray-200 dark:border-gray-800 lg:overflow-y-auto bg-white dark:bg-gray-900 relative order-2 lg:order-1 lg:flex-1 shrink-0">
+                <div className="appearance-content chain-editor-main flex w-full lg:w-1/2 min-h-full flex-col border-b lg:border-b-0 lg:border-r border-gray-200 dark:border-gray-800 lg:overflow-y-auto bg-white dark:bg-gray-900 relative order-2 lg:order-1 lg:flex-1 shrink-0">
                     <div className="flex w-full max-w-3xl flex-col gap-6 p-4 pb-36 md:p-6 md:pb-24 mx-auto">
                         <ChainEditorPromptInputs
                             prompt={basePrompt}
@@ -2207,7 +2210,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 </div>
 
                 {/* Right Panel - Preview (Testing) - Extracted Component */}
-                <div className="chain-editor-preview-wrapper hidden min-h-0 flex-1 lg:contents">
+                <div className="appearance-content chain-editor-preview-wrapper hidden min-h-0 flex-1 lg:contents">
                 <ChainEditorPreview
                     favorite={displayedPreviewItem ? { imageUrl: displayedPreviewItem.imageUrl, sourceType: 'history', sourceId: displayedPreviewItem.id } : { imageUrl: chain.previewImage || '', title: chain.name, sourceType: chain.type === 'character' ? 'character' : 'chain', sourceId: chain.id, prompt: chain.basePrompt, negativePrompt: chain.negativePrompt, params: chain.params }}
                     generationData={displayedPreviewItem ? { prompt: displayedPreviewItem.prompt, negativePrompt: displayedPreviewItem.negativePrompt, params: displayedPreviewItem.params } : undefined}
@@ -2387,7 +2390,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             <div className="mobile-generation-actions flex fixed right-4 z-[900] flex-col items-end gap-2 lg:hidden" style={keyboardOffset > 0 ? { bottom: `calc(${keyboardOffset}px + var(--mobile-generation-bottom))` } : undefined}>
                 {errorMsg && <div role="alert" className="max-h-[30dvh] w-[calc(100vw-2rem)] overflow-y-auto rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs leading-5 text-red-600 shadow-lg dark:border-red-900/60 dark:bg-red-950/80 dark:text-red-300">{errorMsg}</div>}
                 <div className="flex max-w-[calc(100vw-2rem)] items-center gap-2">
-                    {mobileFloatingPreviewImage && <button type="button" onClick={() => setLightboxImg(mobileFloatingPreviewImage)} className="mobile-touch flex h-12 w-12 items-center justify-center overflow-hidden rounded-full border-2 border-white bg-gray-900 shadow-xl dark:border-gray-800" aria-label={t("查看当前预览图")}><SmartImage src={mobileFloatingPreviewImage || ''} alt={t("当前预览图")} /></button>}
+                    {mobileFloatingPreviewImage && <button type="button" onClick={() => setLightboxImg(mobileFloatingPreviewImage)} className="appearance-media mobile-touch flex h-12 w-12 items-center justify-center overflow-hidden rounded-full border-2 border-white bg-gray-900 shadow-xl dark:border-gray-800" aria-label={t("查看当前预览图")}><SmartImage src={mobileFloatingPreviewImage || ''} alt={t("当前预览图")} /></button>}
                     <div className="flex min-w-0 items-stretch justify-end gap-2">
                         <GenerationCountControl {...generationCountControl}
                             generationProgress={generationProgress}
@@ -2424,7 +2427,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                     />
                     {previewHistory.length > 1 && (
                         <button data-card-action="true"
-                            className="hover-reveal-touch absolute left-4 md:left-8 top-1/2 -translate-y-1/2 z-10 h-12 w-12 md:h-14 md:w-14 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center backdrop-blur transition-colors"
+                            className="appearance-media hover-reveal-touch absolute left-4 md:left-8 top-1/2 -translate-y-1/2 z-10 h-12 w-12 md:h-14 md:w-14 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center backdrop-blur transition-colors"
                             onClick={(e) => {
                                 e.stopPropagation();
                                 showPreviousHistory();
@@ -2439,7 +2442,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                     )}
                     {previewHistory.length > 1 && (
                         <button data-card-action="true"
-                            className="hover-reveal-touch absolute right-4 md:right-8 top-1/2 -translate-y-1/2 z-10 h-12 w-12 md:h-14 md:w-14 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center backdrop-blur transition-colors"
+                            className="appearance-media hover-reveal-touch absolute right-4 md:right-8 top-1/2 -translate-y-1/2 z-10 h-12 w-12 md:h-14 md:w-14 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center backdrop-blur transition-colors"
                             onClick={(e) => {
                                 e.stopPropagation();
                                 showNextHistory();

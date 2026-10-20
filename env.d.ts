@@ -2,6 +2,11 @@
 // 版本号唯一来源是 package.json，运行时展示一律使用该常量，禁止硬编码版本字符串。
 declare const __APP_VERSION__: string;
 
+declare module '*.json?raw' {
+  const content: string;
+  export default content;
+}
+
 interface Window {
   atelierLanguage?: { initial: string; set: (language: string) => Promise<void> };
 }

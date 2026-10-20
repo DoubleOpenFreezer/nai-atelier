@@ -7,7 +7,7 @@ const libraryKinds: PromptLibraryKind[] = ['appearance', 'wardrobe', 'pose', 'sc
 
 const libraryFieldClass = 'w-full resize-y rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs leading-5 text-gray-800 outline-none focus:border-indigo-500 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-100';
 const libraryPrimaryButtonClass = 'mobile-touch rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-indigo-700 disabled:opacity-40';
-const librarySecondaryButtonClass = 'mobile-touch rounded-lg border border-gray-200 bg-white px-2.5 py-1 text-xs font-bold text-gray-700 hover:bg-gray-50 disabled:opacity-40 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700';
+const librarySecondaryButtonClass = 'appearance-group mobile-touch rounded-lg border border-gray-200 bg-white px-2.5 py-1 text-xs font-bold text-gray-700 hover:bg-gray-50 disabled:opacity-40 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700';
 
 /**
  * 库生成提示词设置：为人物形象 / 服饰 / 姿势 / 场景四个提示词库置顶追加两段自定义内容，
@@ -137,7 +137,7 @@ export const PromptLibrarySettings: React.FC = () => {
       </div>
       {notice && <p role="status" className="mt-2 text-xs leading-5 text-gray-500 dark:text-gray-400">{notice}</p>}
       {previewOpen && (
-        <div className="mt-3 rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-gray-800 dark:bg-gray-950">
+        <div className="appearance-group mt-3 rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-gray-800 dark:bg-gray-950">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div role="tablist" aria-label={t("提示词库类型")} className="flex flex-wrap items-center gap-2">
               {libraryKinds.map(item => (
@@ -158,7 +158,7 @@ export const PromptLibrarySettings: React.FC = () => {
           </div>
           <p className="mt-2 text-xs leading-5 text-gray-500 dark:text-gray-400">{t("最前面两段是自定义内容（置顶），其后是内置提示词；预览使用输入框当前内容，无需先保存。")}</p>
           <p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">{t("当前长度 {0} 个字符", [preview?.length ?? 0])}</p>
-          <pre aria-label={t("系统提示词预览")} className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-gray-200 bg-white p-3 text-micro leading-5 text-gray-700 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-200">{preview ? preview.systemPrompt : previewing ? t("正在生成预览…") : t("暂无预览内容，请点“预览最终系统提示词”。")}</pre>
+          <pre aria-label={t("系统提示词预览")} className="appearance-group mt-2 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-gray-200 bg-white p-3 text-micro leading-5 text-gray-700 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-200">{preview ? preview.systemPrompt : previewing ? t("正在生成预览…") : t("暂无预览内容，请点“预览最终系统提示词”。")}</pre>
         </div>
       )}
     </section>

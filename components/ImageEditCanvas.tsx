@@ -221,7 +221,7 @@ export const ImageEditCanvas: React.FC<ImageEditCanvasProps> = ({
       aria-label={isFullscreen ? t("全屏大画板精修") : undefined}
       className={
         isFullscreen
-          ? 'fixed inset-0 z-[1250] flex flex-col bg-gray-50 p-4 dark:bg-gray-950 backdrop-blur-md sm:p-6 select-none'
+          ? 'appearance-media fixed inset-0 z-[1250] flex flex-col bg-gray-50 p-4 dark:bg-gray-950 backdrop-blur-md sm:p-6 select-none'
           : 'relative flex flex-1 flex-col min-h-0 w-full'
       }
     >
@@ -236,7 +236,7 @@ export const ImageEditCanvas: React.FC<ImageEditCanvasProps> = ({
             <button
               type="button"
               onClick={() => setIsFullscreen(false)}
-              className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-600 hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"
+              className="appearance-group flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-600 hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"
             >
               <X className="h-4 w-4" />
               <span>{t("完成 (Esc)")}</span>
@@ -251,13 +251,13 @@ export const ImageEditCanvas: React.FC<ImageEditCanvasProps> = ({
         onPointerDown={handleContainerPointerDown}
         onPointerMove={handleContainerPointerMove}
         onPointerUp={handleContainerPointerUp}
-        className={`relative flex flex-1 overflow-auto rounded-xl border border-gray-200 bg-white transition-colors dark:border-gray-800 dark:bg-gray-950/50 ${
+        className={`appearance-media relative flex flex-1 overflow-auto rounded-xl border border-gray-200 bg-white transition-colors dark:border-gray-800 dark:bg-gray-950/50 ${
           isFullscreen ? 'h-full min-h-0 w-full' : 'min-h-[300px]'
         } ${spacePressed ? 'cursor-grab active:cursor-grabbing' : ''}`}
       >
         {/* 缩放与全屏悬浮工具条 */}
         {width > 0 && height > 0 && (
-          <div className="absolute top-2 right-2 z-30 flex items-center gap-1 rounded-lg border border-gray-200/80 bg-white/90 p-1 shadow-sm backdrop-blur-sm dark:border-gray-700/80 dark:bg-gray-900/90">
+          <div className="appearance-surface absolute top-2 right-2 z-30 flex items-center gap-1 rounded-lg border border-gray-200/80 bg-white/90 p-1 shadow-sm backdrop-blur-sm dark:border-gray-700/80 dark:bg-gray-900/90">
             <button
               type="button"
               title={t("缩小")}
@@ -351,7 +351,7 @@ export const ImageEditCanvas: React.FC<ImageEditCanvasProps> = ({
             />
           </div>}
         </div>
-        {!width && <div className="absolute inset-x-6 bottom-6 rounded-lg border border-dashed border-gray-300 bg-white/90 px-3 py-3 text-center text-xs text-gray-500 dark:border-gray-700 dark:bg-gray-900/90 dark:text-gray-400">{t("选择底图")}</div>}
+        {!width && <div className="appearance-media absolute inset-x-6 bottom-6 rounded-lg border border-dashed border-gray-300 bg-white/90 px-3 py-3 text-center text-xs text-gray-500 dark:border-gray-700 dark:bg-gray-900/90 dark:text-gray-400">{t("选择底图")}</div>}
       </div>
     </div>
     </CanvasLayer>

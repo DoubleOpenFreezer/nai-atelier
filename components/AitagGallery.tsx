@@ -27,7 +27,7 @@ import { createUuid } from '../services/id';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { useStaleGuard } from './useStaleGuard';
 import { ExternalLink, Filter, FlaskConical, ImagePlus, Layers, LoaderCircle } from 'lucide-react';
-import { IconButton, ToolbarButton, ToolbarLink, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
+import { IconButton, ToolbarButton, ToolbarLink, ToolbarSearch, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
 import { DetailSidePanel } from './DetailPanel';
 import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
 import { useGalleryLoadMore } from './useGalleryLoadMore';
@@ -162,14 +162,14 @@ const buildPreviewDetail = (work: AitagWorkSummary): AitagWorkDetail | null => {
 const AitagPreviewFallback: React.FC<{ work: AitagWorkSummary; onRetry: () => void }> = ({ work, onRetry }) => (
   // 卡片整体是 role="button"（点击/Enter 打开详情）：占位内的重试钮与原页链接都要拦掉
   // 键盘/点击冒泡，避免误开详情。原页链接 href 本身可 Tab 聚焦、Enter 在新标签打开。
-  <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-gray-100 px-3 dark:bg-gray-800">
+  <div className="appearance-media absolute inset-0 flex flex-col items-center justify-center gap-2 bg-gray-100 px-3 dark:bg-gray-800">
     <span className="text-meta text-gray-400">{t("图片加载失败")}</span>
     <div className="flex items-center gap-2">
       <button
         type="button"
         onClick={event => { event.stopPropagation(); onRetry(); }}
         onKeyDown={event => { event.stopPropagation(); }}
-        className="rounded-lg border border-gray-300 bg-white px-2.5 py-1 text-xs font-bold text-gray-700 shadow-sm hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
+        className="appearance-group rounded-lg border border-gray-300 bg-white px-2.5 py-1 text-xs font-bold text-gray-700 shadow-sm hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
       >
         {t("重试")}</button>
       <a
@@ -178,7 +178,7 @@ const AitagPreviewFallback: React.FC<{ work: AitagWorkSummary; onRetry: () => vo
         rel="noreferrer"
         onClick={event => event.stopPropagation()}
         onKeyDown={event => { event.stopPropagation(); }}
-        className="rounded-lg border border-gray-300 bg-white px-2.5 py-1 text-xs font-bold text-indigo-600 shadow-sm hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-indigo-400"
+        className="appearance-group rounded-lg border border-gray-300 bg-white px-2.5 py-1 text-xs font-bold text-indigo-600 shadow-sm hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-indigo-400"
       >
         {t("打开原页")}</a>
     </div>
@@ -215,7 +215,7 @@ const AitagPreviewImage: React.FC<{ work: AitagWorkSummary; detail?: AitagWorkDe
   const src = candidates[index] || '';
 
   if (!candidates.length) {
-    return <div className="w-full h-full bg-gray-200 dark:bg-gray-800" />;
+    return <div className="appearance-media w-full h-full bg-gray-200 dark:bg-gray-800" />;
   }
   if (index >= candidates.length) {
     return <AitagPreviewFallback work={work} onRetry={() => { setCandidatePosition({ key: candidatesKey, index: 0 }); setRetryKey(value => value + 1); }} />;
@@ -1195,8 +1195,9 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
   const activeFilterCount = Number(Boolean(prompt.trim())) + Number(cacheFilter !== 'all') + Number(sort !== 'new') + Number(Boolean(modelFilter)) + Number(sort === 'monthly' && rankMonth !== 'current');
 
   return (
-    <div className="aitag-workspace flex-1 min-h-0 flex flex-col bg-gray-50 dark:bg-gray-900">
-      <WorkspaceToolbar>
+    <div className="workspace-canvas aitag-workspace flex-1 min-h-0 flex flex-col bg-gray-50 dark:bg-gray-900">
+      <WorkspaceChrome>
+<WorkspaceToolbar>
         <div className="flex w-full min-w-0 items-center gap-2 md:hidden">
           <span title={isAitagConnected ? t("连接正常") : t("当前使用本地缓存")} className={`h-2.5 w-2.5 flex-none rounded-full ${isAitagConnected ? 'bg-emerald-500' : 'bg-red-500'}`} />
           <ToolbarSearch value={q} onChange={event => setQ(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.nativeEvent.isComposing) handleSearch(); }} placeholder={t("搜索 AITag 作品")} />
@@ -1209,7 +1210,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
             <ToolbarButton onClick={() => setShowDesktopFilters(value => !value)} className={activeFilterCount > 0 ? '!border-indigo-300 !bg-indigo-50 !text-indigo-600 dark:!bg-indigo-950/40 dark:!text-indigo-400' : ''} aria-label={activeFilterCount > 0 ? t("筛选 ") + activeFilterCount : t("筛选")} aria-expanded={showDesktopFilters} aria-haspopup="dialog"><Filter className="h-4 w-4" />{t("筛选")}{activeFilterCount > 0 ? " " + activeFilterCount : ""}</ToolbarButton>
             {showDesktopFilters && <AnchoredToolbarPopover anchorRef={filterAnchorRef} title={t("AITag 筛选")} width={544} onClose={() => setShowDesktopFilters(false)}>
 
-            <div className="mb-3 flex items-center justify-between"><h2 className="font-bold text-gray-900 dark:text-white">{t("AITag 筛选")}</h2><button type="button" onClick={() => setShowDesktopFilters(false)} className="flex h-8 w-8 items-center justify-center rounded-lg bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-300">×</button></div>
+            <div className="mb-3 flex items-center justify-between"><h2 className="font-bold text-gray-900 dark:text-white">{t("AITag 筛选")}</h2><button type="button" onClick={() => setShowDesktopFilters(false)} className="appearance-group flex h-8 w-8 items-center justify-center rounded-lg bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-300">×</button></div>
             <label className="mb-3 block text-xs text-gray-500 dark:text-gray-400">{t("提示词搜索")}<input value={prompt} onChange={event => setPrompt(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.nativeEvent.isComposing) { handleSearch(); setShowDesktopFilters(false); } }} placeholder={t("搜索 NovelAI 元数据提示词")} className="mt-1.5 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800 outline-none dark:border-gray-800 dark:bg-gray-950 dark:text-white" /></label>
             <div className="grid grid-cols-3 gap-3">
               <label className="text-xs text-gray-500 dark:text-gray-400">{t("缓存")}<select value={cacheFilter} onChange={e => handleCacheFilterChange(e.target.value as AitagCacheFilter)} disabled={isLoading} className="mt-1.5 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800 outline-none disabled:opacity-50 dark:border-gray-800 dark:bg-gray-950 dark:text-white"><option value="all">{t("全部")}</option><option value="favorite">{t("收藏")}</option><option value="full">{t("已缓存全部")}</option><option value="first-image">{t("已缓存首图")}</option></select></label>
@@ -1232,16 +1233,17 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
             <label className="text-sm font-bold dark:text-white">{t("月份")}<select value={sort === 'monthly' ? rankMonth : ''} disabled={sort !== 'monthly'} onChange={event => handleRankMonthChange(event.target.value)} className="mobile-touch mt-2 w-full rounded-xl border border-gray-200 bg-white px-2 font-normal disabled:opacity-50 dark:border-gray-800 dark:bg-gray-800"><option value="current">{t("当前月份")}</option>{availableMonths.map(month => <option key={month} value={`m${month}`}>{month}</option>)}<option value="older">{t("更早")}</option></select></label>
           </div>
             <label className="text-sm font-bold dark:text-white">{t("模型版本（已加载条目）")}<select value={modelFilter} onChange={event => setModelFilter(event.target.value)} disabled={modelOptions.length === 0} className="mobile-touch mt-2 w-full rounded-xl border border-gray-200 bg-white px-2 font-normal disabled:opacity-50 dark:border-gray-800 dark:bg-gray-800"><option value="">{t("全部")}</option>{modelOptions.map(label => <option key={label} value={label}>{t(label)}</option>)}</select></label>
-          <div className="rounded-xl bg-gray-100 p-3 text-sm text-gray-600 dark:bg-gray-800 dark:text-gray-300">{t("已加载 {0} 条 · 共 {1} 条", [formatCount(visibleItems.length), formatCount(total)])}</div>
+          <div className="appearance-group rounded-xl bg-gray-100 p-3 text-sm text-gray-600 dark:bg-gray-800 dark:text-gray-300">{t("已加载 {0} 条 · 共 {1} 条", [formatCount(visibleItems.length), formatCount(total)])}</div>
         </div>
       </MobileBottomSheet></ImagePreviewPortal>
 
+      </WorkspaceChrome>
       <div className={`aitag-split relative grid min-h-0 flex-1 grid-cols-1 ${selectedWork ? 'lg:grid-cols-[minmax(0,1fr)_460px]' : ''}`}>
         <main
           ref={mainScrollRef}
           onScroll={() => { selectionAnchor.onScroll(); onMainScrollRestore(); }}
           style={{ overflowAnchor: 'none' }}
-          className={`${selectedWork ? 'hidden lg:block' : 'block'} min-h-0 overflow-y-auto p-4 md:p-6`}
+          className={`${selectedWork ? 'hidden lg:block' : 'block'} workspace-scroll-viewport min-h-0 overflow-y-auto p-4 md:p-6`}
         >
           {error && (
             <div className={`mb-4 rounded border px-4 py-3 text-sm ${
@@ -1283,7 +1285,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
           <div className="flex flex-col items-center gap-2 py-6">
             <div ref={appendSentinelRef} className="h-1 w-full" aria-hidden="true" />
             {visibleItems.length >= AITAG_APPEND_LIMIT && hasNextPage && (
-              <button type="button" onClick={() => void appendNextPage(true)} disabled={isLoading} className="mobile-touch px-4 py-2 rounded-full border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 text-sm font-bold text-gray-600 dark:text-gray-300">{t("已加载 {0} 条 · 继续加载更多", [AITAG_APPEND_LIMIT])}</button>
+              <button type="button" onClick={() => void appendNextPage(true)} disabled={isLoading} className="appearance-group mobile-touch px-4 py-2 rounded-full border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 text-sm font-bold text-gray-600 dark:text-gray-300">{t("已加载 {0} 条 · 继续加载更多", [AITAG_APPEND_LIMIT])}</button>
             )}
             <div className="flex justify-center items-center gap-2 text-xs text-gray-500">
               <span>{t("已加载 {0} 条 / 共 {1} 条 · 滚动浏览，可跳转", [formatCount(visibleItems.length), formatCount(total)])}</span>
@@ -1322,13 +1324,13 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
                   }}
                   disabled={isLoading}
                   title={t("点击输入页码跳转")}
-                  className="mobile-touch min-w-24 px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 text-sm text-gray-500 dark:text-gray-400 hover:border-indigo-400 hover:text-indigo-500 disabled:opacity-50"
+                  className="appearance-group mobile-touch min-w-24 px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 text-sm text-gray-500 dark:text-gray-400 hover:border-indigo-400 hover:text-indigo-500 disabled:opacity-50"
                 >{t("跳到第 {0} 页", [page])}</button>
               )}
             </div>
           </div>
           <div className="flex justify-center pb-6 -mt-3">
-            <div className="flex flex-wrap justify-center items-center gap-x-4 gap-y-1 rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 px-3 py-2 text-xs text-gray-600 dark:text-gray-300">
+            <div className="appearance-group flex flex-wrap justify-center items-center gap-x-4 gap-y-1 rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 px-3 py-2 text-xs text-gray-600 dark:text-gray-300">
               <span title={t("当前筛选下已经成功保存到本地的第一张图数量")}>{t("首图保存 {0}", [formatCount(cacheStatus?.firstImagesCount ?? cacheStatus?.coversCount ?? 0)])}</span>
               <span title={t("已经点开并完整保存详情 JSON 的作品数")}>{t("完整保存 {0}", [formatCount(cacheStatus?.detailsCount || 0)])}</span>
               {isOfflineCache && <span className="text-amber-600 dark:text-amber-300">{t("本地缓存模式")}</span>}
@@ -1366,7 +1368,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
                     const modelLabel = getAitagModelLabel(image);
 
                     return (
-                      <div key={image.id || `${image.work_id}-${image.file_name}`} className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 overflow-hidden">
+                      <div key={image.id || `${image.work_id}-${image.file_name}`} className="appearance-media rounded-2xl border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 overflow-hidden">
                         <PressRevealSurface className="group relative">
                           <ViewableImage src={buildAitagImageUrl(image)} alt={t("AITAG 作品图片")} filename={`aitag-${image.work_id}-p${index + 1}.png`} favorite={aitagCollectionImages(selectedDetail).find(item => item.imageId === (image.file_name || String(image.id)))} notify={notify} className="w-full max-h-[62vh] object-contain bg-black/5 dark:bg-black/20" loading="lazy" />
                           <ImageShareOverlay imageUrl={getMobileOriginalUrl(buildAitagImageUrl(image))} filename={`aitag-${image.work_id}-p${index + 1}.png`} favorite={aitagCollectionImages(selectedDetail).find(item => item.imageId === (image.file_name || String(image.id)))} notify={notify} />
@@ -1401,7 +1403,7 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
                               />}
                             </div>
                           </div>
-                          <div className="text-xs font-mono text-gray-700 dark:text-gray-300 leading-relaxed bg-white dark:bg-gray-950 border border-gray-200 dark:border-gray-800 rounded p-2 max-h-28 overflow-y-auto custom-scrollbar break-words">
+                          <div className="appearance-group text-xs font-mono text-gray-700 dark:text-gray-300 leading-relaxed bg-white dark:bg-gray-950 border border-gray-200 dark:border-gray-800 rounded p-2 max-h-28 overflow-y-auto custom-scrollbar break-words">
                             {promptText || <span className="text-gray-400">{t("暂无提示词")}</span>}
                           </div>
                         </div>

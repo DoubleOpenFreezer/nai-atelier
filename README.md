@@ -7,7 +7,7 @@
 
   **[简体中文](./README.md) · [繁體中文](./README.zh-TW.md) · [English](./README.en.md) · [日本語](./README.ja.md) · [한국어](./README.ko.md)**
 
-  [![Version](https://img.shields.io/badge/version-1.94.0-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.95.0-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4%20%7C%20V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据主权与备份)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网创作体验)
@@ -372,7 +372,8 @@ AITag 与法典详情的蓝色「导入实验室」会切到文生图，默认�
 - **临时窥视机制**：点击单张图片仅临时解除遮罩预览，鼠标移开后立即恢复模糊；
 - **失焦自锁保护**：切换标签页、应用失去焦点或轻按 `Esc`，遮罩全自动重置闭合；
 - **布局列数自由掌控**：在「外观与画廊 → 图片列表布局」选择全局默认或具体页面；各页面默认跟随全局，也可单独设置瀑布流／竖向卡片／方形、电脑1～7列及手机列数，重新开启「跟随全局」即可恢复统一布局； 瀑布流追加优先依据现有列的实际高度补到短列，已显示卡片不因图片加载或侧栏变化搬列。风格串、画师库、角色库和收藏库主动改变搜索、筛选或排序时回到顶部，后台数据刷新与详情返回保留位置。
-- **全站个性化主题**：内置明暗模式、透光毛玻璃材质、圆角与字号密度、自定义强调色；在「自定义明暗配色」分别调整背景、侧栏、工具栏、面板、正文、次要文字和边框。主题可另存、覆盖保存及 JSON 导入／导出，当前修改独立标记，恢复默认保留已收藏主题和生图偏好。参见[主题制作与分享](./docs/THEMES.md)，可直接导入[暖纸示例](./public/themes/warm-paper.json)。
+- **全站个性化主题**：内置明暗模式、自定义强调色与明暗两套完整配色；「控件、排版与玻璃细节」开放本机字体、字重、图标线宽、控件／面板／卡片圆角、间距、玻璃高光／背景折射与过渡参数。主题可另存、覆盖保存及版本 3 JSON 导入／导出，兼容旧文件；主题库由当前工坊共享，导入一次即可在其他浏览器及局域网手机选用，各设备独立记住当前主题；旧浏览器主题首次打开设置时保留并合入。当前修改独立标记，恢复默认保留已收藏主题和生图偏好。参见[主题制作与分享](./docs/THEMES.md)，可直接导入[暖纸示例](./public/themes/warm-paper.json)，或使用[主题生成提示词](./docs/THEME_AI_PROMPT.md)交给其他 AI 制作；支持按明暗覆盖高级参数、侧栏／工具栏／弹窗分别设置透明度，以及填充式按钮和分段选择，项目自带 [Cupertino Liquid Glass](./public/themes/cupertino-liquid-glass.json)，新安装可直接选用，无需导入；三项画廊效果均开启，原件锁定且可另存副本，首次启动仍使用 NAI Atelier 默认主题。
+- **工作区背景**：在「个性化 → 工作区背景」选择本地 PNG、JPEG 或 WebP 图片，支持铺满、完整显示、平铺图案、显示强度和图案大小；背景可随主题保存、共享及导出，恢复默认背景即可清除。图片在本机生成去除元数据的压缩副本，不改变作品和编辑画布。
 - **图片卡片效果**：在「全局设置 → 外观与画廊 → 个性化」分别切换「全图磨砂卡片」和「卡片悬停浮动」，默认均开启。关闭磨砂会恢复图下信息栏；鼠标浮动遵循减少／关闭动效设置。两个开关在当前设备保存，也可随自定义外观预设导入、导出。
 
 <div align="center">

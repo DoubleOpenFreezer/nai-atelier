@@ -63,6 +63,13 @@ const setup = (selectedId: number | null = 1) => {
 };
 
 describe('作品选择定位', () => {
+  it('作品在顶栏下方的可见区域居中，不把被玻璃覆盖的区域计入中心', () => {
+    const { root, rerender, draw } = setup(null);
+    root.style.scrollPaddingTop = '100px';
+    root.style.scrollPaddingBottom = '20px';
+    rerender(draw(1));
+    expect(scrollTo).toHaveBeenLastCalledWith({ top: 1610, behavior: 'smooth' });
+  });
   it('点击只启动一次平滑滚动，中间帧不改写终点，重排先即时补偿再接续居中', () => {
     const { root, geometry, rerender, draw } = setup(null);
     const scroll = vi.fn((options: ScrollToOptions) => { if (options.behavior !== 'smooth') root.scrollTop = options.top!; });

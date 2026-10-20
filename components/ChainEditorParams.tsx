@@ -242,7 +242,7 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
 
             {/* Resolution control panel: Aspect ratio scale slider */}
             {!hideResolution && (
-                <div className="mb-4 rounded-2xl border border-gray-200 bg-white/70 p-3.5 dark:border-gray-800 dark:bg-gray-900/60 sm:p-4">
+                <div className="appearance-group mb-4 rounded-2xl border border-gray-200 bg-white/70 p-3.5 dark:border-gray-800 dark:bg-gray-900/60 sm:p-4">
                     <div className="space-y-3">
                         <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2">
                             <span className="min-w-0 text-xs font-medium text-gray-700 dark:text-gray-300">
@@ -377,7 +377,7 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
                 </div>
 
                 {currentModelInfo.supportsTransparentBackground && (
-                    <div className="col-span-full rounded-lg border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900">
+                    <div className="appearance-group col-span-full rounded-lg border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900">
                         <button
                             type="button"
                             aria-label={t("透明背景")}
@@ -433,7 +433,7 @@ export const ChainEditorParams: React.FC<ChainEditorParamsProps> = ({
                             setParams({ ...params, variety: !(params.variety ?? false) });
                             markChange();
                         }}
-                        className="flex min-h-9 w-full items-center justify-between gap-3 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-left transition hover:border-indigo-300 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-indigo-700 sm:w-[calc(50%-0.5rem)]"
+                        className="appearance-group flex min-h-9 w-full items-center justify-between gap-3 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-left transition hover:border-indigo-300 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-indigo-700 sm:w-[calc(50%-0.5rem)]"
                     >
                         <span className="text-xs font-medium text-gray-700 dark:text-gray-200">{t("Variety+（多样性）")}</span>
                         <span className={`relative h-5 w-9 flex-none rounded-full transition-colors ${params.variety ? 'bg-indigo-500' : 'bg-gray-300 dark:bg-gray-700'}`}>

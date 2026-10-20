@@ -13,6 +13,7 @@ import { handleNaiKeyVaultRoute } from './routes/naiKeyVaultRoutes';
 import { handleStyleCollectorRoute } from './routes/styleCollectorRoutes';
 import { handleArtistSampleRoute } from './routes/artistSampleRoutes';
 import { handleStyleRollRoute } from './routes/styleRollRoutes';
+import { handleAppearancePresetRoute } from './routes/appearancePresetRoutes';
 import {
   handleLanRoute, handleSettingsRoute, handleMediaRequest,
   isLoopbackHostname, hasValidLanAccess, lanAccessRequired,
@@ -184,6 +185,8 @@ export default {
 
       const collectorResult = await handleStyleCollectorRoute(routeContext);
       if (collectorResult) return collectorResult;
+      const appearanceResult = await handleAppearancePresetRoute(routeContext);
+      if (appearanceResult) return appearanceResult;
       const settingsResult = await handleSettingsRoute(routeContext);
       if (settingsResult) return settingsResult;
 

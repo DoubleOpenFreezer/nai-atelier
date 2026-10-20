@@ -192,7 +192,7 @@ export const InspirationDetail: React.FC<Props> = ({
 
 
   const detailSections: Partial<Record<LabPageModuleId, React.ReactNode>> = {
-    prompt: (<details data-collection-section="prompt" className="group rounded-xl border border-gray-100 bg-gray-50/50 p-2.5 dark:border-gray-800/60 dark:bg-gray-900/30">
+    prompt: (<details data-collection-section="prompt" className="appearance-group group rounded-xl border border-gray-100 bg-gray-50/50 p-2.5 dark:border-gray-800/60 dark:bg-gray-900/30">
       <summary className="flex cursor-pointer items-center justify-between select-none">
         <span className="text-xs font-bold text-gray-700 dark:text-gray-200">
           {t("提示词")}{promptTagCount > 0 && <span className="ml-1.5 text-micro font-normal text-gray-400">{t("（{0} token）", [promptTagCount])}</span>}
@@ -220,7 +220,7 @@ export const InspirationDetail: React.FC<Props> = ({
       />
     </details>),
     negative: ((draft.negativePrompt || editable) ? (
-      <details data-collection-section="negative" className="group rounded-xl border border-gray-100 bg-gray-50/50 p-2.5 dark:border-gray-800/60 dark:bg-gray-900/30">
+      <details data-collection-section="negative" className="appearance-group group rounded-xl border border-gray-100 bg-gray-50/50 p-2.5 dark:border-gray-800/60 dark:bg-gray-900/30">
         <summary className="flex cursor-pointer items-center justify-between text-xs font-bold text-gray-600 select-none dark:text-gray-300">
           <span className="flex items-center gap-1.5">
             <span className="h-1.5 w-1.5 rounded-full bg-red-400" />
@@ -294,7 +294,7 @@ export const InspirationDetail: React.FC<Props> = ({
   };
 
   return (
-    <article data-safe-mode-work="true" data-collection-item={item.id} className="overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950">
+    <article data-safe-mode-work="true" data-collection-item={item.id} className="appearance-group overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950">
       <PressRevealSurface as="section" pressResetKey={draft.id} className="group relative bg-gray-100 dark:bg-black/60">
         <ViewableImage src={draft.imageUrl} previewTransform={getCollectionPreviewTransform(draft)} alt={draft.title} filename={draft.title + '.png'} favorite={{ imageUrl: draft.imageUrl, collectionId: draft.id }} notify={notify} generationData={draft.params ? { prompt: draft.prompt, negativePrompt: draft.negativePrompt, params: draft.params } : undefined} loading="lazy" className="max-h-[62vh] w-full object-contain" data-safe-mode-ignore="true" />
         <ImageShareOverlay imageUrl={getMobileOriginalUrl(draft.imageUrl)} generationData={draft.params ? { prompt: draft.prompt, negativePrompt: draft.negativePrompt, params: draft.params } : undefined} filename={draft.title + '.png'} favorite={{ imageUrl: draft.imageUrl, collectionId: draft.id }} notify={notify} />
@@ -396,7 +396,7 @@ export const InspirationDetail: React.FC<Props> = ({
           </div>
 
           {/* 底部操作条：窄屏换行，分享操作保持可靠触控宽度。 */}
-          <footer className="flex-none border-t border-gray-200 p-3.5 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-950/60 backdrop-blur-sm">
+          <footer className="appearance-group flex-none border-t border-gray-200 p-3.5 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-950/60 backdrop-blur-sm">
             <div className="flex flex-wrap items-center gap-2 sm:gap-2.5">
               {/* 导入实验室（带底图模式分流，自适应撑开，居于视觉核心） */}
               <div className="relative flex-1 min-w-[9rem] flex h-10 rounded-xl bg-indigo-600 shadow-sm shadow-indigo-600/20 hover:bg-indigo-500 transition-colors">

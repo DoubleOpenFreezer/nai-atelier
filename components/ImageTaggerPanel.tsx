@@ -204,7 +204,7 @@ export const ImageTaggerPanel: React.FC<ImageTaggerPanelProps> = ({ open, onClos
         <section className="space-y-4 border-b border-gray-200 p-4 dark:border-gray-800 md:overflow-y-auto md:border-b-0 md:border-r">
           <input aria-label={t("上传反推图片")} ref={inputRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={event => chooseFile(event.target.files?.[0])} />
           {modelStatusError && <p role="alert" className="text-xs text-red-600 dark:text-red-300">{modelStatusError}</p>}
-          <button type="button" title={t("也可在此按 Ctrl+V 粘贴")} disabled={busy || !modelReady || lockImage} onClick={() => inputRef.current?.click()} className="relative flex aspect-[3/4] w-full items-center justify-center overflow-hidden rounded-2xl border border-dashed border-gray-200 bg-gray-50 text-gray-400 hover:border-violet-400 dark:border-gray-800 dark:bg-gray-900">
+          <button type="button" title={t("也可在此按 Ctrl+V 粘贴")} disabled={busy || !modelReady || lockImage} onClick={() => inputRef.current?.click()} className="appearance-media relative flex aspect-[3/4] w-full items-center justify-center overflow-hidden rounded-2xl border border-dashed border-gray-200 bg-gray-50 text-gray-400 hover:border-violet-400 dark:border-gray-800 dark:bg-gray-900">
             {preview ? <img src={preview} alt={t("待识别图片")} className="h-full w-full object-contain" /> : <span className="flex flex-col items-center gap-2 text-xs"><ImagePlus className="h-8 w-8" /><span>{t("选择或粘贴图片")}</span><span className="text-micro text-gray-500">{t("也可在此按 Ctrl+V 粘贴")}</span></span>}
             {busy && <span className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/70 px-6 text-center text-xs text-white"><LoaderCircle className="h-7 w-7 animate-spin" />{selectedModel && !selectedModel.downloaded ? taggerProgressText(selectedModel) : t("正在本地识别图片…")}{selectedModel && ['downloading', 'verifying'].includes(selectedModel.stage) && <progress aria-label={t("模型下载进度")} max={selectedModel.totalBytes} value={selectedModel.receivedBytes} className="h-1.5 w-full accent-white" />}</span>}
           </button>
@@ -259,7 +259,7 @@ export const ImageTaggerPanel: React.FC<ImageTaggerPanelProps> = ({ open, onClos
             <div className="flex flex-wrap items-center justify-between gap-2"><div><p className="text-sm font-black">{t("识别出 {0} 个 Tag", [result.tags.length])}</p><p className="text-micro text-gray-500">{t("角色 {0} · 普通 {1}{2}", [result.character.length, result.general.length, result.rating ? t(" · 分级预测 {0} {1}", [result.rating.name, percent(result.rating.confidence)]) : ''])}</p></div><div className="flex gap-2"><button type="button" onClick={() => setSelected(new Set(visibleTags.map(item => item.name)))} className="text-xs font-bold text-violet-600">{t("全选")}</button><button type="button" onClick={() => setSelected(new Set())} className="text-xs font-bold text-gray-500">{t("清空")}</button></div></div>
             <div className="grid gap-2 sm:grid-cols-2">{visibleTags.map(tag => {
               const checked = selected.has(tag.name);
-              return <button key={tag.name} type="button" aria-pressed={checked} onClick={() => toggle(tag.name)} className={`flex min-h-12 items-center gap-2 rounded-xl border px-3 py-2 text-left ${checked ? 'border-violet-400 bg-violet-50 dark:border-violet-700 dark:bg-violet-950/30' : 'border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900'}`}>
+              return <button key={tag.name} type="button" aria-pressed={checked} onClick={() => toggle(tag.name)} className={`flex min-h-12 items-center gap-2 rounded-xl border px-3 py-2 text-left ${checked ? 'border-violet-400 bg-violet-50 dark:border-violet-700 dark:bg-violet-950/30' : 'appearance-group border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900'}`}>
                 <span className={`flex h-5 w-5 flex-none items-center justify-center rounded-md border ${checked ? 'border-violet-600 bg-violet-600 text-white' : 'border-gray-300 dark:border-gray-600'}`}>{checked && <Check className="h-3.5 w-3.5" />}</span>
                 <span className="min-w-0 flex-1"><span className="block truncate font-mono text-meta font-bold">{tag.name.replaceAll('_', ' ')}</span>{tag.chinese && <span className="block truncate text-micro text-gray-500">{tag.chinese}</span>}</span>
                 <span className={`text-micro font-black ${tag.category === 'character' ? 'text-emerald-600' : 'text-blue-500'}`}>{percent(tag.confidence)}</span>
@@ -268,7 +268,7 @@ export const ImageTaggerPanel: React.FC<ImageTaggerPanelProps> = ({ open, onClos
           </div>}
         </section>
       </div>
-      <footer className="operation-footer flex flex-none items-center justify-end gap-2 border-t border-gray-200 p-3 dark:border-gray-800">
+      <footer className="appearance-content operation-footer flex flex-none items-center justify-end gap-2 border-t border-gray-200 p-3 dark:border-gray-800">
         <ToolbarButton disabled={!selected.size || busy} onClick={insert} className="mobile-touch">{(actionLabel ?? '追加 {count} 个 Tag 到全局提示词').replace('{count}', String(selected.size))}</ToolbarButton>
         <ToolbarButton tone="primary" disabled={!selected.size || busy} onClick={sendToLab} className="mobile-touch">{t("送往实验室")}</ToolbarButton>
       </footer>

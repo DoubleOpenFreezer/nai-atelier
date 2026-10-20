@@ -931,7 +931,7 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
         onClick={e => e.stopPropagation()}
       >
         {/* Modal Header */}
-        <div className="operation-header flex flex-none items-center justify-between border-b border-gray-200 px-5 dark:border-gray-800">
+        <div className="appearance-content operation-header flex flex-none items-center justify-between border-b border-gray-200 px-5 dark:border-gray-800">
           <div className="flex items-center gap-2.5">
             <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 dark:bg-indigo-950/50 dark:text-indigo-400">
               <FolderUp className="h-5 w-5" />
@@ -965,7 +965,7 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
               className={`flex flex-col items-center justify-center rounded-2xl border-2 border-dashed p-8 md:p-12 text-center transition-colors ${
                 isDragOver
                   ? 'border-indigo-500 bg-indigo-50/50 dark:bg-indigo-950/20'
-                  : 'border-gray-300 hover:border-gray-400 dark:border-gray-700 dark:hover:border-gray-600 bg-gray-50/50 dark:bg-gray-800/20'
+                  : 'appearance-group border-gray-300 hover:border-gray-400 dark:border-gray-700 dark:hover:border-gray-600 bg-gray-50/50 dark:bg-gray-800/20'
               }`}
             >
               <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-indigo-100/70 text-indigo-600 dark:bg-indigo-950/80 dark:text-indigo-400">
@@ -1003,7 +1003,7 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
                 <button
                   type="button"
                   onClick={() => filesInputRef.current?.click()}
-                  className="inline-flex items-center gap-2 rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-750 transition"
+                  className="appearance-group inline-flex items-center gap-2 rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-750 transition"
                 >
                   {t("选择多张 PNG 图片")}</button>
               </div>
@@ -1105,11 +1105,11 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
                       item.selected
                         ? 'border-indigo-500 bg-indigo-50/30 dark:border-indigo-500/80 dark:bg-indigo-950/20 shadow-sm'
                         : item.isDuplicate
-                          ? 'border-gray-200 bg-gray-100/60 dark:border-gray-800 dark:bg-gray-900/60 opacity-60 hover:opacity-90'
-                          : 'border-gray-200 bg-gray-50/50 opacity-60 hover:opacity-100 dark:border-gray-800 dark:bg-gray-850'
+                          ? 'appearance-group border-gray-200 bg-gray-100/60 dark:border-gray-800 dark:bg-gray-900/60 opacity-60 hover:opacity-90'
+                          : 'appearance-group border-gray-200 bg-gray-50/50 opacity-60 hover:opacity-100 dark:border-gray-800 dark:bg-gray-850'
                     }`}
                   >
-                    <div className="relative aspect-square w-full overflow-hidden rounded-lg bg-gray-200 dark:bg-gray-900 border border-gray-100 dark:border-gray-800 flex items-center justify-center">
+                    <div className="appearance-media relative aspect-square w-full overflow-hidden rounded-lg bg-gray-200 dark:bg-gray-900 border border-gray-100 dark:border-gray-800 flex items-center justify-center">
                       <img src={item.previewUrl} alt={item.name} className="h-full w-full object-contain" />
                       <div className="absolute left-1.5 top-1.5 flex items-center gap-1">
                         <div
@@ -1124,7 +1124,7 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
                       </div>
                       {item.isDuplicate && (
                         <div
-                          className="absolute right-1.5 top-1.5 max-w-[65%] truncate rounded bg-gray-900/85 px-1.5 py-0.5 text-mini font-medium text-amber-300 border border-gray-700/60 backdrop-blur-sm"
+                          className="appearance-group absolute right-1.5 top-1.5 max-w-[65%] truncate rounded bg-gray-900/85 px-1.5 py-0.5 text-mini font-medium text-amber-300 border border-gray-700/60 backdrop-blur-sm"
                           title={t("已存在同参数风格串: {0}", [item.duplicateOfName || '现有风格串'])}
                         >
                           {t("已在库中")}</div>
@@ -1163,7 +1163,7 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
               </div>
 
               {/* Import Options Panel */}
-              <div className="rounded-xl border border-gray-200 bg-gray-50/80 p-3.5 dark:border-gray-800 dark:bg-gray-855 space-y-3">
+              <div className="appearance-group rounded-xl border border-gray-200 bg-gray-50/80 p-3.5 dark:border-gray-800 dark:bg-gray-855 space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-4">
                   <label className="flex items-center gap-2 cursor-pointer select-none">
                     <input
@@ -1237,7 +1237,7 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
                 <h4 className="text-sm font-bold text-gray-800 dark:text-gray-200">{t("正在保存风格串与封面...")}</h4>
                 <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{t("进度：{0} / {1}（{2}）", [importProgress.current, importProgress.total, importProgress.name])}</p>
               </div>
-              <div className="w-64 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700 h-2">
+              <div className="appearance-group w-64 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700 h-2">
                 <div
                   className="h-full bg-indigo-600 transition-all duration-150"
                   style={{ width: `${(importProgress.current / Math.max(1, importProgress.total)) * 100}%` }}
@@ -1248,7 +1248,7 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
         </div>
 
         {/* Modal Footer */}
-        <div className="operation-footer flex flex-none items-center justify-between border-t border-gray-200 px-5 py-3.5 bg-gray-50/50 dark:border-gray-800 dark:bg-gray-900/50 rounded-b-2xl">
+        <div className="appearance-content operation-footer flex flex-none items-center justify-between border-t border-gray-200 px-5 py-3.5 bg-gray-50/50 dark:border-gray-800 dark:bg-gray-900/50 rounded-b-2xl">
           <div className="text-xs text-gray-500 dark:text-gray-400">
             {detectedItems.length > 0 && !isScanning && !isImporting && (
               <span>
@@ -1263,7 +1263,7 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
               type="button"
               onClick={handleModalClose}
               disabled={isScanning || isImporting}
-              className="rounded-xl border border-gray-300 bg-white px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-750 disabled:opacity-40"
+              className="appearance-group rounded-xl border border-gray-300 bg-white px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-750 disabled:opacity-40"
             >
               {t("取消")}</button>
             {detectedItems.length > 0 && (
@@ -1300,7 +1300,7 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
             onClick={e => e.stopPropagation()}
           >
             {/* Cleanup Header */}
-            <div className="operation-header flex flex-none items-center justify-between border-b border-gray-200 px-5 dark:border-gray-800">
+            <div className="appearance-content operation-header flex flex-none items-center justify-between border-b border-gray-200 px-5 dark:border-gray-800">
               <div className="flex items-center gap-2.5">
                 <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-rose-50 text-rose-600 dark:bg-rose-950/50 dark:text-rose-400">
                   <Trash2 className="h-5 w-5" />
@@ -1321,7 +1321,7 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
             </div>
 
             {/* Cleanup Category Tabs & Batch Selection */}
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 px-5 py-2.5 bg-gray-50/50 dark:border-gray-800 dark:bg-gray-900/40">
+            <div className="appearance-group flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 px-5 py-2.5 bg-gray-50/50 dark:border-gray-800 dark:bg-gray-900/40">
               <div className="flex items-center gap-1.5">
                 <button
                   type="button"
@@ -1387,7 +1387,7 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
                       className={`flex items-center justify-between gap-3 rounded-xl border p-2.5 transition cursor-pointer select-none ${
                         isSelected
                           ? 'border-rose-300 bg-rose-50/40 dark:border-rose-900/60 dark:bg-rose-950/20'
-                          : 'border-gray-200 bg-white opacity-70 hover:opacity-100 dark:border-gray-800 dark:bg-gray-850'
+                          : 'appearance-group border-gray-200 bg-white opacity-70 hover:opacity-100 dark:border-gray-800 dark:bg-gray-850'
                       }`}
                     >
                       <div className="flex items-center gap-3 min-w-0 flex-1">
@@ -1395,13 +1395,13 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
                           className={`flex h-5 w-5 flex-none items-center justify-center rounded-md border transition ${
                             isSelected
                               ? 'border-rose-600 bg-rose-600 text-white'
-                              : 'border-gray-300 bg-white dark:border-gray-700 dark:bg-gray-900'
+                              : 'appearance-group border-gray-300 bg-white dark:border-gray-700 dark:bg-gray-900'
                           }`}
                         >
                           {isSelected && <Check className="h-3.5 w-3.5" />}
                         </div>
 
-                        <div className="flex h-11 w-11 flex-none items-center justify-center overflow-hidden rounded-lg bg-gray-100 border border-gray-200 dark:border-gray-800 dark:bg-gray-900">
+                        <div className="appearance-media flex h-11 w-11 flex-none items-center justify-center overflow-hidden rounded-lg bg-gray-100 border border-gray-200 dark:border-gray-800 dark:bg-gray-900">
                           {item.previewUrl ? (
                             <img src={item.previewUrl} alt={item.name} className="h-full w-full object-contain" />
                           ) : (
@@ -1435,7 +1435,7 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
             </div>
 
             {/* Cleanup Danger Warning & Footer */}
-            <div className="flex flex-none flex-col gap-3 border-t border-gray-200 p-4 bg-gray-50/80 dark:border-gray-800 dark:bg-gray-900/60 rounded-b-2xl">
+            <div className="appearance-group flex flex-none flex-col gap-3 border-t border-gray-200 p-4 bg-gray-50/80 dark:border-gray-800 dark:bg-gray-900/60 rounded-b-2xl">
               <div className="flex items-center gap-2 text-meta text-amber-700 dark:text-amber-400">
                 <AlertTriangle className="h-4 w-4 flex-none" />
                 <span>{t("永久删除所选文件，无法从回收站恢复。")}</span>
@@ -1449,7 +1449,7 @@ export const FolderBatchImportModal: React.FC<FolderBatchImportModalProps> = ({
                     type="button"
                     onClick={() => setShowCleanupModal(false)}
                     disabled={isDeleting}
-                    className="rounded-xl border border-gray-300 bg-white px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-750 disabled:opacity-40"
+                    className="appearance-group rounded-xl border border-gray-300 bg-white px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-750 disabled:opacity-40"
                   >
                     {t("返回")}</button>
                   <button

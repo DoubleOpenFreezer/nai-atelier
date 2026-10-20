@@ -165,7 +165,7 @@ export const ConfirmDialogProvider: React.FC<{ children: React.ReactNode }> = ({
                                 disabled={isSaving}
                                 data-agent-action="browse"
                                 onClick={() => closeDialog(false)}
-                                className={`mobile-touch rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-750 dark:focus:ring-offset-gray-900 ${options.onSave ? 'order-3 min-h-11 md:order-2' : ''}`}
+                                className={`appearance-group mobile-touch rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-750 dark:focus:ring-offset-gray-900 ${options.onSave ? 'order-3 min-h-11 md:order-2' : ''}`}
                             >
                                 {t(options.cancelLabel) || t("取消")}
                             </button>

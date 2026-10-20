@@ -321,7 +321,7 @@ describe('appearance preferences', () => {
     const current = { ...DEFAULT_APPEARANCE_PREFERENCES, palette };
     const preset = { ...BUILTIN_APPEARANCE_PRESET, ...appearanceValues(current) };
     const json = serializeAppearancePresets([preset]);
-    expect(JSON.parse(json).version).toBe(2);
+    expect(JSON.parse(json).version).toBe(3);
     expect(json).not.toMatch(/isBuiltin|generationMemory|labPageLayouts/);
     const imported = readAppearancePresetImport(json)[0];
     expect(imported.palette).toEqual(palette);

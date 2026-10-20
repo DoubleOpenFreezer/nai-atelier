@@ -67,7 +67,7 @@ const QueueStatusBody: React.FC<{ status: QueueStatus; compact?: boolean; genera
           {active && <span aria-hidden="true" className="h-4 w-4 shrink-0" />}
         </div>
       </div>
-      {status.cancelable && <button type="button" disabled={cancelling} onClick={async () => { setCancelling(true); try { await cancelCloudQueueTask(status.taskId); } finally { setCancelling(false); } }} className="mobile-touch absolute right-0 inline-flex items-center justify-center rounded-xl bg-white/15 px-3 text-xs font-bold text-white ring-1 ring-white/15 transition-colors hover:bg-white/25 disabled:opacity-60">{cancelling ? t("取消中…") : status.proxy ? t("停止等待") : t("取消排队")}</button>}
+      {status.cancelable && <button type="button" disabled={cancelling} onClick={async () => { setCancelling(true); try { await cancelCloudQueueTask(status.taskId); } finally { setCancelling(false); } }} className="appearance-group mobile-touch absolute right-0 inline-flex items-center justify-center rounded-xl bg-white/15 px-3 text-xs font-bold text-white ring-1 ring-white/15 transition-colors hover:bg-white/25 disabled:opacity-60">{cancelling ? t("取消中…") : status.proxy ? t("停止等待") : t("取消排队")}</button>}
   </div>;
 };
 

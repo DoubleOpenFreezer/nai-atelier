@@ -22,7 +22,7 @@ const UC_LABELS: Record<number, string> = {
  * 单个参数展示卡片
  */
 const ParamItem = ({ label, value }: { label: string; value: React.ReactNode }) => (
-    <div className="bg-gray-50 dark:bg-gray-800 p-2 rounded border border-gray-100 dark:border-gray-700/50">
+    <div className="appearance-group bg-gray-50 dark:bg-gray-800 p-2 rounded border border-gray-100 dark:border-gray-700/50">
         <div className="text-micro text-gray-400 uppercase font-bold text-ellipsis overflow-hidden mb-0.5">
             {t(label)}
         </div>
@@ -89,7 +89,7 @@ export const ParamsViewer: React.FC<ParamsViewerProps> = ({
                         >
                             {t("复制")}</button>
                     </div>
-                    <div className="text-xs text-gray-700 dark:text-gray-300 font-mono break-words bg-gray-50 dark:bg-gray-850 border border-gray-100 dark:border-gray-800 p-3 rounded-lg leading-relaxed select-text max-h-32 overflow-y-auto custom-scrollbar">
+                    <div className="appearance-group text-xs text-gray-700 dark:text-gray-300 font-mono break-words bg-gray-50 dark:bg-gray-850 border border-gray-100 dark:border-gray-800 p-3 rounded-lg leading-relaxed select-text max-h-32 overflow-y-auto custom-scrollbar">
                         {prompt || <span className="text-gray-400 italic">{t("（空）")}</span>}
                     </div>
                 </div>
@@ -112,7 +112,7 @@ export const ParamsViewer: React.FC<ParamsViewerProps> = ({
                                 {t("复制")}</button>
                         )}
                     </div>
-                    <div className="text-xs text-gray-700 dark:text-gray-300 font-mono break-words bg-gray-50 dark:bg-gray-850 border border-gray-100 dark:border-gray-800 p-3 rounded-lg leading-relaxed select-text max-h-24 overflow-y-auto custom-scrollbar">
+                    <div className="appearance-group text-xs text-gray-700 dark:text-gray-300 font-mono break-words bg-gray-50 dark:bg-gray-850 border border-gray-100 dark:border-gray-800 p-3 rounded-lg leading-relaxed select-text max-h-24 overflow-y-auto custom-scrollbar">
                         {negativePrompt || <span className="text-gray-400 italic">{t("（空）")}</span>}
                     </div>
                 </div>
@@ -228,7 +228,7 @@ export const ParamsViewer: React.FC<ParamsViewerProps> = ({
 
             {/* 多角色列表 */}
             {(!section || section === 'characters') && params.characters && params.characters.length > 0 && (
-                <details open={section !== 'characters'} className={section === 'characters' ? 'group rounded-xl border border-gray-100 bg-gray-50/50 p-2.5 dark:border-gray-800/60 dark:bg-gray-900/30' : 'group'}>
+                <details open={section !== 'characters'} className={section === 'characters' ? 'appearance-group group rounded-xl border border-gray-100 bg-gray-50/50 p-2.5 dark:border-gray-800/60 dark:bg-gray-900/30' : 'group'}>
                     <summary className="flex cursor-pointer items-center justify-between gap-2 text-xs font-bold text-gray-500 uppercase tracking-wider select-none">
                         <span className="flex items-center gap-1">
                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -242,7 +242,7 @@ export const ParamsViewer: React.FC<ParamsViewerProps> = ({
                         {params.characters.map((char, idx) => (
                             <div
                                 key={char.id || idx}
-                                className="bg-gray-50 dark:bg-gray-800 border border-gray-100 dark:border-gray-700/50 rounded-lg p-2.5"
+                                className="appearance-group bg-gray-50 dark:bg-gray-800 border border-gray-100 dark:border-gray-700/50 rounded-lg p-2.5"
                             >
                                 <div className="flex items-center justify-between mb-1.5">
                                     <span className="text-micro font-bold text-indigo-500 dark:text-indigo-400 uppercase">{t("角色 {0}{1}", [idx + 1, char.enabled === false ? t(" · 已停用") : ''])}</span>

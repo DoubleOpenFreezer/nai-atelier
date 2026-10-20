@@ -599,7 +599,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
       />
 
       {tagAssistEnabled && showTranslations && (currentTranslations.length > 0 || editable) && (
-        <div className="mt-1 rounded-lg border border-gray-200 bg-gray-50/80 px-2.5 py-2 dark:border-gray-700 dark:bg-gray-900/55" aria-label={t("提示词中文翻译")} tabIndex={0}
+        <div className="appearance-group mt-1 rounded-lg border border-gray-200 bg-gray-50/80 px-2.5 py-2 dark:border-gray-700 dark:bg-gray-900/55" aria-label={t("提示词中文翻译")} tabIndex={0}
           onCopy={event => copySelection(event)} onCut={event => copySelection(event, true)}
           onPaste={event => {
             if ((event.target as HTMLElement).closest('input, textarea, [contenteditable="true"]') || !editable) return;
@@ -626,7 +626,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
                       key={item.id}
                       className={`inline-flex max-w-full flex-col rounded-md border px-2 py-1 text-left leading-tight transition-colors ${deleteMode ? 'hover:border-red-400' : 'hover:border-[var(--nai-accent)]'} ${selected
                         ? deleteMode ? 'border-red-400 bg-red-50 dark:border-red-500 dark:bg-red-950/40' : 'border-[var(--nai-accent)] bg-[color-mix(in_srgb,var(--nai-accent)_14%,transparent)]'
-                        : 'border-gray-200 bg-white/60 dark:border-gray-700 dark:bg-gray-900/50'}`}
+                        : 'appearance-group border-gray-200 bg-white/60 dark:border-gray-700 dark:bg-gray-900/50'}`}
                       aria-pressed={selected}
                     >
                       <span className={`max-w-52 truncate font-mono text-micro ${selected ? deleteMode ? 'text-red-600 dark:text-red-400' : 'text-[var(--nai-accent)]' : 'text-gray-500 dark:text-gray-400'}`} title={item.displayTag}>{item.displayTag}</span>
@@ -665,7 +665,7 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
                     key={item.groupId}
                     className={`inline-flex max-w-full flex-wrap items-start overflow-hidden rounded-md border text-left leading-tight transition-colors hover:border-[var(--nai-accent)] ${groupSelected
                       ? 'border-[var(--nai-accent)] bg-[color-mix(in_srgb,var(--nai-accent)_14%,transparent)]'
-                      : 'border-gray-200 bg-white/60 dark:border-gray-700 dark:bg-gray-900/50'}`}
+                      : 'appearance-group border-gray-200 bg-white/60 dark:border-gray-700 dark:bg-gray-900/50'}`}
                     aria-pressed={groupSelected}
                   >
                     {openSyntax && <span className={`shrink-0 py-1 pl-2 font-mono text-micro font-bold ${groupTextTone}`}>{openSyntax}</span>}
@@ -719,18 +719,18 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
             </div> : <>
             <div className="flex shrink-0 items-center gap-1.5 whitespace-nowrap">
               <span className="text-meta text-gray-500 dark:text-gray-400">{t("权重类型")}</span>
-              <div role="group" aria-label={t("权重类型")} className="flex items-stretch overflow-hidden rounded-md border border-gray-300 bg-gray-100 p-0.5 dark:border-gray-600 dark:bg-gray-800">
+              <div role="group" aria-label={t("权重类型")} className="appearance-group flex items-stretch overflow-hidden rounded-md border border-gray-300 bg-gray-100 p-0.5 dark:border-gray-600 dark:bg-gray-800">
               <button
                 type="button"
                 onClick={() => setWeightKind('brace')}
                 aria-pressed={weightKind === 'brace'}
-                className={`rounded px-2 py-0.5 text-meta font-bold transition-colors ${weightKind === 'brace' ? 'bg-white text-[var(--nai-accent)] shadow-sm dark:bg-gray-700' : 'text-gray-500 hover:text-[var(--nai-accent)] dark:text-gray-400'}`}
+                className={`appearance-group rounded px-2 py-0.5 text-meta font-bold transition-colors ${weightKind === 'brace' ? 'bg-white text-[var(--nai-accent)] shadow-sm dark:bg-gray-700' : 'text-gray-500 hover:text-[var(--nai-accent)] dark:text-gray-400'}`}
               >{t("括号")}</button>
               <button
                 type="button"
                 onClick={() => setWeightKind('numeric')}
                 aria-pressed={weightKind === 'numeric'}
-                className={`rounded px-2 py-0.5 text-meta font-bold transition-colors ${weightKind === 'numeric' ? 'bg-white text-[var(--nai-accent)] shadow-sm dark:bg-gray-700' : 'text-gray-500 hover:text-[var(--nai-accent)] dark:text-gray-400'}`}
+                className={`appearance-group rounded px-2 py-0.5 text-meta font-bold transition-colors ${weightKind === 'numeric' ? 'bg-white text-[var(--nai-accent)] shadow-sm dark:bg-gray-700' : 'text-gray-500 hover:text-[var(--nai-accent)] dark:text-gray-400'}`}
               >{t("数值")}</button>
               </div>
               <button

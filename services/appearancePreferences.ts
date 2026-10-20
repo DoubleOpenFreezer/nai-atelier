@@ -1,5 +1,9 @@
 import { useSyncExternalStore } from 'react';
-import { applyThemeColors, HEX_COLOR_PATTERN, normalizeThemePalettes, THEME_PALETTE_KEYS, ThemePalettes } from './themePalette';
+import { applyThemeColors, HEX_COLOR_PATTERN, normalizeThemePalettes, ThemePalettes } from './themePalette';
+import { applyThemeDetails, normalizeThemeDetails, resolveThemeDetails, ThemeDetails } from './themeDetails';
+import { validateAppearancePreset } from './appearancePresets';
+import { applyThemeBackground, normalizeThemeBackground, type ThemeBackground } from './themeBackground';
+export { APPEARANCE_FORMAT_VERSION, appearanceValues, appearanceMatchesPreset, serializeAppearancePresets, validateAppearancePreset, readAppearancePresetImport, parseAppearancePresetsFromJson } from './appearancePresets';
 
 export type ThemeMode = 'light' | 'dark' | 'system';
 export type DesignTheme = 'nai-atelier';
@@ -116,6 +120,8 @@ export interface AppearancePreset {
   galleryHoverFloat: boolean;
   gallerySelectionFocus: boolean;
   palette?: ThemePalettes;
+  details?: ThemeDetails;
+  background?: ThemeBackground;
 }
 
 export const BUILTIN_APPEARANCE_PRESET: AppearancePreset = {
@@ -140,6 +146,8 @@ export interface AppearancePreferences {
   themeMode: ThemeMode;
   accentColor: string;
   palette?: ThemePalettes;
+  details?: ThemeDetails;
+  background?: ThemeBackground;
   density: InterfaceDensity;
   corners: CornerStyle;
   surfaces: SurfaceStyle;
@@ -172,21 +180,6 @@ export interface AppearancePreferences {
 
 const STORAGE_KEY = 'nai_appearance_preferences';
 const LEGACY_THEME_KEY = 'nai_theme';
-export const APPEARANCE_FORMAT_VERSION = 2;
-
-const APPEARANCE_KEYS = ['accentColor', 'themeMode', 'density', 'corners', 'surfaces', 'motion', 'fontScale', 'galleryFrostedCaption', 'galleryHoverFloat', 'gallerySelectionFocus', 'palette'] as const;
-export const appearanceValues = (value: AppearancePreset | AppearancePreferences): Pick<AppearancePreset, typeof APPEARANCE_KEYS[number]> => ({
-  ...Object.fromEntries(APPEARANCE_KEYS.map(key => [key, value[key]])),
-  palette: normalizeThemePalettes(value.palette),
-}) as Pick<AppearancePreset, typeof APPEARANCE_KEYS[number]>;
-export const appearanceMatchesPreset = (preferences: AppearancePreferences, preset: AppearancePreset): boolean =>
-  JSON.stringify(appearanceValues(preferences)) === JSON.stringify(appearanceValues(preset));
-
-export const serializeAppearancePresets = (presets: AppearancePreset[]): string => JSON.stringify({
-  version: APPEARANCE_FORMAT_VERSION,
-  presets: presets.map(preset => ({ id: preset.id, name: preset.name, createdAt: preset.createdAt, ...appearanceValues(preset) })),
-}, null, 2);
-
 export const DEFAULT_APPEARANCE_PREFERENCES: AppearancePreferences = {
   designTheme: 'nai-atelier',
   themeMode: 'system',
@@ -211,92 +204,6 @@ export const DEFAULT_APPEARANCE_PREFERENCES: AppearancePreferences = {
   labPageLayouts: cloneDefaultLabPageLayouts(),
   customPresets: [],
   activePresetId: 'builtin-default',
-};
-
-export const validateAppearancePreset = (input: unknown): AppearancePreset | null => {
-  if (!input || typeof input !== 'object') return null;
-  const obj = input as Partial<AppearancePreset>;
-  if (typeof obj.name !== 'string' || !obj.name.trim()) return null;
-
-  const id = typeof obj.id === 'string' && obj.id.trim()
-    ? obj.id.trim()
-    : `preset-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-  const name = obj.name.trim().slice(0, 30);
-  const createdAt = typeof obj.createdAt === 'number' && Number.isFinite(obj.createdAt) ? obj.createdAt : Date.now();
-  const isBuiltin = obj.isBuiltin === true;
-  const accentColor = typeof obj.accentColor === 'string' && HEX_COLOR_PATTERN.test(obj.accentColor) ? obj.accentColor.toLowerCase() : '#0ea5e9';
-  const themeMode = isOneOf(obj.themeMode, ['light', 'dark', 'system']) ? obj.themeMode : 'system';
-  const density = isOneOf(obj.density, ['comfortable', 'standard', 'compact']) ? obj.density : 'standard';
-  const corners = isOneOf(obj.corners, ['soft', 'standard', 'sharp']) ? obj.corners : 'standard';
-  const surfaces = isOneOf(obj.surfaces, ['solid', 'translucent']) ? obj.surfaces : 'solid';
-  const motion = isOneOf(obj.motion, ['full', 'reduced', 'off']) ? obj.motion : 'full';
-  const fontScale = isOneOf(obj.fontScale, ['small', 'standard', 'large']) ? obj.fontScale : 'standard';
-
-  return {
-    id,
-    name,
-    createdAt,
-    ...(isBuiltin ? { isBuiltin: true } : {}),
-    accentColor,
-    themeMode,
-    density,
-    corners,
-    surfaces,
-    motion,
-    fontScale,
-    galleryFrostedCaption: typeof obj.galleryFrostedCaption === 'boolean' ? obj.galleryFrostedCaption : true,
-    galleryHoverFloat: typeof obj.galleryHoverFloat === 'boolean' ? obj.galleryHoverFloat : true,
-    gallerySelectionFocus: typeof obj.gallerySelectionFocus === 'boolean' ? obj.gallerySelectionFocus : true,
-    ...(normalizeThemePalettes(obj.palette) ? { palette: normalizeThemePalettes(obj.palette) } : {}),
-  };
-};
-
-export const readAppearancePresetImport = (jsonText: string): AppearancePreset[] => {
-  let parsed: unknown;
-  try { parsed = JSON.parse(jsonText); }
-  catch { throw new Error('主题文件不是有效的 JSON'); }
-  const container = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : undefined;
-  if (container && 'version' in container && (typeof container.version !== 'number' || ![1, APPEARANCE_FORMAT_VERSION].includes(container.version))) throw new Error('不支持的主题文件版本，请更新应用');
-  if (container && 'presets' in container && !Array.isArray(container.presets)) throw new Error('主题文件的 presets 必须是数组');
-  if (container && 'presets' in container && Object.keys(container).some(key => !['version', 'presets', 'exportedAt'].includes(key))) throw new Error('主题包含不支持的字段，请对照主题制作说明');
-  const rawList = Array.isArray(parsed)
-    ? parsed
-    : (container && Array.isArray(container.presets))
-      ? container.presets
-      : [parsed];
-  const results: AppearancePreset[] = [];
-  for (const item of rawList) {
-    const valid = validateAppearancePreset(item);
-    if (!valid) throw new Error('主题名称缺失或主题数据无效');
-    const record = item as Record<string, unknown>;
-    const allowed = ['id', 'name', 'createdAt', 'isBuiltin', ...APPEARANCE_KEYS];
-    if (Object.keys(record).some(key => !allowed.includes(key))) throw new Error('主题包含不支持的字段，请对照主题制作说明');
-    for (const key of APPEARANCE_KEYS) {
-      if (key === 'palette' || !(key in record)) continue;
-      const value = record[key];
-      if (key === 'accentColor' ? typeof value !== 'string' || !HEX_COLOR_PATTERN.test(value) : value !== valid[key]) throw new Error('主题选项无效，请对照主题制作说明');
-    }
-    if ('palette' in record) {
-      const palette = record.palette;
-      if (!palette || typeof palette !== 'object' || Array.isArray(palette) || Object.keys(palette).some(mode => !['light', 'dark'].includes(mode))) throw new Error('主题配色只支持 light 和 dark');
-      for (const colors of Object.values(palette)) {
-        if (!colors || typeof colors !== 'object' || Array.isArray(colors) || Object.entries(colors).some(([key, color]) => !THEME_PALETTE_KEYS.includes(key as typeof THEME_PALETTE_KEYS[number]) || typeof color !== 'string' || !HEX_COLOR_PATTERN.test(color))) throw new Error('主题配色必须使用已支持的字段和六位十六进制颜色');
-      }
-    }
-    const custom = { ...valid };
-    delete custom.isBuiltin;
-    results.push(custom);
-  }
-  if (!results.length) throw new Error('主题文件中没有可导入的主题');
-  return results;
-};
-
-export const parseAppearancePresetsFromJson = (jsonText: string): AppearancePreset[] => {
-  try {
-    return readAppearancePresetImport(jsonText);
-  } catch {
-    return [];
-  }
 };
 
 const isOneOf = <T extends string>(value: unknown, values: readonly T[]): value is T =>
@@ -368,6 +275,8 @@ export const normalizeAppearancePreferences = (value: unknown): AppearancePrefer
       ? input.accentColor.toLowerCase()
       : DEFAULT_APPEARANCE_PREFERENCES.accentColor,
     ...(normalizeThemePalettes(input.palette) ? { palette: normalizeThemePalettes(input.palette) } : {}),
+    ...(normalizeThemeDetails(input.details) ? { details: normalizeThemeDetails(input.details) } : {}),
+    ...(normalizeThemeBackground(input.background) ? { background: normalizeThemeBackground(input.background) } : {}),
     density: isOneOf(input.density, ['comfortable', 'standard', 'compact']) ? input.density : DEFAULT_APPEARANCE_PREFERENCES.density,
     corners: isOneOf(input.corners, ['soft', 'standard', 'sharp']) ? input.corners : DEFAULT_APPEARANCE_PREFERENCES.corners,
     surfaces: isOneOf(input.surfaces, ['solid', 'translucent']) ? input.surfaces : DEFAULT_APPEARANCE_PREFERENCES.surfaces,
@@ -440,8 +349,10 @@ export const saveAppearancePreferences = (preferences: AppearancePreferences) =>
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized));
     localStorage.setItem(LEGACY_THEME_KEY, normalized.themeMode);
+    return true;
   } catch {
     // 写入失败只影响持久化，本次会话内的偏好状态仍然有效
+    return false;
   }
 };
 
@@ -458,8 +369,11 @@ export const applyAppearancePreferences = (preferences: AppearancePreferences, i
   root.dataset.galleryFrostedCaption = String(preferences.galleryFrostedCaption);
   root.dataset.galleryHoverFloat = String(preferences.galleryHoverFloat);
   if (captionChanged) window.dispatchEvent(new Event('nai-gallery-caption-change'));
-  root.style.setProperty('--nai-accent', preferences.accentColor);
-  applyThemeColors(root, preferences.palette, isDark, preferences.surfaces === 'translucent', preferences.accentColor);
+  const accent = resolveThemeDetails(preferences.details, isDark)?.accentColor || preferences.accentColor;
+  root.style.setProperty('--nai-accent', accent);
+  applyThemeColors(root, preferences.palette, isDark, preferences.surfaces === 'translucent', accent);
+  applyThemeDetails(root, preferences.details, preferences);
+  applyThemeBackground(root, preferences.background);
   root.style.colorScheme = isDark ? 'dark' : 'light';
 };
 

@@ -88,11 +88,11 @@ export const CharacterTaggerReference: React.FC<CharacterTaggerReferenceProps> =
     <button type="button" disabled={!canEdit || busy} onPaste={handlePaste}
       onClick={() => void recognize(() => readClipboardImage({ pasteHint: '在「粘贴反推」按钮上按 Ctrl+V', imagePurpose: '反推参考' }))}
       title={t("识别剪贴板图片并追加到此角色，也可聚焦按钮后按 Ctrl+V")}
-      className="flex h-9 w-full items-center justify-center gap-1 rounded border border-gray-200 bg-white px-1 text-xs font-medium text-gray-600 outline-none hover:bg-gray-50 focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700">
+      className="appearance-group flex h-9 w-full items-center justify-center gap-1 rounded border border-gray-200 bg-white px-1 text-xs font-medium text-gray-600 outline-none hover:bg-gray-50 focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700">
       {busy ? <LoaderCircle className="h-3.5 w-3.5 shrink-0 animate-spin" /> : <ClipboardPaste className="h-3.5 w-3.5 shrink-0" />}
       {busy ? t("反推中…") : t("粘贴反推")}
     </button>
-    {preview && <div className="relative overflow-hidden rounded border border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900">
+    {preview && <div className="appearance-media relative overflow-hidden rounded border border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900">
       <button type="button" aria-label={t("放大反推参考图")} title={t("反推参考图，仅作提示词对照")} onClick={() => setExpanded(true)} className="flex min-h-16 w-full items-center justify-center focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500">
         <img src={preview} alt={t("反推参考图")} className="max-h-40 w-full object-contain" />
       </button>

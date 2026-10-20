@@ -15,7 +15,7 @@ import { createUuid } from '../services/id';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { ShortestColumnMasonry, useMasonryColumnCount } from './ShortestColumnMasonry';
 import { AlertTriangle, CalendarDays, ChevronDown, Clock3, Footprints, Heart, Layers, ListChecks, LoaderCircle, Save, Trash2 } from 'lucide-react';
-import { CloseButton, EmptyState, IconButton, PageSpinner, ToolbarButton, ToolbarSelect, WorkspaceToolbar } from './DesignSystem';
+import { CloseButton, EmptyState, IconButton, PageSpinner, ToolbarButton, ToolbarSelect, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
 import { buildMediaUrl, canUseMediaGateway } from '../services/mobileImageCache';
 import { useKeepAliveScrollRestore } from './useKeepAliveScrollRestore';
 import { useGalleryLoadMore } from './useGalleryLoadMore';
@@ -140,7 +140,7 @@ const HistoryCard = React.memo(function HistoryCard({
             role="button"
             tabIndex={0}
             aria-label={t("查看生成于 {0} 的图片", [createdAt])}
-            className={`mobile-gallery-item gallery-image-card group relative flex-col bg-white dark:bg-gray-800 rounded-lg overflow-hidden cursor-pointer border hover:border-indigo-500 transition-colors ${isSelected ? 'border-indigo-500 ring-2 ring-indigo-500' : 'border-gray-200 dark:border-gray-700'}`}
+            className={`appearance-group mobile-gallery-item gallery-image-card group relative flex-col bg-white dark:bg-gray-800 rounded-lg overflow-hidden cursor-pointer border hover:border-indigo-500 transition-colors ${isSelected ? 'border-indigo-500 ring-2 ring-indigo-500' : 'border-gray-200 dark:border-gray-700'}`}
             onKeyDown={event => {
                 if (event.target !== event.currentTarget || !['Enter', ' '].includes(event.key)) return;
                 event.preventDefault();
@@ -151,7 +151,7 @@ const HistoryCard = React.memo(function HistoryCard({
                 else onOpen(item);
             }}
         >
-            <div className="mobile-gallery-frame md:aspect-square relative w-full overflow-hidden bg-gray-200 dark:bg-gray-900" style={{ '--mobile-image-ratio': `${ratio}` } as React.CSSProperties}>
+            <div className="appearance-media mobile-gallery-frame md:aspect-square relative w-full overflow-hidden bg-gray-200 dark:bg-gray-900" style={{ '--mobile-image-ratio': `${ratio}` } as React.CSSProperties}>
                 <SmartImage src={item.imageUrl} thumbnailVariant={HISTORY_THUMBNAIL_VARIANT} alt={t("生成于 {0} 的图片", [createdAt])} className={`w-full h-full ${preserveRatioUntilMeasured && !measuredRatio ? 'object-contain' : 'object-cover'}`} onLoad={event => {
                     const image = event.currentTarget;
                     const imageRatio = image.naturalWidth / Math.max(1, image.naturalHeight);
@@ -171,7 +171,7 @@ const HistoryCard = React.memo(function HistoryCard({
                     {createdAt}
                 </div>
             </div>
-            <div className="truncate px-2 py-2 text-meta text-gray-600 dark:text-gray-300 md:hidden">{createdAt}</div>
+            <div className="gallery-card-footer truncate px-2 py-2 text-meta text-gray-600 dark:text-gray-300 md:hidden">{createdAt}</div>
         </PressRevealSurface>
     );
 });
@@ -1027,8 +1027,9 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
     );
 
     return (
-        <div className="flex-1 flex flex-col h-full bg-gray-50 dark:bg-gray-900 overflow-hidden">
-            <WorkspaceToolbar>
+        <div className="workspace-canvas flex-1 flex flex-col h-full bg-gray-50 dark:bg-gray-900 overflow-hidden">
+            <WorkspaceChrome>
+<WorkspaceToolbar>
                 <div className="history-toolbar-shell">
                     {selectionMode ? <>
                         <span className="flex-1 whitespace-nowrap text-sm font-semibold md:hidden">{t("已选 {0} 张", [selectedIds.size])}</span>
@@ -1093,8 +1094,8 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
                 <div className="space-y-2">
                             {newImageCount > 0 && <ToolbarButton className="w-full" onClick={() => { setShowCleanMenu(false); showNewImages(); }}>{t("新增 {0} 张图片 · 查看最新", [newImageCount])}</ToolbarButton>}
                             <button onClick={() => { setSelectionMode(true); setSelectedIds(new Set()); setShowCleanMenu(false); }} className="mobile-touch w-full rounded-xl bg-indigo-50 px-4 text-left text-sm font-bold text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-300">{t("批量选择图片")}</button>
-                            <button onClick={() => handleCleanMenuClick('days')} className="mobile-touch w-full rounded-xl bg-gray-100 px-4 text-left text-sm dark:bg-gray-800">{t("删除指定天数以前的历史")}</button>
-                            <button onClick={() => handleCleanMenuClick('count')} className="mobile-touch w-full rounded-xl bg-gray-100 px-4 text-left text-sm dark:bg-gray-800">{t("只保留最近指定数量")}</button>
+                            <button onClick={() => handleCleanMenuClick('days')} className="appearance-group mobile-touch w-full rounded-xl bg-gray-100 px-4 text-left text-sm dark:bg-gray-800">{t("删除指定天数以前的历史")}</button>
+                            <button onClick={() => handleCleanMenuClick('count')} className="appearance-group mobile-touch w-full rounded-xl bg-gray-100 px-4 text-left text-sm dark:bg-gray-800">{t("只保留最近指定数量")}</button>
                             <button onClick={handleClearAll} className="mobile-touch w-full rounded-xl bg-red-50 px-4 text-left text-sm font-bold text-red-600 dark:bg-red-950/40 dark:text-red-400">{t("清空全部历史")}</button>
                 </div>
             </MobileBottomSheet></ImagePreviewPortal>
@@ -1110,7 +1111,8 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
                 </div>
             </MobileBottomSheet></ImagePreviewPortal>
 
-            <div ref={historyScrollRef} onScroll={onScrollRestore} className="flex-1 overflow-y-auto p-4 md:p-6 pb-20">
+            </WorkspaceChrome>
+            <div ref={historyScrollRef} onScroll={onScrollRestore} className="workspace-scroll-viewport flex-1 overflow-y-auto p-4 md:p-6 pb-20">
                 {loadFailed && <div role="alert" className="mb-4 flex items-center justify-center gap-3 text-sm text-gray-500"><span>{t("历史加载失败")}</span><ToolbarButton onClick={() => void goToPage(currentPageRef.current, true)}>{t("重试")}</ToolbarButton></div>}
                 {isLoading ? (
                     <PageSpinner label={t("加载中…")} className="h-full" />
@@ -1145,7 +1147,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
                             )}
                           </section>)}
                         </div>
-                        {selectionMode && <div className="mobile-safe-bottom fixed bottom-[calc(4.25rem+env(safe-area-inset-bottom))] left-0 right-0 z-40 border-t border-gray-200 bg-white/95 p-2 backdrop-blur dark:border-gray-700 dark:bg-gray-900/95 md:hidden"><div className="mb-1 text-center text-xs font-bold dark:text-white">{t("多选模式 · 已选 {0} 张", [selectedIds.size])}</div><div className="grid grid-cols-3 gap-2"><button onClick={selectCurrentPage} className="mobile-touch rounded-xl bg-indigo-50 text-sm font-bold text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-200">{t("全选")}</button><button onClick={invertCurrentPageSelection} className="mobile-touch rounded-xl bg-indigo-50 text-sm font-bold text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-200">{t("反选")}</button><button onClick={exitSelectionMode} className="mobile-touch rounded-xl bg-gray-100 text-sm font-bold dark:bg-gray-800">{t("退出")}</button><button onClick={() => void handleBulkFavorite(true)} disabled={!selectedIds.size || selectionFavoritePending} className="mobile-touch rounded-xl bg-rose-500 text-sm font-bold text-white disabled:opacity-40">{t("收藏")}</button><button onClick={() => void handleBulkFavorite(false)} disabled={!selectedIds.size || selectionFavoritePending} className="mobile-touch rounded-xl bg-rose-50 text-sm font-bold text-rose-600 disabled:opacity-40 dark:bg-rose-950/40 dark:text-rose-300">{t("取消收藏")}</button><button onClick={() => void handleBulkDelete()} disabled={!selectedIds.size} className="mobile-touch rounded-xl bg-red-600 text-sm font-bold text-white disabled:opacity-40">{t("删除")}</button></div></div>}
+                        {selectionMode && <div className="appearance-surface mobile-safe-bottom fixed bottom-[calc(4.25rem+env(safe-area-inset-bottom))] left-0 right-0 z-40 border-t border-gray-200 bg-white/95 p-2 backdrop-blur dark:border-gray-700 dark:bg-gray-900/95 md:hidden"><div className="mb-1 text-center text-xs font-bold dark:text-white">{t("多选模式 · 已选 {0} 张", [selectedIds.size])}</div><div className="grid grid-cols-3 gap-2"><button onClick={selectCurrentPage} className="mobile-touch rounded-xl bg-indigo-50 text-sm font-bold text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-200">{t("全选")}</button><button onClick={invertCurrentPageSelection} className="mobile-touch rounded-xl bg-indigo-50 text-sm font-bold text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-200">{t("反选")}</button><button onClick={exitSelectionMode} className="appearance-group mobile-touch rounded-xl bg-gray-100 text-sm font-bold dark:bg-gray-800">{t("退出")}</button><button onClick={() => void handleBulkFavorite(true)} disabled={!selectedIds.size || selectionFavoritePending} className="mobile-touch rounded-xl bg-rose-500 text-sm font-bold text-white disabled:opacity-40">{t("收藏")}</button><button onClick={() => void handleBulkFavorite(false)} disabled={!selectedIds.size || selectionFavoritePending} className="mobile-touch rounded-xl bg-rose-50 text-sm font-bold text-rose-600 disabled:opacity-40 dark:bg-rose-950/40 dark:text-rose-300">{t("取消收藏")}</button><button onClick={() => void handleBulkDelete()} disabled={!selectedIds.size} className="mobile-touch rounded-xl bg-red-600 text-sm font-bold text-white disabled:opacity-40">{t("删除")}</button></div></div>}
                         {/* 底部分页信息 */}
                         <div className="mt-12 md:mt-16">
                             {totalCount > 0 && <>
@@ -1280,7 +1282,7 @@ export const GenHistory: React.FC<GenHistoryProps> = ({ chains, notify, onNaviga
                         <div className="flex gap-2">
                             <button
                                 onClick={() => setShowCleanModal(false)}
-                                className="flex-1 py-2 bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 rounded-xl font-bold"
+                                className="appearance-group flex-1 py-2 bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 rounded-xl font-bold"
                             >
                                 {t("取消")}</button>
                             <button

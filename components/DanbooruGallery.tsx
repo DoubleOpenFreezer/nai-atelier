@@ -17,7 +17,7 @@ import { IMPORT_SESSION_KEY, PendingImportData } from '../services/metadataServi
 import { Inspiration, NAIParams, User } from '../types';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { useStaleGuard } from './useStaleGuard';
-import { EmptyState, PageSpinner, ToolbarButton, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
+import { EmptyState, PageSpinner, ToolbarButton, ToolbarSearch, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
 import { DetailSidePanel, DetailImageStage, TagChipGroup } from './DetailPanel';
 import { ExternalImageTools } from './ExternalImageTools';
 import { ToolbarPopover, TOOLBAR_FIELD_CLASS } from './ToolbarPopover';
@@ -341,7 +341,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, select
   }, [frostedCaption]);
 
   const renderHistoryCard = (item: GalleryHistoryItem) => (
-    <PressRevealSurface as="article" key={item.id} style={{ contentVisibility: 'visible' }} data-gallery-work-id={item.sourceId} className={`mobile-gallery-item gallery-image-card group relative flex-col overflow-hidden rounded-lg border bg-white transition-[filter,box-shadow,border-color] duration-150 dark:bg-gray-800 ${selectionFocusEnabled && selectedId !== null && selectedId !== Number(item.sourceId) ? 'brightness-[.7]' : ''} ${selectedId === Number(item.sourceId) ? 'border-indigo-500 ring-2 ring-indigo-500' : 'border-gray-200 dark:border-gray-700 hover:border-indigo-500'}`}>
+    <PressRevealSurface as="article" key={item.id} style={{ contentVisibility: 'visible' }} data-gallery-work-id={item.sourceId} className={`appearance-group mobile-gallery-item gallery-image-card group relative flex-col overflow-hidden rounded-lg border bg-white transition-[filter,box-shadow,border-color] duration-150 dark:bg-gray-800 ${selectionFocusEnabled && selectedId !== null && selectedId !== Number(item.sourceId) ? 'brightness-[.7]' : ''} ${selectedId === Number(item.sourceId) ? 'border-indigo-500 ring-2 ring-indigo-500' : 'border-gray-200 dark:border-gray-700 hover:border-indigo-500'}`}>
       <button
         type="button"
         onClick={() => {
@@ -377,7 +377,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, select
         }}
         className="gallery-card-visual block w-full text-left"
       >
-        <div className="mobile-gallery-frame relative aspect-[3/4] overflow-hidden bg-gray-200 dark:bg-gray-800">
+        <div className="appearance-media mobile-gallery-frame relative aspect-[3/4] overflow-hidden bg-gray-200 dark:bg-gray-800">
           <SmartImage src={item.sampleUrl} alt={item.title} />
         </div>
         <div className="gallery-card-caption p-2.5">
@@ -396,13 +396,13 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, select
       <PressRevealSurface as="article"
         key={post.id} data-gallery-work-id={post.id}
         data-safe-mode-work="true"
-        className={`mobile-gallery-item gallery-image-card group relative flex-col overflow-hidden rounded-lg border bg-white transition-[filter,box-shadow,border-color] duration-150 dark:bg-gray-800 ${selectionFocusEnabled && selectedId !== null && selectedId !== post.id ? 'brightness-[.7]' : ''} ${
+        className={`appearance-group mobile-gallery-item gallery-image-card group relative flex-col overflow-hidden rounded-lg border bg-white transition-[filter,box-shadow,border-color] duration-150 dark:bg-gray-800 ${selectionFocusEnabled && selectedId !== null && selectedId !== post.id ? 'brightness-[.7]' : ''} ${
           selectedId === post.id ? 'border-indigo-500 ring-2 ring-indigo-500' : 'border-gray-200 dark:border-gray-700 hover:border-indigo-500'
         }`}
       >
         <button type="button" onClick={() => { selectionAnchor.prepareSelection(post.id); setSelectedId(post.id); }} className="gallery-card-visual block w-full text-left">
           <div
-            className="mobile-gallery-frame relative aspect-[3/4] overflow-hidden bg-gray-200 dark:bg-gray-800"
+            className="appearance-media mobile-gallery-frame relative aspect-[3/4] overflow-hidden bg-gray-200 dark:bg-gray-800"
             style={{ '--mobile-image-ratio': ratio } as React.CSSProperties}
           >
             <SmartImage src={post.sampleUrl} alt={title.replaceAll('_', ' ')} />
@@ -455,8 +455,9 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, select
   };
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col bg-gray-50 dark:bg-gray-900">
-      <WorkspaceToolbar>
+    <div className="workspace-canvas flex min-h-0 flex-1 flex-col bg-gray-50 dark:bg-gray-900">
+      <WorkspaceChrome>
+<WorkspaceToolbar>
         <form onSubmit={submitSearch} className="min-w-0 flex-1"><ToolbarSearch value={input} onChange={event => setInput(event.target.value)} placeholder={t("输入中文或英文 Tag，回车搜索")} aria-label={t("搜索 Danbooru")} containerClassName="md:max-w-none!" /></form>
         <ToolbarPopover title={t("Danbooru 筛选")} count={Number(sort !== 'rank') + Number(rating !== 'all') + Number(ratio !== 'all') + Number(soloOnly)}>
         <div className="space-y-4">
@@ -504,7 +505,7 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, select
             className={`mobile-touch h-10 w-full rounded-xl border px-3 text-sm font-semibold transition-colors ${
               soloOnly
                 ? 'border-indigo-600 bg-indigo-600 text-white'
-                : 'border-gray-200 bg-gray-50 text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300'
+                : 'appearance-group border-gray-200 bg-gray-50 text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300'
             }`}
           >
             {soloOnly ? t("✓ 已启用仅单人 (solo)") : t("启用仅单人 (solo)")}
@@ -514,8 +515,9 @@ export const DanbooruGallery: React.FC<DanbooruGalleryProps> = ({ active, select
         <ToolbarButton aria-label={t("浏览足迹")} onClick={() => (showHistory ? void handleApplyFilter() : loadHistory())} tone={showHistory ? 'primary' : 'neutral'} className="mobile-touch border-l"><Clock /><span className="hidden sm:inline">{t("足迹")}</span></ToolbarButton>
       </WorkspaceToolbar>
 
+      </WorkspaceChrome>
       <div className={`aitag-split relative grid min-h-0 flex-1 grid-cols-1 ${selected ? 'lg:grid-cols-[minmax(0,1fr)_460px]' : ''}`}>
-        <main ref={scrollRef} onScroll={() => { selectionAnchor.onScroll(); onScrollRestore(); }} className={`${selected ? 'hidden lg:block' : 'block'} min-h-0 overflow-y-auto p-3 md:p-5`}>
+        <main ref={scrollRef} onScroll={() => { selectionAnchor.onScroll(); onScrollRestore(); }} className={`${selected ? 'hidden lg:block' : 'block'} workspace-scroll-viewport min-h-0 overflow-y-auto p-3 md:p-5`}>
           <div ref={galleryContentRef}>
           {showHistory ? (
             <div className="mb-3 flex items-center justify-between text-xs text-gray-500">

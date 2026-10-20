@@ -32,10 +32,13 @@ export const useRestoreListAnchor = (
 
     const rootRect = root.getBoundingClientRect();
     const targetRect = target.getBoundingClientRect();
-    const isVisible = targetRect.bottom > rootRect.top && targetRect.top < rootRect.bottom;
+    const style = getComputedStyle(root);
+    const topInset = parseFloat(style.scrollPaddingTop) || 0;
+    const bottomInset = parseFloat(style.scrollPaddingBottom) || 0;
+    const isVisible = targetRect.bottom > rootRect.top + topInset && targetRect.top < rootRect.bottom - bottomInset;
     if (!isVisible) {
       const centeredTop = root.scrollTop + targetRect.top - rootRect.top
-        - (rootRect.height - targetRect.height) / 2;
+        - (rootRect.height + topInset - bottomInset - targetRect.height) / 2;
       root.scrollTop = Math.max(0, centeredTop);
     }
     restoredTargetRef.current = targetId;

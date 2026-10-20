@@ -1,0 +1,49 @@
+// @vitest-environment jsdom
+import React from 'react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { AppearanceBackgroundEditor } from '../../components/AppearanceBackgroundEditor';
+import { normalizeThemeBackground, prepareThemeBackground } from '../../services/themeBackground';
+
+vi.mock('../../services/themeBackground', async original => ({ ...await original<typeof import('../../services/themeBackground')>(), prepareThemeBackground: vi.fn() }));
+const background = normalizeThemeBackground({ image: 'data:image/png;base64,AAAA' })!;
+afterEach(() => { cleanup(); vi.clearAllMocks(); });
+describe('工作区背景设置', () => {
+  it('上传后提交背景，读取失败保留当前图片，存储失败显示错误', async () => {
+    const onChange = vi.fn(() => true);
+    render(<AppearanceBackgroundEditor onChange={onChange} />);
+    const file = new File(['image'], 'test.png', { type: 'image/png' });
+    vi.mocked(prepareThemeBackground).mockResolvedValueOnce(background);
+    fireEvent.change(screen.getByLabelText('选择背景图片'), { target: { files: [file] } });
+    await waitFor(() => expect(onChange).toHaveBeenCalledWith(background));
+    onChange.mockReturnValue(false);
+    vi.mocked(prepareThemeBackground).mockResolvedValueOnce(background);
+    fireEvent.change(screen.getByLabelText('选择背景图片'), { target: { files: [file] } });
+    await screen.findByText('外观存储空间不足，请缩小背景或减少已保存的主题');
+    vi.mocked(prepareThemeBackground).mockRejectedValueOnce(Error('无法读取背景图片，请检查文件'));
+    fireEvent.change(screen.getByLabelText('选择背景图片'), { target: { files: [file] } });
+    await screen.findByText('无法读取背景图片，请检查文件');
+    expect(onChange).toHaveBeenCalledTimes(2);
+  });
+  it('显示方式、强度、图案大小和恢复默认分别写回', () => {
+    const onChange = vi.fn(() => true);
+    render(<AppearanceBackgroundEditor background={{ ...background, fit: 'tile' }} onChange={onChange} />);
+    fireEvent.change(screen.getByLabelText('背景显示方式'), { target: { value: 'contain' } });
+    expect(onChange).toHaveBeenLastCalledWith({ ...background, fit: 'contain' });
+    fireEvent.change(screen.getByLabelText('背景显示强度'), { target: { value: '40' } });
+    expect(onChange).toHaveBeenLastCalledWith({ ...background, fit: 'tile', opacity: .4 });
+    fireEvent.change(screen.getByLabelText('图案大小'), { target: { value: '256' } });
+    expect(onChange).toHaveBeenLastCalledWith({ ...background, fit: 'tile', tileSize: 256 });
+    fireEvent.click(screen.getByText('恢复默认背景'));
+    expect(onChange).toHaveBeenLastCalledWith(undefined);
+  });
+  it('关闭设置后迟到的解码不能覆盖后来选用的主题', async () => {
+    let resolve!: (value: typeof background) => void;
+    vi.mocked(prepareThemeBackground).mockReturnValueOnce(new Promise(done => { resolve = done; }));
+    const onChange = vi.fn(() => true);
+    const view = render(<AppearanceBackgroundEditor onChange={onChange} />);
+    fireEvent.change(screen.getByLabelText('选择背景图片'), { target: { files: [new File(['x'], 'x.png', { type: 'image/png' })] } });
+    view.unmount(); resolve(background); await Promise.resolve();
+    expect(onChange).not.toHaveBeenCalled();
+  });
+});

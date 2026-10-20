@@ -47,6 +47,7 @@ it('右侧弹层保持锚点右方与顶边对齐，贴近视口底部时向上�
   const firstPanel = screen.getByRole('dialog', { name: '右侧菜单' });
   expect(parseFloat(firstPanel.style.left)).toBe(92);
   expect(parseFloat(firstPanel.style.top)).toBe(90);
+  expect(firstPanel.style.transformOrigin).toBe('0px 22px');
   first.unmount();
 
   vi.stubGlobal('innerWidth', 1024); vi.stubGlobal('innerHeight', 300);
@@ -57,5 +58,6 @@ it('右侧弹层保持锚点右方与顶边对齐，贴近视口底部时向上�
   const bottomPanel = screen.getByRole('dialog', { name: '右侧菜单' });
   expect(parseFloat(bottomPanel.style.top)).toBe(8);
   expect(parseFloat(bottomPanel.style.maxHeight)).toBe(284);
+  expect(bottomPanel.style.transformOrigin).toBe('0px 264px');
   expect(bottomPanel.className).toContain('overflow-y-auto');
 });

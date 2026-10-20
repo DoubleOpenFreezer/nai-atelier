@@ -185,10 +185,10 @@ describe('PromptAgentPanel 顶栏前端布局规范', () => {
       root.style.setProperty('--nai-accent', '#e11d48'); expect(getComputedStyle(send).backgroundColor).toBe('var(--nai-accent, #0ea5e9)');
       fireEvent.click(send); await waitFor(() => expect(finish).toBeTypeOf('function'));
       const stop = screen.getByRole('button', { name: '停止' });
-      expect(getComputedStyle(stop).backgroundColor).toBe('var(--nai-accent, #0ea5e9)'); expect(getComputedStyle(stop).color).toBe('rgb(255, 255, 255)');
+      expect(getComputedStyle(stop).backgroundColor).toBe('var(--nai-accent, #0ea5e9)'); expect(getComputedStyle(stop).color).toBe('var(--nai-on-accent, white)');
       expect(stop.className).not.toMatch(/bg-gray|text-gray/);
       await act(async () => { finish(); });
-    } finally { style.remove(); root.classList.toggle('dark', previousDark); if (previousAccent) root.style.setProperty('--nai-accent', previousAccent); else root.style.removeProperty('--nai-accent'); }
+    } finally { await act(async () => { finish?.(); }); style.remove(); root.classList.toggle('dark', previousDark); if (previousAccent) root.style.setProperty('--nai-accent', previousAccent); else root.style.removeProperty('--nai-accent'); }
   });
 
   it('执行中没有排队入口，Enter 保留下一条草稿，结束后由用户手动发送', async () => {

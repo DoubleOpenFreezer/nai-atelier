@@ -167,7 +167,7 @@ export function StorageLocationManager({ notify }: { notify: (message: string, t
       </>}
       {!storage?.available && feedback.data && <div className="py-3"><span className="text-sm font-medium">{t('工坊数据')}</span>{renderFeedback('data')}</div>}
       {android && <div className="flex items-center justify-between gap-3 py-3 text-sm"><span>{t('工坊数据')}</span><span className="text-xs text-gray-500">{t('Android 应用私有存储')}</span></div>}
-      {editing && <div className="space-y-3 rounded-xl bg-gray-50 p-3 dark:bg-gray-800/50">
+      {editing && <div className="appearance-group space-y-3 rounded-xl bg-gray-50 p-3 dark:bg-gray-800/50">
         <div className="flex min-w-0 gap-2">
           <input aria-label={editing === 'data' ? t('新的工坊数据位置') : t('新的缓存与下载资源位置')} value={directory} disabled={pending(editing) || migrating} onChange={event => setDirectory(event.target.value)} className={fieldClass} />
           <ToolbarButton className="h-10 text-xs" disabled={pickerOpen || pending(editing) || migrating} onClick={choose}><FolderOpen />{t('浏览')}</ToolbarButton>
@@ -188,7 +188,7 @@ export function StorageLocationManager({ notify }: { notify: (message: string, t
               <option value="system">{t('系统默认')}</option><option value="directory" disabled={!exports?.canPickDirectory}>{t('自定义文件夹')}</option><option value="ask" disabled={!exports?.canAsk}>{t('每次询问')}</option>
             </ToolbarSelect>
           </div>
-          <div className="flex min-w-0 flex-wrap items-center gap-2 rounded-xl bg-gray-50 px-3 py-2 dark:bg-gray-800/50">
+          <div className="appearance-group flex min-w-0 flex-wrap items-center gap-2 rounded-xl bg-gray-50 px-3 py-2 dark:bg-gray-800/50">
             <div className="min-w-0 flex-1 basis-40">
               <p className="text-xs text-gray-500 dark:text-gray-400">{t('当前导出目录')}</p>
               <p className="mt-1 truncate text-xs text-gray-800 dark:text-gray-200" title={exportDirectory}>{exportDirectory}</p>

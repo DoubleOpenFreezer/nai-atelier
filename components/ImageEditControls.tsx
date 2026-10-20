@@ -111,8 +111,8 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
       <div className="space-y-3 pt-1">
         {safeMode && <div role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-meta leading-5 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-300">{t("安全模式下不可绘制蒙版")}</div>}
         <div className="flex items-center gap-2">
-          <button disabled={isBusy || safeMode} type="button" onClick={() => onToolChange('brush')} className={`flex h-9 flex-1 items-center justify-center gap-1 rounded-lg text-xs disabled:cursor-not-allowed disabled:opacity-45 ${tool === 'brush' ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300' : 'bg-gray-100 text-gray-500 dark:bg-gray-900'}`}>{t("画笔")}</button>
-          <button disabled={isBusy || safeMode} type="button" onClick={() => onToolChange('eraser')} className={`flex h-9 flex-1 items-center justify-center gap-1 rounded-lg text-xs disabled:cursor-not-allowed disabled:opacity-45 ${tool === 'eraser' ? 'bg-gray-200 text-gray-800 dark:bg-gray-800 dark:text-gray-200' : 'bg-gray-100 text-gray-500 dark:bg-gray-900'}`}><Eraser className="h-3.5 w-3.5" />{t("橡皮擦")}</button>
+          <button disabled={isBusy || safeMode} type="button" onClick={() => onToolChange('brush')} className={`flex h-9 flex-1 items-center justify-center gap-1 rounded-lg text-xs disabled:cursor-not-allowed disabled:opacity-45 ${tool === 'brush' ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300' : 'appearance-group bg-gray-100 text-gray-500 dark:bg-gray-900'}`}>{t("画笔")}</button>
+          <button aria-pressed={Boolean(tool === 'eraser')} disabled={isBusy || safeMode} type="button" onClick={() => onToolChange('eraser')} className={`appearance-group flex h-9 flex-1 items-center justify-center gap-1 rounded-lg text-xs disabled:cursor-not-allowed disabled:opacity-45 ${tool === 'eraser' ? 'bg-gray-200 text-gray-800 dark:bg-gray-800 dark:text-gray-200' : 'bg-gray-100 text-gray-500 dark:bg-gray-900'}`}><Eraser className="h-3.5 w-3.5" />{t("橡皮擦")}</button>
         </div>
         <div>
           <div className="mb-1 flex items-center justify-between">
@@ -138,16 +138,16 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
           <button disabled={isBusy || safeMode} type="button" onClick={onResetFocusedRect} className="h-8 w-full rounded-lg bg-amber-50 text-xs font-semibold text-amber-700 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-45 dark:bg-amber-950/30 dark:text-amber-300">{t("重新框选区域")}</button>
         )}
         <div className="grid grid-cols-4 gap-1">
-          <button disabled={isBusy || safeMode} type="button" onClick={onUndo} className="flex h-9 items-center justify-center rounded-lg bg-gray-100 text-gray-600 dark:bg-gray-900 dark:text-gray-300 disabled:cursor-not-allowed disabled:opacity-45" title={t("撤销")}><RotateCcw className="h-4 w-4" /></button>
-          <button disabled={isBusy || safeMode} type="button" onClick={onRedo} className="flex h-9 items-center justify-center rounded-lg bg-gray-100 text-gray-600 dark:bg-gray-900 dark:text-gray-300 disabled:cursor-not-allowed disabled:opacity-45" title={t("重做")}><RotateCw className="h-4 w-4" /></button>
-          <button disabled={isBusy || safeMode} type="button" onClick={onClearMask} className="flex h-9 items-center justify-center rounded-lg bg-gray-100 text-gray-600 dark:bg-gray-900 dark:text-gray-300 disabled:cursor-not-allowed disabled:opacity-45" title={t("清空蒙版")}><Trash2 className="h-4 w-4" /></button>
-          <button disabled={isBusy || safeMode} type="button" onClick={onInvertMask} className="flex h-9 items-center justify-center rounded-lg bg-gray-100 text-gray-600 dark:bg-gray-900 dark:text-gray-300 disabled:cursor-not-allowed disabled:opacity-45" title={t("反转蒙版")}><Contrast className="h-4 w-4" /></button>
+          <button disabled={isBusy || safeMode} type="button" onClick={onUndo} className="appearance-group flex h-9 items-center justify-center rounded-lg bg-gray-100 text-gray-600 dark:bg-gray-900 dark:text-gray-300 disabled:cursor-not-allowed disabled:opacity-45" title={t("撤销")}><RotateCcw className="h-4 w-4" /></button>
+          <button disabled={isBusy || safeMode} type="button" onClick={onRedo} className="appearance-group flex h-9 items-center justify-center rounded-lg bg-gray-100 text-gray-600 dark:bg-gray-900 dark:text-gray-300 disabled:cursor-not-allowed disabled:opacity-45" title={t("重做")}><RotateCw className="h-4 w-4" /></button>
+          <button disabled={isBusy || safeMode} type="button" onClick={onClearMask} className="appearance-group flex h-9 items-center justify-center rounded-lg bg-gray-100 text-gray-600 dark:bg-gray-900 dark:text-gray-300 disabled:cursor-not-allowed disabled:opacity-45" title={t("清空蒙版")}><Trash2 className="h-4 w-4" /></button>
+          <button disabled={isBusy || safeMode} type="button" onClick={onInvertMask} className="appearance-group flex h-9 items-center justify-center rounded-lg bg-gray-100 text-gray-600 dark:bg-gray-900 dark:text-gray-300 disabled:cursor-not-allowed disabled:opacity-45" title={t("反转蒙版")}><Contrast className="h-4 w-4" /></button>
         </div>
       </div>
     );
   };
 
-  return <><div className="chain-editor-main order-2 flex min-h-full w-full shrink-0 flex-col border-b border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900 lg:order-1 lg:w-1/2 lg:flex-1 lg:overflow-y-auto lg:border-b-0 lg:border-r">
+  return <><div className="appearance-content chain-editor-main order-2 flex min-h-full w-full shrink-0 flex-col border-b border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900 lg:order-1 lg:w-1/2 lg:flex-1 lg:overflow-y-auto lg:border-b-0 lg:border-r">
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 p-4 pb-36 md:p-6 md:pb-24">
       <LabModuleSection moduleId="prompt" label={t("全局提示词")} order={getModuleOrder(layout, 'prompt')} defaultCollapsed={isModuleCollapsed(layout, 'prompt')} className={mobileTab === 'prompt' ? 'block' : 'hidden lg:block'}>
         <section className="space-y-4">
@@ -225,13 +225,13 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
           <div className="mb-3 flex items-center justify-between gap-3"><label className="text-sm font-semibold text-gray-800 dark:text-gray-100" title={draft.baseImageSource ? ({ history: t("历史图片"), inspiration: t("收藏库"), generated: t("文生图结果"), upload: t("本地上传"), clipboard: t("剪贴板图片") }[draft.baseImageSource]) : undefined}>{t("底图来源")}</label></div>
           <div className="grid grid-cols-3 gap-2">
             <input aria-label={t("上传当前模式底图")} ref={fileInputRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={onFileChange} />
-            <button disabled={isBusy} type="button" onClick={() => fileInputRef.current?.click()} className="flex h-10 items-center justify-center gap-1 whitespace-nowrap rounded-lg border border-gray-300 bg-white px-1 text-xs sm:gap-2 sm:px-3 font-semibold text-gray-700 hover:border-indigo-400 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"><ImagePlus className="h-4 w-4" />{t("上传图片")}</button>
-            <button disabled={isBusy || !latestTextToImageItem} type="button" onClick={() => latestTextToImageItem && onSelectImageSource(latestTextToImageItem, 'generated')} className="flex h-10 items-center justify-center gap-1 whitespace-nowrap rounded-lg border border-gray-300 bg-white px-1 text-xs sm:gap-2 sm:px-3 font-semibold text-gray-700 hover:border-indigo-400 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-45 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200" title={latestTextToImageItem ? operation === 'image-to-image' ? t("取用最新结果作为底图 · 保留当前配置") : t("取用最新结果及配置") : t("当前没有可用的文生图结果")}><Images className="h-4 w-4" />{t("文生图最新")}</button>
-            <button disabled={isBusy} type="button" onClick={onPasteImage} className="flex h-10 items-center justify-center gap-1 whitespace-nowrap rounded-lg border border-gray-300 bg-white px-1 text-xs sm:gap-2 sm:px-3 font-semibold text-gray-700 hover:border-indigo-400 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-45 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200" title={operation === 'image-to-image' ? t("粘贴图片 · Ctrl+V · 保留当前配置") : t("粘贴图片 · Ctrl+V · 带入图片配置")}><ClipboardPaste className="h-4 w-4" />{t("粘贴")}</button>
+            <button disabled={isBusy} type="button" onClick={() => fileInputRef.current?.click()} className="appearance-group flex h-10 items-center justify-center gap-1 whitespace-nowrap rounded-lg border border-gray-300 bg-white px-1 text-xs sm:gap-2 sm:px-3 font-semibold text-gray-700 hover:border-indigo-400 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"><ImagePlus className="h-4 w-4" />{t("上传图片")}</button>
+            <button disabled={isBusy || !latestTextToImageItem} type="button" onClick={() => latestTextToImageItem && onSelectImageSource(latestTextToImageItem, 'generated')} className="appearance-group flex h-10 items-center justify-center gap-1 whitespace-nowrap rounded-lg border border-gray-300 bg-white px-1 text-xs sm:gap-2 sm:px-3 font-semibold text-gray-700 hover:border-indigo-400 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-45 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200" title={latestTextToImageItem ? operation === 'image-to-image' ? t("取用最新结果作为底图 · 保留当前配置") : t("取用最新结果及配置") : t("当前没有可用的文生图结果")}><Images className="h-4 w-4" />{t("文生图最新")}</button>
+            <button disabled={isBusy} type="button" onClick={onPasteImage} className="appearance-group flex h-10 items-center justify-center gap-1 whitespace-nowrap rounded-lg border border-gray-300 bg-white px-1 text-xs sm:gap-2 sm:px-3 font-semibold text-gray-700 hover:border-indigo-400 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-45 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200" title={operation === 'image-to-image' ? t("粘贴图片 · Ctrl+V · 保留当前配置") : t("粘贴图片 · Ctrl+V · 带入图片配置")}><ClipboardPaste className="h-4 w-4" />{t("粘贴")}</button>
           </div>
           {operation === 'image-to-image' ? <>
             {baseImagePreview ? (
-              <div className="mt-4 overflow-hidden rounded-xl border border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900">
+              <div className="appearance-media mt-4 overflow-hidden rounded-xl border border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900">
                 <div className="relative flex items-center justify-center bg-black/5 p-3 dark:bg-black/20">
                   <img src={baseImagePreview} alt={t("图生图底图")} className="max-h-64 w-auto max-w-full rounded-lg object-contain shadow" />
                 </div>
@@ -240,12 +240,12 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
                 </div>
               </div>
             ) : (
-              <div className="mt-4 rounded-lg border border-dashed border-gray-300 bg-white/70 px-3 py-3 text-center text-xs text-gray-500 dark:border-gray-700 dark:bg-gray-900/60 dark:text-gray-400">{t("选择底图")}</div>
+              <div className="appearance-group mt-4 rounded-lg border border-dashed border-gray-300 bg-white/70 px-3 py-3 text-center text-xs text-gray-500 dark:border-gray-700 dark:bg-gray-900/60 dark:text-gray-400">{t("选择底图")}</div>
             )}
             <div className="hidden" aria-hidden="true"><canvas ref={canvasProps.imageCanvasRef} /></div>
           </> : operation === 'outpaint' && !manualMaskEditing ? (
             <div className="mt-4 space-y-3">
-              <div className="rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-900">
+              <div className="appearance-group rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-900">
                 <div className="mb-3 flex items-center justify-between">
                   <span className="text-xs font-semibold text-gray-700 dark:text-gray-200">{t("智能画幅扩展")}</span>
                   <span className="text-meta font-mono text-gray-400">
@@ -271,28 +271,28 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
                     type="button"
                     disabled={isBusy}
                     onClick={() => setCustomExpansion({ top: 128, right: 128, bottom: 128, left: 128 })}
-                    className="rounded-md border border-gray-200 bg-white px-2 py-1.5 text-meta font-medium text-gray-700 transition hover:bg-indigo-50 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300"
+                    className="appearance-group rounded-md border border-gray-200 bg-white px-2 py-1.5 text-meta font-medium text-gray-700 transition hover:bg-indigo-50 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300"
                   >
                     {t("四周 +128px")}</button>
                   <button
                     type="button"
                     disabled={isBusy}
                     onClick={() => setCustomExpansion({ top: 64, right: 64, bottom: 64, left: 64 })}
-                    className="rounded-md border border-gray-200 bg-white px-2 py-1.5 text-meta font-medium text-gray-700 transition hover:bg-indigo-50 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300"
+                    className="appearance-group rounded-md border border-gray-200 bg-white px-2 py-1.5 text-meta font-medium text-gray-700 transition hover:bg-indigo-50 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300"
                   >
                     {t("四周 +64px")}</button>
                   <button
                     type="button"
                     disabled={isBusy}
                     onClick={() => setCustomExpansion({ top: 0, right: 128, bottom: 0, left: 128 })}
-                    className="rounded-md border border-gray-200 bg-white px-2 py-1.5 text-meta font-medium text-gray-700 transition hover:bg-indigo-50 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300"
+                    className="appearance-group rounded-md border border-gray-200 bg-white px-2 py-1.5 text-meta font-medium text-gray-700 transition hover:bg-indigo-50 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300"
                   >
                     {t("左右 +128px")}</button>
                   <button
                     type="button"
                     disabled={isBusy}
                     onClick={() => setCustomExpansion({ top: 0, right: 0, bottom: 0, left: 0 })}
-                    className="rounded-md border border-gray-200 bg-white px-2 py-1.5 text-meta font-medium text-gray-500 transition hover:bg-red-50 hover:text-red-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400"
+                    className="appearance-group rounded-md border border-gray-200 bg-white px-2 py-1.5 text-meta font-medium text-gray-500 transition hover:bg-red-50 hover:text-red-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400"
                   >
                     {t("清零重置")}</button>
                 </div>
@@ -336,7 +336,7 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
                 aria-checked={manualMaskEditing}
                 disabled={isBusy || safeMode}
                 onClick={() => onManualMaskEditingChange(!manualMaskEditing)}
-                className="flex w-full items-center justify-between gap-3 rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-left text-xs font-semibold text-gray-600 transition hover:border-indigo-300 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-indigo-700"
+                className="appearance-group flex w-full items-center justify-between gap-3 rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-left text-xs font-semibold text-gray-600 transition hover:border-indigo-300 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-indigo-700"
               >
                 <span>
                   <span className="block">{t("手动调整蒙版")}</span>
@@ -366,7 +366,7 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
                     aria-checked={manualMaskEditing}
                     disabled={isBusy || safeMode}
                     onClick={() => onManualMaskEditingChange(!manualMaskEditing)}
-                    className="flex w-full items-center justify-between gap-3 rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-left text-xs font-semibold text-gray-600 transition hover:border-indigo-300 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-indigo-700"
+                    className="appearance-group flex w-full items-center justify-between gap-3 rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-left text-xs font-semibold text-gray-600 transition hover:border-indigo-300 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-indigo-700"
                   >
                     <span>
                       <span className="block">{t("手动调整蒙版")}</span>
@@ -379,7 +379,7 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
               )}
             </div>
           )}
-          {normalization && (operation !== 'image-to-image' || sizeMode === 'original') && <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200"><div className="font-semibold">{t("底图尺寸需要规范化")}</div><div className="mt-1 leading-5">{t("当前 {0} × {1}，需调整为 {2} × {3}", [normalization.sourceWidth, normalization.sourceHeight, normalization.targetWidth, normalization.targetHeight])}</div><div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3"><button disabled={isBusy} type="button" onClick={() => onNormalize('crop')} className="rounded-md bg-amber-100 px-2 py-1.5 font-semibold hover:bg-amber-200 disabled:opacity-50 dark:bg-amber-900/50 dark:hover:bg-amber-900">{t("居中裁剪（推荐）")}</button><button disabled={isBusy} type="button" onClick={() => onNormalize('contain')} className="rounded-md bg-white/80 px-2 py-1.5 font-semibold hover:bg-white disabled:opacity-50 dark:bg-gray-900/60 dark:hover:bg-gray-900">{t("完整保留并填充")}</button><button disabled={isBusy} type="button" onClick={() => onNormalize('stretch')} className="rounded-md bg-white/80 px-2 py-1.5 font-semibold hover:bg-white disabled:opacity-50 dark:bg-gray-900/60 dark:hover:bg-gray-900">{t("直接缩放")}</button></div></div>}
+          {normalization && (operation !== 'image-to-image' || sizeMode === 'original') && <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200"><div className="font-semibold">{t("底图尺寸需要规范化")}</div><div className="mt-1 leading-5">{t("当前 {0} × {1}，需调整为 {2} × {3}", [normalization.sourceWidth, normalization.sourceHeight, normalization.targetWidth, normalization.targetHeight])}</div><div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3"><button disabled={isBusy} type="button" onClick={() => onNormalize('crop')} className="rounded-md bg-amber-100 px-2 py-1.5 font-semibold hover:bg-amber-200 disabled:opacity-50 dark:bg-amber-900/50 dark:hover:bg-amber-900">{t("居中裁剪（推荐）")}</button><button disabled={isBusy} type="button" onClick={() => onNormalize('contain')} className="appearance-group rounded-md bg-white/80 px-2 py-1.5 font-semibold hover:bg-white disabled:opacity-50 dark:bg-gray-900/60 dark:hover:bg-gray-900">{t("完整保留并填充")}</button><button disabled={isBusy} type="button" onClick={() => onNormalize('stretch')} className="appearance-group rounded-md bg-white/80 px-2 py-1.5 font-semibold hover:bg-white disabled:opacity-50 dark:bg-gray-900/60 dark:hover:bg-gray-900">{t("直接缩放")}</button></div></div>}
         </section>
       </LabModuleSection>
 

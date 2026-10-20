@@ -113,7 +113,7 @@ export const HistoryImagePicker: React.FC<HistoryImagePickerProps> = ({ open, on
           </div>
         </header>
 
-        <div className="min-h-0 flex-1 overflow-y-auto bg-gray-50 p-3 dark:bg-gray-950/40 sm:p-4">
+        <div className="appearance-group min-h-0 flex-1 overflow-y-auto bg-gray-50 p-3 dark:bg-gray-950/40 sm:p-4">
           {loading && items.length === 0 ? (
             <div className="flex min-h-64 items-center justify-center gap-2 text-sm text-gray-500 dark:text-gray-400"><LoaderCircle className="h-5 w-5 animate-spin" />{t("正在读取历史图片…")}</div>
           ) : error ? (
@@ -127,10 +127,10 @@ export const HistoryImagePicker: React.FC<HistoryImagePickerProps> = ({ open, on
                   key={item.id}
                   type="button"
                   onClick={() => onSelect(item, importParams)}
-                  className="group min-w-0 overflow-hidden rounded-xl border border-gray-200 bg-white text-left shadow-sm transition hover:border-indigo-400 hover:ring-2 hover:ring-indigo-200 dark:border-gray-700 dark:bg-gray-800 dark:hover:border-indigo-600 dark:hover:ring-indigo-900/50"
+                  className="appearance-group group min-w-0 overflow-hidden rounded-xl border border-gray-200 bg-white text-left shadow-sm transition hover:border-indigo-400 hover:ring-2 hover:ring-indigo-200 dark:border-gray-700 dark:bg-gray-800 dark:hover:border-indigo-600 dark:hover:ring-indigo-900/50"
                   aria-label={t("选择历史生成图片，{0}", [new Date(item.createdAt).toLocaleString(getLanguage())])}
                 >
-                  <div className="w-full overflow-hidden bg-gray-100 dark:bg-gray-950" style={{ aspectRatio: getImageRatio(item) }}>
+                  <div className="appearance-media w-full overflow-hidden bg-gray-100 dark:bg-gray-950" style={{ aspectRatio: getImageRatio(item) }}>
                     <SmartImage src={item.imageUrl} thumbnailVariant={HISTORY_THUMBNAIL_VARIANT} alt={t("历史生成图片")} className="h-full w-full object-contain transition-transform group-hover:scale-[1.02]" />
                   </div>
                   <div className="truncate border-t border-gray-100 px-2 py-2 text-meta text-gray-600 dark:border-gray-700 dark:text-gray-300">{getHistoryTypeLabel(item)} · {new Date(item.createdAt).toLocaleString(getLanguage())}</div>
@@ -146,8 +146,8 @@ export const HistoryImagePicker: React.FC<HistoryImagePickerProps> = ({ open, on
             <input type="checkbox" checked={importParams} onChange={event => setImportParams(event.target.checked)} className="h-4 w-4 accent-indigo-500" />
             {t("同时导入该图参数")}</label>
           <div className="flex items-center gap-2">
-            <button type="button" onClick={() => void loadPage(page - 1)} disabled={loading || page <= 1} className="mobile-touch flex h-10 items-center gap-1 rounded-lg border border-gray-200 bg-white px-3 text-xs font-semibold text-gray-600 hover:border-indigo-300 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300" aria-label={t("上一页历史图片")}><ChevronLeft className="h-4 w-4" />{t("上一页")}</button>
-            <button type="button" onClick={() => void loadPage(page + 1)} disabled={loading || page >= totalPages} className="mobile-touch flex h-10 items-center gap-1 rounded-lg border border-gray-200 bg-white px-3 text-xs font-semibold text-gray-600 hover:border-indigo-300 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300" aria-label={t("下一页历史图片")}>{t("下一页")}<ChevronRight className="h-4 w-4" /></button>
+            <button type="button" onClick={() => void loadPage(page - 1)} disabled={loading || page <= 1} className="appearance-group mobile-touch flex h-10 items-center gap-1 rounded-lg border border-gray-200 bg-white px-3 text-xs font-semibold text-gray-600 hover:border-indigo-300 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300" aria-label={t("上一页历史图片")}><ChevronLeft className="h-4 w-4" />{t("上一页")}</button>
+            <button type="button" onClick={() => void loadPage(page + 1)} disabled={loading || page >= totalPages} className="appearance-group mobile-touch flex h-10 items-center gap-1 rounded-lg border border-gray-200 bg-white px-3 text-xs font-semibold text-gray-600 hover:border-indigo-300 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300" aria-label={t("下一页历史图片")}>{t("下一页")}<ChevronRight className="h-4 w-4" /></button>
           </div>
         </footer>
       </section>

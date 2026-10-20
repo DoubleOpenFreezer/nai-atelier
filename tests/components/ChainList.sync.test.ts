@@ -534,10 +534,10 @@ describe('风格串列表的酒馆筛选交互', () => {
   });
 
   it.each([
-    { anchorLeft: 600, anchorWidth: 88, viewport: 1400, offset: 0 },
-    { anchorLeft: 0, anchorWidth: 40, viewport: 1000, offset: 188 },
-    { anchorLeft: 760, anchorWidth: 24, viewport: 800, offset: -180 },
-  ])('筛选默认居中，屏幕边缘仅作可见范围修正：$anchorLeft', ({ anchorLeft, anchorWidth, viewport, offset }) => {
+    { anchorLeft: 600, anchorWidth: 88, viewport: 1400, left: 644 },
+    { anchorLeft: 0, anchorWidth: 40, viewport: 1000, left: 204 },
+    { anchorLeft: 760, anchorWidth: 24, viewport: 800, left: 596 },
+  ])('筛选共用锚定展开，屏幕边缘仅作可见范围修正：$anchorLeft', ({ anchorLeft, anchorWidth, viewport, left }) => {
     vi.stubGlobal('innerWidth', viewport);
     vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
       if (this.getAttribute('aria-label') === '筛选与排序') return { width: 384 } as DOMRect;
@@ -549,13 +549,14 @@ describe('风格串列表的酒馆筛选交互', () => {
     expect(dialog.classList.contains('fixed')).toBe(true);
     expect(dialog.classList.contains('-translate-x-1/2')).toBe(true);
     expect(dialog.classList.contains('right-0')).toBe(false);
-    expect(dialog.style.left).toBe(`${anchorLeft + anchorWidth / 2}px`);
+    expect(dialog.style.left).toBe(`${left}px`);
     expect(dialog.style.top).toBe('80px');
     expect(dialog.closest('header')).toBeNull();
-    expect(dialog.style.marginLeft).toBe(`${offset}px`);
+    expect(dialog.classList.contains('appearance-popover')).toBe(true);
+    expect(dialog.style.transformOrigin).toBe(`${anchorLeft + anchorWidth / 2 - left + 192}px top`);
     if (anchorLeft === 600) {
       vi.stubGlobal('innerWidth', 800); fireEvent(window, new Event('resize'));
-      expect(dialog.style.marginLeft).toBe('-52px');
+      expect(dialog.style.left).toBe('596px');
       vi.stubGlobal('innerWidth', 600); fireEvent(window, new Event('resize'));
       expect(screen.queryByRole('dialog')).toBeNull();
       return;

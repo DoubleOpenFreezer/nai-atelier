@@ -96,7 +96,7 @@ const SetupForm: React.FC<Props> = ({ initial, chains, library = [], libraryCoun
             <div className="grid grid-cols-3 gap-1.5">
               {(['random', 'pinnedArtists', 'fixedWeight'] as const).map(mode => <ToolbarButton key={mode} active={plan.mode === mode} onClick={() => changeMode(mode)} className="!px-1 !text-xs">{t(mode === 'random' ? '全随机' : mode === 'pinnedArtists' ? '固定画师' : '固定权重')}</ToolbarButton>)}
             </div>
-            {plan.mode === 'pinnedArtists' && <div className="flex flex-wrap items-center gap-2 rounded-xl bg-gray-50 p-2 dark:bg-gray-800/50">
+            {plan.mode === 'pinnedArtists' && <div className="appearance-group flex flex-wrap items-center gap-2 rounded-xl bg-gray-50 p-2 dark:bg-gray-800/50">
               <span className="min-w-0 flex-1 text-xs text-gray-500">{plan.pinnedArtists?.length ? t('已固定 {0} 位画师', [plan.pinnedArtists.length]) : t('尚未固定画师，先选择固定画师再随机权重')}</span>
               <ToolbarButton disabled={busy} onClick={() => setPartyOpen(true)}><Users />{t('选择固定画师')}</ToolbarButton>
             </div>}
@@ -115,7 +115,7 @@ const SetupForm: React.FC<Props> = ({ initial, chains, library = [], libraryCoun
             {!!suggestions.length && <div className="mt-2 flex flex-wrap gap-2">{suggestions.map(artist => <button key={artist.name} type="button" className="mobile-touch rounded-lg border border-gray-200 px-2 py-1 text-xs hover:border-indigo-400 dark:border-gray-700" disabled={busy || draft.artists.some(item => item.tag === artist.name)} onClick={() => add(artist.name)}>{artist.name}{artist.chinese ? ` · ${artist.chinese}` : ''}</button>)}</div>}
           </div>
           <div className="overflow-hidden rounded-xl border border-gray-200 dark:border-gray-700">
-            <div className="grid grid-cols-[minmax(0,1fr)_4.5rem_3rem_3rem] items-center gap-2 bg-gray-50 px-3 py-2 text-xs text-gray-500 dark:bg-gray-800"><span>{t('画师')}</span><span>{t('锁定权重')}</span><span>{t('锁定')}</span><span>{t('排除')}</span></div>
+            <div className="appearance-group grid grid-cols-[minmax(0,1fr)_4.5rem_3rem_3rem] items-center gap-2 bg-gray-50 px-3 py-2 text-xs text-gray-500 dark:bg-gray-800"><span>{t('画师')}</span><span>{t('锁定权重')}</span><span>{t('锁定')}</span><span>{t('排除')}</span></div>
             {draft.artists.map((artist, index) => <div key={artist.tag} className={`grid grid-cols-[minmax(0,1fr)_4.5rem_3rem_3rem] items-center gap-2 border-t border-gray-100 px-3 py-1 dark:border-gray-800 ${artist.excluded ? 'opacity-50' : ''}`}>
               <span className="min-w-0 truncate text-sm" title={artist.tag}>{artist.tag}</span>
               <input aria-label={t('锁定权重：{0}', [artist.tag])} type="number" className={`${field} !px-2`} min={0.1} max={3} step={0.1} value={artist.weight} disabled={busy || !artist.locked || artist.excluded} onChange={event => setDraft({ ...draft, artists: draft.artists.map((item, i) => i === index ? { ...item, weight: Number(event.target.value) } : item) })} />

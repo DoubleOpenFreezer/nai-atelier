@@ -1137,7 +1137,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
 
   return (
     <div ref={agentScopeRef} data-agent-command-scope={agentCommandScope} data-agent-canvas-state={JSON.stringify({ operation, width: state.width, height: state.height, outputSize, imageToImageSizeMode: draft.imageToImageSizeMode || 'original', focusedRect: state.focusedRect, focused, revision: agentCanvasRevision, busy: isLoading || isImportingImage || isApplyingOutpaint, error })} aria-busy={isLoading || isImportingImage || isApplyingOutpaint} className="flex min-h-0 flex-1 flex-col">
-      <nav className="grid h-10 flex-none grid-cols-3 border-b border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950 lg:hidden">
+      <nav className="workspace-mode-tabs appearance-group grid h-10 flex-none grid-cols-3 border-b border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950 lg:hidden">
         {mobileTabs.map(([value, label]) => (
           <button
             key={value}
@@ -1155,7 +1155,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
       <div
         data-image-edit-drop-zone="true"
         tabIndex={-1}
-        className="chain-editor-body relative flex min-h-0 flex-1 flex-col overflow-y-auto bg-white dark:bg-gray-900 lg:flex-row lg:overflow-hidden"
+        className="appearance-content chain-editor-body relative flex min-h-0 flex-1 flex-col overflow-y-auto bg-white dark:bg-gray-900 lg:flex-row lg:overflow-hidden"
         onDragEnter={handleBaseImageDragEnter}
         onDragOver={handleBaseImageDragOver}
         onDragLeave={handleBaseImageDragLeave}
@@ -1167,7 +1167,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
           if (!control || control === event.currentTarget) event.currentTarget.focus({ preventScroll: true });
         }}
       >
-        {isBaseImageDragActive && <div className="pointer-events-none absolute inset-0 z-[90] flex items-center justify-center bg-indigo-950/55 backdrop-blur-sm"><div className="rounded-xl border-2 border-dashed border-white/80 bg-white/95 px-6 py-5 text-center text-sm font-bold text-indigo-700 shadow-2xl dark:bg-gray-900/95 dark:text-indigo-300">{t("松手导入为当前编辑底图")}<br /><span className="mt-1 block text-xs font-normal text-gray-500 dark:text-gray-400">PNG / JPEG / WebP</span></div></div>}
+        {isBaseImageDragActive && <div className="pointer-events-none absolute inset-0 z-[90] flex items-center justify-center bg-indigo-950/55 backdrop-blur-sm"><div className="appearance-group rounded-xl border-2 border-dashed border-white/80 bg-white/95 px-6 py-5 text-center text-sm font-bold text-indigo-700 shadow-2xl dark:bg-gray-900/95 dark:text-indigo-300">{t("松手导入为当前编辑底图")}<br /><span className="mt-1 block text-xs font-normal text-gray-500 dark:text-gray-400">PNG / JPEG / WebP</span></div></div>}
         <ImageEditControls
           operation={operation}
           draft={draft}

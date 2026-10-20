@@ -68,7 +68,7 @@ export const AnlasBalanceBar: React.FC<AnlasBalanceBarProps> = ({ collapsed = fa
   };
   const refreshLabel = `刷新 Anlas 余额：个人剩余预算 ${t(budgetSummary)} / 账号剩余点数 ${t(balanceSummary)}；${balanceState}`;
   if (variant === 'details') return (
-    <section aria-label={t("Anlas 点数")} className={`rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-800/70 ${className}`}>
+    <section aria-label={t("Anlas 点数")} className={`appearance-group rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-800/70 ${className}`}>
       <div className="mb-2 flex items-center justify-between gap-2">
         <span className="flex items-center gap-1.5 text-xs font-medium text-gray-600 dark:text-gray-300"><Gem className="h-4 w-4 text-indigo-600 dark:text-indigo-300" aria-hidden="true" />Anlas</span>
         <button type="button" onClick={refreshAll} disabled={loading} title={title} aria-label={t(refreshLabel)} aria-busy={loading}

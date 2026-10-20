@@ -80,7 +80,7 @@ export const LanAccessGate: React.FC<LanAccessGateProps> = ({ children }) => {
 
   if (state === 'checking') {
     return (
-      <div className="flex min-h-[100dvh] items-center justify-center bg-gray-50 text-gray-600 dark:bg-gray-950 dark:text-gray-300">
+      <div className="workspace-canvas flex min-h-[100dvh] items-center justify-center bg-gray-50 text-gray-600 dark:bg-gray-950 dark:text-gray-300">
         <div className="flex items-center gap-3 text-sm"><span className="h-5 w-5 animate-spin rounded-full border-2 border-indigo-400 border-t-transparent" />{t("正在连接电脑端…")}</div>
       </div>
     );
@@ -88,7 +88,7 @@ export const LanAccessGate: React.FC<LanAccessGateProps> = ({ children }) => {
 
   if (state === 'error') {
     return (
-      <div className="flex min-h-[100dvh] items-center justify-center bg-gray-50 p-5 text-gray-900 dark:bg-gray-950 dark:text-gray-100">
+      <div className="workspace-canvas flex min-h-[100dvh] items-center justify-center bg-gray-50 p-5 text-gray-900 dark:bg-gray-950 dark:text-gray-100">
         <div className="appearance-panel w-full max-w-sm rounded-3xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900 p-6 text-center shadow-2xl">
           <div className="text-3xl">⚠️</div>
           <h1 className="mt-3 text-xl font-bold">{t("无法连接电脑端")}</h1>
@@ -100,7 +100,7 @@ export const LanAccessGate: React.FC<LanAccessGateProps> = ({ children }) => {
   }
 
   return (
-    <div className="flex min-h-[100dvh] items-center justify-center bg-gray-50 p-5 text-gray-900 dark:bg-gray-950 dark:text-gray-100">
+    <div className="workspace-canvas flex min-h-[100dvh] items-center justify-center bg-gray-50 p-5 text-gray-900 dark:bg-gray-950 dark:text-gray-100">
       <form onSubmit={submit} className="appearance-panel w-full max-w-sm rounded-3xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900 p-6 shadow-2xl backdrop-blur md:p-8">
         <div className="flex items-center gap-3">
           <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-indigo-700 text-white text-2xl font-black shadow-lg">N</div>

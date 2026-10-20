@@ -3,7 +3,7 @@ import React from 'react';
 import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import ts from 'typescript';
-import { compile } from '@tailwindcss/node';
+import { compile, optimize } from '@tailwindcss/node';
 import { parse, type AtRule, type Node as PostCssNode } from 'postcss';
 import { act, cleanup, render, renderHook, screen } from '@testing-library/react';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -11,19 +11,26 @@ import { LanAccessGate } from '../../components/LanAccessGate';
 import {
   applyAppearancePreferences, appearanceScrollBehavior, DEFAULT_APPEARANCE_PREFERENCES,
   restoreAppearancePreferences, saveAppearancePreferences, useGalleryFrostedCaption,
+  readAppearancePresetImport,
 } from '../../services/appearancePreferences';
+import { mixThemeColor, resolveThemePalette, themeContrast, themePaletteVariables } from '../../services/themePalette';
 
 const files = ['App.tsx', ...readdirSync('components', { recursive: true })
   .filter(file => typeof file === 'string' && file.endsWith('.tsx') && !file.includes('.test.'))
   .map(file => `components/${file}`)];
 const sources = files.map(file => ({ file, text: readFileSync(resolve(file), 'utf8') }));
 const css = readFileSync(resolve('index.css'), 'utf8');
-const classes: { file: string; text: string }[] = [];
+const classes: { file: string; text: string; tag: string; role: string; control: boolean }[] = [];
 for (const source of sources) {
   const ast = ts.createSourceFile(source.file, source.text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   const visit = (node: ts.Node) => {
     if (ts.isJsxAttribute(node) && node.name.getText(ast) === 'className' && node.initializer) {
-      classes.push({ file: source.file, text: node.initializer.getText(ast) });
+      const element = node.parent.parent as ts.JsxOpeningElement;
+      const attributes = element.attributes.properties.filter(ts.isJsxAttribute);
+      classes.push({ file: source.file, text: node.initializer.getText(ast), tag: element.tagName.getText(ast),
+        role: attributes.find(attr => attr.name.getText(ast) === 'role')?.initializer?.getText(ast) || '',
+        control: attributes.some(attr => attr.name.getText(ast) === 'data-appearance'),
+      });
     }
     ts.forEachChild(node, visit);
   };
@@ -52,7 +59,7 @@ let systemDark: boolean;
 let systemReduced: boolean;
 beforeAll(async () => {
   const compiler = await compile(css, { base: process.cwd(), onDependency: () => {} });
-  generatedCss = compiler.build(['rounded', 'rounded-xl', 'text-meta', 'text-tiny', 'text-mini', 'bg-indigo-600', 'h-10', 'p-3']);
+  generatedCss = compiler.build(['rounded', 'rounded-xl', 'text-meta', 'text-tiny', 'text-mini', 'bg-indigo-600', 'h-10', 'p-3', '-translate-x-1/2', '-translate-y-full', 'ring-2', 'focus-visible:ring-2']);
 });
 beforeEach(() => {
   systemDark = false; systemReduced = false;
@@ -63,6 +70,334 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); localStorage.clear(); applyAppearancePreferences(DEFAULT_APPEARANCE_PREFERENCES, false); });
 
 describe('全局外观覆盖审计', () => {
+  it('所有页面顶栏共用滚动穿透与高度避让，分类、状态行和工作区不遗漏', () => {
+    const detailCss = readFileSync(resolve('components/themeDetails.css'), 'utf8');
+    const root = "html[data-surfaces='translucent']";
+    const chrome = declarations(`${root} .workspace-chrome`, undefined, detailCss);
+    expect(chrome['margin-bottom']).toBe('calc(-1 * var(--workspace-chrome-height, 0px))');
+    expect(chrome['backdrop-filter']).toBeUndefined();
+    const viewport = declarations(`${root} .workspace-scroll-viewport`, undefined, detailCss);
+    expect(viewport['padding-top']).toBe('calc(var(--workspace-chrome-height, 0px) + var(--workspace-scroll-gutter, 0px))');
+    expect(viewport['scroll-padding-top']).toBe(viewport['padding-top']);
+    for (const source of sources.filter(source => source.text.includes('<WorkspaceToolbar>'))) {
+      expect(source.text, source.file).toContain('<WorkspaceChrome>');
+      expect(source.text, source.file).toContain('workspace-scroll-viewport');
+    }
+    expect(readFileSync(resolve('components/roll/StyleRollGallery.tsx'), 'utf8')).toContain('workspace-scroll-viewport');
+    expect(sources.find(source => source.file === 'components/PromptLibrary.tsx')!.text).toContain('<WorkspaceChrome>{categoryNavigation}');
+    for (const file of ['ChainEditor', 'ImageEditPanel']) {
+      expect(sources.find(source => source.file === `components/${file}.tsx`)!.text).toContain('workspace-mode-tabs');
+    }
+    const desktop = declarations(`${root} .chain-editor-workspace :is(.chain-editor-main, .chain-editor-preview)`, '(min-width: 1024px)', detailCss);
+    expect(desktop['padding-top']).toBe('var(--workspace-chrome-height, 0px)');
+    const mobile = declarations(`${root} .chain-editor-workspace .chain-editor-body`, '(max-width: 1023px)', detailCss);
+    expect(mobile['padding-top']).toBe('calc(var(--workspace-chrome-height, 0px) + var(--spacing) * 10)');
+    expect(declarations(`${root} .aitag-detail-panel`, undefined, detailCss)['margin-top']).toBeUndefined();
+    expect(declarations(`${root} .aitag-detail-panel`, '(min-width: 1024px)', detailCss)['margin-top']).toBe('var(--workspace-chrome-height, 0px)');
+  });
+  it('全项目中性底板声明材质语义，图像衬底、状态和控件由各自规则接管', () => {
+    const missing = classes.filter(({ text, tag, role, control }) => {
+      if (!/(?<![\w:-])(?:dark:)?bg-(?:white|(?:gray|slate|zinc|neutral|stone)-\d{2,3})\b/.test(text)) return false;
+      if (control || ['span', 'i', 'small', 'svg', 'img', 'canvas', 'input', 'textarea', 'select', 'option'].includes(tag)) return false;
+      if (/Textarea|Input|Select|Search|IconButton|ToolbarButton|ActionIcon|IconLink|CloseButton|BackButton/.test(tag)) return false;
+      if (/tablist|progressbar|status/.test(role)) return false;
+      if (/appearance-(?:surface|content|group|panel|media|contrast|control-panel|segmented)|workspace-canvas|workspace-command-bar|app-(?:sidebar|workspace|mobile-nav)|settings-(?:content|navigation|dialog)|operation-dialog|mobile-(?:page-header|detail-header|detail-footer|sheet)|media-card|gallery-card-caption|atelier-theme-card/.test(text)) return false;
+      if (/h-1\.5|h-0\.5|w-px|h-px|animate-pulse/.test(text)) return false;
+      // 图片覆盖操作和深色遮罩保留独立对比度，不把它们当内容面板清空。
+      if (/gallery-cover-navigation|IMAGE_PREVIEW_BUTTON_CLASS|bg-black\//.test(text)) return false;
+      return !/(?<![\w:-])(?:dark:)?bg-(?!white\b|black\b|(?:gray|slate|zinc|neutral|stone)-\d{2,3}\b)[a-z]+-\d/.test(text);
+    });
+    expect(missing.map(({ file, text }) => ({ file, text }))).toEqual([]);
+  });
+  it('固定语义色操作不混用中性内容材质，避免收藏和危险按钮被刷灰', () => {
+    const conflicts = classes.filter(({ text }) => /^["']/.test(text) &&
+      /appearance-(?:group|surface)\b/.test(text) &&
+      /(?<![\w:-])(?:dark:)?bg-(?:red|rose|emerald|green|amber|orange|violet|blue|indigo)-\d/.test(text));
+    expect(conflicts.map(({ file, text }) => ({ file, text }))).toEqual([]);
+  });
+  it('全局背景连续，独立分组承载材质，图片检查板不被改写', () => {
+    const detailCss = readFileSync(resolve('components/themeDetails.css'), 'utf8');
+    const root = "html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-material='frosted'])";
+    const surface = declarations(`${root} :is(.appearance-surface, .appearance-group)`, undefined, detailCss);
+    expect(surface['background-color']).toContain('--nai-panel-opacity');
+    expect(surface['background-color']).toContain('transparent');
+    expect(surface['backdrop-filter']).toContain('--nai-glass-blur');
+    const canvas = declarations(`${root} :is(.app-workspace, .workspace-canvas, .appearance-content)`, undefined, detailCss);
+    expect(canvas['background-color']).toBe('transparent');
+    expect(canvas['backdrop-filter']).toBeUndefined();
+    expect(detailCss).not.toContain('.app-workspace::before');
+    expect(declarations(`${root} .appearance-group:is(div, section, article, details)`, undefined, detailCss)['border-width']).toBe('0');
+    const nested = declarations(`${root} :is(.appearance-surface, .appearance-panel, .appearance-group, .settings-dialog, .operation-dialog) .appearance-group`, undefined, detailCss);
+    expect(nested['background-color']).toContain('18%');
+    expect(nested['backdrop-filter']).toBe('none');
+    parse(detailCss).walkRules(rule => {
+      if (rule.selector.includes('appearance-media')) throw new Error('图片和画布衬底不能进入玻璃覆盖选择器');
+    });
+    const preview = sources.find(source => source.file === 'components/ChainEditorPreview.tsx')!.text;
+    expect(preview).toContain("transparentPreview ? 'nai-alpha-checker' : generatedImage || previewImage ? 'bg-white dark:bg-gray-950/50' : 'appearance-group bg-white dark:bg-gray-950/50'");
+    for (const file of ['ChainEditor', 'ImageEditPanel', 'ImageEditControls', 'ChainEditorPreview']) {
+      expect(sources.find(source => source.file === `components/${file}.tsx`)!.text).toContain('appearance-content chain-editor-');
+    }
+    const selected = "html[data-theme-material='glass'][data-control-style='filled'] :is([role='tablist'], .appearance-segmented) > button:is([aria-selected='true'], [aria-pressed='true'], [aria-current])";
+    expect(declarations(selected, undefined, detailCss)['background-color']).toContain('transparent');
+  });
+  it('所有主题的卡片及图片信息分隔线无装饰边，悬停浮动也不恢复阴影或吞掉功能外圈', () => {
+    const cards = 'html:root :is(.media-card, .gallery-image-card, .appearance-card, .atelier-theme-card, .appearance-control-panel)';
+    const card = declarations(cards);
+    expect(card['border-width']).toBe('0');
+    expect(card['box-shadow']).toBe('var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000)');
+    expect(card['box-shadow']).not.toContain('--tw-shadow');
+    expect(declarations('html:root :is(.media-card, .gallery-image-card) :is(.mobile-gallery-frame, .gallery-card-caption)')['border-width']).toBe('0');
+    const priority: Record<string, boolean> = {};
+    parse(generatedCss).walkRules(rule => {
+      if (rule.selector === cards) {
+        for (const node of rule.nodes) if (node.type === 'decl') priority[node.prop] = Boolean(node.important);
+      }
+    });
+    expect(priority).toEqual({ 'border-width': true, 'box-shadow': true });
+    // 卡片规则继续使用功能性外圈变量，不能连键盘焦点一起抹掉。
+    expect(generatedCss).toContain('.focus-visible\\:ring-2');
+    const detailCss = readFileSync(resolve('components/themeDetails.css'), 'utf8');
+    const root = "html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-material='frosted'])";
+    const photo = declarations(`${root} .gallery-image-card`, undefined, detailCss);
+    expect(photo['background-color']).toBe('transparent');
+    expect(photo['backdrop-filter']).toBe('none');
+    expect(photo['-webkit-backdrop-filter']).toBe('none');
+    const caption = declarations(`${root}:not([data-gallery-frosted-caption='true']) .gallery-image-card .gallery-card-caption`, undefined, detailCss);
+    expect(caption['background-color']).toContain('--nai-panel-opacity');
+    expect(caption['backdrop-filter']).toContain('--nai-glass-blur');
+  });
+  it('阅读底色只用于编辑内容和独立控件，生成区不铺整条底板且文字仍可辨认', () => {
+    const detailCss = readFileSync(resolve('components/themeDetails.css'), 'utf8');
+    const root = "html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-material='frosted'])";
+    const reading = declarations(`${root} .appearance-reading-surface`, undefined, detailCss);
+    const floor = Number(reading['background-color'].match(/max\((\d+)%/)?.[1]) / 100;
+    expect(floor).toBeGreaterThanOrEqual(.9);
+    expect(reading['background-color']).toContain('--nai-panel-opacity');
+    expect(reading['backdrop-filter']).toBeUndefined();
+    expect(sources.find(source => source.file === 'components/LabModuleSection.tsx')!.text).toContain('appearance-reading-surface');
+    for (const file of ['ChainEditor', 'ChainEditorPreview']) {
+      const code = sources.find(source => source.file === `components/${file}.tsx`)!.text;
+      expect(code).not.toContain('generation-action-surface');
+    }
+    expect(detailCss).not.toContain('.generation-action-surface');
+    expect(sources.find(source => source.file === 'components/GenerationCountControl.tsx')!.text).toContain('appearance-reading-surface mobile-touch');
+    const action = `${root} .generation-action-button--workbench:not(.generation-action-button--loading)`;
+    expect(declarations(action, undefined, detailCss)['background-color']).toBe('var(--nai-action-deep, var(--nai-accent))');
+    expect(declarations(action, undefined, detailCss).color).toBe('var(--nai-on-action, white)');
+    expect(declarations(`${action} .generation-action-button__cost`, undefined, detailCss).color).toBe('inherit');
+    const [preset] = readAppearancePresetImport(readFileSync('public/themes/cupertino-liquid-glass.json', 'utf8'));
+    for (const dark of [false, true]) {
+      const modeRoot = root + (dark ? '.dark' : '');
+      const mutedClasses = dark ? ":is(.text-gray-400, .text-gray-500, [class~='dark:text-gray-400'], [class~='dark:text-gray-500'])" : ':is(.text-gray-400, .text-gray-500)';
+      const foreground = declarations(`${modeRoot} .chain-editor-main ${mutedClasses}`, undefined, detailCss).color;
+      const placeholder = declarations(`${modeRoot} .appearance-reading-surface :is(input, textarea)::placeholder`, undefined, detailCss).color;
+      expect(placeholder).toBe(foreground);
+      const palette = resolveThemePalette(preset.palette, dark);
+      const variables = themePaletteVariables(preset.palette, dark, true);
+      const muted = variables[foreground.slice(4, -1)];
+      for (const background of ['#000000', '#ffffff']) {
+        const surface = mixThemeColor(palette.panel, background, floor);
+        expect(themeContrast(palette.text, surface)).toBeGreaterThanOrEqual(4.5);
+        expect(themeContrast(muted, surface)).toBeGreaterThanOrEqual(4.5);
+      }
+      applyAppearancePreferences({ ...DEFAULT_APPEARANCE_PREFERENCES, ...preset }, dark);
+      const actionFill = mixThemeColor(preset.details?.[dark ? 'dark' : 'light']?.accentColor || preset.accentColor, dark ? '#0d0f14' : '#000000', dark ? .55 : .68);
+      expect(themeContrast(document.documentElement.style.getPropertyValue('--nai-on-action'), actionFill)).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+  it('所有设置中性分组共用薄透表面，选中状态和实色模式保留', () => {
+    const detailCss = readFileSync(resolve('components/themeDetails.css'), 'utf8');
+    const translucent = "html[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-material='frosted']) .settings-content";
+    const backdrop = "html[data-theme-details='true'][data-theme-material='glass'] .ui-backdrop-enter:has(> :is(.settings-dialog, .operation-dialog))";
+    expect(declarations(backdrop, undefined, detailCss)['background-color']).toBe('rgb(0 0 0 / .18)');
+    expect(declarations(backdrop, '(prefers-reduced-transparency: reduce)', detailCss)['background-color']).toBe('rgb(0 0 0 / .55)');
+    expect(declarations(translucent, undefined, detailCss)['background-color']).toBe('transparent');
+    const groupsRoot = translucent.replace('html[', 'html:root[');
+    const groups = declarations(`${groupsRoot} :is(.appearance-group, .appearance-panel, .appearance-control-panel, .atelier-theme-card)`, undefined, detailCss);
+    expect(groups['background-color']).toBe('color-mix(in srgb, var(--nai-panel-solid-surface) 18%, transparent)');
+    expect(groups['backdrop-filter']).toBeUndefined();
+    expect(declarations(`${groupsRoot} :is(.appearance-group[data-active='true'], .atelier-theme-card[aria-pressed='true'])`, undefined, detailCss)['background-color']).toBe('color-mix(in srgb, var(--nai-accent) 8%, transparent)');
+    expect(declarations("html[data-control-style='filled'] .settings-content", undefined, detailCss)['background-color']).toBe('var(--nai-canvas)');
+    const fields = "html[data-theme-material='glass'][data-control-style='filled'] :is(input:not([type='range']):not([type='color']):not([type='checkbox']):not([type='radio']):not([type='file']):not([type='hidden']), select, textarea)";
+    expect(declarations(fields, undefined, detailCss)['background-color']).toContain('--nai-panel-solid-surface');
+    expect(declarations(fields, undefined, detailCss)['background-color']).not.toContain('--nai-canvas');
+  });
+  it('六类设置及嵌入模块的中性内容容器全部声明材质语义，进度和语义色不混用', () => {
+    const modules = ['GlobalSettings', 'PromptAgentSettings', 'PromptLibrarySettings', 'AgentConnectionForm', 'AnlasBalanceBar', 'OpusUsageBar', 'ImageTaggerModelManager', 'DataBackupManager', 'StorageLocationManager', 'DesktopLauncherManager', 'AndroidStorageManager', 'SillyTavernBridgeExport', 'TagDictionaryUpdater', 'ArtistSampleManager', 'AppUpdateManager'];
+    const missing: string[] = [];
+    for (const name of modules) {
+      const file = `components/${name}.tsx`;
+      const ast = ts.createSourceFile(file, readFileSync(resolve(file), 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+      const visit = (node: ts.Node) => {
+        if (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) {
+          const tag = node.tagName.getText(ast);
+          const attributes = node.attributes.properties.filter(ts.isJsxAttribute);
+          const classes = attributes.find(attr => attr.name.getText(ast) === 'className')?.initializer?.getText(ast) || '';
+          const role = attributes.find(attr => attr.name.getText(ast) === 'role')?.initializer?.getText(ast) || '';
+          // 只审计内容底板；控件轨道、色板、徽记和功能状态另有语义。
+          if (['div', 'section', 'details', 'fieldset', 'pre', 'label'].includes(tag)
+            && /(?<![\w:-])bg-(?:white|gray-\d{2,3})\b/.test(classes)
+            && !/(?<![\w:-])bg-(?!white\b|gray-\d{2,3}\b)[a-z]+-\d/.test(classes)
+            && !/progressbar|tablist/.test(role)
+            && !/h-1\.5|appearance-(?:group|panel|control-panel|surface)|atelier-theme-card|settings-(?:dialog|navigation)|workspace-command-bar/.test(classes)) {
+            missing.push(`${file}:${ast.getLineAndCharacterOfPosition(node.getStart(ast)).line + 1}`);
+          }
+          if (/appearance-group/.test(classes)) {
+            expect(role, file).not.toContain('progressbar');
+            expect(classes, file).not.toMatch(/appearance-surface\b/);
+          }
+        }
+        ts.forEachChild(node, visit);
+      };
+      visit(ast);
+    }
+    expect(missing).toEqual([]);
+    const settings = sources.find(source => source.file === 'components/GlobalSettings.tsx')!.text;
+    expect(settings).toMatch(/key=\{entry\.id\} data-active=\{active\} className=\{`appearance-group/);
+    expect(settings).toContain("safeMode ? 'bg-emerald-600 text-white'");
+    expect(settings).toMatch(/h-5 w-5 rounded-full bg-white shadow-sm/);
+  });
+  it('自定义背景只铺在全局底层，页面底板透明且不处理图片或安全模式', () => {
+    const body = declarations("html[data-theme-background='true'] body");
+    expect(body['background-image']).toBe('var(--nai-background-image)');
+    expect(body['background-size']).toBe('var(--nai-background-size)');
+    expect(declarations("html:root[data-theme-background='true'] :is(.workspace-canvas, .app-workspace)")['background-color']).toBe('transparent');
+    parse(css).walkRules(rule => {
+      if (rule.selector.includes('data-theme-background')) expect(rule.selector).not.toMatch(/safe-mode|\bimg\b|media-card|gallery-image/);
+    });
+  });
+  it('自定义画布色覆盖页面底板，保留卡片、图片与默认主题的独立表面', () => {
+    expect(declarations("html[data-design-theme='nai-atelier'][data-custom-palette='true'] .workspace-canvas")['background-color']).toBe('var(--nai-canvas)');
+    for (const name of ['Layout', 'ChainList', 'ArtistLibrary', 'CharacterLibrary', 'CreationFootprint', 'PromptLibrary', 'GenHistory', 'DanbooruGallery', 'PixivGallery', 'AitagGallery', 'ChainEditor', 'StyleRollPage']) {
+      const source = sources.find(source => source.file === `components/${name}.tsx`)!;
+      expect(source.text, name).toContain('workspace-canvas');
+    }
+    const artist = sources.find(source => source.file === 'components/ArtistLibrary.tsx')!.text;
+    expect(artist.split('\n').find(line => line.includes('ref={scrollContainerRef}'))).toContain('className="workspace-canvas');
+    expect(declarations("html[data-design-theme='nai-atelier'] .media-card")['background-color']).toBeUndefined();
+    const detailCss = readFileSync(resolve('components/themeDetails.css'), 'utf8');
+    // alpha 的 min 两边保持相同数字类型，避免整条玻璃阴影失效。
+    expect(declarations("html[data-theme-details='true'][data-theme-material='glass']", undefined, detailCss)['--nai-glass-edge']).toContain('min(.8,');
+  });
+  it('锚定展开适用于所有主题，玻璃只增强形态，系统减少动效时不播放', () => {
+    const media = '(prefers-reduced-motion: no-preference)';
+    expect(declarations("html[data-motion='full'] .appearance-popover", media, css).animation).toContain('ui-popover-in');
+    expect(declarations("html[data-motion='reduced'] .appearance-popover", undefined, css).animation).toBeUndefined();
+    const detailCss = readFileSync(resolve('components/themeDetails.css'), 'utf8');
+    expect(declarations("html[data-theme-material='glass'][data-motion='full'] .appearance-popover", media, detailCss)['animation-name']).toBe('nai-glass-popover-in');
+    parse(css + detailCss).walkAtRules('keyframes', rule => {
+      if (['ui-popover-in', 'nai-glass-popover-in'].includes(rule.params)) {
+        expect(rule.toString()).toContain('transform: scale('); expect(rule.toString()).not.toMatch(/\btranslate:/);
+      }
+    });
+    const horizontal = declarations('.-translate-x-1\\/2'), vertical = declarations('.-translate-y-full');
+    expect(horizontal.translate).toContain('--tw-translate-x'); expect(horizontal['--tw-translate-x']).toBe('calc(calc(1/2 * 100%) * -1)');
+    expect(vertical.translate).toContain('--tw-translate-y'); expect(vertical['--tw-translate-y']).toMatch(/-100%|100%.*-1/);
+    expect(horizontal.transform).toBeUndefined(); expect(vertical.transform).toBeUndefined();
+    const glassFrames = parse(detailCss).nodes.find(node => node.type === 'atrule' && node.name === 'keyframes' && node.params === 'nai-glass-popover-in');
+    expect(glassFrames?.toString()).toContain('backdrop-filter: var(--nai-glass-filter)');
+    expect(glassFrames?.toString()).not.toContain('url(');
+    const base = "html:root[data-theme-details='true'][data-theme-material='glass'] :is(.app-sidebar, .workspace-command-bar, .app-mobile-nav, .appearance-panel, .settings-dialog, .operation-dialog, .mobile-page-header, .mobile-detail-header, .mobile-detail-footer)";
+    expect(declarations(base, undefined, detailCss)['--nai-glass-contour']).toBe('initial');
+  });
+  it('生产 CSS 优化后保留标准背景滤镜、折射与关闭规则', () => {
+    const source = readFileSync(resolve('components/themeDetails.css'), 'utf8');
+    const optimized = optimize(source, { file: 'components/themeDetails.css', minify: true }).code;
+    const filters: string[] = [];
+    parse(optimized).walkDecls('backdrop-filter', declaration => { filters.push(declaration.value); });
+    expect(filters.some(value => value.includes('--nai-glass-blur'))).toBe(true);
+    expect(filters).toContain('var(--nai-glass-filter)');
+    expect(filters.some(value => /^var\(--nai-glass-filter\)\s*var\(--nai-glass-contour,/.test(value))).toBe(true);
+    expect(filters.filter(value => value === 'none')).toHaveLength(5);
+  });
+  it('追光只画在独立无滤镜层，不更新玻璃表面背景', () => {
+    const selectors: string[] = [];
+    parse(readFileSync(resolve('components/themeDetails.css'), 'utf8')).walkRules(rule => {
+      rule.walkDecls('background-image', declaration => {
+        if (declaration.value.includes('--nai-light-x')) selectors.push(rule.selector);
+      });
+    });
+    expect(selectors.length).toBeGreaterThan(0);
+    for (const selector of selectors) {
+      expect(selector).toContain("[data-theme-light='true']");
+      expect(selector).toContain("[data-theme-material='glass'][data-motion='full']");
+      expect(selector).toContain('.nai-theme-light');
+      expect(selector).not.toMatch(/\.(?:appearance-panel|appearance-control-panel|settings-content|settings-dialog|operation-dialog)\b/);
+    }
+    const layer = declarations('.nai-theme-light', undefined, readFileSync(resolve('components/themeDetails.css'), 'utf8'));
+    expect(layer['pointer-events']).toBe('none');
+    expect(layer.contain).toBe('strict');
+    expect(layer['backdrop-filter']).toBeUndefined();
+  });
+  it('玻璃透光不会被实色输入框盖住，固定反光和既定追光范围分别保留', () => {
+    const detailCss = readFileSync(resolve('components/themeDetails.css'), 'utf8');
+    const fields = "html[data-theme-material='glass'][data-control-style='filled'] :is(input:not([type='range']):not([type='color']):not([type='checkbox']):not([type='radio']):not([type='file']):not([type='hidden']), select, textarea)";
+    expect(declarations(fields, undefined, detailCss)['background-color']).toContain('transparent');
+    const fallback = "html[data-theme-material='glass'][data-control-style='filled'] :is(input, select, textarea)";
+    expect(declarations(fallback, '(prefers-reduced-transparency: reduce)', detailCss)['background-color']).not.toContain('transparent');
+    const toggle = "html[data-theme-material='glass'][data-control-style='filled'] :is(.appearance-popover, .mobile-sheet) button[aria-pressed='false']";
+    expect(declarations(toggle, undefined, detailCss)['background-color']).toContain('transparent');
+    expect(declarations(toggle, '(prefers-reduced-transparency: reduce)', detailCss)['background-color']).not.toContain('transparent');
+    const root = "html[data-theme-details='true'][data-theme-material='glass']";
+    expect(declarations(root, undefined, detailCss)['--nai-glass-control-sheen']).toContain('linear-gradient');
+    const large = "html:root[data-theme-details='true'][data-theme-material='glass'] :is(.app-sidebar, .workspace-command-bar, .app-mobile-nav, .appearance-panel, .settings-dialog, .operation-dialog, .mobile-page-header, .mobile-detail-header, .mobile-detail-footer)";
+    expect(declarations(large, undefined, detailCss)['background-image']).toBe('var(--nai-glass-surface-reflection)');
+    const surface = declarations(root, undefined, detailCss)['--nai-glass-surface-sheen'];
+    expect(surface).toContain('linear-gradient(180deg'); expect(surface).toContain('transparent 36px');
+    expect(surface).not.toContain('%');
+    expect(surface).not.toContain('38%');
+    expect(surface).not.toContain('url(');
+    expect(detailCss).not.toMatch(/nai-glass-grain|feTurbulence/);
+    expect(declarations(`${root} .settings-navigation`, undefined, detailCss)['--nai-glass-surface-reflection']).toBe('none');
+    parse(detailCss).walkRules(rule => rule.walkDecls('background-image', declaration => {
+      if (declaration.value.includes('--nai-glass-control-sheen')) expect(rule.selector).not.toMatch(/\.(?:settings-dialog|settings-navigation|app-sidebar|workspace-command-bar|appearance-panel)\b/);
+    }));
+    const control = "html[data-theme-material='glass'][data-motion='full'] .nai-theme-light[data-theme-light='true'][data-light-kind='control']";
+    const light = declarations(control, undefined, detailCss)['background-image'];
+    expect(light).toContain('48px circle'); expect(light).not.toContain('var(--nai-glass-control-sheen)');
+    const chrome = "html[data-theme-material='glass'][data-motion='full'] .nai-theme-light[data-theme-light='true'][data-light-kind='chrome']";
+    expect(declarations(chrome, undefined, detailCss)['background-image']).toContain('96px circle');
+    expect(declarations(chrome, undefined, detailCss)['background-image']).toContain('var(--nai-light-opacity) * .25');
+    expect(declarations(chrome, undefined, detailCss)['background-image']).not.toContain('linear-gradient');
+    expect(declarations(chrome, undefined, detailCss)['background-image']).not.toContain('--nai-glass-control-sheen');
+    expect(declarations(chrome, undefined, detailCss)['background-image']).not.toContain('--nai-glass-surface-reflection');
+    expect(declarations("html[data-theme-material='glass'].dark", undefined, detailCss)['--nai-light-opacity']).toBe('min(22%, calc(var(--nai-glass-highlight, .6) * 120%))');
+  });
+  it('高级玻璃只折射背景，触屏不缩小控件，减少透明度与动效优先', () => {
+    const detailCss = readFileSync(resolve('components/themeDetails.css'), 'utf8');
+    const root = "html[data-theme-details='true']";
+    const touch = '(max-width: 767px), (any-pointer: coarse)';
+    expect(declarations(`${root} [data-control-kind='icon']`, touch, detailCss)['min-width']).toBe('44px');
+    expect(declarations(`${root} [data-appearance='control']`, touch, detailCss)['min-height']).toBe('44px');
+    expect(declarations(`${root} .app-sidebar nav button`, touch, detailCss)['min-height']).toBe('44px');
+    expect(declarations(`${root} [data-appearance='control']`, undefined, detailCss).height).toBe('var(--nai-control-height, revert-layer)');
+    expect(detailCss).toContain("@supports (backdrop-filter: url('#nai-glass-lens') blur(1px))");
+    const filteredSelectors: string[] = [];
+    const lensOrder: string[] = [];
+    parse(detailCss).walkRules(rule => {
+      rule.walkDecls(/^(?:backdrop-)?filter$/, declaration => {
+        if (declaration.value.includes('nai-glass-contour')) { filteredSelectors.push(rule.selector); lensOrder.push(declaration.value); }
+      });
+    });
+    expect(filteredSelectors).toHaveLength(1);
+    expect(lensOrder).toEqual(['var(--nai-glass-filter) var(--nai-glass-contour, )']);
+    expect(filteredSelectors[0]).not.toMatch(/(?:img|canvas|media-card|gallery-image)/);
+    for (const surface of ['.settings-dialog', '.operation-dialog', '.mobile-page-header', '.mobile-detail-header', '.mobile-detail-footer']) expect(filteredSelectors[0]).toContain(surface);
+    const nested = "html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-material='frosted']) :is(.settings-dialog, .operation-dialog, .appearance-surface, .appearance-panel) :is(.appearance-surface, .appearance-panel)";
+    expect(declarations(nested, undefined, detailCss)['backdrop-filter']).toBe('none');
+    expect(declarations(nested, undefined, detailCss)['-webkit-backdrop-filter']).toBe('none');
+    const button = "html[data-theme-material='glass'][data-control-style='filled'] [data-appearance='control'][data-tone='neutral']:not(input):not(select):not([data-active='true'])";
+    expect(declarations(button, undefined, detailCss)['background-color']).toContain('transparent');
+    expect(declarations(button, undefined, detailCss)['box-shadow']).toBe('var(--nai-glass-edge), var(--nai-filled-shadow)');
+    expect(detailCss).toContain("[data-theme-material='glass'][data-motion='full']");
+    const fallback = "html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-material='frosted']) :is(.app-sidebar, .workspace-command-bar, .app-mobile-nav, .appearance-surface, .appearance-group, .appearance-reading-surface, .appearance-panel, .settings-dialog, .operation-dialog, .mobile-page-header, .mobile-detail-header, .mobile-detail-footer)";
+    expect(declarations(fallback, '(prefers-reduced-transparency: reduce)', detailCss)['backdrop-filter']).toBe('none');
+    const reducedButton = "html[data-theme-material='glass'] [data-appearance='control'][data-tone='neutral']:not([data-active='true'])";
+    expect(declarations(reducedButton, '(prefers-reduced-transparency: reduce)', detailCss)['background-color']).toBe('var(--nai-control-surface, var(--nai-panel-solid-surface))');
+    const solid = "html[data-theme-details='true'][data-theme-material='solid'] :is(.app-sidebar, .workspace-command-bar, .app-mobile-nav, .appearance-panel, .settings-dialog, .operation-dialog, .mobile-page-header, .mobile-detail-header, .mobile-detail-footer)";
+    expect(declarations(solid, undefined, detailCss)['backdrop-filter']).toBe('none');
+  });
   it('强调色控件和文字使用可读前景色，自定义面板接管白底但不改语义色与图片遮罩', () => {
     expect(declarations("html[data-design-theme='nai-atelier'] :is(.bg-indigo-600, .bg-violet-600).text-white").color).toBe('var(--nai-on-accent-600)');
     expect(declarations("html[data-design-theme='nai-atelier'] :is([class~='hover:bg-indigo-500'], [class~='hover:bg-violet-500']).text-white:hover:not(:disabled)").color).toBe('var(--nai-on-accent-500)');

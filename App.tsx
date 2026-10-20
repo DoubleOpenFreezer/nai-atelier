@@ -637,13 +637,13 @@ const App = () => {
   };
 
   if (!currentUser && !dbConfigError) {
-    return <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 text-gray-500">{t("正在启动本地应用…")}</div>;
+    return <div className="workspace-canvas min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 text-gray-500">{t("正在启动本地应用…")}</div>;
   }
 
   // --- Database Setup Guide ---
   if (dbConfigError) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 p-4 font-sans dark:text-white">
+      <div className="workspace-canvas min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 p-4 font-sans dark:text-white">
         <div className="text-center">
           <h2 className="text-2xl font-bold mb-2">{t("本地服务未连接")}</h2>
           <p>{t("请启动本地服务")}</p>

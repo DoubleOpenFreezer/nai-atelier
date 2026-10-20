@@ -19,11 +19,12 @@ interface GenerationModeNavProps {
 export const GenerationModeNav: React.FC<GenerationModeNavProps> = ({ activeMode, onSelect, disabled = false }) => {
   useLanguage();
   const modes = GENERATION_MODES;
-  return <nav className={`generation-mode-nav mx-auto grid w-full max-w-3xl grid-cols-4 gap-1 rounded-xl border border-gray-200/60 bg-gray-100/90 p-1 dark:border-gray-800/80 dark:bg-gray-900/90`} aria-label={t("生成模式")}>
+  return <nav className={`generation-mode-nav appearance-segmented mx-auto grid w-full max-w-3xl grid-cols-4 gap-1 rounded-xl border border-gray-200/60 bg-gray-100/90 p-1 dark:border-gray-800/80 dark:bg-gray-900/90`} aria-label={t("生成模式")}>
     {modes.map(({ mode, label }) => (
       <button
         key={mode}
         type="button"
+        data-appearance="control"
         disabled={disabled}
         aria-current={activeMode === mode ? 'page' : undefined}
         onClick={() => void onSelect(mode)}

@@ -55,9 +55,11 @@ describe('工具栏弹层位置与连续操作', () => {
     expect(screen.queryByRole('dialog')).toBeNull(); expect(document.activeElement).toBe(trigger);
   });
   it('与触发器居中，两侧贴边时留出屏幕边距', () => {
-    expect(getToolbarPopoverPosition({ left: 460, width: 80, bottom: 52 }, 400, 1000, 800)).toEqual({ left: 500, top: 60, width: 400, maxHeight: 728 });
+    expect(getToolbarPopoverPosition({ left: 460, width: 80, bottom: 52 }, 400, 1000, 800)).toEqual({ left: 500, top: 60, width: 400, maxHeight: 728, transformOrigin: '200px top' });
     expect(getToolbarPopoverPosition({ left: 0, width: 40, bottom: 52 }, 400, 1000, 800).left).toBe(212);
     expect(getToolbarPopoverPosition({ left: 960, width: 40, bottom: 52 }, 400, 1000, 800).left).toBe(788);
+    expect(getToolbarPopoverPosition({ left: 0, width: 40, bottom: 52 }, 400, 1000, 800).transformOrigin).toBe('8px top');
+    expect(getToolbarPopoverPosition({ left: 960, width: 40, bottom: 52 }, 400, 1000, 800).transformOrigin).toBe('392px top');
   });
 
   it('限制面板宽高，窗口较小也不会裁掉操作区', () => {
@@ -69,7 +71,7 @@ describe('工具栏弹层位置与连续操作', () => {
   });
   it('贴底生成栏向上展开，保留可用高度与屏幕左右边界', () => {
     expect(getToolbarPopoverPosition({ left: 950, width: 44, top: 746, bottom: 790 }, 280, 1000, 800, true))
-      .toEqual({ left: 848, top: 738, width: 280, maxHeight: 726 });
+      .toEqual({ left: 848, top: 738, width: 280, maxHeight: 726, transformOrigin: '264px bottom' });
   });
 
   it('筛选内容脱离工作区隔离层，修改后标记数量且关闭不丢失条件', () => {
@@ -81,6 +83,7 @@ describe('工具栏弹层位置与连续操作', () => {
     expect(panel.closest('.workspace-content')).toBeNull();
     fireEvent.click(within(panel).getByRole('checkbox', { name: '只看收藏' }));
     expect(screen.getByRole('button', { name: '筛选 1' }).getAttribute('aria-expanded')).toBe('true');
+    expect(screen.getByRole('button', { name: '筛选 1' }).getAttribute('data-active')).toBe('true');
     fireEvent.click(within(panel).getByRole('button', { name: '查看结果' }));
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(document.activeElement).toBe(trigger);

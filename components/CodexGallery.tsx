@@ -8,7 +8,7 @@ import { codexCharactersToParams, codexEntryMatches, codexPromptImport, loadCode
 import { collectionRevision, collectionTargetActive, subscribeCollection, type CollectionImage, type CollectionTarget } from '../services/collectionFavorites';
 import { mobileGalleryClassName, mobileGalleryStyle, useMobileImageDisplayPreferences } from '../services/imageDisplayPreferences';
 import { getMobileOriginalUrl } from '../services/mobileImageCache';
-import { EmptyState, IconButton, MediaCardShell, PageSpinner, ToolbarButton, ToolbarSearch, WorkspaceToolbar } from './DesignSystem';
+import { EmptyState, IconButton, MediaCardShell, PageSpinner, ToolbarButton, ToolbarSearch, WorkspaceChrome, WorkspaceToolbar } from './DesignSystem';
 import { DetailSidePanel } from './DetailPanel';
 import { ImageShareOverlay } from './ImageShareActions';
 import { SmartImage } from './SmartImage';
@@ -226,7 +226,7 @@ export const CodexGallery: React.FC<{ active: boolean; selectionFocusEnabled?: b
       notify(error instanceof Error ? error.message : t('导入失败'), 'error');
     }
   };
-  const promptSection = (label: string, text: string, open = false) => text ? <details key={`${selectedKey}:${page}:${label}`} open={open} className="rounded-lg border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950">
+  const promptSection = (label: string, text: string, open = false) => text ? <details key={`${selectedKey}:${page}:${label}`} open={open} className="appearance-group rounded-lg border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950">
     <summary className="flex min-h-9 cursor-pointer items-center gap-2 px-2 text-xs font-semibold"><span className="mr-auto">{t(label)}</span><IconButton label={t('复制提示词')} className="!h-8 !w-8 !border-0 !bg-transparent" onClick={event => { event.preventDefault(); void copy(text); }}><Copy /></IconButton></summary>
     <pre className="max-h-28 overflow-auto whitespace-pre-wrap break-words px-2 pb-2 text-xs leading-relaxed text-gray-600 dark:text-gray-300">{text}</pre>
   </details> : null;
@@ -242,10 +242,10 @@ export const CodexGallery: React.FC<{ active: boolean; selectionFocusEnabled?: b
     const imageRatio = image ? imageRatios[entry.key] || (image.width && image.height ? image.width / image.height : 0.75) : 0.75;
     return <MediaCardShell pressReveal key={entry.key} data-gallery-work-id={entry.key} data-safe-mode-work="true" selected={selectedKey === entry.key} className={`mobile-gallery-item ${image ? 'gallery-image-card' : ''} group relative flex-col ${selectionFocusEnabled && selectedKey && selectedKey !== entry.key ? 'brightness-[.7]' : ''}`}>
       <button type="button" onClick={() => { anchor.prepareSelection(entry.key); setSelectedKeys(current => ({ ...current, [mode]: entry.key })); setPages(current => ({ ...current, [mode]: entry.coverIndex })); }} className={`block w-full text-left ${image ? 'gallery-card-visual' : ''}`}>
-        {image ? <div className="mobile-gallery-frame relative aspect-[3/4] overflow-hidden bg-gray-200 dark:bg-gray-800" style={{ '--mobile-image-ratio': `${imageRatio}` } as React.CSSProperties}>
+        {image ? <div className="appearance-media mobile-gallery-frame relative aspect-[3/4] overflow-hidden bg-gray-200 dark:bg-gray-800" style={{ '--mobile-image-ratio': `${imageRatio}` } as React.CSSProperties}>
           <SmartImage src={image.url} alt={entry.title} className={display.layout === 'masonry' && !imageRatios[entry.key] ? 'h-full w-full object-contain' : undefined} onLoad={event => updateImageRatio(entry.key, event.currentTarget.naturalWidth, event.currentTarget.naturalHeight)} />
           {!frostedCaption && (entry.images.length > 1 || partial) && <span className="absolute bottom-2 right-2 rounded-full bg-black/60 px-2 py-1 text-micro text-white">{partial ? `${t('部分已收藏')} · ` : ''}{t('{0}页', [entry.images.length])}</span>}
-        </div> : <div className="max-h-40 overflow-hidden bg-gray-50 p-3 text-xs leading-relaxed text-gray-500 dark:bg-gray-950">{entry.prompt || entry.characters.map(character => character.prompt).join('\n') || entry.note}</div>}
+        </div> : <div className="appearance-group max-h-40 overflow-hidden bg-gray-50 p-3 text-xs leading-relaxed text-gray-500 dark:bg-gray-950">{entry.prompt || entry.characters.map(character => character.prompt).join('\n') || entry.note}</div>}
         <div className={`p-2.5 ${image ? 'gallery-card-caption' : ''}`}>{frostedCaption && image && (entry.images.length > 1 || partial) && <span className="gallery-card-meta mb-1 block text-micro">{partial ? `${t('部分已收藏')} · ` : ''}{t('{0}页', [entry.images.length])}</span>}<p data-safe-mode-title="true" className="truncate text-xs font-bold">{entry.title}</p><p className="gallery-card-meta mt-1 truncate text-micro text-gray-500">{mode === 'books' ? [filter.scope === 'all' && entry.bookTitle, entry.path.join(' / ') || (filter.scope === 'book' && entry.bookTitle)].filter(Boolean).join(' · ') : entry.author || entry.path.join(' / ')}</p></div>
       </button>
       {image && <ImageShareOverlay imageUrl={getMobileOriginalUrl(image.originalUrl || image.url)} filename={`${entry.id}.png`} favorite={groupTarget(entry)} notify={notify} />}
@@ -255,7 +255,8 @@ export const CodexGallery: React.FC<{ active: boolean; selectionFocusEnabled?: b
   const select = (label: string, name: keyof Filters, values: [string, string][]) => field(label, <select aria-label={t(label)} className={TOOLBAR_FIELD_CLASS} value={String(filter[name])} onChange={event => changeFilter({ [name]: event.target.value })}>{values.map(([value, text]) => <option key={value} value={value}>{t(text)}</option>)}</select>);
 
   return <div className="flex h-full min-h-0 flex-col" data-agent-page-scope="codex" data-agent-page-title={t('法典')}>
-    <WorkspaceToolbar>
+    <WorkspaceChrome>
+<WorkspaceToolbar>
       <ToolbarPopover label={sourceLabel} title={t('法典来源')} icon={<BookOpen />} width={440} className="[&>button>span]:inline [&>button>span]:max-w-20 sm:[&>button>span]:max-w-40 [&>button>span]:truncate [&>button>svg]:hidden sm:[&>button>svg]:block">
         {close => <div className="space-y-2">
           <button type="button" className={TOOLBAR_MENU_CLASS} aria-pressed={mode === 'community'} onClick={() => { setMode('community'); setVisibleLimit(120); close(); }}>{t('共创广场')}</button>
@@ -287,8 +288,9 @@ export const CodexGallery: React.FC<{ active: boolean; selectionFocusEnabled?: b
       <div className="hidden sm:block"><IconButton label={t('刷新')} disabled={loading} onClick={() => setReload(value => value + 1)}><RefreshCw className={loading ? 'animate-spin' : ''} /></IconButton></div>
     </WorkspaceToolbar>
     {(error || result?.error || boot?.offline || progress) && <div role="status" className="flex-none border-b border-gray-200 px-3 py-2 text-xs text-amber-700 dark:border-gray-800 dark:text-amber-300">{progress || error || result?.error || boot?.error}{(result?.offline || boot?.offline) && ` · ${t('正在使用上次成功的数据')}`}</div>}
+    </WorkspaceChrome>
     <div className={`aitag-split relative grid min-h-0 flex-1 grid-cols-1 ${selected ? 'lg:grid-cols-[minmax(0,1fr)_460px]' : ''}`}>
-      <div ref={scrollRef} onScroll={() => { scrollRestore(); anchor.onScroll(); }} className="min-h-0 overflow-y-auto p-3">
+      <div ref={scrollRef} onScroll={() => { scrollRestore(); anchor.onScroll(); }} className="workspace-scroll-viewport min-h-0 overflow-y-auto p-3">
         <div ref={galleryRef}>
           {loading && !result ? <PageSpinner className="min-h-60" /> : !filtered.length ? <EmptyState className="min-h-60" icon={<BookOpen />} title={t(error ? '法典读取失败' : '没有符合条件的内容')} action={error ? <ToolbarButton onClick={() => setReload(value => value + 1)}>{t('重试')}</ToolbarButton> : hasFilters ? <ToolbarButton onClick={clearFilters}>{t('清除筛选')}</ToolbarButton> : undefined} /> : <>
             {display.layout === 'masonry' ? <ShortestColumnMasonry items={filtered.slice(0, visibleLimit)} columns={columns} getItemKey={entry => entry.key} estimateItemHeight={estimateHeight} renderItem={renderCard} stableColumns /> : <div className={mobileGalleryClassName(display)} style={mobileGalleryStyle(display, columns)}>{filtered.slice(0, visibleLimit).map(renderCard)}</div>}
@@ -298,7 +300,7 @@ export const CodexGallery: React.FC<{ active: boolean; selectionFocusEnabled?: b
       </div>
       <DetailSidePanel open={Boolean(selected)} title={selected?.title || ''} sensitiveTitle subInfo={selected ? [selected.bookTitle, selected.author, selected.images.length ? t('{0}页', [selected.images.length]) : t('纯文本')].filter(Boolean).join(' · ') : ''} sourceUrl={selected?.sourceUrl} onClose={closeDetail} onBack={closeDetail}>
         {selected && sourceEntry && detailEntry && <div className="space-y-3">
-          <div className="overflow-hidden rounded-2xl border border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-900">
+          <div className="appearance-group overflow-hidden rounded-2xl border border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-900">
           {selectedImage && <PressRevealSurface pressResetKey={`${selected.key}:${page}`} className="group relative mx-auto max-h-[42vh] w-full overflow-hidden bg-black/5 dark:bg-black/20" style={{ aspectRatio: `${selectedImage.width || 3} / ${selectedImage.height || 4}` }}>
             <ViewableImage src={getMobileOriginalUrl(selectedImage.originalUrl || selectedImage.url)} alt={selected.title} width={selectedImage.width || 3} height={selectedImage.height || 4} className="absolute inset-0 h-full w-full object-contain" favorite={codexCollectionImage(selected, page)} notify={notify} />
             <ImageShareOverlay imageUrl={getMobileOriginalUrl(selectedImage.originalUrl || selectedImage.url)} filename={`${selected.id}-${page + 1}.png`} favorite={codexCollectionImage(selected, page)} notify={notify} />

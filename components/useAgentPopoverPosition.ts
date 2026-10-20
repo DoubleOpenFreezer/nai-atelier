@@ -22,7 +22,11 @@ export const useAgentPopoverPosition = (open: boolean, anchorRef: RefObject<HTML
         ? rightCandidate + actualWidth <= availableRight ? rightCandidate : anchor.left - actualWidth - 8
         : align === 'center' ? anchor.left + (anchor.width - actualWidth) / 2 : align === 'end' ? anchor.right - actualWidth : anchor.left;
       const desiredTop = placement === 'right' ? anchor.top : upward ? anchor.top - height - 8 : anchor.bottom + 8;
-      setPosition({ position: 'fixed', width: actualWidth, maxHeight, left: Math.max(left + 8, Math.min(desiredLeft, left + viewportWidth - actualWidth - 8)), top: Math.max(top + 8, Math.min(desiredTop, top + viewportHeight - height - 8)) });
+      const panelLeft = Math.max(left + 8, Math.min(desiredLeft, left + viewportWidth - actualWidth - 8));
+      const panelTop = Math.max(top + 8, Math.min(desiredTop, top + viewportHeight - height - 8));
+      const originX = placement === 'right' ? panelLeft >= anchor.right ? 0 : actualWidth : Math.max(0, Math.min(actualWidth, anchor.left + anchor.width / 2 - panelLeft));
+      const originY = placement === 'right' ? `${Math.max(0, Math.min(height, anchor.top + anchor.height / 2 - panelTop))}px` : upward ? 'bottom' : 'top';
+      setPosition({ position: 'fixed', width: actualWidth, maxHeight, left: panelLeft, top: panelTop, transformOrigin: `${originX}px ${originY}` });
     };
     place();
     const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(place);

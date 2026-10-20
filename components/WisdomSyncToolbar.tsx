@@ -11,13 +11,13 @@ export function WisdomSyncToolbar({ sync, filteredIds }: { sync: WisdomSyncSelec
   const verified = sync.lastSnapshotAt ? new Date(sync.lastSnapshotAt).toLocaleString(getLanguage(), { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
   const canSelectFiltered = filteredIds.some(id => sync.available.has(id) && !sync.selected.has(id));
   const canClearFiltered = filteredIds.some(id => sync.selected.has(id));
-  return <div className="flex-none border-b border-gray-200 bg-white/80 px-3 py-1.5 dark:border-gray-800 dark:bg-gray-900/80 md:px-5">
+  return <div className="appearance-group flex-none border-b border-gray-200 bg-white/80 px-3 py-1.5 dark:border-gray-800 dark:bg-gray-900/80 md:px-5">
     {/* 桌面按内容连续排布；窄屏才换行，不用占位将操作推到两端。 */}
     <div role="toolbar" aria-label={t("智慧姬同步操作")} className="flex flex-wrap items-center gap-x-3 gap-y-2">
       <div className="flex w-full min-w-0 items-center gap-1.5 sm:w-auto">
         <IconButton label={t("返回资料库")} title={t("返回资料库，取消尚未加入的勾选")} onClick={sync.cancel} className="mobile-touch !h-8 !w-8 !rounded-lg"><ArrowLeft className="h-4 w-4" /></IconButton>
         <div role="tablist" aria-label={t("智慧姬同步视图")} className="flex min-w-0 flex-1 gap-0.5 overflow-x-auto rounded-lg bg-gray-100 p-0.5 dark:bg-gray-800/80 sm:flex-none">
-          {tabs.map(tab => <button key={tab.view} type="button" role="tab" aria-label={`${t(tab.label)}${tab.count !== undefined ? ` ${tab.count}` : ''}`} aria-selected={sync.view === tab.view} onClick={() => sync.setView(tab.view)} className={`mobile-touch flex min-h-8 flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-md px-2 text-xs font-semibold outline-none transition-colors focus-visible:ring-2 focus-visible:ring-indigo-500 sm:flex-none sm:px-3 ${sync.view === tab.view ? 'bg-white text-indigo-600 shadow-sm dark:bg-gray-700 dark:text-indigo-300' : 'text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white'}`}>
+          {tabs.map(tab => <button key={tab.view} type="button" role="tab" aria-label={`${t(tab.label)}${tab.count !== undefined ? ` ${tab.count}` : ''}`} aria-selected={sync.view === tab.view} onClick={() => sync.setView(tab.view)} className={`appearance-group mobile-touch flex min-h-8 flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-md px-2 text-xs font-semibold outline-none transition-colors focus-visible:ring-2 focus-visible:ring-indigo-500 sm:flex-none sm:px-3 ${sync.view === tab.view ? 'bg-white text-indigo-600 shadow-sm dark:bg-gray-700 dark:text-indigo-300' : 'text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white'}`}>
             <tab.icon className="hidden h-3.5 w-3.5 shrink-0 sm:block" />
             {tab.view === 'pick' ? <><span className="sm:hidden">{t("挑选")}</span><span className="hidden sm:inline">{t(tab.label)}</span></> : <span>{t(tab.label)}</span>}
             {tab.count !== undefined && <span className="text-micro tabular-nums opacity-70">{tab.count}</span>}

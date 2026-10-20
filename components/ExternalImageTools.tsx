@@ -72,7 +72,7 @@ export const ExternalImageTools: React.FC<ExternalImageToolsProps> = ({ source, 
       </div>
       {loadError && <div className="flex items-center gap-2 text-xs text-red-600 dark:text-red-300"><span>{t("无法读取已保存的 Tag")}</span><ToolbarButton onClick={() => setLoadToken(value => value + 1)}>{t("重试读取")}</ToolbarButton></div>}
     </div>
-    {reverse && <section className="space-y-2 rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-gray-800 dark:bg-gray-900">
+    {reverse && <section className="appearance-group space-y-2 rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-gray-800 dark:bg-gray-900">
       <div className="flex items-center justify-between gap-2"><h3 className="text-xs font-black">{t("反推 Tag")}</h3><span className="text-micro text-gray-500">{t("{0} · 模型预测", [saved ? t("已保存到收藏库") : t("尚未保存")])}</span></div>
       <textarea aria-label={t("反推 Tag")} value={reverse.prompt} onChange={event => retain({ ...reverse, prompt: event.target.value })} className="min-h-24 w-full rounded-lg border border-gray-200 bg-white p-2 font-mono text-xs dark:border-gray-700 dark:bg-gray-950" />
       <div className="flex flex-wrap gap-2">

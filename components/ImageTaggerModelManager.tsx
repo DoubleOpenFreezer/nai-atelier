@@ -26,7 +26,7 @@ export const ImageTaggerModelManager: React.FC<{ notify: (message: string, type?
     <div className="mt-3 space-y-2">{status?.models.map(model => {
       const selected = status.model === model.id;
       const downloading = status.downloadingModel === model.id;
-      return <div key={model.id} className={`rounded-xl border bg-gray-50/70 p-3 dark:bg-gray-800/40 ${selected ? 'border-indigo-300 dark:border-indigo-500/40' : 'border-gray-200 dark:border-gray-700/80'}`}>
+      return <div key={model.id} className={`appearance-group rounded-xl border bg-gray-50/70 p-3 dark:bg-gray-800/40 ${selected ? 'border-indigo-300 dark:border-indigo-500/40' : 'border-gray-200 dark:border-gray-700/80'}`}>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="min-w-0"><div className="flex items-center gap-2 text-sm font-semibold text-gray-800 dark:text-gray-100">{t(model.label)}{selected && <span className="text-micro font-normal text-indigo-600 dark:text-indigo-300">{t("当前使用")}</span>}</div><p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{t(model.description)} · {formatTaggerBytes(model.totalBytes)}</p></div>
           <div className="flex flex-wrap gap-2">

@@ -1,12 +1,14 @@
 import { t, useLanguage } from '../services/i18n';
 import { PressRevealSurface } from './PressRevealSurface';
-import React from 'react';
+import React, { useLayoutEffect, useRef } from 'react';
+import { useGlassRefraction } from './useGlassRefraction';
 import { ArrowLeft, ChevronDown, Inbox, LoaderCircle, Search, X } from 'lucide-react';
 export { UNTESTED_CHAIN_TAG, isUntestedChain } from '../services/chainStatus';
 
 /** 弹层/面板右上角的关闭钮：复用 IconButton 的中性色阶与圆角。 */
 export const CloseButton: React.FC<{ onClick: (e: React.MouseEvent) => void; label?: string; className?: string; size?: 'sm' | 'md' }> = ({ onClick, label = '关闭', className = '', size = 'md' }) => (
   <button
+    data-appearance="control" data-control-kind="icon" data-tone="neutral"
     type="button"
     aria-label={t(label)}
     title={t(label)}
@@ -22,6 +24,7 @@ export const CloseButton: React.FC<{ onClick: (e: React.MouseEvent) => void; lab
 /** 返回钮：常用于移动端覆盖层标题行左侧。 */
 export const BackButton: React.FC<{ onClick: (e: React.MouseEvent) => void; label?: string; className?: string }> = ({ onClick, label = '返回', className = '' }) => (
   <button
+    data-appearance="control" data-control-kind="icon" data-tone="neutral"
     type="button"
     aria-label={t(label)}
     title={t(label)}
@@ -43,33 +46,66 @@ export const PageSpinner: React.FC<{ label?: string; className?: string }> = ({ 
 /** 列表/网格空态：可带图标、标题、提示与主操作。 */
 export const EmptyState: React.FC<{ icon?: React.ReactNode; title: string; hint?: string; action?: React.ReactNode; className?: string }> = ({ icon, title, hint, action, className = '' }) => (
   <div className={`flex flex-col items-center justify-center text-center ${className}`}>
-    <div className="flex h-16 w-16 items-center justify-center rounded-3xl bg-gray-100 text-gray-400 dark:bg-gray-800/80 dark:text-gray-500">
-      {icon ?? <Inbox className="h-8 w-8" aria-hidden="true" />}
+    <div className="appearance-group flex max-w-xl flex-col items-center rounded-2xl p-6">
+      <div className="appearance-group flex h-16 w-16 items-center justify-center rounded-3xl bg-gray-100 text-gray-400 dark:bg-gray-800/80 dark:text-gray-500">
+        {icon ?? <Inbox className="h-8 w-8" aria-hidden="true" />}
+      </div>
+      <p className="mt-4 text-base font-bold text-gray-600 dark:text-gray-300">{title}</p>
+      {hint && <p className="mt-2 max-w-sm text-sm text-gray-500 dark:text-gray-400">{t(hint)}</p>}
+      {action && <div className="mt-5">{action}</div>}
     </div>
-    <p className="mt-4 text-base font-bold text-gray-600 dark:text-gray-300">{title}</p>
-    {hint && <p className="mt-2 max-w-sm text-sm text-gray-400 dark:text-gray-500">{t(hint)}</p>}
-    {action && <div className="mt-5">{action}</div>}
   </div>
 );
+
+/** 把顶栏及状态行叠在滚动内容上，实际高度同时用于首屏留白和焦点避让。 */
+export const WorkspaceChrome: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const ref = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const chrome = ref.current, host = chrome?.parentElement;
+    if (!chrome || !host) return;
+    const previous = host.style.getPropertyValue('--workspace-chrome-height');
+    let height = 0;
+    const measure = () => {
+      const next = chrome.offsetHeight;
+      // 缓存页面隐藏时保留上次高度，重新显示不会先把内容拉到顶栏下面。
+      if (next > 0 && next !== height) {
+        height = next;
+        host.style.setProperty('--workspace-chrome-height', `${height}px`);
+      }
+    };
+    measure();
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
+    observer?.observe(chrome);
+    return () => {
+      observer?.disconnect();
+      if (previous) host.style.setProperty('--workspace-chrome-height', previous);
+      else host.style.removeProperty('--workspace-chrome-height');
+    };
+  }, []);
+  return <div ref={ref} className="workspace-chrome relative z-30 flex flex-none flex-col">{children}</div>;
+};
 
 export const WorkspaceToolbar: React.FC<{
   children: React.ReactNode;
   className?: string;
-}> = ({ children, className = '' }) => (
-  <header className={`workspace-page-heading workspace-command-bar relative z-30 flex flex-none items-center gap-2 overflow-visible border-b border-gray-200 bg-white px-3 py-0 dark:border-gray-800/80 dark:bg-gray-900/90 md:px-5 ${className}`}>
+}> = ({ children, className = '' }) => {
+  const surface = useRef<HTMLElement>(null);
+  useGlassRefraction(surface);
+  return <header ref={surface} className={`workspace-page-heading workspace-command-bar relative z-30 flex flex-none items-center gap-2 overflow-visible border-b border-gray-200 bg-white px-3 py-0 dark:border-gray-800/80 dark:bg-gray-900/90 md:px-5 ${className}`}>
     {children}
-  </header>
-);
+  </header>;
+};
 
 export const ToolbarSearch: React.FC<React.InputHTMLAttributes<HTMLInputElement> & {
   containerClassName?: string;
 }> = ({ containerClassName = '', className = '', type = 'search', children, ...props }) => {
   const hasLeadingContent = children !== undefined;
   const Container = hasLeadingContent ? 'div' : 'label';
-  return <Container className={`relative min-w-0 flex-1 md:max-w-md ${hasLeadingContent ? 'flex items-center rounded-xl border border-gray-200 bg-gray-50 pl-9 pr-1 transition focus-within:border-indigo-400 focus-within:bg-white focus-within:ring-2 focus-within:ring-indigo-500/10 dark:border-gray-800 dark:bg-gray-950/70 dark:focus-within:border-indigo-500/80 dark:focus-within:bg-gray-900' : 'block'} ${containerClassName}`}>
+  return <Container className={`relative min-w-0 flex-1 md:max-w-md ${hasLeadingContent ? 'appearance-group flex items-center rounded-xl border border-gray-200 bg-gray-50 pl-9 pr-1 transition focus-within:border-indigo-400 focus-within:bg-white focus-within:ring-2 focus-within:ring-indigo-500/10 dark:border-gray-800 dark:bg-gray-950/70 dark:focus-within:border-indigo-500/80 dark:focus-within:bg-gray-900' : 'block'} ${containerClassName}`}>
     <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
     {children}
     <input
+      data-appearance="control" data-tone="neutral"
       type={type}
       autoComplete="off"
       data-lpignore="true"
@@ -86,7 +122,7 @@ const ICON_NEUTRAL_CLASS = 'border-gray-200 bg-white text-gray-500 hover:border-
 
 /** 来源导航使用原生链接，尺寸与图标按钮一致，并保留新窗口／键盘行为。 */
 export const IconLink: React.FC<React.AnchorHTMLAttributes<HTMLAnchorElement> & { label: string }> = ({ label, className = '', children, ...props }) => (
-  <a aria-label={t(label)} title={t(label)} className={`${ICON_CONTROL_CLASS} ${ICON_NEUTRAL_CLASS} ${className}`} {...props}>{children}</a>
+  <a data-appearance="control" data-control-kind="icon" data-tone="neutral" aria-label={t(label)} title={t(label)} className={`${ICON_CONTROL_CLASS} ${ICON_NEUTRAL_CLASS} ${className}`} {...props}>{children}</a>
 );
 
 export const IconButton: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement> & {
@@ -106,7 +142,7 @@ export const IconButton: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement> 
       ? 'border-red-200 bg-red-50 text-red-600 hover:bg-red-100 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300'
       : ICON_NEUTRAL_CLASS;
   return (
-    <button type="button" aria-label={t(label)} title={t(label)} className={`${ICON_CONTROL_CLASS} ${toneClass} ${className}`} {...props}>
+    <button data-appearance="control" data-control-kind="icon" data-tone={tone} type="button" aria-label={t(label)} title={t(label)} className={`${ICON_CONTROL_CLASS} ${toneClass} ${className}`} {...props}>
       {children}
     </button>
   );
@@ -131,7 +167,7 @@ export const ToolbarButton: React.FC<React.ButtonHTMLAttributes<HTMLButtonElemen
         ? 'border-indigo-200 bg-indigo-50 text-indigo-700 hover:border-indigo-300 hover:bg-indigo-100 dark:border-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-300 dark:hover:border-indigo-700 dark:hover:bg-indigo-950/60'
         : TOOLBAR_NEUTRAL_CLASS;
   return (
-    <button type="button" className={`${TOOLBAR_CONTROL_CLASS} px-3 ${toneClass} ${className}`} {...props}>
+    <button data-appearance="control" data-tone={tone} data-active={active || undefined} type="button" className={`${TOOLBAR_CONTROL_CLASS} px-3 ${toneClass} ${className}`} {...props}>
       {children}
     </button>
   );
@@ -145,7 +181,7 @@ export const ToolbarSelect: React.FC<React.SelectHTMLAttributes<HTMLSelectElemen
 }> = ({ label, icon, containerClassName = '', className = '', children, ...props }) => (
   <span className={`relative inline-flex flex-none ${containerClassName}`}>
     {icon && <span aria-hidden="true" className="toolbar-select-icon pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-600 dark:text-gray-300 [&>svg]:h-4 [&>svg]:w-4">{icon}</span>}
-    <select aria-label={t(label)} title={t(label)} className={`${TOOLBAR_CONTROL_CLASS} ${TOOLBAR_NEUTRAL_CLASS} w-full appearance-none ${icon ? 'pl-9' : 'pl-3'} pr-9 ${className}`} {...props}>{children}</select>
+    <select data-appearance="control" data-tone="neutral" aria-label={t(label)} title={t(label)} className={`${TOOLBAR_CONTROL_CLASS} ${TOOLBAR_NEUTRAL_CLASS} w-full appearance-none ${icon ? 'pl-9' : 'pl-3'} pr-9 ${className}`} {...props}>{children}</select>
     <ChevronDown aria-hidden="true" className="toolbar-select-chevron pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-600 dark:text-gray-300" />
   </span>
 );
@@ -158,7 +194,7 @@ export const ToolbarLink: React.FC<React.AnchorHTMLAttributes<HTMLAnchorElement>
     ? 'border-indigo-600 bg-indigo-600 text-white hover:bg-indigo-500 dark:border-indigo-500/40 dark:bg-indigo-600/90 dark:hover:bg-indigo-500'
     : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900 dark:border-gray-800 dark:bg-gray-900/90 dark:text-gray-300 dark:hover:border-gray-700 dark:hover:bg-gray-800 dark:hover:text-white';
   return (
-    <a className={`inline-flex h-10 flex-none items-center justify-center gap-2 rounded-xl border px-3 text-sm font-semibold outline-none transition focus-visible:ring-2 focus-visible:ring-indigo-500 [&_svg]:h-4 [&_svg]:w-4 [&_svg]:shrink-0 ${toneClass} ${className}`} {...props}>
+    <a data-appearance="control" data-tone={tone} className={`inline-flex h-10 flex-none items-center justify-center gap-2 rounded-xl border px-3 text-sm font-semibold outline-none transition focus-visible:ring-2 focus-visible:ring-indigo-500 [&_svg]:h-4 [&_svg]:w-4 [&_svg]:shrink-0 ${toneClass} ${className}`} {...props}>
       {children}
     </a>
   );
@@ -214,6 +250,7 @@ export const SegmentedControl = <T extends string = string>({
       return (
         <button
           key={option.value}
+          data-appearance="control"
           type="button"
           role="tab"
           aria-selected={active}
@@ -245,6 +282,7 @@ export const FilterPill: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement> 
   active?: boolean;
 }> = ({ active = false, className = '', children, ...props }) => (
   <button
+    data-appearance="control"
     type="button"
     className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors ${
       active

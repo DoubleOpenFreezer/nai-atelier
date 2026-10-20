@@ -24,9 +24,9 @@ export const LabModuleSection: React.FC<LabModuleSectionProps> = ({ moduleId, la
     onToggle={event => setOpen(event.currentTarget.open)}
     data-lab-module={moduleId}
     style={{ order }}
-    className={`group min-w-0 rounded-xl border border-gray-200 bg-white/70 shadow-sm transition-all dark:border-gray-800 dark:bg-gray-900/60 overflow-hidden ${className}`}
+    className={`appearance-reading-surface appearance-card appearance-group group min-w-0 rounded-xl border border-gray-200 bg-white/70 shadow-sm transition-all dark:border-gray-800 dark:bg-gray-900/60 overflow-hidden ${className}`}
   >
-    <summary className="flex cursor-pointer list-none items-center justify-between gap-3 bg-gray-50/70 px-4 py-3 text-xs font-bold text-gray-700 transition hover:bg-gray-100/80 hover:text-indigo-600 dark:bg-gray-800/45 dark:text-gray-300 dark:hover:bg-gray-800/70 dark:hover:text-indigo-300 group-open:border-b group-open:border-gray-200/80 group-open:bg-gray-50/90 dark:group-open:border-gray-800 dark:group-open:bg-gray-800/60 [&::-webkit-details-marker]:hidden">
+    <summary className="appearance-group flex cursor-pointer list-none items-center justify-between gap-3 bg-gray-50/70 px-4 py-3 text-xs font-bold text-gray-700 transition hover:bg-gray-100/80 hover:text-indigo-600 dark:bg-gray-800/45 dark:text-gray-300 dark:hover:bg-gray-800/70 dark:hover:text-indigo-300 group-open:border-b group-open:border-gray-200/80 group-open:bg-gray-50/90 dark:group-open:border-gray-800 dark:group-open:bg-gray-800/60 [&::-webkit-details-marker]:hidden">
       <span>{t(label)}</span>
       <span className="flex items-center gap-1 text-micro font-medium text-gray-400">
         {open ? t("收起") : t("展开")}

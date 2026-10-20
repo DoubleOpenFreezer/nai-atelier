@@ -98,7 +98,7 @@ export const GenerationCountControl: React.FC<GenerationCountControlProps> = ({ 
     {continuousGenerationEnabled && <div className="flex min-h-10 items-center justify-center gap-2 rounded-lg px-2 py-1 text-sm text-gray-700 dark:text-gray-200">
       <Images aria-hidden="true" className="h-4 w-4 flex-none text-gray-400 dark:text-gray-500" />
       <label htmlFor={countId} className="w-14 shrink-0">{t("生成张数")}</label>
-      <div className="flex w-40 shrink-0 items-center overflow-hidden rounded-lg border border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-950">
+      <div className="appearance-group flex w-40 shrink-0 items-center overflow-hidden rounded-lg border border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-950">
         <button type="button" aria-label={t("减少生成张数")} disabled={blocked || count <= 1} onClick={() => onCountChange(count - 1)} className="mobile-touch flex h-8 w-8 items-center justify-center text-gray-500 transition-colors hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-30 dark:hover:bg-gray-800"><Minus className="h-3.5 w-3.5" /></button>
         <input id={countId} type="number" min={1} step={1} inputMode="numeric" aria-label={t("生成张数")} value={value} disabled={blocked}
           onChange={event => { setValue(event.target.value); const next = Number(event.target.value); if (Number.isSafeInteger(next) && next > 0) onCountChange(next); }}
@@ -110,7 +110,7 @@ export const GenerationCountControl: React.FC<GenerationCountControlProps> = ({ 
     {continuousGenerationEnabled && onIntervalChange && <div className="flex min-h-10 items-center justify-center gap-2 rounded-lg px-2 py-1 text-sm text-gray-700 dark:text-gray-200" title={t("每张图片保存后等待；0 秒不额外等待")}>
       <Timer aria-hidden="true" className="h-4 w-4 flex-none text-gray-400 dark:text-gray-500" />
       <label htmlFor={intervalId} className="w-14 shrink-0">{t("生成间隔")}</label>
-      <div className="flex w-40 shrink-0 items-center overflow-hidden rounded-lg border border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-950">
+      <div className="appearance-group flex w-40 shrink-0 items-center overflow-hidden rounded-lg border border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-950">
         <button type="button" aria-label={t("减少生成间隔")} data-generation-interval-step disabled={intervalPending || intervalStepTenths <= 0}
           onMouseDown={event => event.preventDefault()} onClick={() => adjustInterval(-1)}
           className="mobile-touch flex h-8 w-8 flex-none items-center justify-center text-gray-500 transition-colors hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-30 dark:hover:bg-gray-800"><Minus aria-hidden="true" className="h-3.5 w-3.5" /></button>
@@ -148,7 +148,7 @@ export const GenerationCountControl: React.FC<GenerationCountControlProps> = ({ 
     {showProgress && <ToolbarButton onClick={onTogglePause || onStop} disabled={pausePending || series?.stopping || queueState?.pausing || (!occupied && !paused)}
       aria-label={t(queueState?.pausing ? "暂停中…" : paused ? "继续生成" : "暂停生成")}
       title={t(queueState?.pausing ? "当前图片保存后暂停" : paused ? "继续生成" : "暂停生成")}
-      className="mobile-touch !h-auto min-h-10 !gap-1.5 !px-2.5 !text-xs tabular-nums lg:absolute lg:inset-y-0 lg:right-full lg:mr-3">
+      className="appearance-reading-surface mobile-touch !h-auto min-h-10 !gap-1.5 !px-2.5 !text-xs tabular-nums lg:absolute lg:inset-y-0 lg:right-full lg:mr-3">
       <Images aria-hidden="true" className="h-3.5 w-3.5" />{continuousGenerationEnabled && <span>{completed}/{total}</span>}{paused && !queueState?.pausing ? <Play aria-hidden="true" className="h-3.5 w-3.5" /> : <Pause aria-hidden="true" className="h-3.5 w-3.5" />}
     </ToolbarButton>}
     <button ref={anchorRef} type="button" data-agent-action="business" aria-haspopup={hasMenuContent ? 'dialog' : undefined} aria-expanded={hasMenuContent ? open : undefined} aria-disabled={primaryBlocked}
