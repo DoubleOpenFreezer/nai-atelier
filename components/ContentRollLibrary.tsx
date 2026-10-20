@@ -81,7 +81,7 @@ export const ContentRollLibrary: React.FC<ContentRollLibraryProps> = ({ active, 
         <section className="rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
           <div className="flex flex-wrap items-baseline justify-between gap-2">
             <h2 className="text-base font-bold text-gray-900 dark:text-gray-100">{t('Roll 内容库')}</h2>
-            <span className="text-[11px] text-gray-400">{t('共 {0} 条', [String(shown.length)])}</span>
+            <span className="text-meta text-gray-400">{t('共 {0} 条', [String(shown.length)])}</span>
           </div>
           <p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">
             {t('这里只保存六类内容与它们自己的约束，不含画师串、风格负面与生图参数；载入后仍走「填入实验室」的确认流程。')}
@@ -105,7 +105,7 @@ export const ContentRollLibrary: React.FC<ContentRollLibraryProps> = ({ active, 
                   {item.chain.previewImage ? (
                     <SmartImage src={item.chain.previewImage} alt={item.chain.name || t('封面')} thumbnailVariant="thumb-320" className="h-full w-full object-cover" containerClassName="h-full w-full" />
                   ) : (
-                    <span className="flex h-full w-full items-center justify-center text-[10px] text-gray-400">{t('无封面')}</span>
+                    <span className="flex h-full w-full items-center justify-center text-micro text-gray-400">{t('无封面')}</span>
                   )}
                 </div>
                 <div className="min-w-0 flex-1">
@@ -122,29 +122,29 @@ export const ContentRollLibrary: React.FC<ContentRollLibraryProps> = ({ active, 
                       {item.chain.name || t('未命名')}
                     </button>
                   )}
-                  <span className="text-[10px] text-gray-400">{new Date(Number(item.chain.updatedAt || 0)).toLocaleString()}</span>
+                  <span className="text-micro text-gray-400">{new Date(Number(item.chain.updatedAt || 0)).toLocaleString()}</span>
                 </div>
-                <p className="mt-1 text-[11px] leading-4 text-gray-600 dark:text-gray-300" data-content-roll-scope={item.chain.id}>
+                <p className="mt-1 text-meta leading-4 text-gray-600 dark:text-gray-300" data-content-roll-scope={item.chain.id}>
                   {item.read.ok ? (item.scope.label || t('（没有可载入的内容）')) : t('这条记录不能按纯内容载入：{0}', [item.read.warnings[0] || ''])}
                 </p>
-                {item.chain.description ? <p className="mt-1 text-[11px] leading-4 text-gray-500 dark:text-gray-400">{shortText(item.chain.description, 90)}</p> : null}
+                {item.chain.description ? <p className="mt-1 text-meta leading-4 text-gray-500 dark:text-gray-400">{shortText(item.chain.description, 90)}</p> : null}
                 <div className="mt-2 flex flex-wrap items-center gap-1">
                   <button type="button" disabled={!item.read.ok} onClick={() => onLoad(item.chain)}
-                    className="rounded-lg bg-indigo-600 px-2.5 py-1 text-[11px] font-semibold text-white disabled:opacity-40">
+                    className="rounded-lg bg-indigo-600 px-2.5 py-1 text-meta font-semibold text-white disabled:opacity-40">
                     {t('载入到一键 Roll')}
                   </button>
                   <button type="button" onClick={() => setRenaming({ id: item.chain.id, value: item.chain.name || '' })}
-                    className="rounded-lg border border-gray-200 px-2.5 py-1 text-[11px] text-gray-600 dark:border-gray-700 dark:text-gray-300">{t('改名')}</button>
+                    className="rounded-lg border border-gray-200 px-2.5 py-1 text-meta text-gray-600 dark:border-gray-700 dark:text-gray-300">{t('改名')}</button>
                   <button type="button" onClick={() => void copySnapshot(item)}
-                    className="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-2.5 py-1 text-[11px] text-gray-600 dark:border-gray-700 dark:text-gray-300">
+                    className="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-2.5 py-1 text-meta text-gray-600 dark:border-gray-700 dark:text-gray-300">
                     <Copy className="h-3 w-3" />{t('复制快照')}
                   </button>
                   <button type="button" onClick={() => setCoverFor(item.chain)} data-content-roll-cover={item.chain.id}
-                    className="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-2.5 py-1 text-[11px] text-gray-600 dark:border-gray-700 dark:text-gray-300">
+                    className="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-2.5 py-1 text-meta text-gray-600 dark:border-gray-700 dark:text-gray-300">
                     <ImagePlus className="h-3 w-3" />{t(item.chain.previewImage ? '换封面' : '从历史选封面')}
                   </button>
                   <button type="button" onClick={() => void onDelete(item.chain)}
-                    className="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-2.5 py-1 text-[11px] text-red-600 dark:border-gray-700 dark:text-red-400">
+                    className="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-2.5 py-1 text-meta text-red-600 dark:border-gray-700 dark:text-red-400">
                     <Trash2 className="h-3 w-3" />{t('删除')}
                   </button>
                 </div>
@@ -164,7 +164,7 @@ export const ContentRollLibrary: React.FC<ContentRollLibraryProps> = ({ active, 
             <div className="flex flex-wrap items-baseline justify-between gap-2">
               <h3 className="text-sm font-bold text-gray-800 dark:text-gray-100">{t('只读预览：{0}', [preview.chain.name || t('未命名')])}</h3>
               <button type="button" onClick={() => setPreviewId('')}
-                className="rounded-lg border border-gray-200 px-2 py-1 text-[11px] text-gray-500 dark:border-gray-700 dark:text-gray-400">{t('关闭预览')}</button>
+                className="rounded-lg border border-gray-200 px-2 py-1 text-meta text-gray-500 dark:border-gray-700 dark:text-gray-400">{t('关闭预览')}</button>
             </div>
             <div className="mt-2 space-y-1">
               {KINDS.map(kind => {
@@ -175,7 +175,7 @@ export const ContentRollLibrary: React.FC<ContentRollLibraryProps> = ({ active, 
                 const negative = isRole ? role?.negatives?.[kind] : preview.read.global?.[kind]?.negative;
                 if (!provided) return null;
                 return (
-                  <div key={kind} className="rounded-lg border border-gray-200 p-2 text-[11px] dark:border-gray-700">
+                  <div key={kind} className="rounded-lg border border-gray-200 p-2 text-meta dark:border-gray-700">
                     <span className="font-semibold text-indigo-600 dark:text-indigo-300">{t(META[kind].title)}</span>
                     <p className="mt-0.5 break-all font-mono text-gray-600 dark:text-gray-300">{text}</p>
                     {negative && (negative.text || negative.note) ? (
@@ -189,12 +189,12 @@ export const ContentRollLibrary: React.FC<ContentRollLibraryProps> = ({ active, 
                 );
               })}
             </div>
-            <p className="mt-2 flex items-center gap-1 text-[11px] text-gray-400">
+            <p className="mt-2 flex items-center gap-1 text-meta text-gray-400">
               <Download className="h-3 w-3" />{t('这只是只读预览，不会改动实验室，也不会消耗额度。')}
             </p>
           </section>
         ) : null}
-        {busy ? <p className="flex items-center gap-1 text-[11px] text-gray-400"><LoaderCircle className="h-3 w-3 animate-spin" />{t('处理中…')}</p> : null}
+        {busy ? <p className="flex items-center gap-1 text-meta text-gray-400"><LoaderCircle className="h-3 w-3 animate-spin" />{t('处理中…')}</p> : null}
         <HistoryImagePicker open={!!coverFor} onClose={() => setCoverFor(null)}
           onSelect={async (item: LocalGenItem) => {
             const target = coverFor;

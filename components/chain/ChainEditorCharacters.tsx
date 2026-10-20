@@ -234,10 +234,10 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
                                     <div className="mb-1 flex items-center justify-between gap-2">
                                         <span className="text-micro font-bold text-gray-500">{t("分栏内容")}</span>
                                         <span className="flex items-center gap-2">
-                                            <span className="text-[10px] text-gray-400">{t("请求时与正文合并")}</span>
+                                            <span className="text-micro text-gray-400">{t("请求时与正文合并")}</span>
                                             {onContentRollForRole && canEdit ? (
                                                 <button type="button" onClick={() => onContentRollForRole(idx)}
-                                                    className="rounded border border-dashed border-indigo-300 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-600 hover:bg-indigo-50 dark:border-indigo-800 dark:text-indigo-300 dark:hover:bg-indigo-950/40">
+                                                    className="rounded border border-dashed border-indigo-300 px-1.5 py-0.5 text-micro font-semibold text-indigo-600 hover:bg-indigo-50 dark:border-indigo-800 dark:text-indigo-300 dark:hover:bg-indigo-950/40">
                                                     {t("Roll 当前角色")}
                                                 </button>
                                             ) : null}
@@ -246,7 +246,7 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
                                     <div className="grid grid-cols-2 gap-2">
                                         {CHARACTER_SECTION_KEYS.map(key => (
                                             <div key={key} className="min-w-0">
-                                                <label className="mb-0.5 block text-[10px] font-semibold text-gray-500" htmlFor={`char-section-${idx}-${key}`}>
+                                                <label className="mb-0.5 block text-micro font-semibold text-gray-500" htmlFor={`char-section-${idx}-${key}`}>
                                                     {t(CHARACTER_SECTION_LABELS[key])}
                                                 </label>
                                                 <TagAutocompleteTextarea

@@ -1023,7 +1023,7 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
                       if (!chips.length) return null;
                       return (
                         <div className="mt-1 flex flex-wrap items-center gap-1" data-candidate-tags={index}>
-                          <span className="text-[10px] text-gray-400">{t('逐标签删除')}</span>
+                          <span className="text-micro text-gray-400">{t('逐标签删除')}</span>
                           {chips.map(chip => (
                             <button key={chip.raw} type="button"
                               title={chip.weighted ? t('带权重标签默认不拆，先去掉权重再删') : t('删除这个标签')}
@@ -1032,7 +1032,7 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
                                 if (!next.removed) return;
                                 patchDraft(index, { prompt: next.prompt, bilingual: next.bilingual });
                               }}
-                              className={`inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 font-mono text-[10px] ${chip.weighted
+                              className={`inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 font-mono text-micro ${chip.weighted
                                 ? 'border-amber-300 text-amber-600 dark:border-amber-800 dark:text-amber-400'
                                 : 'border-gray-200 text-gray-600 hover:border-red-400 hover:text-red-600 dark:border-gray-700 dark:text-gray-300'}`}>
                               {chip.tag}

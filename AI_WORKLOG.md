@@ -6,6 +6,7 @@
 
 ## 2026-10-20
 
+- **DeepSeek Harness（deepseek/deepseek-v4.1-flash）**：跑全套测试后修掉自己引入的两处回归 —— ① 新增界面文案缺词典（73 个键，补简中/EN/日本語/한국어，占位符逐一对齐），`i18n` 测试由失败转通过；② 新组件用了固定像素字号（`text-[10px]` / `text-[11px]`），按外观审计规则改为 `text-micro` / `text-meta`，审计违规从 44 条降到只剩 `ArtistSampleCover` / `CreationFootprint` 两个本次未修改文件里的 5 条（疑似既有）。另把 `promptSections` 测试按六栏（含场景/镜头）更新。版本由 2.6.1 递增至 2.6.2。
 - **DeepSeek Harness（deepseek/deepseek-v4.1-flash）**：补**保存可靠性**的第一半 —— 新增 `services/operationId.ts`（FNV-1a + 递归稳定序列化：同一份数据必得同一标识，字段顺序不影响结果，内容变化则换新标识）与 3 项单测；「存为 Roll 内容」改用稳定操作标识，重复点击 / 重试复用同一条记录而不是再建一条。结果未知先查询再重试（生成链路）仍未做。版本由 2.6.0 递增至 2.6.1。
 - **DeepSeek Harness（deepseek/deepseek-v4.1-flash）**：迁入**详细补全三档** —— 后端新增纯函数 `buildLibraryDetailInstruction(detail, keepEmpty, singleColor)`（严格 / 适度 / 详细，缺省与非法值回落详细；保持留空与单色依赖默认开启），并拼进预览与实际请求共用的系统提示 `【详细补全】` 块；前端生成面板新增「详细程度」下拉与「未提到的限定项保持留空」勾选，请求带上 `detail` / `keepEmpty`。后端测试 8/8。版本由 2.5.0 递增至 2.6.0。
 - **DeepSeek Harness（deepseek/deepseek-v4.1-flash）**：迁入**候选逐标签筛选** —— 新增 `services/promptTagFilter.ts`（解析 `(tag:1.2)` 与 `1.2::tag::` 两种带权重写法、中英对照按归一化 Tag 对齐删除、带权重组默认拒绝拆分、同名重复一并删除）与 6 项单测；提示词库生成候选下新增逐标签 chip（带中文对照与受保护标记），点 × 只删这一个标签并同步删中文对照。版本由 2.4.0 递增至 2.5.0。

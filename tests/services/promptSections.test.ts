@@ -5,13 +5,13 @@ import { createLabWorkspaceSession, LAB_DEFAULT_PARAMS, loadLabWorkspaceSession,
 import { DEFAULT_GENERATION_MEMORY_PREFERENCES } from '../../services/appearancePreferences';
 
 afterEach(() => { localStorage.clear(); sessionStorage.clear(); });
-const sections = { appearance: 'silver_hair', wardrobe: 'blue_dress', pose: 'sitting', extra: 'rainy_street' };
+const sections = { appearance: 'silver_hair', wardrobe: 'blue_dress', pose: 'sitting', scene: 'rainy_street', camera: 'close_up', extra: 'none' };
 
 it('分栏往返保留原文和合并顺序，旧数据与过期分栏不猜词', () => {
   const normalized = normalizeParams({ _promptSections: sections });
   const subject = mergePromptSections(sections);
   expect(resolvePromptSections(normalized._promptSections, subject)).toEqual(sections);
-  expect(resolvePromptSections(sections, 'assistant changed everything')).toEqual({ appearance: '', wardrobe: '', pose: '', extra: 'assistant changed everything' });
+  expect(resolvePromptSections(sections, 'assistant changed everything')).toEqual({ appearance: '', wardrobe: '', pose: '', scene: '', camera: '', extra: 'assistant changed everything' });
   expect(resolvePromptSections(undefined, 'legacy prompt')).toHaveProperty('extra', 'legacy prompt');
   expect(resolvePromptSections(sections, '')).toHaveProperty('extra', '');
 });

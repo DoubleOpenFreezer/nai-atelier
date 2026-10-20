@@ -289,7 +289,7 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ acti
         <section className="rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
           <div className="flex flex-wrap items-baseline justify-between gap-2">
             <h2 className="text-base font-bold text-gray-900 dark:text-gray-100">{t('一键 Roll')}</h2>
-            <span className="text-[11px] text-gray-400">
+            <span className="text-meta text-gray-400">
               {current ? t('组合随机码 {0}', [current.seed]) : t('还没有抽取')}
             </span>
           </div>
@@ -314,7 +314,7 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ acti
               className="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-2 py-1.5 text-xs disabled:opacity-40 dark:border-gray-700">
               {t('下一组')}<ChevronRight className="h-4 w-4" />
             </button>
-            <span className="text-[11px] text-gray-400">
+            <span className="text-meta text-gray-400">
               {history.length ? t('第 {0} / {1} 组', [String(cursor + 1), String(history.length)]) : ''}
             </span>
           </div>
@@ -337,9 +337,9 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ acti
                     {row && row.filled ? (
                       <>
                         <p className="truncate text-sm font-medium text-gray-800 dark:text-gray-100" data-content-roll-name={kind}>{row.name}</p>
-                        <p className="mt-0.5 line-clamp-2 break-words font-mono text-[11px] text-gray-500 dark:text-gray-400">{row.text}</p>
+                        <p className="mt-0.5 line-clamp-2 break-words font-mono text-meta text-gray-500 dark:text-gray-400">{row.text}</p>
                         {row.constraints?.notes ? (
-                          <p className="mt-1 text-[11px] leading-4 text-amber-600 dark:text-amber-400" data-content-roll-constraint={kind}>{row.constraints.notes}</p>
+                          <p className="mt-1 text-meta leading-4 text-amber-600 dark:text-amber-400" data-content-roll-constraint={kind}>{row.constraints.notes}</p>
                         ) : null}
                       </>
                     ) : (
@@ -351,12 +351,12 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ acti
                   <div className="flex shrink-0 items-center gap-1">
                     <button type="button" onClick={() => toggleLock(kind)}
                       aria-pressed={isLocked} title={t(isLocked ? '解除固定' : '固定这一条')}
-                      className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[11px] ${isLocked ? 'border-indigo-300 bg-indigo-50 text-indigo-700 dark:border-indigo-800 dark:bg-indigo-950/60 dark:text-indigo-300' : 'border-gray-200 text-gray-500 dark:border-gray-700 dark:text-gray-400'}`}>
+                      className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-meta ${isLocked ? 'border-indigo-300 bg-indigo-50 text-indigo-700 dark:border-indigo-800 dark:bg-indigo-950/60 dark:text-indigo-300' : 'border-gray-200 text-gray-500 dark:border-gray-700 dark:text-gray-400'}`}>
                       {isLocked ? <Lock className="h-3.5 w-3.5" /> : <LockOpen className="h-3.5 w-3.5" />}
                       {t(isLocked ? '已固定' : '固定')}
                     </button>
                     <button type="button" onClick={() => rerollKind(kind)} disabled={!current || !on}
-                      className="rounded-lg border border-gray-200 px-2 py-1 text-[11px] text-gray-500 disabled:opacity-40 dark:border-gray-700 dark:text-gray-400">
+                      className="rounded-lg border border-gray-200 px-2 py-1 text-meta text-gray-500 disabled:opacity-40 dark:border-gray-700 dark:text-gray-400">
                       {t('换一个')}
                     </button>
                   </div>
@@ -370,7 +370,7 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ acti
           <section className="rounded-2xl border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-900" data-content-roll-save="true">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="text-xs font-semibold text-gray-700 dark:text-gray-200">{t('存为 Roll 内容')}</span>
-              <span className="text-[11px] text-gray-400">{savedId ? t('上次保存：{0}', [savedId.slice(0, 12)]) : ''}</span>
+              <span className="text-meta text-gray-400">{savedId ? t('上次保存：{0}', [savedId.slice(0, 12)]) : ''}</span>
             </div>
             {saveOpen ? (
               <div className="mt-2">
@@ -378,7 +378,7 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ acti
                   aria-label={t('给这条记录起名')} onChange={event => setSaveName(event.target.value)}
                   onKeyDown={event => { if (event.key === 'Enter') void doSave(); else if (event.key === 'Escape') setSaveOpen(false); }}
                   className="h-8 w-full rounded-lg border border-gray-200 px-2 text-xs dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100" />
-                <p className="mt-1 text-[11px] leading-4 text-gray-400">
+                <p className="mt-1 text-meta leading-4 text-gray-400">
                   {t('只保存六类内容与它们自己的约束，不含画师串、风格负面与生图参数。')}
                 </p>
                 <div className="mt-2 flex items-center gap-2">
@@ -403,34 +403,34 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ acti
           <section className="rounded-2xl border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-900" data-content-roll-apply="true">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="text-xs font-semibold text-gray-700 dark:text-gray-200">{t('填入实验室')}</span>
-              <label className="flex items-center gap-1 text-[11px] text-gray-500 dark:text-gray-400">
+              <label className="flex items-center gap-1 text-meta text-gray-500 dark:text-gray-400">
                 {t('范围')}
                 <select value={range} onChange={event => setRange(event.target.value as ContentRollScope)}
                   aria-label={t('选择抽取范围')}
-                  className="rounded-lg border border-gray-200 bg-white px-2 py-1 text-[11px] dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">
+                  className="rounded-lg border border-gray-200 bg-white px-2 py-1 text-meta dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">
                   <option value="all">{t('角色＋场景')}</option>
                   <option value="character">{t('仅角色')}</option>
                   <option value="global">{t('仅场景与镜头')}</option>
                 </select>
               </label>
-              <label className="flex items-center gap-1 text-[11px] text-gray-500 dark:text-gray-400">
+              <label className="flex items-center gap-1 text-meta text-gray-500 dark:text-gray-400">
                 {t('目标角色')}
                 <select value={targetId} onChange={event => { targetTouched.current = true; setTargetId(event.target.value); setConfirming(false); }}
                   aria-label={t('选择写入的目标角色')}
-                  className="rounded-lg border border-gray-200 bg-white px-2 py-1 text-[11px] dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">
+                  className="rounded-lg border border-gray-200 bg-white px-2 py-1 text-meta dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">
                   {playgroundRoles.length ? <option value="all-enabled">{t('所有启用角色')}</option> : null}
                   <option value="new">{t('新建角色')}</option>
                   {playgroundRoles.map(role => <option key={role.id} value={role.id}>{role.label}</option>)}
                 </select>
               </label>
             </div>
-            <p className="mt-1 text-[11px] leading-4 text-gray-400">
+            <p className="mt-1 text-meta leading-4 text-gray-400">
               {t('角色四类写进目标角色的提示词；场景与镜头各写自己的一栏。画师串、风格负面与生图参数不会改动。')}
             </p>
             {confirming && plan ? (
               <div className="mt-2 space-y-1" data-content-roll-apply-preview="true">
                 {plan.rows.map(item => (
-                  <div key={item.kind} className="rounded-lg border border-gray-200 px-2 py-1 text-[11px] dark:border-gray-700" data-content-roll-apply-row={item.kind} data-content-roll-apply-action={item.action}>
+                  <div key={item.kind} className="rounded-lg border border-gray-200 px-2 py-1 text-meta dark:border-gray-700" data-content-roll-apply-row={item.kind} data-content-roll-apply-action={item.action}>
                     <span className="font-semibold text-indigo-600 dark:text-indigo-300">{t(item.title)}</span>
                     <span className="ml-1 text-gray-400">{item.action === 'replace' ? t('改为填入') : t('保持原值')}</span>
                     <span className="ml-1 break-all font-mono text-gray-500 dark:text-gray-400">
@@ -456,7 +456,7 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ acti
                   <button type="button" onClick={() => void onUndoApply?.()} data-content-roll-undo="true"
                     className="rounded-lg border border-amber-300 px-3 py-1.5 text-xs text-amber-700 dark:border-amber-800 dark:text-amber-300">{t('撤销上次填入')}</button>
                 ) : null}
-                {!onApplyRoll ? <span className="text-[11px] text-gray-400">{t('当前视图不支持写入，请进入实验室后再试')}</span> : null}
+                {!onApplyRoll ? <span className="text-meta text-gray-400">{t('当前视图不支持写入，请进入实验室后再试')}</span> : null}
               </div>
             )}
           </section>
@@ -468,20 +468,20 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ acti
               <span className="text-xs font-semibold text-gray-700 dark:text-gray-200">{t('这一组的证据')}</span>
               <div className="flex items-center gap-2">
                 <button type="button" onClick={() => setShowEvidence(value => !value)}
-                  className="rounded-lg border border-gray-200 px-2 py-1 text-[11px] text-gray-500 dark:border-gray-700 dark:text-gray-400">
+                  className="rounded-lg border border-gray-200 px-2 py-1 text-meta text-gray-500 dark:border-gray-700 dark:text-gray-400">
                   {t(showEvidence ? '收起' : '展开')}
                 </button>
                 <button type="button" onClick={() => void copyEvidence()}
-                  className="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-2 py-1 text-[11px] text-gray-500 dark:border-gray-700 dark:text-gray-400">
+                  className="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-2 py-1 text-meta text-gray-500 dark:border-gray-700 dark:text-gray-400">
                   <Copy className="h-3.5 w-3.5" />{t('复制证据')}
                 </button>
               </div>
             </div>
-            <p className="mt-1 text-[11px] leading-4 text-gray-400">
+            <p className="mt-1 text-meta leading-4 text-gray-400">
               {t('组合随机码只用于复现这一组，不是生图 seed。')}
             </p>
             {showEvidence ? (
-              <pre data-content-roll-evidence="true" className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-gray-50 p-2 font-mono text-[10px] leading-4 text-gray-500 dark:bg-gray-800/60 dark:text-gray-400">
+              <pre data-content-roll-evidence="true" className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-gray-50 p-2 font-mono text-micro leading-4 text-gray-500 dark:bg-gray-800/60 dark:text-gray-400">
                 {evidenceText}
               </pre>
             ) : null}
