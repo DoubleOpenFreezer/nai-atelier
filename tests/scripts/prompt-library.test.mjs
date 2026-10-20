@@ -118,3 +118,29 @@ test('详细补全三档与「保持留空」进入系统提示，未指定时�
   }
   assert.match(library.buildLibrarySystemPrompt('camera', { detail: 'strict' }), /严格/);
 });
+
+test('界面上的六类字段都能到达模型（后端 facets 清单与前端一致，不按数量验收）', async t => {
+  /* 逐库列出「界面有、后端也必须读」的代表性新字段，全部走 collectLibraryFacets */
+  const cases = [
+    ['appearance', 'hair_length', '发型长度', '超长发'],
+    ['appearance', 'bangs', '刘海', '空气刘海'],
+    ['wardrobe', 'top_color', '上装颜色', '白色'],
+    ['wardrobe', 'wear_state', '穿着状态', '半脱'],
+    ['pose', 'hold_hand', '持握手', '左手'],
+    ['pose', 'gaze', '视线目标', '看镜头'],
+    ['scene', 'light_dir', '光源方向', '逆光'],
+    ['scene', 'env_event', '环境事件', '下雨'],
+    ['expression', 'eye_tone', '瞳色构成', '异色瞳'],
+    ['camera', 'motion', '运动趋势', '运动模糊'],
+  ];
+  for (const [kind, key, label, value] of cases) {
+    const facets = library.collectLibraryFacets(kind, { [key]: value });
+    assert.deepEqual(facets, [[label, value]], kind + '.' + key + ' 没有到达模型');
+  }
+  /* 全量核对：六库字段数与本机一致（25/29/15/15/12/11 = 107） */
+  const counts = { appearance: 25, wardrobe: 29, pose: 15, scene: 15, expression: 12, camera: 11 };
+  for (const [kind, expected] of Object.entries(counts)) {
+    const spec = library.PROMPT_LIBRARY_KIND_FACETS(kind);
+    assert.equal(spec.length, expected, kind + ' 的后端字段数不对');
+  }
+});
