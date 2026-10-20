@@ -862,6 +862,7 @@ const App = () => {
           onLoad={handleLoadContentRoll}
           onRename={async (chain, name) => { await handleUpdateChain(chain.id, { name }); }}
           onDelete={async chain => { await handleDelete(chain.id); }}
+          onSetCover={async (chain, url) => { await handleUpdateChain(chain.id, { previewImage: url }); }}
         />;
       case 'content-roll':
         return <ContentRollWorkspace

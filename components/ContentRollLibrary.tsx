@@ -1,8 +1,12 @@
 import React, { useMemo, useState } from 'react';
-import { Copy, Download, LoaderCircle, Search, Trash2 } from 'lucide-react';
+import { Copy, Download, ImagePlus, LoaderCircle, Search, Trash2 } from 'lucide-react';
 import { t } from '../services/i18n';
 import type { PromptChain } from '../types';
 import { KINDS, META, contentRead, contentScopeOf, isContentRecord } from '../services/contentRoll';
+import { promptLibraryHistoryImageUrl } from './PromptLibrary';
+import { HistoryImagePicker } from './HistoryImagePicker';
+import { SmartImage } from './SmartImage';
+import type { LocalGenItem } from '../types';
 
 interface ContentRollLibraryProps {
   active: boolean;
@@ -12,6 +16,8 @@ interface ContentRollLibraryProps {
   onLoad: (chain: PromptChain) => void;
   onRename: (chain: PromptChain, name: string) => Promise<void>;
   onDelete: (chain: PromptChain) => Promise<void>;
+  /** 封面只写 previewImage（与图片提示词库同一套约定：历史图由 Worker 转成独立资产） */
+  onSetCover: (chain: PromptChain, url: string) => Promise<void>;
 }
 
 const shortText = (value: string, max = 64): string => {
@@ -25,11 +31,12 @@ const shortText = (value: string, max = 64): string => {
  * 只读预览里逐类列出内容与内容负面；「载入到一键 Roll」把这一组变成工作区的当前一组，
  * 之后仍然走同一条「填入实验室」确认流程（目标角色 + 逐栏预览 + 撤销）。
  */
-export const ContentRollLibrary: React.FC<ContentRollLibraryProps> = ({ active, chains, notify, onLoad, onRename, onDelete }) => {
+export const ContentRollLibrary: React.FC<ContentRollLibraryProps> = ({ active, chains, notify, onLoad, onRename, onDelete, onSetCover }) => {
   const [query, setQuery] = useState('');
   const [previewId, setPreviewId] = useState('');
   const [renaming, setRenaming] = useState<{ id: string; value: string } | null>(null);
   const [busy, setBusy] = useState('');
+  const [coverFor, setCoverFor] = useState<PromptChain | null>(null);
 
   const records = useMemo(() => chains.filter(chain => isContentRecord(chain)), [chains]);
   const shown = useMemo(() => {
@@ -93,6 +100,15 @@ export const ContentRollLibrary: React.FC<ContentRollLibraryProps> = ({ active, 
             return (
               <article key={item.chain.id} data-content-roll-record={item.chain.id}
                 className="rounded-xl border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-900">
+                <div className="flex items-start gap-3">
+                <div className="h-16 w-16 shrink-0 overflow-hidden rounded-lg border border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-800">
+                  {item.chain.previewImage ? (
+                    <SmartImage src={item.chain.previewImage} alt={item.chain.name || t('封面')} thumbnailVariant="thumb-320" className="h-full w-full object-cover" containerClassName="h-full w-full" />
+                  ) : (
+                    <span className="flex h-full w-full items-center justify-center text-[10px] text-gray-400">{t('无封面')}</span>
+                  )}
+                </div>
+                <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-baseline gap-2">
                   {isRenaming ? (
                     <input autoFocus value={renaming.value} disabled={busy === item.chain.id}
@@ -123,10 +139,16 @@ export const ContentRollLibrary: React.FC<ContentRollLibraryProps> = ({ active, 
                     className="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-2.5 py-1 text-[11px] text-gray-600 dark:border-gray-700 dark:text-gray-300">
                     <Copy className="h-3 w-3" />{t('复制快照')}
                   </button>
+                  <button type="button" onClick={() => setCoverFor(item.chain)} data-content-roll-cover={item.chain.id}
+                    className="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-2.5 py-1 text-[11px] text-gray-600 dark:border-gray-700 dark:text-gray-300">
+                    <ImagePlus className="h-3 w-3" />{t(item.chain.previewImage ? '换封面' : '从历史选封面')}
+                  </button>
                   <button type="button" onClick={() => void onDelete(item.chain)}
                     className="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-2.5 py-1 text-[11px] text-red-600 dark:border-gray-700 dark:text-red-400">
                     <Trash2 className="h-3 w-3" />{t('删除')}
                   </button>
+                </div>
+                </div>
                 </div>
               </article>
             );
@@ -173,6 +195,21 @@ export const ContentRollLibrary: React.FC<ContentRollLibraryProps> = ({ active, 
           </section>
         ) : null}
         {busy ? <p className="flex items-center gap-1 text-[11px] text-gray-400"><LoaderCircle className="h-3 w-3 animate-spin" />{t('处理中…')}</p> : null}
+        <HistoryImagePicker open={!!coverFor} onClose={() => setCoverFor(null)}
+          onSelect={async (item: LocalGenItem) => {
+            const target = coverFor;
+            setCoverFor(null);
+            if (!target || !item?.id) return;
+            setBusy(target.id);
+            try {
+              await onSetCover(target, promptLibraryHistoryImageUrl(String(item.id)));
+              notify(t('封面已更新：历史图会由 Worker 转成独立资产，不受历史清理影响'));
+            } catch (error) {
+              notify(t('设置封面失败：{0}', [String((error as Error)?.message || error)]), 'error');
+            } finally {
+              setBusy('');
+            }
+          }} />
       </div>
     </div>
   );

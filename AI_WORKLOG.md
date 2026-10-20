@@ -6,6 +6,7 @@
 
 ## 2026-10-20
 
+- **DeepSeek Harness（deepseek/deepseek-v4.1-flash）**：Roll 内容库接通封面 —— 卡片显示封面缩略图/无封面占位，新增「从历史选封面 / 换封面」复用 `HistoryImagePicker`，选中后按图片提示词库同一约定写 `previewImage = /api/local-history/<id>/image`（Worker 转独立资产）。源码版冒烟：内容库列出 1 条、封面按钮就位、选图器可打开、无控制台报错。版本由 1.98.1 递增至 1.99.0。
 - **DeepSeek Harness（deepseek/deepseek-v4.1-flash）**：补齐两个新库的界面文案译文 —— `locales/messages.json` 增 38 个键（库名 / 名词 / 期限标签 / 生成按钮与提示 / 新建与空态 / 占位符 / 19 个限定项标签），四语言齐备、既有条目格式与顺序不变（总数 4576）。限定项**选项值**仍回退中文，避免机翻污染术语表。`npx tsc --noEmit` 零错误、`npm run build` 通过。版本由 1.98.0 递增至 1.98.1（仅文案）。
 - **DeepSeek Harness（deepseek/deepseek-v4.1-flash）**：把「填入实验室」的基底改成 `LAB_DEFAULT_PARAMS`（此前若从未进过实验室，写入的 params 会缺模型/尺寸等字段），并在 `wrangler pages dev`（3099 端口 + 独立 persist）上做了源码版真机验收：六栏抽到内容 → 存为 Roll 内容（落 `type='preset'`）→ 内容库列出/预览/载入 → 填入实验室（六栏 replace、出现撤销）→ 进入实验室看到角色提示词已合并写入；控制台无报错。版本由 1.97.0 递增至 1.98.0。
 - **DeepSeek Harness（deepseek/deepseek-v4.1-flash）**：补上 Roll 内容库闭环 —— 新增 `components/ContentRollLibrary.tsx`（只列纯内容记录：搜索 / 范围摘要 / 只读预览六类内容与内容负面 / 复制快照 / 改名 / 删除 / 载入到一键 Roll），`ContentRollWorkspace` 增加「存为 Roll 内容」（名称 + 只写白名单快照）与「载入内容库这一组」的种子消费，`App.tsx` 增加 `content-roll-library` 视图、`handleSaveContentRoll`（复用 `createLibraryChain` 落 `type='preset'` + `params._rollContentSnapshot`）与 `handleLoadContentRoll`（把记录还原成当前一组，再走同一条「填入实验室」确认与撤销），`Layout` 加「Roll 内容库」入口，`ChainType` 允许 `preset`。`npx tsc --noEmit` 零错误、`npm run build` 通过、定向 vitest 34/34。版本由 1.96.0 递增至 1.97.0。真机验收与两库 i18n 仍未做。
