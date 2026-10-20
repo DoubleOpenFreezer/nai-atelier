@@ -3,7 +3,7 @@
  *
  *   replace      用条目内容替换当前栏位；
  *   append       追加到末尾（已存在的 Tag 不重复追加）；
- *   fill-missing 只补当前栏位里还没有的 Tag（保留原有顺序与内容）。
+ *   fill-missing 只在栏位**为空**时填入；已有内容就原样保留（对应本地的「补充未设置项」）。
  *
  * 分类冲突：从「服饰」库里挑条目填进「形象」栏属于跨类应用，
  * 不阻止，但必须给出提示 —— 由 kindConflictOf 返回，由界面显示。
@@ -42,7 +42,8 @@ export const applyPromptText = (current: string, incoming: string, mode: PromptA
   if (!next.length) return base.join(', ');
   if (!base.length || mode === 'replace') return next.join(', ');
   if (mode === 'append') return mergeMissing(base, next).join(', ');
-  return mergeMissing(base, next).join(', ');
+  /* fill-missing：只补「未设置」的栏位 —— 当前已有内容就原样保留，不并入新条目 */
+  return base.join(', ');
 };
 
 /** 分类冲突：条目所属库与目标栏位所属库不一致时返回 true（跨类应用，需要提示）。 */

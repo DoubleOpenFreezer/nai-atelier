@@ -81,7 +81,14 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ acti
   const [busy, setBusy] = useState(false);
   const [showEvidence, setShowEvidence] = useState(false);
   const [targetId, setTargetId] = useState<string>('new');
-  const [range, setRange] = useState<ContentRollScope>('all');
+  const [range, setRange] = useState<ContentRollScope>(() => {
+    /* 本机默认「仅角色」；用户改过就记住，下次直接沿用 */
+    try {
+      const saved = window.localStorage.getItem('nai-content-roll-range');
+      if (saved === 'all' || saved === 'character' || saved === 'global') return saved;
+    } catch { /* 存储不可用时用默认值 */ }
+    return 'character';
+  });
   const targetTouched = useRef(false);
   const [confirming, setConfirming] = useState(false);
   const [applying, setApplying] = useState(false);
@@ -405,7 +412,11 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ acti
               <span className="text-xs font-semibold text-gray-700 dark:text-gray-200">{t('填入实验室')}</span>
               <label className="flex items-center gap-1 text-meta text-gray-500 dark:text-gray-400">
                 {t('范围')}
-                <select value={range} onChange={event => setRange(event.target.value as ContentRollScope)}
+                <select value={range} onChange={event => {
+                  const nextRange = event.target.value as ContentRollScope;
+                  setRange(nextRange);
+                  try { window.localStorage.setItem('nai-content-roll-range', nextRange); } catch { /* 忽略存储失败 */ }
+                }}
                   aria-label={t('选择抽取范围')}
                   className="rounded-lg border border-gray-200 bg-white px-2 py-1 text-meta dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">
                   <option value="all">{t('角色＋场景')}</option>

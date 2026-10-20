@@ -28,7 +28,7 @@ interface PromptLibraryPickerProps {
 const MODE_LABELS: Record<PromptApplyMode, string> = {
     replace: '替换当前栏位',
     append: '追加到末尾',
-    'fill-missing': '只补缺失的',
+    'fill-missing': '只填空白栏位',
 };
 
 const LibraryOptions: React.FC<PromptLibraryPickerProps & { close: () => void }> = ({ kind, onPick, onPickEntry, targetKind, current = '', close }) => {

@@ -5,7 +5,8 @@ describe('选择器的三种应用模式', () => {
   it('replace 直接替换；append 去重追加；fill-missing 只补缺失', () => {
     expect(applyPromptText('blonde_hair, smile', 'white_dress, smile', 'replace')).toBe('white_dress, smile');
     expect(applyPromptText('blonde_hair, smile', 'white_dress, smile', 'append')).toBe('blonde_hair, smile, white_dress');
-    expect(applyPromptText('blonde_hair, smile', 'white_dress, smile', 'fill-missing')).toBe('blonde_hair, smile, white_dress');
+    /* fill-missing 只在栏位为空时生效：已有内容保持原样，不并入新条目 */
+    expect(applyPromptText('blonde_hair, smile', 'white_dress, smile', 'fill-missing')).toBe('blonde_hair, smile');
     expect(applyPromptText('blonde_hair', 'blonde_hair', 'append')).toBe('blonde_hair');
     expect(PROMPT_APPLY_MODES).toEqual(['replace', 'append', 'fill-missing']);
   });
@@ -17,7 +18,7 @@ describe('选择器的三种应用模式', () => {
 
   it('归一化后同名 Tag 视为同一个，不会重复追加', () => {
     expect(applyPromptText('Blue Eyes', 'blue_eyes', 'append')).toBe('Blue Eyes');
-    expect(applyPromptText('blonde hair', 'blonde_hair, smile', 'fill-missing')).toBe('blonde hair, smile');
+    expect(applyPromptText('blonde hair', 'blonde_hair, smile', 'fill-missing')).toBe('blonde hair');
   });
 
   it('分类冲突与已覆盖数量', () => {
