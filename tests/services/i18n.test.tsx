@@ -11,6 +11,14 @@ import ts from 'typescript';
 import messages from '../../locales/messages.json';
 import { sourceLabel } from '../../services/inspirationUtils';
 
+it('主题配色、修改状态及导入错误具备完整译文', () => {
+  for (const key of ['自定义明暗配色', '浅色配色', '深色配色', '正文', '次要文字', '恢复默认配色', '当前外观已修改', '导出当前外观', '主题文件不是有效的 JSON', '不支持的主题文件版本，请更新应用', '主题包含不支持的字段，请对照主题制作说明', '主题选项无效，请对照主题制作说明', '主题配色只支持 light 和 dark', '主题配色必须使用已支持的字段和六位十六进制颜色', '主题文件中没有可导入的主题']) expect((messages as Record<string, string[]>)[key], key).toHaveLength(4);
+  for (const language of LANGUAGES.filter(item => item.code !== 'zh-CN')) {
+    expect(translate(language.code, '成功导入 {0} 个外观预设', [3])).toContain('3');
+    expect(translate(language.code, '导出当前外观')).not.toBe('导出当前外观');
+  }
+});
+
 beforeEach(() => { localStorage.clear(); delete window.atelierLanguage; restoreLanguage(); });
 afterEach(() => { cleanup(); delete window.atelierLanguage; setLanguage('zh-CN'); vi.restoreAllMocks(); });
 

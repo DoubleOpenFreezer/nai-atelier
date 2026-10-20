@@ -265,6 +265,61 @@ html[data-design-theme='nai-atelier'].dark body {
   color: var(--color-gray-100);
 }
 
+/* 配色接管沿用现有工具类；语义色、图片遮罩和作品像素不变。 */
+html[data-design-theme='nai-atelier'] :where(.text-indigo-50, .text-violet-50) { color: var(--nai-accent-text-50); }
+html[data-design-theme='nai-atelier'].dark :where([class~='dark:text-indigo-50'], [class~='dark:text-violet-50']) { color: var(--nai-accent-text-50); }
+html[data-design-theme='nai-atelier'] :where(.text-indigo-100, .text-violet-100) { color: var(--nai-accent-text-100); }
+html[data-design-theme='nai-atelier'].dark :where([class~='dark:text-indigo-100'], [class~='dark:text-violet-100']) { color: var(--nai-accent-text-100); }
+html[data-design-theme='nai-atelier'] :where(.text-indigo-200, .text-violet-200) { color: var(--nai-accent-text-200); }
+html[data-design-theme='nai-atelier'].dark :where([class~='dark:text-indigo-200'], [class~='dark:text-violet-200']) { color: var(--nai-accent-text-200); }
+html[data-design-theme='nai-atelier'] :where(.text-indigo-300, .text-violet-300) { color: var(--nai-accent-text-300); }
+html[data-design-theme='nai-atelier'].dark :where([class~='dark:text-indigo-300'], [class~='dark:text-violet-300']) { color: var(--nai-accent-text-300); }
+html[data-design-theme='nai-atelier'] :where(.text-indigo-400, .text-violet-400) { color: var(--nai-accent-text-400); }
+html[data-design-theme='nai-atelier'].dark :where([class~='dark:text-indigo-400'], [class~='dark:text-violet-400']) { color: var(--nai-accent-text-400); }
+html[data-design-theme='nai-atelier'] :where(.text-indigo-500, .text-violet-500) { color: var(--nai-accent-text-500); }
+html[data-design-theme='nai-atelier'].dark :where([class~='dark:text-indigo-500'], [class~='dark:text-violet-500']) { color: var(--nai-accent-text-500); }
+html[data-design-theme='nai-atelier'] :where(.text-indigo-600, .text-violet-600) { color: var(--nai-accent-text-600); }
+html[data-design-theme='nai-atelier'].dark :where([class~='dark:text-indigo-600'], [class~='dark:text-violet-600']) { color: var(--nai-accent-text-600); }
+html[data-design-theme='nai-atelier'] :where(.text-indigo-700, .text-violet-700) { color: var(--nai-accent-text-700); }
+html[data-design-theme='nai-atelier'].dark :where([class~='dark:text-indigo-700'], [class~='dark:text-violet-700']) { color: var(--nai-accent-text-700); }
+html[data-design-theme='nai-atelier'] :where(.text-indigo-800, .text-violet-800) { color: var(--nai-accent-text-800); }
+html[data-design-theme='nai-atelier'].dark :where([class~='dark:text-indigo-800'], [class~='dark:text-violet-800']) { color: var(--nai-accent-text-800); }
+html[data-design-theme='nai-atelier'] :where(.text-indigo-900, .text-violet-900) { color: var(--nai-accent-text-900); }
+html[data-design-theme='nai-atelier'].dark :where([class~='dark:text-indigo-900'], [class~='dark:text-violet-900']) { color: var(--nai-accent-text-900); }
+html[data-design-theme='nai-atelier'] :where(.text-indigo-950, .text-violet-950) { color: var(--nai-accent-text-950); }
+html[data-design-theme='nai-atelier'].dark :where([class~='dark:text-indigo-950'], [class~='dark:text-violet-950']) { color: var(--nai-accent-text-950); }
+html[data-design-theme='nai-atelier'] :is(.bg-indigo-400, .bg-violet-400).text-white { color: var(--nai-on-accent-400); }
+html[data-design-theme='nai-atelier'] :is([class~='hover:bg-indigo-400'], [class~='hover:bg-violet-400']).text-white:hover:not(:disabled) { color: var(--nai-on-accent-400); }
+html[data-design-theme='nai-atelier'] :is(.bg-indigo-500, .bg-violet-500).text-white { color: var(--nai-on-accent-500); }
+html[data-design-theme='nai-atelier'] :is([class~='hover:bg-indigo-500'], [class~='hover:bg-violet-500']).text-white:hover:not(:disabled) { color: var(--nai-on-accent-500); }
+html[data-design-theme='nai-atelier'] :is(.bg-indigo-600, .bg-violet-600).text-white { color: var(--nai-on-accent-600); }
+html[data-design-theme='nai-atelier'] :is([class~='hover:bg-indigo-600'], [class~='hover:bg-violet-600']).text-white:hover:not(:disabled) { color: var(--nai-on-accent-600); }
+html[data-design-theme='nai-atelier'] :is(.bg-indigo-700, .bg-violet-700).text-white { color: var(--nai-on-accent-700); }
+html[data-design-theme='nai-atelier'] :is([class~='hover:bg-indigo-700'], [class~='hover:bg-violet-700']).text-white:hover:not(:disabled) { color: var(--nai-on-accent-700); }
+html[data-custom-palette='true']:not(.dark) :where(.bg-white, [class~='hover:bg-white']:hover, [class~='focus:bg-white']:focus, [class~='focus-within:bg-white']:focus-within) { background-color: var(--nai-white-surface); }
+html[data-custom-palette='true']:not(.dark) :where([class~='bg-white/60']) { background-color: color-mix(in srgb, var(--nai-white-surface) 60%, transparent); }
+html[data-custom-palette='true']:not(.dark) :where([class~='bg-white/70']) { background-color: color-mix(in srgb, var(--nai-white-surface) 70%, transparent); }
+html[data-custom-palette='true']:not(.dark) :where([class~='bg-white/80']) { background-color: color-mix(in srgb, var(--nai-white-surface) 80%, transparent); }
+html[data-custom-palette='true']:not(.dark) :where([class~='bg-white/90']) { background-color: color-mix(in srgb, var(--nai-white-surface) 90%, transparent); }
+html[data-custom-palette='true']:not(.dark) :where([class~='bg-white/95']) { background-color: color-mix(in srgb, var(--nai-white-surface) 95%, transparent); }
+html[data-custom-palette='true'].dark :where([class~='dark:text-white']) { color: var(--color-gray-100); }
+
+@media (hover: hover) {
+  html[data-design-theme='nai-atelier'] :where([class~='hover:text-indigo-300']:hover, [class~='hover:text-violet-300']:hover) { color: var(--nai-accent-text-300); }
+  html[data-design-theme='nai-atelier'].dark :where([class~='dark:hover:text-indigo-300']:hover, [class~='dark:hover:text-violet-300']:hover) { color: var(--nai-accent-text-300); }
+  html[data-design-theme='nai-atelier'] :where([class~='hover:text-indigo-400']:hover, [class~='hover:text-violet-400']:hover) { color: var(--nai-accent-text-400); }
+  html[data-design-theme='nai-atelier'].dark :where([class~='dark:hover:text-indigo-400']:hover, [class~='dark:hover:text-violet-400']:hover) { color: var(--nai-accent-text-400); }
+  html[data-design-theme='nai-atelier'] :where([class~='hover:text-indigo-500']:hover, [class~='hover:text-violet-500']:hover) { color: var(--nai-accent-text-500); }
+  html[data-design-theme='nai-atelier'].dark :where([class~='dark:hover:text-indigo-500']:hover, [class~='dark:hover:text-violet-500']:hover) { color: var(--nai-accent-text-500); }
+  html[data-design-theme='nai-atelier'] :where([class~='hover:text-indigo-600']:hover, [class~='hover:text-violet-600']:hover) { color: var(--nai-accent-text-600); }
+  html[data-design-theme='nai-atelier'].dark :where([class~='dark:hover:text-indigo-600']:hover, [class~='dark:hover:text-violet-600']:hover) { color: var(--nai-accent-text-600); }
+  html[data-design-theme='nai-atelier'] :where([class~='hover:text-indigo-700']:hover, [class~='hover:text-violet-700']:hover) { color: var(--nai-accent-text-700); }
+  html[data-design-theme='nai-atelier'].dark :where([class~='dark:hover:text-indigo-700']:hover, [class~='dark:hover:text-violet-700']:hover) { color: var(--nai-accent-text-700); }
+}
+html[data-design-theme='nai-atelier'] [class~='bg-indigo-400/80'].text-white { color: var(--nai-on-accent-400); }
+html[data-design-theme='nai-atelier'] [class~='bg-indigo-500/85'].text-white { color: var(--nai-on-accent-500); }
+html[data-design-theme='nai-atelier'] [class~='bg-indigo-600/90'].text-white { color: var(--nai-on-accent-600); }
+
 html[data-design-theme='nai-atelier'] ::selection {
   background: color-mix(in srgb, var(--nai-accent) 28%, transparent);
 }
@@ -281,7 +336,7 @@ html[data-design-theme='nai-atelier'] ::selection {
   isolation: isolate;
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--nai-accent, #0ea5e9) 28%, transparent);
-  color: color-mix(in srgb, var(--nai-accent, #0ea5e9) 76%, black);
+  color: var(--nai-accent-text-600);
   background-color: color-mix(in srgb, var(--nai-accent, #0ea5e9) 9%, transparent);
   background-image: none;
   box-shadow: 0 1px 2px rgb(15 23 42 / .06);
@@ -330,7 +385,7 @@ html[data-design-theme='nai-atelier'] ::selection {
 }
 
 .generation-action-button:hover:not(:disabled):not([aria-disabled='true']) {
-  color: white;
+  color: var(--nai-on-action, white);
   border-color: transparent;
   background-color: var(--nai-action-deep, #0284c7);
   filter: saturate(1.05) brightness(1.04);
@@ -352,7 +407,7 @@ html[data-design-theme='nai-atelier'] ::selection {
   z-index: 1;
   padding: .125rem .5rem;
   border-radius: 999px;
-  color: color-mix(in srgb, var(--nai-accent, #0ea5e9) 82%, black);
+  color: var(--nai-accent-text-600);
   background: color-mix(in srgb, var(--nai-accent, #0ea5e9) 13%, transparent);
   font-size: .6875rem;
   font-weight: 700;
@@ -362,13 +417,13 @@ html[data-design-theme='nai-atelier'] ::selection {
 
 .generation-action-button:hover:not(:disabled):not([aria-disabled='true']) .generation-action-button__cost,
 .generation-action-button--loading .generation-action-button__cost {
-  color: white;
+  color: inherit;
   background: rgb(255 255 255 / .16);
 }
 
 .generation-action-button--loading {
   cursor: wait;
-  color: white;
+  color: var(--nai-on-action, white);
   border-color: transparent;
   filter: saturate(1.05);
   box-shadow: 0 8px 18px var(--nai-action-shadow, rgb(14 165 233 / .28));
@@ -403,24 +458,24 @@ html[data-design-theme='nai-atelier'] ::selection {
 }
 
 html[data-design-theme='nai-atelier'].dark .generation-action-button:not(.generation-action-button--loading) {
-  color: color-mix(in srgb, var(--nai-accent, #818cf8) 64%, white);
+  color: var(--nai-accent-text-300);
   border-color: color-mix(in srgb, var(--nai-accent, #818cf8) 34%, transparent);
   background-color: color-mix(in srgb, var(--nai-accent, #818cf8) 14%, transparent);
 }
 
 html[data-design-theme='nai-atelier'].dark .generation-action-button:not(.generation-action-button--loading) .generation-action-button__cost {
-  color: color-mix(in srgb, var(--nai-accent, #818cf8) 58%, white);
+  color: var(--nai-accent-text-300);
   background: color-mix(in srgb, var(--nai-accent, #818cf8) 18%, transparent);
 }
 
 html[data-design-theme='nai-atelier'].dark .generation-action-button:hover:not(:disabled):not([aria-disabled='true']) {
-  color: white;
+  color: var(--nai-on-action, white);
   border-color: transparent;
   background-color: var(--nai-action-deep, #4f46e5);
 }
 
 html[data-design-theme='nai-atelier'].dark .generation-action-button:hover:not(:disabled):not([aria-disabled='true']) .generation-action-button__cost {
-  color: white;
+  color: inherit;
   background: rgb(255 255 255 / .16);
 }
 

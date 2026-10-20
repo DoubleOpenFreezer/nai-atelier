@@ -89,7 +89,16 @@ export class StyleCollector extends EventEmitter {
       if (action === 'appearance') {
         if (!id || !['light', 'dark', 'system'].includes(id.themeMode) || typeof id.isDark !== 'boolean' || !/^#[a-f0-9]{6}$/i.test(id.accentColor || '') || !['full', 'reduced', 'off'].includes(id.motion)) throw new Error('外观设置无效');
         const language = normalizeLanguage(id.language);
-        this.appearance = { themeMode: id.themeMode, isDark: id.isDark, accentColor: id.accentColor.toLowerCase(), motion: id.motion, language, labels: collectorLabels(language) };
+        let palette;
+        if (id.palette !== undefined) {
+          if (!id.palette || typeof id.palette !== 'object' || Array.isArray(id.palette) || Object.keys(id.palette).some(mode => !['light', 'dark'].includes(mode))) throw new Error('外观配色无效');
+          palette = {};
+          for (const [mode, colors] of Object.entries(id.palette)) {
+            if (!colors || typeof colors !== 'object' || Array.isArray(colors) || Object.entries(colors).some(([key, color]) => !['canvas', 'sidebar', 'toolbar', 'panel', 'text', 'mutedText', 'border'].includes(key) || typeof color !== 'string' || !/^#[a-f0-9]{6}$/i.test(color))) throw new Error('外观配色无效');
+            palette[mode] = { ...colors };
+          }
+        }
+        this.appearance = { themeMode: id.themeMode, isDark: id.isDark, accentColor: id.accentColor.toLowerCase(), motion: id.motion, language, labels: collectorLabels(language), ...(palette ? { palette } : {}) };
         if (this.run) this.publish(this.run); else this.emit('state', this.state());
         return this.state();
       }

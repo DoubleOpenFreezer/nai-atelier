@@ -3,7 +3,8 @@ import React, { useState } from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { LANGUAGES, setLanguage, t } from '../../services/i18n';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { DEFAULT_APPEARANCE_PREFERENCES, AppearancePreferences } from '../../services/appearancePreferences';
+import { DEFAULT_APPEARANCE_PREFERENCES, AppearancePreferences, appearanceValues, BUILTIN_APPEARANCE_PRESET, readAppearancePresetImport } from '../../services/appearancePreferences';
+import { downloadFile } from '../../services/fileDownload';
 import { ConfirmDialogProvider } from '../../components/ConfirmDialog';
 import { GlobalSettings } from '../../components/GlobalSettings';
 import { readAgentPage } from '../../services/agentWorkspace';
@@ -12,6 +13,7 @@ import { readActiveNaiKey, REMEMBER_NAI_KEY_STORAGE_KEY, setActiveNaiKey } from 
 import { naiKeyVault } from '../../services/naiKeyVault';
 import { getImageDisplayPageOverride, getMobileImageDisplayPreferences } from '../../services/imageDisplayPreferences';
 const subscriptionFixture = vi.hoisted(() => ({ entries: [] as import('../../services/naiKeyVault').NaiKeyEntry[], expired: false, balance: undefined as { fixedTrainingStepsLeft: number; purchasedTrainingSteps: number } | undefined, usage: undefined as import('../../services/naiUsage').NovelaiUsageState | undefined, refresh: vi.fn(async () => null) }));
+vi.mock('../../services/fileDownload', () => ({ downloadFile: vi.fn(async () => ({ saved: true, cancelled: false, browserDownload: true })) }));
 vi.mock('../../services/naiUsage', async importOriginal => ({
   ...await importOriginal<typeof import('../../services/naiUsage')>(),
   useNovelaiUsage: () => ({ info: subscriptionFixture.expired || subscriptionFixture.balance || subscriptionFixture.usage ? { active: !subscriptionFixture.expired, tier: 3, trainingStepsLeft: subscriptionFixture.balance } : null, usage: subscriptionFixture.usage, loading: false, error: null, fetchedAt: 0, refresh: subscriptionFixture.refresh }),
@@ -67,9 +69,10 @@ interface SettingsHarnessProps {
   initialSection?: 'home' | 'appearance' | 'generation' | 'novelai' | 'agent' | 'privacy' | 'maintenance';
   initialAppearancePreferences?: Partial<AppearancePreferences>;
   onAppearancePreferencesChange?: (preferences: AppearancePreferences) => void;
+  notify?: (message: string, tone?: 'success' | 'error' | 'info') => void;
 }
 
-const SettingsHarness: React.FC<SettingsHarnessProps> = ({ initialSection = 'appearance', initialAppearancePreferences, onAppearancePreferencesChange }) => {
+const SettingsHarness: React.FC<SettingsHarnessProps> = ({ initialSection = 'appearance', initialAppearancePreferences, onAppearancePreferencesChange, notify = vi.fn() }) => {
   const [appearancePreferences, setAppearancePreferences] = useState<AppearancePreferences>(() => ({
     ...DEFAULT_APPEARANCE_PREFERENCES,
     ...initialAppearancePreferences,
@@ -80,10 +83,10 @@ const SettingsHarness: React.FC<SettingsHarnessProps> = ({ initialSection = 'app
       open: true,
       initialSection,
       onClose: vi.fn(),
-      notify: vi.fn(),
+      notify,
       isDark: false,
-      themeMode: 'light',
-      setThemeMode: vi.fn(),
+      themeMode: appearancePreferences.themeMode,
+      setThemeMode: themeMode => setAppearancePreferences(current => ({ ...current, themeMode })),
       appearancePreferences,
       setAppearancePreferences,
       safeMode: true,
@@ -206,6 +209,7 @@ describe('GlobalSettings', () => {
   });
 
   beforeEach(() => {
+    vi.mocked(downloadFile).mockClear();
     subscriptionFixture.entries = [];
     vi.mocked(naiKeyVault.add).mockReset();
     vi.mocked(naiKeyVault.activate).mockReset();
@@ -526,7 +530,7 @@ describe('GlobalSettings', () => {
     expect(screen.getByText('局域网访问')).toBeTruthy();
   });
 
-  it('选中的主题卡片强调色与色标会随着外观偏好的强调色改变而同步联动', async () => {
+  it('当前外观修改不会改写已保存卡片，明确标记修改并提供当前外观导出', async () => {
     const { container } = render(React.createElement(SettingsHarness));
 
     const activeCard = container.querySelector('.atelier-theme-card');
@@ -539,14 +543,75 @@ describe('GlobalSettings', () => {
     const indigoButton = screen.getByRole('button', { name: '强调色：靛蓝' });
     fireEvent.click(indigoButton);
 
-    // 选中卡片的微缩骨架高亮条与卡片底部的十六进制色标应同步变为 #6366f1
-    await waitFor(() => {
-      expect(activeCard?.textContent).toContain('#6366f1');
-    });
+    expect(await screen.findByText('当前外观已修改')).toBeTruthy();
+    expect(activeCard?.getAttribute('aria-pressed')).toBe('false');
+    expect(activeCard?.textContent).toContain('#0ea5e9');
+    expect(activeCard?.textContent).not.toContain('#6366f1');
 
     const previewAccentBar = activeCard?.querySelector('.atelier-theme-preview span[style*="background-color"]');
     expect(previewAccentBar).toBeTruthy();
-    expect(previewAccentBar?.getAttribute('style')).toContain('rgb(99, 102, 241)');
+    expect(previewAccentBar?.getAttribute('style')).toContain('rgb(14, 165, 233)');
+    fireEvent.click(screen.getByRole('button', { name: '导出当前外观' }));
+    await waitFor(() => expect(downloadFile).toHaveBeenCalledTimes(1));
+    const reader = new FileReader();
+    const json = await new Promise<string>(resolve => { reader.onload = () => resolve(String(reader.result)); reader.readAsText(vi.mocked(downloadFile).mock.calls[0][0] as Blob); });
+    expect(readAppearancePresetImport(json)[0].accentColor).toBe('#6366f1');
+  });
+
+  it('配色可以编辑并覆盖保存，恢复默认保留所有主题、生图偏好和布局', async () => {
+    const changed = vi.fn<(preferences: AppearancePreferences) => void>();
+    const preset = { ...BUILTIN_APPEARANCE_PRESET, id: 'paper', name: '纸张', isBuiltin: false };
+    render(React.createElement(SettingsHarness, { initialAppearancePreferences: { customPresets: [preset], activePresetId: preset.id, generationStreamPreview: true, forceEmptySeed: true, enforceFreeStepLimit: false, tagAssistEnabled: false, continuousGenerationEnabled: false }, onAppearancePreferencesChange: changed }));
+    fireEvent.click(screen.getByText('自定义明暗配色'));
+    fireEvent.change(screen.getByLabelText('浅色配色 · 背景'), { target: { value: '#fff4dd' } });
+    expect(changed.mock.lastCall?.[0].palette).toEqual({ light: { canvas: '#fff4dd' } });
+    expect(screen.getByRole('button', { name: '应用外观预设：纸张' }).getAttribute('aria-pressed')).toBe('false');
+    fireEvent.click(screen.getByRole('button', { name: '保存修改' }));
+    expect(changed.mock.lastCall?.[0].customPresets[0].palette).toEqual({ light: { canvas: '#fff4dd' } });
+    expect(screen.queryByText('当前外观已修改')).toBeNull();
+    const layouts = changed.mock.lastCall?.[0].labPageLayouts;
+    fireEvent.click(screen.getByRole('button', { name: '恢复 NAI Atelier 默认外观' }));
+    expect(changed.mock.lastCall?.[0]).toMatchObject({ generationStreamPreview: true, forceEmptySeed: true, enforceFreeStepLimit: false, tagAssistEnabled: false, continuousGenerationEnabled: false, activePresetId: 'builtin-default', labPageLayouts: layouts });
+    expect(changed.mock.lastCall?.[0].palette).toBeUndefined();
+    expect(changed.mock.lastCall?.[0].customPresets[0].palette).toEqual({ light: { canvas: '#fff4dd' } });
+  });
+
+  it('删除当前主题真正恢复默认外观，其余主题保留', async () => {
+    const changed = vi.fn<(preferences: AppearancePreferences) => void>();
+    const preset = { ...BUILTIN_APPEARANCE_PRESET, id: 'paper', name: '纸张', isBuiltin: false, themeMode: 'dark' as const, accentColor: '#14b8a6', palette: { dark: { canvas: '#211c19' } } };
+    render(React.createElement(SettingsHarness, { initialAppearancePreferences: { ...appearanceValues(preset), activePresetId: preset.id, customPresets: [preset, { ...preset, id: 'other', name: '保留主题' }] }, onAppearancePreferencesChange: changed }));
+    fireEvent.click(screen.getByRole('button', { name: '删除「纸张」' }));
+    fireEvent.click(await screen.findByRole('button', { name: '删除预设' }));
+    await waitFor(() => expect(changed.mock.lastCall?.[0].activePresetId).toBe('builtin-default'));
+    expect(appearanceValues(changed.mock.lastCall![0])).toEqual(appearanceValues(BUILTIN_APPEARANCE_PRESET));
+    expect(changed.mock.lastCall?.[0].customPresets.map(item => item.name)).toEqual(['保留主题']);
+    expect(screen.getByRole('button', { name: '应用外观预设：NAI Atelier 默认' }).getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('默认主题可以导出再导入为普通主题，重名连续导入保持名称唯一，错误文件可重选', async () => {
+    const changed = vi.fn<(preferences: AppearancePreferences) => void>();
+    const notify = vi.fn();
+    render(React.createElement(SettingsHarness, { onAppearancePreferencesChange: changed, notify }));
+    fireEvent.click(screen.getByRole('button', { name: '导出「NAI Atelier 默认」' }));
+    await waitFor(() => expect(downloadFile).toHaveBeenCalledTimes(1));
+    const reader = new FileReader();
+    const json = await new Promise<string>(resolve => { reader.onload = () => resolve(String(reader.result)); reader.readAsText(vi.mocked(downloadFile).mock.calls[0][0] as Blob); });
+    expect(JSON.parse(json).version).toBe(2);
+    expect(readAppearancePresetImport(json)[0].isBuiltin).toBeUndefined();
+    const input = screen.getByLabelText('导入外观预设 JSON');
+    fireEvent.change(input, { target: { files: [new File(['{"version":999}'], 'future.json')] } });
+    await waitFor(() => expect(notify).toHaveBeenCalledWith('不支持的主题文件版本，请更新应用', 'error'));
+    expect(changed.mock.lastCall?.[0].customPresets).toHaveLength(0);
+    for (const count of [1, 2]) {
+      fireEvent.change(input, { target: { files: [new File([json], 'default.json')] } });
+      await waitFor(() => expect(changed.mock.lastCall?.[0].customPresets).toHaveLength(count));
+    }
+    const presets = changed.mock.lastCall![0].customPresets;
+    expect(new Set(presets.map(item => item.name)).size).toBe(2);
+    expect(new Set(presets.map(item => item.id)).size).toBe(2);
+    expect(presets.every(item => !item.isBuiltin)).toBe(true);
+    fireEvent.drop(input.parentElement!, { dataTransfer: { files: [new File([json], 'dropped.json')] } });
+    await waitFor(() => expect(changed.mock.lastCall?.[0].customPresets).toHaveLength(3));
   });
 
   it('明暗模式和外观选项被选中时具有 dark:text-indigo-300 保证暗色高对比度', async () => {
@@ -559,9 +624,8 @@ describe('GlobalSettings', () => {
       expect(btn.className).toContain('dark:text-indigo-300');
     });
 
-    // SettingsHarness 中当前 themeMode 为 'light'，因此「浅色」是选中的
-    const lightModeBtn = screen.getByRole('button', { name: /浅色/ });
-    expect(lightModeBtn.className).toContain('dark:text-indigo-300');
+    const systemModeBtn = screen.getByRole('button', { name: '跟随系统' });
+    expect(systemModeBtn.className).toContain('dark:text-indigo-300');
   });
 
   it('切换图片列表布局时正确切换选中态并更新本地偏好', async () => {

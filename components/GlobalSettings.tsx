@@ -39,7 +39,6 @@ import {
   AppearancePreset,
   BUILTIN_APPEARANCE_PRESET,
   CornerStyle,
-  DEFAULT_APPEARANCE_PREFERENCES,
   DEFAULT_LAB_PAGE_LAYOUTS,
   cloneDefaultLabPageLayouts,
   FontScale,
@@ -49,11 +48,15 @@ import {
   LabPageLayout,
   LabPageModuleId,
   MotionStyle,
-  parseAppearancePresetsFromJson,
+  appearanceMatchesPreset,
+  appearanceValues,
+  readAppearancePresetImport,
+  serializeAppearancePresets,
   SurfaceStyle,
   ThemeMode,
-  validateAppearancePreset,
 } from '../services/appearancePreferences';
+import { AppearancePaletteEditor } from './AppearancePaletteEditor';
+import { AppearancePresetPreview } from './AppearancePresetPreview';
 import { ArrowDown, ArrowLeft, ArrowUp, Bot, Check, ChevronRight, Copy, Database, Edit2, ExternalLink, Eye, EyeOff, FileDown, FileUp, FolderInput, FolderOutput, GripVertical, KeyRound, Lock, Monitor, Moon, Palette, Plus, RotateCcw, Server, Shield, ShieldCheck, SlidersHorizontal, Smartphone, Sparkles, Sun, Trash2, X } from 'lucide-react';
 
 type SettingsSection = 'appearance' | 'generation' | 'novelai' | 'agent' | 'privacy' | 'maintenance';
@@ -524,42 +527,25 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
   const resetAllLabPageLayouts = () => updateAppearance({ labPageLayouts: cloneDefaultLabPageLayouts() });
 
   const resetThemeCustomization = () => {
-    setAppearancePreferences({
-      ...DEFAULT_APPEARANCE_PREFERENCES,
-      themeMode,
-      tagAssistEnabled: appearancePreferences.tagAssistEnabled,
-      continuousGenerationEnabled: appearancePreferences.continuousGenerationEnabled,
-      rememberGenerationSettings: appearancePreferences.rememberGenerationSettings,
-      generationMemory: appearancePreferences.generationMemory,
-      labModuleOrder: appearancePreferences.labModuleOrder,
-      labModuleCollapsed: appearancePreferences.labModuleCollapsed,
-      labPageLayouts: appearancePreferences.labPageLayouts,
-    });
+    applyPreset(BUILTIN_APPEARANCE_PRESET);
   };
 
   const customPresets = appearancePreferences.customPresets || [];
   const allPresets: AppearancePreset[] = [BUILTIN_APPEARANCE_PRESET, ...customPresets];
   const activePresetId = appearancePreferences.activePresetId || 'builtin-default';
+  const activePreset = allPresets.find(preset => preset.id === activePresetId);
+  const appearanceModified = !activePreset || !appearanceMatchesPreset(appearancePreferences, activePreset);
 
-  const downloadJson = async (filename: string, data: unknown) => {
+  const downloadJson = async (filename: string, presets: AppearancePreset[]) => {
     const target = beginExportTarget();
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const blob = new Blob([serializeAppearancePresets(presets)], { type: 'application/json' });
     const { downloadFile } = await import('../services/fileDownload');
     return downloadFile(blob, filename, target);
   };
 
   const applyPreset = (preset: AppearancePreset) => {
     updateAppearance({
-      accentColor: preset.accentColor,
-      themeMode: preset.themeMode,
-      density: preset.density,
-      corners: preset.corners,
-      surfaces: preset.surfaces,
-      motion: preset.motion,
-      fontScale: preset.fontScale,
-      galleryFrostedCaption: preset.galleryFrostedCaption,
-      galleryHoverFloat: preset.galleryHoverFloat,
-      gallerySelectionFocus: preset.gallerySelectionFocus,
+      ...appearanceValues(preset),
       activePresetId: preset.id,
     });
     if (preset.themeMode !== themeMode) {
@@ -572,19 +558,10 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
     const trimmed = newPresetName.trim();
     const finalName = trimmed || `自定义外观 ${customPresets.length + 1}`;
     const newPreset: AppearancePreset = {
-      id: `preset-${Date.now()}`,
+      id: `preset-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       name: finalName,
       createdAt: Date.now(),
-      accentColor: appearancePreferences.accentColor,
-      themeMode,
-      density: appearancePreferences.density,
-      corners: appearancePreferences.corners,
-      surfaces: appearancePreferences.surfaces,
-      motion: appearancePreferences.motion,
-      fontScale: appearancePreferences.fontScale,
-      galleryFrostedCaption: appearancePreferences.galleryFrostedCaption,
-      galleryHoverFloat: appearancePreferences.galleryHoverFloat,
-      gallerySelectionFocus: appearancePreferences.gallerySelectionFocus,
+      ...appearanceValues(appearancePreferences),
     };
     updateAppearance({
       customPresets: [...customPresets, newPreset],
@@ -605,11 +582,11 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
       tone: 'danger',
     });
     if (confirmed) {
-      const nextPresets = customPresets.filter(p => p.id !== preset.id);
-      updateAppearance({
-        customPresets: nextPresets,
-        ...(activePresetId === preset.id ? { activePresetId: 'builtin-default' } : {}),
-      });
+      setAppearancePreferences(current => ({
+        ...current,
+        customPresets: current.customPresets.filter(p => p.id !== preset.id),
+        ...(current.activePresetId === preset.id ? { ...appearanceValues(BUILTIN_APPEARANCE_PRESET), activePresetId: 'builtin-default' } : {}),
+      }));
       notify?.('已删除外观预设「' + preset.name + '」', 'success');
     }
   };
@@ -637,49 +614,38 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
       notify?.('暂无自定义预设可导出');
       return;
     }
-    try { const receipt = await downloadJson(`nai-appearance-presets-${new Date().toISOString().slice(0, 10)}.json`, {
-      version: 1,
-      exportedAt: Date.now(),
-      presets: customPresets,
-    });
+    try { const receipt = await downloadJson(`nai-appearance-presets-${new Date().toISOString().slice(0, 10)}.json`, customPresets);
     notify?.(receipt.browserDownload ? '已交给浏览器下载' : `已导出 ${customPresets.length} 个自定义预设`, 'success'); }
     catch (error) { if (error instanceof DOMException && error.name === 'AbortError') return; notify?.(error instanceof Error ? error.message : '预设导出失败', 'error'); }
   };
 
-  const handleImportPresets = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
+  const importPresetFile = (file: File) => {
     const reader = new FileReader();
     reader.onload = (e) => {
       const text = String(e.target?.result || '');
-      const parsed = parseAppearancePresetsFromJson(text);
-      if (parsed.length === 0) {
-        notify?.('导入失败：未找到有效的外观预设数据', 'error');
-        return;
-      }
-      const existingNames = new Set(customPresets.map(p => p.name));
-      const nextPresets = [...customPresets];
-      let added = 0;
-      for (const item of parsed) {
-        let name = item.name;
-        if (existingNames.has(name)) {
-          name = `${name} (导入)`;
-        }
-        existingNames.add(name);
-        nextPresets.push({
-          ...item,
-          id: `preset-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-          name,
-          createdAt: Date.now(),
+      try {
+        const parsed = readAppearancePresetImport(text);
+        setAppearancePreferences(current => {
+          const names = new Set([t(BUILTIN_APPEARANCE_PRESET.name), ...current.customPresets.map(p => p.name)]);
+          const imported = parsed.map(item => {
+            let name = item.name;
+            let suffix = 1;
+            while (names.has(name)) name = `${item.name.slice(0, 22)} (${suffix++})`;
+            names.add(name);
+            return { ...item, id: `preset-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, name, createdAt: Date.now() };
+          });
+          return { ...current, customPresets: [...current.customPresets, ...imported] };
         });
-        added++;
+        notify?.(t('成功导入 {0} 个外观预设', [parsed.length]), 'success');
+      } catch (error) {
+        notify?.(t(error instanceof Error ? error.message : '预设导入失败'), 'error');
+      } finally {
+        if (importFileRef.current) importFileRef.current.value = '';
       }
-      updateAppearance({ customPresets: nextPresets });
-      notify?.(`成功导入 ${added} 个外观预设`, 'success');
-      if (importFileRef.current) importFileRef.current.value = '';
     };
     reader.onerror = () => {
       notify?.('读取文件失败', 'error');
+      if (importFileRef.current) importFileRef.current.value = '';
     };
     reader.readAsText(file);
   };
@@ -790,12 +756,12 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
               </div>
 
               {/* 设计主题与预设管理 */}
-              <div className="border-t border-gray-200 pt-3 dark:border-gray-700">
+              <div className="border-t border-gray-200 pt-3 dark:border-gray-700" onDragOver={event => { if (event.dataTransfer.types.includes('Files')) event.preventDefault(); }} onDrop={event => { event.preventDefault(); const file = event.dataTransfer.files[0]; if (file) importPresetFile(file); }}>
                 <input
                   type="file"
                   ref={importFileRef} aria-label={t("导入外观预设 JSON")}
                   accept=".json,application/json"
-                  onChange={handleImportPresets}
+                  onChange={event => { const file = event.target.files?.[0]; if (file) importPresetFile(file); }}
                   className="hidden"
                 />
                 <div className="mb-2 flex flex-wrap items-end justify-between gap-3">
@@ -831,6 +797,11 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                   </div>
                 </div>
 
+                {appearanceModified && <div className="mb-3 flex flex-wrap items-center gap-2 text-meta">
+                  <span role="status" className="text-amber-700 dark:text-amber-300">{t('当前外观已修改')}</span>
+                  {activePreset && !activePreset.isBuiltin && <button type="button" onClick={() => updateAppearance({ customPresets: customPresets.map(preset => preset.id === activePreset.id ? { ...preset, ...appearanceValues(appearancePreferences) } : preset) })} className="mobile-touch rounded-lg px-2 py-1 font-bold text-indigo-600 dark:text-indigo-300">{t('保存修改')}</button>}
+                  <button type="button" onClick={() => handleExportSinglePreset({ id: 'current-appearance', name: t('当前外观'), createdAt: Date.now(), ...appearanceValues(appearancePreferences) })} className="mobile-touch rounded-lg px-2 py-1 font-bold text-indigo-600 dark:text-indigo-300">{t('导出当前外观')}</button>
+                </div>}
                 {isCreatingPreset && (
                   <div className="mb-3 rounded-xl border border-indigo-200 bg-indigo-50/50 p-2.5 dark:border-indigo-900/60 dark:bg-indigo-950/30">
                     <div className="text-meta font-bold text-indigo-900 dark:text-indigo-200 mb-1.5">
@@ -870,9 +841,9 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
 
                 <div className={`grid gap-3 ${allPresets.length > 1 ? 'sm:grid-cols-2' : 'grid-cols-1'}`}>
                   {allPresets.map(preset => {
-                    const isSelected = activePresetId === preset.id;
+                    const isSelected = activePresetId === preset.id && !appearanceModified;
                     const isEditing = editingPresetId === preset.id;
-                    const presetAccent = isSelected ? (appearancePreferences.accentColor || '#0ea5e9') : (preset.accentColor || '#0ea5e9');
+                    const presetAccent = preset.accentColor;
                     return (
                       <div
                         key={preset.id}
@@ -893,24 +864,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
 
                         <div className="flex min-w-0 items-center gap-3">
                           {/* 微缩界面骨架 */}
-                          <div
-                            className="atelier-theme-preview grid h-20 w-28 flex-none grid-cols-[1.8rem_1fr] overflow-hidden rounded-xl border border-gray-200 bg-gray-100 shadow-sm dark:border-gray-700 dark:bg-gray-900"
-                            aria-hidden="true"
-                          >
-                            <div className="border-r border-gray-200 bg-white p-1 dark:border-gray-700 dark:bg-gray-950">
-                              <span className="mt-1 block h-1 w-3 rounded-full" style={{ backgroundColor: presetAccent }} />
-                              <span className="mt-2 block h-1 w-4 rounded-full bg-gray-300 dark:bg-gray-600" />
-                              <span className="mt-1 block h-1 w-4 rounded-full bg-gray-400 dark:bg-gray-700" />
-                            </div>
-                            <div className="p-1.5">
-                              <span className="block h-2 w-8 rounded opacity-85" style={{ backgroundColor: presetAccent }} />
-                              <span className="mt-1.5 block h-5 rounded border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800" />
-                              <span className="mt-1.5 grid grid-cols-2 gap-1">
-                                <span className="h-7 rounded bg-gray-200 dark:bg-gray-800" />
-                                <span className="h-7 rounded bg-gray-200 dark:bg-gray-800" />
-                              </span>
-                            </div>
-                          </div>
+                          <AppearancePresetPreview preset={preset} isDark={isDark} />
 
                           <div className="min-w-0 flex-1">
                             {isEditing ? (
@@ -1042,6 +996,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                   </button>)}
                 </div>
 
+                <AppearancePaletteEditor palette={appearancePreferences.palette} onChange={palette => updateAppearance({ palette })} />
                 <button type="button" onClick={resetThemeCustomization} className="mobile-touch mt-4 flex w-full items-center justify-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 text-xs font-bold text-gray-600 transition hover:border-indigo-300 hover:text-indigo-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-indigo-600 dark:hover:text-indigo-300"><RotateCcw className="h-3.5 w-3.5" />{t("恢复 NAI Atelier 默认外观")}</button>
               </div>
             </div>}

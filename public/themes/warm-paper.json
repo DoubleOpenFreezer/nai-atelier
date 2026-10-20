@@ -1,0 +1,38 @@
+{
+  "version": 2,
+  "presets": [
+    {
+      "name": "暖纸",
+      "accentColor": "#b96e2b",
+      "themeMode": "system",
+      "density": "standard",
+      "corners": "soft",
+      "surfaces": "solid",
+      "motion": "full",
+      "fontScale": "standard",
+      "galleryFrostedCaption": true,
+      "galleryHoverFloat": true,
+      "gallerySelectionFocus": true,
+      "palette": {
+        "light": {
+          "canvas": "#f5ecdc",
+          "sidebar": "#eee2ce",
+          "toolbar": "#fbf4e7",
+          "panel": "#fffbf3",
+          "text": "#3d3025",
+          "mutedText": "#7b6b59",
+          "border": "#d2bfa5"
+        },
+        "dark": {
+          "canvas": "#211c19",
+          "sidebar": "#29221d",
+          "toolbar": "#2d251f",
+          "panel": "#352c25",
+          "text": "#f5e8d3",
+          "mutedText": "#c6b49c",
+          "border": "#63513f"
+        }
+      }
+    }
+  ]
+}

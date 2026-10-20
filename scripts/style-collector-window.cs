@@ -94,6 +94,7 @@ public sealed class AtelierCollectorWindow : Form {
     bool dark = true, fallbackDark = true;
     bool? testSystemDark;
     Color accent = Color.FromArgb(14, 165, 233), borderColor = Color.FromArgb(56, 63, 75), pausedColor = Color.FromArgb(199, 179, 133);
+    Dictionary<string, object> palette;
     bool positionDirty;
     DateTime positionChanged;
     uint sequence;
@@ -173,6 +174,10 @@ public sealed class AtelierCollectorWindow : Form {
         try { using (var key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize")) { var light = key == null ? null : key.GetValue("AppsUseLightTheme"); if (light != null) return Convert.ToInt32(light) == 0; } } catch { }
         return fallbackDark;
     }
+    static Color PaletteColor(Dictionary<string, object> colors, string key, Color fallback) {
+        string color = Str(colors, key);
+        return Regex.IsMatch(color, @"^#[0-9a-fA-F]{6}$") ? ColorTranslator.FromHtml(color) : fallback;
+    }
     void ApplyAppearance(Dictionary<string, object> value) {
         if (value != null) {
             if (value.ContainsKey("labels")) labels = value["labels"] as Dictionary<string, object> ?? labels;
@@ -181,6 +186,7 @@ public sealed class AtelierCollectorWindow : Form {
             if (Regex.IsMatch(color, @"^#[0-9a-fA-F]{6}$")) accent = ColorTranslator.FromHtml(color);
             if (nextMotion == "full" || nextMotion == "reduced" || nextMotion == "off") motion = nextMotion;
             if (value.ContainsKey("isDark")) fallbackDark = Convert.ToBoolean(value["isDark"]);
+            palette = value.ContainsKey("palette") ? value["palette"] as Dictionary<string, object> : null;
         }
         Text = T("Atelier 风格串收集");
         metrics.Labels = new string[]{ T("待处理"), T("已保存"), T("跳过"), T("失败") };
@@ -202,8 +208,16 @@ public sealed class AtelierCollectorWindow : Form {
         metrics.Success = dark ? Color.FromArgb(152, 196, 172) : Color.FromArgb(44, 121, 86);
         metrics.Failure = dark ? Color.FromArgb(222, 153, 157) : Color.FromArgb(175, 65, 77);
         pausedColor = dark ? Color.FromArgb(199, 179, 133) : Color.FromArgb(145, 111, 50);
-        title.ForeColor = metrics.ForeColor = ForeColor; phase.ForeColor = metrics.Muted;
         detail.BackColor = dark ? Color.FromArgb(27, 32, 44) : Color.FromArgb(247, 248, 252);
+        var modePalette = palette != null && palette.ContainsKey(dark ? "dark" : "light") ? palette[dark ? "dark" : "light"] as Dictionary<string, object> : null;
+        if (modePalette != null) {
+            BackColor = PaletteColor(modePalette, "panel", BackColor);
+            ForeColor = PaletteColor(modePalette, "text", ForeColor);
+            borderColor = PaletteColor(modePalette, "border", borderColor);
+            metrics.Muted = PaletteColor(modePalette, "mutedText", metrics.Muted);
+            detail.BackColor = PaletteColor(modePalette, "canvas", detail.BackColor);
+        }
+        title.ForeColor = metrics.ForeColor = ForeColor; phase.ForeColor = metrics.Muted;
         detail.ForeColor = latestFailed ? metrics.Failure : detail.Text.StartsWith(T("已保存：")) ? metrics.Success : metrics.Muted;
         failureHint.ForeColor = metrics.Failure;
         foreach (var button in new Button[]{ pause, collapse, finish }) {

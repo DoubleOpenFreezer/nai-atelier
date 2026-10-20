@@ -282,5 +282,12 @@ test('appearance is remembered before startup and updates one active listener wi
   assert.equal(h.manager.state().session, before.session); assert.equal(h.manager.state().saved, before.saved); assert.equal(updates.at(-1).appearance.themeMode, 'dark');
   await assert.rejects(h.manager.command('appearance', { ...light, accentColor: 'red' }), /外观设置无效/);
   assert.equal(h.manager.state().appearance.themeMode, 'dark');
+  const palette = { light: { panel: '#fff4dd', text: '#362415' }, dark: { panel: '#352c25' } };
+  await h.manager.command('appearance', { ...light, palette });
+  assert.deepEqual(h.manager.state().appearance.palette, palette);
+  await assert.rejects(h.manager.command('appearance', { ...light, palette: { light: { panel: 'url(https://example.invalid)' } } }), /外观配色无效/);
+  assert.deepEqual(h.manager.state().appearance.palette, palette);
+  await h.manager.command('appearance', { themeMode: 'dark', isDark: true, accentColor: '#0ea5e9', motion: 'full' });
+  assert.equal(h.manager.state().appearance.palette, undefined);
   await h.manager.command('stop'); await h.manager.command('start'); assert.equal(initial.themeMode, 'dark'); await h.manager.command('stop');
 });

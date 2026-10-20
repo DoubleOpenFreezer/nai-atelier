@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
 import {
   DEFAULT_APPEARANCE_PREFERENCES,
   DEFAULT_GENERATION_MEMORY_PREFERENCES,
@@ -9,6 +10,11 @@ import {
   parseAppearancePresetsFromJson,
   saveAppearancePreferences,
   validateAppearancePreset,
+  appearanceMatchesPreset,
+  appearanceValues,
+  BUILTIN_APPEARANCE_PRESET,
+  readAppearancePresetImport,
+  serializeAppearancePresets,
 } from '../../services/appearancePreferences';
 
 const localStorageValues = new Map<string, string>();
@@ -22,6 +28,11 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('appearance preferences', () => {
+  it('随工程交付的暖纸示例可以直接导入并完整往返', () => {
+    const presets = readAppearancePresetImport(readFileSync('public/themes/warm-paper.json', 'utf8'));
+    expect(presets[0].palette).toMatchObject({ light: { canvas: '#f5ecdc' }, dark: { panel: '#352c25' } });
+    expect(readAppearancePresetImport(serializeAppearancePresets(presets))).toEqual(presets);
+  });
   it('外观预设只保存主题效果，保存恢复不改图库全局与页面覆盖', () => {
     const display = JSON.stringify({ layout: 'masonry', columns: 2, desktopColumns: 5, pages: { artists: { layout: 'square', columns: 1, desktopColumns: 3 } } });
     localStorageValues.set('nai_mobile_image_display', display);
@@ -275,12 +286,12 @@ describe('appearance preferences', () => {
     const arrayJson = JSON.stringify([
       { name: '预设 1', accentColor: '#0ea5e9' },
       { name: '预设 2', accentColor: '#e11d48' },
-      { invalid: true },
     ]);
     const parsedArray = parseAppearancePresetsFromJson(arrayJson);
     expect(parsedArray).toHaveLength(2);
     expect(parsedArray[0].name).toBe('预设 1');
     expect(parsedArray[1].name).toBe('预设 2');
+    expect(() => readAppearancePresetImport('[{"name":"有效主题"},{"invalid":true}]')).toThrow('主题名称');
 
     const wrappedJson = JSON.stringify({
       presets: [
@@ -303,5 +314,44 @@ describe('appearance preferences', () => {
     expect(normalized.customPresets[0].id).toBe('custom-1');
     expect(normalized.customPresets[0].name).toBe('我的预设');
     expect(normalized.activePresetId).toBe('custom-1');
+  });
+
+  it('默认主题和新配色导出后均能重新导入，文件不携带内置锁或生图偏好', () => {
+    const palette = { light: { canvas: '#fff4dd' }, dark: { text: '#f5e8d3' } };
+    const current = { ...DEFAULT_APPEARANCE_PREFERENCES, palette };
+    const preset = { ...BUILTIN_APPEARANCE_PRESET, ...appearanceValues(current) };
+    const json = serializeAppearancePresets([preset]);
+    expect(JSON.parse(json).version).toBe(2);
+    expect(json).not.toMatch(/isBuiltin|generationMemory|labPageLayouts/);
+    const imported = readAppearancePresetImport(json)[0];
+    expect(imported.palette).toEqual(palette);
+    expect(appearanceMatchesPreset(current, imported)).toBe(true);
+    saveAppearancePreferences({ ...current, customPresets: [imported] });
+    expect(loadAppearancePreferences().palette).toEqual(palette);
+    expect(loadAppearancePreferences().customPresets[0].palette).toEqual(palette);
+    expect(readAppearancePresetImport(JSON.stringify([BUILTIN_APPEARANCE_PRESET]))[0].isBuiltin).toBeUndefined();
+  });
+
+  it('修改外观才标为修改，非外观偏好不影响主题身份，配色键顺序不影响比较', () => {
+    expect(appearanceMatchesPreset(DEFAULT_APPEARANCE_PREFERENCES, BUILTIN_APPEARANCE_PRESET)).toBe(true);
+    expect(appearanceMatchesPreset({ ...DEFAULT_APPEARANCE_PREFERENCES, forceEmptySeed: true }, BUILTIN_APPEARANCE_PRESET)).toBe(true);
+    expect(appearanceMatchesPreset({ ...DEFAULT_APPEARANCE_PREFERENCES, accentColor: '#ffffff' }, BUILTIN_APPEARANCE_PRESET)).toBe(false);
+    expect(appearanceMatchesPreset({ ...DEFAULT_APPEARANCE_PREFERENCES, themeMode: 'light' }, BUILTIN_APPEARANCE_PRESET)).toBe(false);
+    expect(appearanceMatchesPreset({ ...DEFAULT_APPEARANCE_PREFERENCES, palette: { light: { panel: '#ffffff', text: '#112233' } } }, { ...BUILTIN_APPEARANCE_PRESET, palette: { light: { text: '#112233', panel: '#ffffff' } } })).toBe(true);
+  });
+
+  it('旧格式兼容；未知版本、无效选项和未支持的美化字段明确拒绝', () => {
+    expect(readAppearancePresetImport('{"version":1,"presets":[{"name":"旧主题"}]}')[0].accentColor).toBe('#0ea5e9');
+    for (const input of [
+      { version: 999, presets: [{ name: '未来主题' }] },
+      { version: 2, customCss: 'body{}', presets: [{ name: '不支持的样式' }] },
+      { name: '无效颜色', accentColor: 'red' },
+      { name: '无效选项', corners: 'round' },
+      { name: '自定义代码', customCss: 'body{}' },
+      { name: '自定义配色', palette: { light: { unknown: '#ffffff' } } },
+      { name: '无效配色', palette: { light: { panel: 'url(https://example.invalid)' } } },
+      { name: '错误模式', palette: { system: { panel: '#ffffff' } } },
+      { version: 2, presets: [] },
+    ]) expect(() => readAppearancePresetImport(JSON.stringify(input))).toThrow();
   });
 });

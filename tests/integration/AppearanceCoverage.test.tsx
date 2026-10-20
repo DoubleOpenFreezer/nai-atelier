@@ -63,6 +63,16 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); localStorage.clear(); applyAppearancePreferences(DEFAULT_APPEARANCE_PREFERENCES, false); });
 
 describe('全局外观覆盖审计', () => {
+  it('强调色控件和文字使用可读前景色，自定义面板接管白底但不改语义色与图片遮罩', () => {
+    expect(declarations("html[data-design-theme='nai-atelier'] :is(.bg-indigo-600, .bg-violet-600).text-white").color).toBe('var(--nai-on-accent-600)');
+    expect(declarations("html[data-design-theme='nai-atelier'] :is([class~='hover:bg-indigo-500'], [class~='hover:bg-violet-500']).text-white:hover:not(:disabled)").color).toBe('var(--nai-on-accent-500)');
+    expect(declarations("html[data-design-theme='nai-atelier'].dark :where([class~='dark:text-indigo-300'], [class~='dark:text-violet-300'])").color).toBe('var(--nai-accent-text-300)');
+    const surface = readFileSync(resolve('components/AgentSurface.css'), 'utf8');
+    expect(surface).toContain('color: var(--nai-on-accent, white)');
+    expect(css).toContain("html[data-custom-palette='true']:not(.dark)");
+    expect(css).not.toContain('.bg-red-600.text-white');
+    expect(css).not.toContain("[class~='bg-white/10']");
+  });
   it('Agent 侧栏保留桌面让位，但任何动效时长都不再让整个工作区逐帧改变宽度', () => {
     expect(declarations('.agent-stage')['transition-property']).toBe('none');
     const docked = '.agent-panel-docked .agent-stage';

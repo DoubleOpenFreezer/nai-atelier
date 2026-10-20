@@ -58,6 +58,14 @@ test('Windows native window protocol, pause baselines, screen clamp, topmost and
   const lightWindow = events.filter(e => e.type === 'window').at(-1);
   assert.deepEqual(lightWindow.appearance, { themeMode: 'light', dark: false, accent: '#8B5CF6', background: '#FFFFFF', foreground: '#171E2D', muted: '#6F7A90', failure: '#AF414D', motion: 'off' });
   assert.equal(lightWindow.failureHint, true); assert.equal(lightWindow.failureTooltip, longDetail); assert.equal(lightWindow.detailTooltip, ''); assert.equal(lightWindow.foreground, false);
+  const paperState = { saved: 0, paused: false, stage: '等待复制图片链接', pending: 0, skipped: 0, failed: 1, detail: longDetail };
+  send('state', { state: { ...paperState, appearance: { ...appearance, palette: { light: { panel: '#fff4dd', text: '#362415', mutedText: '#7b6b59', border: '#a08060' } } } }, id: 'paper-theme' });
+  await until(() => events.some(e => e.id === 'paper-theme'));
+  const paper = events.filter(e => e.type === 'window').at(-1).appearance;
+  assert.equal(paper.background, '#FFF4DD'); assert.equal(paper.foreground, '#362415'); assert.equal(paper.muted, '#7B6B59');
+  send('state', { state: { ...paperState, appearance }, id: 'reset-paper' });
+  await until(() => events.some(e => e.id === 'reset-paper'));
+  assert.equal(events.filter(e => e.type === 'window').at(-1).appearance.background, '#FFFFFF');
   send('collapse', { id: 'expand-light' }); await until(() => events.some(e => e.id === 'expand-light'));
   assert.equal(events.filter(e => e.type === 'window').at(-1).detailTooltip, longDetail);
   send('collapse', { id: 'collapse-light' }); await until(() => events.some(e => e.id === 'collapse-light'));

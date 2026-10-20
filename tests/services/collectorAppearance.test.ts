@@ -38,6 +38,15 @@ describe('悬浮窗外观同步', () => {
     expect(fetchMock).toHaveBeenCalledTimes(5);
     expect(fetchMock.mock.calls.every(call => call[0] === '/api/style-collector/appearance')).toBe(true);
   });
+  it('明暗配色同步到小窗，恢复默认时不残留上一主题', async () => {
+    const palette = { light: { panel: '#fff4dd', text: '#362415' }, dark: { panel: '#352c25' } };
+    const view = renderHook(({ preferences }) => useCollectorAppearance(preferences, false), { initialProps: { preferences: { ...DEFAULT_APPEARANCE_PREFERENCES, palette } as typeof DEFAULT_APPEARANCE_PREFERENCES } });
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).palette).toEqual(palette);
+    view.rerender({ preferences: DEFAULT_APPEARANCE_PREFERENCES });
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).not.toHaveProperty('palette');
+  });
   it('快速调色串行提交并合并中间值，最后的颜色不会被旧请求覆盖', async () => {
     let release!: () => void;
     fetchMock.mockImplementationOnce(() => new Promise(resolve => { release = () => resolve({ ok: true }); }));
