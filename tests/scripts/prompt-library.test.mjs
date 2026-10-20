@@ -80,3 +80,15 @@ test('Android 共用的真实路由无需额外全局函数，设置读取、保
   assert.equal((await invoke(directEndpoint, 'POST', { enabled: true })).status, 405);
   assert.equal(service.publicConfig().creativeDirect, false);
 });
+
+test('六类库分类都可生成系统提示（表情状态 / 镜头画面不再被拒）', async t => {
+  const root = createWorkspace('prompt-library-kinds-'); t.after(() => removeWorkspace(root));
+  const service = new library.PromptAgentService({ lanSecret: 'synthetic', configFile: root });
+  for (const kind of ['appearance', 'wardrobe', 'pose', 'expression', 'scene', 'camera']) {
+    const preview = service.previewLibrarySystemPrompt({ kind });
+    assert.equal(preview.kind, kind);
+    assert.ok(preview.systemPrompt.length > 200, kind + ' 的系统提示过短');
+  }
+  /* previewLibrarySystemPrompt 是同步方法：用 throws 断言，而不是 rejects */
+  assert.throws(() => service.previewLibrarySystemPrompt({ kind: 'not-a-kind' }), /分类无效/);
+});
