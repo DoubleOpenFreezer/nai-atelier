@@ -13,6 +13,8 @@ const SECTION_FIELDS: { key: keyof PromptSections; label: string; library: Promp
     { key: 'appearance', label: '人物', library: 'appearance', placeholder: '外貌特征，如发色、瞳色与体型' },
     { key: 'wardrobe', label: '服饰', library: 'wardrobe', placeholder: '服装、鞋袜与配饰' },
     { key: 'pose', label: '姿势', library: 'pose', placeholder: '姿态、动作与视角' },
+    { key: 'scene', label: '场景', library: 'scene', placeholder: '地点、时间、天气与氛围' },
+    { key: 'camera', label: '镜头', library: 'camera', placeholder: '景别、视角、构图与成像效果' },
     { key: 'extra', label: '补充', library: 'scene', placeholder: '人数、场景、构图与光线等补充' },
 ];
 

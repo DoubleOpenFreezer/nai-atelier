@@ -20141,5 +20141,8 @@
   "景深": ["景深","Depth of field","被写界深度","심도"],
   "画面倾斜": ["画面倾斜","Tilt","画面の傾き","화면 기울기"],
   "清晰度": ["清晰度","Clarity","鮮明さ","선명도"],
-  "成像效果": ["成像效果","Imaging effect","描写効果","묘사 효과"]
+  "成像效果": ["成像效果","Imaging effect","描写効果","묘사 효과"],
+  "地点、时间、天气与氛围": ["地点、时间、天气与氛围","Place, time, weather and mood","場所・時間・天気・雰囲気","장소, 시간, 날씨, 분위기"],
+  "景别、视角、构图与成像效果": ["景别、视角、构图与成像效果","Shot size, angle, composition and imaging effect","ショットサイズ・アングル・構図・描写効果","샷 크기, 앵글, 구도, 묘사 효과"],
+  "角色四类写进目标角色的提示词；场景与镜头各写自己的一栏。画师串、风格负面与生图参数不会改动。": ["角色四类写进目标角色的提示词；场景与镜头各写自己的一栏。画师串、风格负面与生图参数不会改动。","The four character kinds go into the target role's prompt; scene and camera each get their own column. Artist tags, style negatives and generation parameters are untouched.","キャラクター4種は対象ロールのプロンプトへ、シーンとカメラはそれぞれの欄へ書き込みます。画風タグ・スタイルのネガティブ・生成パラメータは変更しません。","캐릭터 4종은 대상 역할의 프롬프트로, 장면과 카메라는 각자의 칸에 기록합니다. 화풍 태그, 스타일 네거티브, 생성 파라미터는 변경하지 않습니다."]
 }

@@ -38,6 +38,8 @@ export const normalizePromptSections = (sections?: Partial<PromptSections> | nul
         appearance: String(sections.appearance ?? ''),
         wardrobe: String(sections.wardrobe ?? ''),
         pose: String(sections.pose ?? ''),
+        scene: String(sections.scene ?? ''),
+        camera: String(sections.camera ?? ''),
         extra: String(sections.extra ?? ''),
     };
     return Object.values(next).some(value => String(value).trim()) ? next : undefined;
@@ -48,6 +50,8 @@ export const mergePromptSections = (sections?: Partial<PromptSections> | null): 
     sections?.appearance,
     sections?.wardrobe,
     sections?.pose,
+    sections?.scene,
+    sections?.camera,
     sections?.extra,
 ].map(value => String(value || '').trim()).filter(Boolean).join(', ');
 
@@ -55,7 +59,7 @@ export const mergePromptSections = (sections?: Partial<PromptSections> | null): 
 export const resolvePromptSections = (sections: PromptSections | null | undefined, subject: string): PromptSections => {
     const normalized = normalizePromptSections(sections);
     return normalized && mergePromptSections(normalized) === subject.trim()
-        ? normalized : { appearance: '', wardrobe: '', pose: '', extra: subject };
+        ? normalized : { appearance: '', wardrobe: '', pose: '', scene: '', camera: '', extra: subject };
 };
 
 export const normalizeParams = (params?: Partial<NAIParams> | null): NAIParams => {

@@ -143,6 +143,10 @@ export interface PromptSections {
   appearance?: string;
   wardrobe?: string;
   pose?: string;
+  /** 场景环境（独立栏位；早期版本并进 extra） */
+  scene?: string;
+  /** 镜头画面（独立栏位；早期版本并进 extra） */
+  camera?: string;
   extra?: string;
 }
 

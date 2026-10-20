@@ -362,7 +362,7 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ acti
               </label>
             </div>
             <p className="mt-1 text-[11px] leading-4 text-gray-400">
-              {t('角色四类写进目标角色的提示词；场景与镜头写进「补充」栏。画师串、风格负面与生图参数不会改动。')}
+              {t('角色四类写进目标角色的提示词；场景与镜头各写自己的一栏。画师串、风格负面与生图参数不会改动。')}
             </p>
             {confirming && plan ? (
               <div className="mt-2 space-y-1" data-content-roll-apply-preview="true">

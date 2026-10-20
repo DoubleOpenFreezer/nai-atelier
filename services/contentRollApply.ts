@@ -35,8 +35,10 @@ export interface ContentRollApplyPlan {
   rows: ContentRollApplyRow[];
   /** 角色四类拼好的文本（写入目标角色 prompt） */
   characterText: string;
-  /** 场景 + 镜头拼好的文本（写入 _promptSections.extra） */
+  /** 场景 + 镜头拼好的文本（兼容旧调用，= globalSections.scene + camera） */
   globalText: string;
+  /** 场景 / 镜头按栏位分好的文本（写入 _promptSections.scene / .camera） */
+  globalSections: Record<string, string>;
   /** 实际会改动的落点：character / extra */
   written: string[];
   /** 未提供内容的栏位（保持原值），用于界面说明 */
@@ -87,9 +89,11 @@ export const planContentRollApply = (
   const characters = characterParamsOf(safeParams);
   const existing = target.mode === 'existing' ? characters.find(item => String(item.id) === String(target.id)) : null;
   const currentCharacter = existing ? String(existing.prompt || '') : '';
-  const currentExtra = String((safeParams._promptSections?.extra) || '');
+  const sectionsOf = (safeParams._promptSections || {}) as Record<string, unknown>;
+  const currentSection = (key: string) => String(sectionsOf[key] || '');
   const characterParts: string[] = [];
   const globalParts: string[] = [];
+  const globalSections: Record<string, string> = {};
   const rows: ContentRollApplyRow[] = [];
   const written: string[] = [];
   const kept: string[] = [];
@@ -99,11 +103,11 @@ export const planContentRollApply = (
     const row = picks[kind];
     const next = textOfRow(row);
     const isGlobal = meta.scope === 'global';
-    const current = isGlobal ? currentExtra : currentCharacter;
+    const current = isGlobal ? currentSection(kind) : currentCharacter;
     const action: 'replace' | 'keep' = next ? 'replace' : 'keep';
     if (next) {
       written.push(kind);
-      if (isGlobal) globalParts.push(next);
+      if (isGlobal) { globalParts.push(next); globalSections[kind] = next; }
       else characterParts.push(next);
     } else {
       kept.push(kind);
@@ -120,6 +124,7 @@ export const planContentRollApply = (
     rows,
     characterText: joinTags(characterParts),
     globalText: joinTags(globalParts),
+    globalSections,
     written,
     kept,
   };
@@ -165,11 +170,13 @@ export const applyContentRollToParams = (
   }
   if (characters.length) next.characters = characters;
 
-  if (plan.globalText) {
+  /* 场景 / 镜头各自写自己的栏位；补充栏（extra）不再被占用 */
+  const globalSections = plan.globalSections || {};
+  if (globalSections.scene || globalSections.camera) {
     const sections: PromptSections = { ...(before._promptSections || {}) };
-    sections.extra = plan.globalText;
+    if (globalSections.scene) { sections.scene = globalSections.scene; written.push('scene'); }
+    if (globalSections.camera) { sections.camera = globalSections.camera; written.push('camera'); }
     next._promptSections = sections;
-    written.push('extra');
   }
 
   return { params: next, undoParams: before, createdRoleId, written };

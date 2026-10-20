@@ -24,7 +24,7 @@ const picks = {
 const baseParams = (): NAIParams => ({
   width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler_ancestral',
   seed: 12345, characters: [{ id: 'c1', prompt: 'old_role_text', x: 0.5, y: 0.5 }],
-  _promptSections: { appearance: 'keep_me', wardrobe: '', pose: '', extra: 'old_extra' },
+  _promptSections: { appearance: 'keep_me', wardrobe: '', pose: '', scene: 'old_scene', camera: 'old_camera', extra: 'old_extra' },
 } as unknown as NAIParams);
 
 describe('一键 Roll → 实验室：组计划', () => {
@@ -45,6 +45,7 @@ describe('一键 Roll → 实验室：组计划', () => {
     );
     expect(plan.characterText).toBe('blonde_hair, smile, white_dress');
     expect(plan.globalText).toBe('rain, night, close_up');
+    expect(plan.globalSections).toEqual({ scene: 'rain, night', camera: 'close_up' });
   });
 
   it('计划里带出每一栏的当前值，界面可直接显示「当前 → 将填入」', () => {
@@ -52,7 +53,7 @@ describe('一键 Roll → 实验室：组计划', () => {
     const appearance = plan.rows.find(item => item.kind === 'appearance');
     const scene = plan.rows.find(item => item.kind === 'scene');
     expect(appearance?.current).toBe('old_role_text');
-    expect(scene?.current).toBe('old_extra');
+    expect(scene?.current).toBe('old_scene');
   });
 
   it('没有目标角色时按「新建角色」规划', () => {
@@ -71,7 +72,10 @@ describe('一键 Roll → 实验室：写值与撤销', () => {
     const plan = planContentRollApply(picks, params, { mode: 'existing', id: 'c1' });
     const { params: next, written } = applyContentRollToParams(params, plan, createId);
     expect(next.characters?.[0].prompt).toBe('blonde_hair, blue_eyes, white_dress, smile');
-    expect(next._promptSections?.extra).toBe('rain, night, close_up');
+    /* 场景与镜头各自写自己的栏位（不再是并进「补充」栏） */
+    expect(next._promptSections?.scene).toBe('rain, night');
+    expect(next._promptSections?.camera).toBe('close_up');
+    expect(next._promptSections?.extra).toBe('old_extra');
     /* 其它分区栏位保持原样，不被顺手清空 */
     expect(next._promptSections?.appearance).toBe('keep_me');
     /* 生成参数与角色几何不动 */
@@ -80,7 +84,8 @@ describe('一键 Roll → 实验室：写值与撤销', () => {
     expect(next.seed).toBe(12345);
     expect(next.characters?.[0].x).toBe(0.5);
     expect(written).toContain('character:c1');
-    expect(written).toContain('extra');
+    expect(written).toContain('scene');
+    expect(written).toContain('camera');
   });
 
   it('新建角色时把内容写在新区间，不影响已有角色', () => {
