@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { CustomProviderForm } from '../../components/PromptAgentSettings';
 import { mergePromptAgentModelCapabilities, previewPromptAgentEndpoint, type PromptAgentCustomModel, type PromptAgentCustomProvider } from '../../services/promptAgent';
+import { AGENT_PROVIDER_PRESETS } from '../../services/agentProviders';
 
 afterEach(cleanup);
 it('新连接只外露地址和 Key，名称与协议折叠，没有供应商选择或付费自动调用', () => {
@@ -87,4 +88,30 @@ it('保存默认不选用，测试模型和图片用途显式选择，发现列�
   expect(screen.getByLabelText('图片输入能力 a').closest('label')?.title).toBe('未知');
   expect(screen.getByLabelText('推理能力 a').closest('label')?.title).toBe('名称推断');
   expect(screen.getByText('图片能力未知，请手动确认。')).toBeTruthy();
+});
+
+it('第三方提供商标签选择预设、填入密钥后交给保存流程，自定义标签保留原表单', () => {
+  const onSavePreset = vi.fn();
+  render(<CustomProviderForm value={{ name: '', baseUrl: '', api: 'openai-completions', models: [] }} onChange={() => {}} discovered={[]} busy={false} onTest={() => {}} onFetch={() => {}} onSave={() => {}} presets={[{ id: 'openai', name: 'OpenAI', baseUrl: 'https://api.openai.com/v1', api: 'openai-completions' }]} onSavePreset={onSavePreset} />);
+  expect(screen.getByRole('tab', { name: '第三方模型提供商' }).getAttribute('aria-selected')).toBe('true');
+  expect(screen.getByText('接口地址：https://api.openai.com/v1')).toBeTruthy();
+  fireEvent.change(screen.getByLabelText(/API 密钥/), { target: { value: 'sk-synthetic' } });
+  fireEvent.click(screen.getByRole('button', { name: '保存连接' }));
+  expect(onSavePreset).toHaveBeenCalledWith({ id: 'openai', name: 'OpenAI', baseUrl: 'https://api.openai.com/v1', api: 'openai-completions' }, 'sk-synthetic');
+  fireEvent.click(screen.getByRole('tab', { name: '自定义模型 API' }));
+  expect(screen.getByLabelText('API 地址')).toBeTruthy();
+  expect(screen.getByRole('button', { name: '获取模型' })).toBeTruthy();
+});
+
+it('内置提供商预设包含 DeepSeek 等常见服务且 ID 唯一', () => {
+  const ids = AGENT_PROVIDER_PRESETS.map(item => item.id);
+  expect(ids).toContain('deepseek');
+  expect(ids).toContain('openai');
+  expect(ids).toContain('anthropic');
+  expect(ids.length).toBeGreaterThanOrEqual(20);
+  expect(new Set(ids).size).toBe(ids.length);
+  for (const item of AGENT_PROVIDER_PRESETS) {
+    expect(item.baseUrl).toMatch(/^https:\/\//);
+    expect(['openai-completions', 'openai-responses', 'anthropic-messages']).toContain(item.api);
+  }
 });

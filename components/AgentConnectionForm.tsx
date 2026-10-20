@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import { Eye, EyeOff, Plus, Trash2 } from 'lucide-react';
 import { AGENT_THINKING_LEVELS, AGENT_THINKING_LABELS, createAgentThinkingMap } from '../services/agentThinking.mjs';
 import { previewPromptAgentEndpoint, type PromptAgentCustomProvider, type PromptAgentProbeResult } from '../services/promptAgent';
+import { AGENT_PROVIDER_PRESETS, type AgentProviderPreset } from '../services/agentProviders';
 
 const sourceName = (source?: string) => ({ manual: '人工', metadata: '接口声明', official_docs: '官方文档', pi_catalog: '模型目录', model_name: '名称推断', unknown: '未知', fallback: '兼容选项，接口未声明' } as Record<string, string>)[source || 'unknown'] || '未知';
 const inputStyle = 'mobile-touch w-full rounded-xl border border-gray-300 bg-gray-50 px-3 text-sm outline-none focus:border-indigo-500 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100 dark:focus:border-indigo-400';
@@ -13,9 +14,16 @@ export const AgentConnectionForm: React.FC<{
   value: PromptAgentCustomProvider; onChange: (value: PromptAgentCustomProvider) => void;
   busy: boolean; onTest: () => void; onFetch: () => void; onSave: () => void;
   result?: PromptAgentProbeResult | null; discovered?: ConnectionModel[];
-}> = ({ value, onChange, busy, onTest, onFetch, onSave, result, discovered = [] }) => {
+  presets?: AgentProviderPreset[];
+  onSavePreset?: (preset: AgentProviderPreset, apiKey: string) => void;
+}> = ({ value, onChange, busy, onTest, onFetch, onSave, result, discovered = [], presets = AGENT_PROVIDER_PRESETS, onSavePreset }) => {
   useLanguage();
   const [search, setSearch] = useState(''), [showKey, setShowKey] = useState(false);
+  const presetEnabled = Boolean(onSavePreset) && presets.length > 0;
+  const [tab, setTab] = useState<'preset' | 'custom'>(presetEnabled && !value.id ? 'preset' : 'custom');
+  const [presetId, setPresetId] = useState(presets[0]?.id || '');
+  const [presetKey, setPresetKey] = useState('');
+  const preset = presets.find(item => item.id === presetId);
   const patchModel = (index: number, patch: Partial<ConnectionModel>) => onChange({ ...value, models: value.models.map((model, i) => i === index ? { ...model, ...patch } : model) });
   const updateId = (index: number, id: string) => {
     const current = value.models[index];
@@ -35,7 +43,23 @@ export const AgentConnectionForm: React.FC<{
   const matched = discovered.filter(model => `${model.id} ${model.name || ''}`.toLowerCase().includes(search.toLowerCase()));
   return <div className="min-h-0 flex-1 overflow-y-auto py-3">
     <div className="agent-theme appearance-panel mx-auto max-w-xl rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900 md:p-5">
-      <fieldset disabled={busy} className="space-y-4">
+      {presetEnabled && <div role="tablist" aria-label={t("API 连接方式")} className="mb-4 flex gap-1 rounded-xl bg-gray-100 p-1 dark:bg-gray-800">
+        {(['preset', 'custom'] as const).map(mode => <button key={mode} type="button" role="tab" aria-selected={tab === mode} onClick={() => setTab(mode)} className={tab === mode ? 'flex-1 rounded-lg bg-white px-3 py-2 text-sm font-medium text-gray-900 shadow-sm dark:bg-gray-900 dark:text-white' : 'flex-1 rounded-lg px-3 py-2 text-sm text-gray-500 dark:text-gray-400'}>{mode === 'preset' ? t("第三方模型提供商") : t("自定义模型 API")}</button>)}
+      </div>}
+      {presetEnabled && tab === 'preset' ? <div className="space-y-4">
+        <label className="block text-sm text-gray-700 dark:text-gray-200">{t("提供商")}
+          <select value={presetId} onChange={event => setPresetId(event.target.value)} className={`mt-1 ${inputStyle}`}>
+            {presets.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+          </select>
+        </label>
+        <label className="block text-sm text-gray-700 dark:text-gray-200">{t("API 密钥")}
+          <input type="password" value={presetKey} onChange={event => setPresetKey(event.target.value)} placeholder={t("填写 API 密钥")} autoComplete="new-password" className={`mt-1 font-mono ${inputStyle}`} />
+        </label>
+        {preset && <p className="break-all text-micro text-gray-500 dark:text-gray-400">{t("接口地址：{0}", [preset.baseUrl])}</p>}
+        <p className="text-micro text-gray-500 dark:text-gray-400">{t("保存后自动获取模型并选择首个模型，可在编辑中调整。")}</p>
+        <button type="button" disabled={!preset || !presetKey.trim() || busy} onClick={() => preset && onSavePreset?.(preset, presetKey)} className="mobile-touch w-full rounded-xl bg-emerald-600 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-40">{busy ? t("正在连接…") : t("保存连接")}</button>
+        <p className="text-micro text-gray-500 dark:text-gray-400">{t("Key 加密保存在本机")}</p>
+      </div> : <fieldset disabled={busy} className="space-y-4">
         <label className="block text-sm text-gray-700 dark:text-gray-200">{t("API 地址")}<input autoFocus value={value.baseUrl} onChange={event => onChange({ ...value, baseUrl: event.target.value })} placeholder="https://api.example.com/v1" className={`mt-1 font-mono ${inputStyle}`} /></label>
         <label className="block text-sm text-gray-700 dark:text-gray-200">API Key<span className="mt-1 flex gap-2"><input value={value.apiKey || ''} type={showKey ? 'text' : 'password'} onChange={event => onChange({ ...value, apiKey: event.target.value })} placeholder={value.id ? t("留空保留已保存的 Key") : t("填写 Key，本机无鉴权服务可留空")} autoComplete="new-password" className={`min-w-0 flex-1 font-mono ${inputStyle}`} /><button type="button" aria-label={showKey ? t("隐藏 API Key") : t("显示 API Key")} onClick={() => setShowKey(!showKey)} className="mobile-touch shrink-0 rounded-xl px-3 text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800">{showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button></span></label>
         <button type="button" disabled={busy || !value.baseUrl.trim()} onClick={onFetch} className="mobile-touch w-full rounded-xl border border-indigo-300 text-sm font-medium text-indigo-600 hover:bg-indigo-50 disabled:opacity-40 dark:border-indigo-800 dark:text-indigo-300 dark:hover:bg-indigo-950/40">{busy ? t("正在连接…") : t("获取模型")}</button>
@@ -76,7 +100,7 @@ export const AgentConnectionForm: React.FC<{
         {result && <div role="status" className={`rounded-xl p-3 text-xs ${result.ok ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300' : 'bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300'}`}>{t(result.message)}<div className="mt-1">{Object.entries(result.checks || {}).map(([key, state]) => <span key={key} className="mr-2">{({ text: t("文本"), tools: t("工具"), image: t("图片"), network: t("网络"), auth: t("鉴权"), protocol: t("协议") } as Record<string, string>)[key]}：{({ passed: t("通过"), failed: t("未通过"), not_tested: t("未测"), accepted: t("请求已接受") } as Record<string, string>)[state] || state}</span>)}</div>{result.usage?.length ? <div className="mt-1">{t("本次测试 {0} · {1} tokens", [result.model, result.usage.reduce((sum, usage) => sum + usage.totalTokens, 0).toLocaleString(getLanguage())])}</div> : null}</div>}
         <button type="button" disabled={!ready || busy || value.models.some(model => model.reasoning && model.thinkingLevels?.length === 0)} onClick={onSave} className="mobile-touch w-full rounded-xl bg-emerald-600 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-40">{t("保存连接")}</button>
         <p className="text-micro text-gray-500 dark:text-gray-400">{t("Key 加密保存在本机")}</p>
-      </fieldset>
+      </fieldset>}
     </div>
   </div>;
 };

@@ -18,7 +18,7 @@ import { readFileSync } from 'node:fs';
 import { appendFile, mkdir, readFile, readdir, rename, stat, unlink, writeFile } from 'fs/promises';
 import { validateAgentWebTarget, fetchAgentWebPage } from './agent-web.mjs';
 import { dirname, join } from 'path';
-import { getGlobalDispatcher, ProxyAgent, setGlobalDispatcher } from 'undici';
+import { fetch as undiciFetch, getGlobalDispatcher, ProxyAgent, setGlobalDispatcher } from 'undici';
 import { getNovelAiModelProfile, readNovelAiOfficialKnowledge, searchNovelAiOfficialKnowledge } from './novelai-agent-knowledge.mjs';
 import { normalizeTransparentWeight, TRANSPARENT_WEIGHT_MIN, TRANSPARENT_WEIGHT_MAX } from '../services/transparentBackground.mjs';
 import { AGENT_THINKING_LEVELS, createAgentThinkingMap, normalizeAgentThinkingLevels, normalizeAgentThinkingMap } from '../services/agentThinking.mjs';
@@ -160,6 +160,8 @@ const stripHtml = value => decodeHtml(String(value || '')
   .replace(/\n{3,}/g, '\n\n')
   .trim();
 
+const urlHost = value => { try { return new URL(String(value)).hostname.toLowerCase(); } catch { return ''; } };
+
 const normalizeSearchResultUrl = raw => {
   try {
     const parsed = new URL(decodeHtml(raw), 'https://html.duckduckgo.com');
@@ -192,6 +194,42 @@ export const parseWebSearchResponse = (raw, provider = 'duckduckgo', limit = 8) 
     const title = stripHtml(match[2]).slice(0, 300);
     const snippet = snippets[index++] || '';
     if (url && title && !output.some(item => item.url === url)) output.push({ title, url, snippet });
+    if (output.length >= limit) break;
+  }
+  return output;
+};
+
+/** 调用兼容 DeepSeek Search/Fetch 协议的搜索服务；失败、余额不足或限流时返回 null，由调用方回退免费搜索。 */
+export const requestDeepseekTool = async (request, path, body, { key = '', baseUrl = 'https://api.deepseek.com', proxyUrl = '', signal } = {}) => {
+  if (!key) return null;
+  const endpoint = `${String(baseUrl || 'https://api.deepseek.com').replace(/\/+$/, '')}${path}`;
+  const dispatcher = proxyUrl ? new ProxyAgent(proxyUrl) : undefined;
+  const timeout = AbortSignal.timeout(18_000);
+  const bounded = signal ? AbortSignal.any([signal, timeout]) : timeout;
+  try {
+    const response = await request(endpoint, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body || {}),
+      dispatcher,
+      signal: bounded,
+      redirect: 'error',
+    });
+    if (!response.ok) { await response.body?.cancel(); return null; }
+    return await response.json();
+  } catch { return null; }
+  finally { await dispatcher?.destroy(); }
+};
+
+/** 把 DeepSeek Search 结果映射成与免费搜索一致的结构。 */
+export const mapDeepseekSearchResults = (results, limit = 6) => {
+  if (!Array.isArray(results)) return [];
+  const output = [];
+  for (const item of results) {
+    const url = normalizeSearchResultUrl(text(item?.url));
+    const title = text(item?.title).trim().slice(0, 300);
+    if (!url || !title) continue;
+    output.push({ title, url, snippet: text(item?.summary || item?.snippet).trim().slice(0, 800) });
     if (output.length >= limit) break;
   }
   return output;
@@ -1226,7 +1264,7 @@ export class PromptAgentService {
     this.encryptionKey = this.legacyEncryptionKey;
     this.credentialKeyError = '';
     this.credentialWarning = '';
-    this.config = { version: PROMPT_AGENT_CONFIG_VERSION, provider: 'deepseek', model: this.defaultModelFor('deepseek'), encryptedKeys: {}, customProviders: [], unrestrictedRules: '' };
+    this.config = { version: PROMPT_AGENT_CONFIG_VERSION, provider: 'deepseek', model: this.defaultModelFor('deepseek'), encryptedKeys: {}, customProviders: [], unrestrictedRules: '', searchEnabled: false, searchApiBaseUrl: 'https://api.deepseek.com', searchApiKey: '' };
     this.activeAgents = new Map();
     this.startingAgents = new Set();
     this.runs = new Map();
@@ -1256,7 +1294,7 @@ export class PromptAgentService {
     if (!this.configTransaction) await atomicJsonWrite(this.configFilePath(), this.config);
   }
   installConfigTransactions() {
-    const names = ['setPermissionMode', 'setCreativeDirect', 'setCreativeDirectRules', 'saveCustomProvider', 'deleteCustomProvider', 'selectModel', 'loginProvider', 'logoutProvider', 'saveLibraryPrompts'];
+    const names = ['setPermissionMode', 'setCreativeDirect', 'setCreativeDirectRules', 'setSearchApi', 'saveCustomProvider', 'deleteCustomProvider', 'selectModel', 'loginProvider', 'logoutProvider', 'saveLibraryPrompts'];
     for (const name of names) {
       this[name] = (...args) => {
         const next = (this.configWriteTail || Promise.resolve()).catch(() => {}).then(async () => {
@@ -1571,6 +1609,11 @@ export class PromptAgentService {
       creativeDirectRules,
       creativeDirectRulesDefault: UNRESTRICTED_RULES,
       creativeDirectRulesCustom: creativeDirectRules !== UNRESTRICTED_RULES,
+      deepseekSearch: this.config.searchEnabled === true || this.config.deepseekSearch === true,
+      searchEnabled: this.config.searchEnabled === true || this.config.deepseekSearch === true,
+      searchApiBaseUrl: text(this.config.searchApiBaseUrl || 'https://api.deepseek.com'),
+      searchApiKeyConfigured: Boolean(this.searchCredential()),
+      searchApiKeyCustom: Boolean(this.config.searchApiKey),
       runtimeStartedAt: this.runtimeStartedAt,
       backendVersion: LOADED_VERSION,
       sourceVersion: sourceVersion(),
@@ -1604,6 +1647,40 @@ export class PromptAgentService {
     const trimmed = rules.trim();
     if (trimmed.length > 20000) throw Object.assign(new Error('破限规则过长，请控制在 20000 字符以内'), { status: 400 });
     this.config.unrestrictedRules = trimmed;
+    await this.persistConfig();
+    return this.publicConfig();
+  }
+
+  searchCredential() {
+    if (this.config.searchApiKey && typeof this.config.searchApiKey === 'object') {
+      const key = this.decrypt(this.config.searchApiKey);
+      if (key) return key;
+    }
+    const targetHost = urlHost(this.config.searchApiBaseUrl || 'https://api.deepseek.com');
+    for (const providerId of Object.keys(this.config.encryptedKeys || {})) {
+      const provider = PROVIDER_CATALOG.get(providerId) || this.customProviders.get(providerId);
+      if (!provider || urlHost(provider.baseUrl) !== targetHost) continue;
+      const key = this.getCredential(providerId)?.key;
+      if (key) return key;
+    }
+    return '';
+  }
+
+  async setSearchApi({ enabled, baseUrl, apiKey } = {}) {
+    if (typeof enabled !== 'boolean') throw Object.assign(new Error('搜索开关必须是布尔值'), { status: 400 });
+    if (baseUrl !== undefined) {
+      const normalized = text(baseUrl).trim() || 'https://api.deepseek.com';
+      let parsed;
+      try { parsed = new URL(normalized); } catch { throw Object.assign(new Error('搜索服务地址无效'), { status: 400 }); }
+      if (!['https:', 'http:'].includes(parsed.protocol) || parsed.username || parsed.password) throw Object.assign(new Error('搜索服务地址必须是 HTTP(S) 公网地址'), { status: 400 });
+      this.config.searchApiBaseUrl = parsed.href.replace(/\/+$/, '');
+    }
+    this.config.searchEnabled = enabled;
+    if (apiKey !== undefined) {
+      if (typeof apiKey !== 'string') throw Object.assign(new Error('搜索 API Key 必须是字符串'), { status: 400 });
+      const trimmed = apiKey.trim();
+      this.config.searchApiKey = trimmed ? this.encrypt(trimmed) : '';
+    }
     await this.persistConfig();
     return this.publicConfig();
   }
@@ -2574,7 +2651,16 @@ export class PromptAgentService {
     const allowedWebUrls = new Set();
     let webSearchCount = 0;
     let webReadCount = 0;
+    const deepseekTool = (path, body) => {
+      const enabled = this.config.searchEnabled === true || this.config.deepseekSearch === true;
+      const key = enabled ? this.searchCredential() : '';
+      if (!key) return Promise.resolve(null);
+      return requestDeepseekTool(this.deepseekRequest || undiciFetch, path, body, { key, baseUrl: this.config.searchApiBaseUrl || 'https://api.deepseek.com', proxyUrl: this.outboundProxyUrl, signal: project.signal });
+    };
     const searchWeb = async (query, limit) => {
+      const deepseek = await deepseekTool('/v1/tools/search', { query, count: Math.max(limit, 6) });
+      const deepseekResults = mapDeepseekSearchResults(deepseek?.results, limit);
+      if (deepseekResults.length) return { provider: 'deepseek', results: deepseekResults };
       const providers = [
         { id: 'duckduckgo', url: `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}` },
         { id: 'bing', url: `https://www.bing.com/search?format=rss&q=${encodeURIComponent(query)}` },
@@ -2591,6 +2677,11 @@ export class PromptAgentService {
       throw new Error(`网页搜索暂时不可用：${lastError instanceof Error ? lastError.message : '未知错误'}`);
     };
     const readPublicPage = async rawUrl => {
+      const deepseek = await deepseekTool('/v1/tools/fetch', { url: rawUrl });
+      if (typeof deepseek?.content === 'string' && deepseek.content.trim()) {
+        const content = deepseek.content.replace(/\r\n/g, '\n').trim().slice(0, MAX_WEB_PAGE_CHARS);
+        return { url: rawUrl, title: text(deepseek.title).trim().slice(0, 300), content, truncated: content.length >= MAX_WEB_PAGE_CHARS };
+      }
       const page = await fetchAgentWebPage(rawUrl, { signal: project.signal, proxyUrl: this.outboundProxyUrl });
       const html = page.mimeType.includes("html");
       const title = html ? stripHtml(page.text.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] || '').slice(0, 300) : '';

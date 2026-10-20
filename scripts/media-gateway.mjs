@@ -3532,6 +3532,11 @@ const serveDistFile = async (req, res, url) => {
           const body = JSON.parse((await readRequestBody(req, 65536)).toString('utf8') || '{}');
           return sendJson(res, 200, await promptAgent.setCreativeDirectRules(body?.rules));
         }
+        if (url.pathname === '/api/prompt-agent/search-api') {
+          if (req.method !== 'PUT') return sendJson(res, 405, { error: 'Method not allowed' });
+          const body = JSON.parse((await readRequestBody(req, 4096)).toString('utf8') || '{}');
+          return sendJson(res, 200, await promptAgent.setSearchApi({ enabled: body?.enabled, baseUrl: body?.baseUrl, apiKey: body?.apiKey }));
+        }
         if (url.pathname === '/api/prompt-agent/local-image' || url.pathname === '/api/prompt-agent/local-file') {
           if (req.method !== 'GET') return sendJson(res, 405, { error: 'Method not allowed' });
           const scope = await getCloudQueueScope(req);

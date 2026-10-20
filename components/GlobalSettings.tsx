@@ -54,7 +54,7 @@ import {
   ThemeMode,
   validateAppearancePreset,
 } from '../services/appearancePreferences';
-import { ArrowDown, ArrowLeft, ArrowUp, Bot, Check, ChevronRight, Copy, Database, Edit2, ExternalLink, FileDown, FileUp, FolderInput, FolderOutput, GripVertical, KeyRound, Lock, Monitor, Moon, Palette, Plus, RotateCcw, Server, Shield, ShieldCheck, SlidersHorizontal, Smartphone, Sparkles, Sun, Trash2, X } from 'lucide-react';
+import { ArrowDown, ArrowLeft, ArrowUp, Bot, Check, ChevronRight, Copy, Database, Edit2, ExternalLink, Eye, EyeOff, FileDown, FileUp, FolderInput, FolderOutput, GripVertical, KeyRound, Lock, Monitor, Moon, Palette, Plus, RotateCcw, Server, Shield, ShieldCheck, SlidersHorizontal, Smartphone, Sparkles, Sun, Trash2, X } from 'lucide-react';
 
 type SettingsSection = 'appearance' | 'generation' | 'novelai' | 'agent' | 'privacy' | 'maintenance';
 type SettingsPage = 'home' | SettingsSection;
@@ -247,6 +247,9 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
     setActiveSection(initialSection === 'home' ? (isMobile ? 'home' : 'appearance') : initialSection);
     setApiKey(readApiKey());
     setRememberApiKey(getRememberNaiKey());
+    // 每次重新打开设置都回到「脱敏 + 密码框」的默认态，明文回显不跨会话。
+    setRevealedKeyId('');
+    setShowNewKeyValue(false);
     void getNaiRuntimeConfig().then(config => setNaiRuntimeCoefficient(config.imagesPerPercent || 17.3));
     void getCloudQueuePreferences().then(setCloudQueue).catch(() => notify('读取公共队列设置失败', 'error'));
   }, [open, initialSection, isMobile]);
@@ -350,6 +353,9 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
   const [renamingKeyId, setRenamingKeyId] = useState('');
   const [renameValue, setRenameValue] = useState('');
   const [showNewKeyValue, setShowNewKeyValue] = useState(false);
+  // 明文回显只作用于「当前点开的那一条」，同屏最多一把；不写入任何存储，
+  // 关闭设置或切换密钥即复位，避免明文长期停在屏幕上（局域网访问场景同理）。
+  const [revealedKeyId, setRevealedKeyId] = useState('');
 
   useEffect(() => {
     if (!open) return;
@@ -365,6 +371,8 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
     if (entry.key === readApiKey()) return;
     naiKeyVault.activate(entry, rememberApiKey);
     setApiKey(entry.key);
+    // 切走后不再保留上一条的明文回显。
+    setRevealedKeyId('');
     notify(`已切换到「${entry.name}」`, 'success');
   };
 
@@ -392,8 +400,13 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
     setNewKeyName('');
     setNewKeyValue('');
     setNewKeyGatewayUrl('');
+    setShowNewKeyValue(false);
     await refreshVault();
-    notify(`已添加「${result.entry.name}」`, 'success');
+    // 添加即启用：旧实现只入箱不激活，用户看到「输入框清空 + 列表只剩掩码」后
+    // 会以为没保存成功，其他页面仍提示「请先配置 NovelAI API Key」。
+    naiKeyVault.activate(result.entry, rememberApiKey);
+    setApiKey(result.entry.key);
+    notify(`已添加「${result.entry.name}」并切换使用`, 'success');
   };
 
   const removeKeyEntry = async (entry: NaiKeyEntry) => {
@@ -406,6 +419,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
       tone: 'danger',
     })) return;
     await naiKeyVault.remove(entry.id);
+    if (entry.id === revealedKeyId) setRevealedKeyId('');
     if (active) {
       naiKeyVault.clearActive();
       setApiKey('');
@@ -1180,6 +1194,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
               )}
               {keyVault.map(entry => {
                 const active = entry.key === apiKey;
+                const revealed = entry.id === revealedKeyId;
                 // 只对「当前使用」的 key 显示订阅健康（复用轮询结果，不额外探测）；
                 // 加载中/请求失败时不妄断订阅过期，避免误标。
                 const activeKeySubscription = active
@@ -1219,10 +1234,12 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                           {keyExpired && <span className="flex-none rounded-full bg-amber-100 px-1.5 py-0.5 text-micro font-bold text-amber-700 dark:bg-amber-950/50 dark:text-amber-300" title={t(entry.gatewayUrl ? '成员分配额度与实际扣费以网关为准；点击刷新' : "免费权益已过期；Paid Anlas 可付费生成。")}>{t(entry.gatewayUrl ? '网关权益不可用' : "订阅过期")}</span>}
                           {keyNonOpus && !entry.gatewayUrl && <span className="flex-none rounded-full bg-amber-100 px-1.5 py-0.5 text-micro font-bold text-amber-700 dark:bg-amber-950/50 dark:text-amber-300" title={t("当前订阅不是 Opus 档，无免费生成额度，按 Anlas 扣费生成")}>{t("非 Opus")}</span>}
                         </div>
-                        <p className="mt-0.5 truncate font-mono text-meta text-gray-500 dark:text-gray-400">{maskNaiKeyForDisplay(entry.key)}</p>
+                        <p className={revealed ? 'mt-0.5 select-all break-all font-mono text-meta text-gray-700 dark:text-gray-200' : 'mt-0.5 truncate font-mono text-meta text-gray-500 dark:text-gray-400'}>{revealed ? entry.key : maskNaiKeyForDisplay(entry.key)}</p>
                       </div>
                     )}
-                    <div className="flex flex-none items-center gap-1">
+                    <div className="flex flex-none flex-wrap items-center justify-end gap-1">
+                      {renamingKeyId !== entry.id && <button type="button" aria-pressed={revealed} onClick={() => setRevealedKeyId(revealed ? '' : entry.id)} aria-label={revealed ? t("隐藏完整 Key") : t("显示完整 Key")} title={revealed ? t("隐藏完整 Key") : t("显示完整 Key")} className="mobile-touch rounded-lg px-2 py-1 text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700">{revealed ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}</button>}
+                      {renamingKeyId !== entry.id && <button type="button" onClick={() => void copyTagText(entry.key).then(() => notify(`已复制「${entry.name}」的完整 Key`), () => notify('复制失败，请点「显示」后手动选择复制', 'error'))} aria-label={t("复制完整 Key")} title={t("复制完整 Key")} className="mobile-touch rounded-lg px-2 py-1 text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700"><Copy className="h-3.5 w-3.5" /></button>}
                       <button type="button" onClick={() => { setRenamingKeyId(entry.id); setRenameValue(entry.name); }} className="rounded-lg px-2 py-1 text-xs text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700" title={t("修改备注名")}>{t("备注")}</button>
                       {renamingKeyId !== entry.id && <button type="button" disabled={active} aria-pressed={active} onClick={() => activateKeyEntry(entry)} className={`rounded-lg px-2.5 py-1 text-xs font-bold text-white ${active ? 'cursor-default bg-indigo-600' : 'bg-indigo-600 hover:bg-indigo-500'}`}>{active ? t("使用中") : t("使用")}</button>}
                       {renamingKeyId !== entry.id && <button type="button" onClick={() => void removeKeyEntry(entry)} className="rounded-lg px-2 py-1 text-xs text-gray-400 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/40" title={t("删除")}>{t("删除")}</button>}
@@ -1274,7 +1291,7 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                   <input type="checkbox" checked={rememberApiKey} title={t("关闭后仅当前标签页使用")} onChange={event => updateRememberApiKey(event.target.checked)} className="shrink-0 rounded border-gray-300 text-indigo-600" />
                   <span>{t("在本机记住当前使用的 API Key")}</span>
                 </label>
-                <p className="text-amber-600 dark:text-amber-400">{t("Key 明文保存在本机，局域网访问需密码。")}</p>
+                <p className="text-amber-600 dark:text-amber-400">{t("保存后列表只显示脱敏格式 pst-…XXXX，可点条目旁的「显示」或「复制」取回完整 Key。")}{t("Key 明文保存在本机，局域网访问需密码。")}</p>
               </div>
             </div>
             {!activeGateway && <div className="mt-4 border-t border-gray-200 pt-4 dark:border-gray-700">

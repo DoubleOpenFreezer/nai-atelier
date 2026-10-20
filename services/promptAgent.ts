@@ -24,6 +24,11 @@ export interface PromptAgentConfig {
   creativeDirectRules?: string;
   creativeDirectRulesDefault?: string;
   creativeDirectRulesCustom?: boolean;
+  deepseekSearch?: boolean;
+  searchEnabled?: boolean;
+  searchApiBaseUrl?: string;
+  searchApiKeyConfigured?: boolean;
+  searchApiKeyCustom?: boolean;
   runtimeStartedAt: number;
   backendVersion?: string;
   sourceVersion?: string;
@@ -297,6 +302,11 @@ export const promptAgentService = {
   },
   setCreativeDirectRules: async (rules: string): Promise<PromptAgentConfig> => {
     const response = await fetch('/api/prompt-agent/creative-direct-rules', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ rules }) });
+    if (!response.ok) throw await parseErrorResponse(response);
+    return response.json();
+  },
+  setSearchApi: async ({ enabled, baseUrl, apiKey }: { enabled: boolean; baseUrl?: string; apiKey?: string }): Promise<PromptAgentConfig> => {
+    const response = await fetch('/api/prompt-agent/search-api', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled, baseUrl, apiKey }) });
     if (!response.ok) throw await parseErrorResponse(response);
     return response.json();
   },

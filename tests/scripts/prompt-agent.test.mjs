@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm, mkdir, writeFile, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { PromptAgentService, buildSystemPrompt, assemblePromptContext, estimateContextTokens, sanitizeAgentImages, detectModelCapabilities, sanitizeCustomProvider, customProviderRuntime, createPromptAgentModelRuntime, UNRESTRICTED_RULES } from '../../scripts/prompt-agent.mjs';
+import { PromptAgentService, buildSystemPrompt, assemblePromptContext, estimateContextTokens, sanitizeAgentImages, detectModelCapabilities, sanitizeCustomProvider, customProviderRuntime, createPromptAgentModelRuntime, UNRESTRICTED_RULES, requestDeepseekTool, mapDeepseekSearchResults } from '../../scripts/prompt-agent.mjs';
 import { getSupportedThinkingLevels, InMemoryCredentialStore } from '@earendil-works/pi-ai';
 import { createAgentThinkingMap } from '../../services/agentThinking.mjs';
 
@@ -161,6 +161,45 @@ test('模型服务错误进入任务时转成可操作说明，原始错误保�
     assert.match(errorEvent.error, /余额不足/);
     assert.match(errorEvent.errorDetail, /402/);
   } finally { globalThis.fetch = previous; }
+}));
+
+test('DeepSeek 搜索工具带 Key 请求官方接口，失败与无 Key 返回空交给调用方回退', async () => {
+  const requests = [];
+  const request = async (url, options) => {
+    requests.push({ url, options });
+    if (url.endsWith('/v1/tools/search')) return new Response(JSON.stringify({ results: [{ title: 'A', url: 'https://example.com/a', summary: 'summary-a' }] }), { status: 200, headers: { 'content-type': 'application/json' } });
+    return new Response('{}', { status: 402 });
+  };
+  const result = await requestDeepseekTool(request, '/v1/tools/search', { query: 'q', count: 6 }, { key: 'synthetic-key', baseUrl: 'https://search.example.com' });
+  assert.equal(result.results[0].title, 'A');
+  assert.equal(requests[0].url, 'https://search.example.com/v1/tools/search');
+  assert.equal(requests[0].options.headers.Authorization, 'Bearer synthetic-key');
+  assert.equal(await requestDeepseekTool(request, '/v1/tools/search', {}, { key: '' }), null);
+  assert.equal(await requestDeepseekTool(request, '/v1/tools/fetch', { url: 'https://example.com' }, { key: 'k' }), null);
+  assert.deepEqual(mapDeepseekSearchResults([{ title: 'A', url: 'https://example.com/a', snippet: 's' }, { title: 'bad', url: 'http://insecure.example' }], 6), [{ title: 'A', url: 'https://example.com/a', snippet: 's' }]);
+});
+
+test('搜索配置默认关闭、可独立保存地址与 Key，并自动使用同地址连接', () => isolated(async service => {
+  assert.equal(service.publicConfig().searchEnabled, false);
+  assert.equal(service.publicConfig().searchApiKeyConfigured, false);
+  assert.equal(service.publicConfig().searchApiBaseUrl, 'https://api.deepseek.com');
+  await service.saveCustomProvider({ ...customInput(), baseUrl: 'https://api.deepseek.com', apiKey: 'synthetic-connection', select: true });
+  assert.equal(service.publicConfig().searchApiKeyConfigured, true);
+  assert.equal(service.publicConfig().searchApiKeyCustom, false);
+  await service.setSearchApi({ enabled: true, baseUrl: 'https://api.deepseek.com', apiKey: 'synthetic-search-key' });
+  assert.equal(service.publicConfig().searchEnabled, true);
+  assert.equal(service.publicConfig().searchApiKeyCustom, true);
+  assert.equal(service.searchCredential(), 'synthetic-search-key');
+  const stored = JSON.parse(await readFile(service.configFilePath(), 'utf8'));
+  assert.equal(stored.searchEnabled, true);
+  assert.equal(stored.searchApiBaseUrl, 'https://api.deepseek.com');
+  assert.notEqual(stored.searchApiKey, 'synthetic-search-key');
+  await service.setSearchApi({ enabled: true, apiKey: '' });
+  assert.equal(service.publicConfig().searchApiKeyCustom, false);
+  assert.equal(service.searchCredential(), 'synthetic-connection');
+  await assert.rejects(service.setSearchApi({ enabled: 'true' }), /布尔值/);
+  await assert.rejects(service.setSearchApi({ enabled: true, baseUrl: 'ftp://bad' }), /HTTP/);
+  await service.setSearchApi({ enabled: false });
 }));
 
 test('五种界面语言实际进入模型请求，切换会话语言保留原始 Tag，未知值回退且不可注入', () => isolated(async service => {

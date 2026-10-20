@@ -208,6 +208,7 @@ describe('GlobalSettings', () => {
   beforeEach(() => {
     subscriptionFixture.entries = [];
     vi.mocked(naiKeyVault.add).mockReset();
+    vi.mocked(naiKeyVault.activate).mockReset();
     subscriptionFixture.expired = false;
     subscriptionFixture.balance = undefined;
     subscriptionFixture.usage = undefined;
@@ -245,6 +246,48 @@ describe('GlobalSettings', () => {
     await waitFor(() => expect(naiKeyVault.add).toHaveBeenLastCalledWith('', 'pst-official'));
   });
 
+  it('添加密钥后自动设为当前使用，避免“填了却没生效”', async () => {
+    const entry = { id: 'auto', name: '新号', key: 'pst-auto-activate', createdAt: 0 };
+    vi.mocked(naiKeyVault.add).mockResolvedValue({ status: 'added', entry });
+    subscriptionFixture.entries = [entry];
+    render(React.createElement(SettingsHarness, { initialSection: 'novelai' }));
+    fireEvent.change(await screen.findByLabelText('NovelAI API Key'), { target: { value: 'pst-auto-activate' } });
+    fireEvent.click(screen.getByRole('button', { name: '添加' }));
+    await waitFor(() => expect(naiKeyVault.activate).toHaveBeenCalledWith(entry, true));
+    // 新 Key 立即成为当前使用项，不再需要额外点一次「使用」。
+    expect(await screen.findByRole('button', { name: '使用中' })).toBeTruthy();
+  });
+
+  it('保管箱默认只显示脱敏 Key，可临时显示明文并复制，且同屏最多一把', async () => {
+    const key = 'pst-view-1234';
+    const otherKey = 'pst-backup-5678';
+    sessionStorage.setItem('nai_api_key', key);
+    subscriptionFixture.entries = [
+      { id: 'view', name: '查看用', key, createdAt: 0 },
+      { id: 'other', name: '备用', key: otherKey, createdAt: 0 },
+    ];
+    const writeText = vi.fn(async () => undefined);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    render(React.createElement(SettingsHarness, { initialSection: 'novelai' }));
+
+    expect(await screen.findByText('pst-vi…1234')).toBeTruthy();
+    expect(screen.getByText('pst-ba…5678')).toBeTruthy();
+    expect(screen.queryByText(key)).toBeNull();
+
+    fireEvent.click(screen.getAllByRole('button', { name: '显示完整 Key' })[0]);
+    expect(screen.getByText(key)).toBeTruthy();
+    // 点开一条不会连带显示其它条目。
+    expect(screen.getByText('pst-ba…5678')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: '隐藏完整 Key' }));
+    expect(screen.queryByText(key)).toBeNull();
+
+    // 复制走剪贴板，不需要先显示明文。
+    fireEvent.click(screen.getAllByRole('button', { name: '复制完整 Key' })[0]);
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith(key));
+    expect(screen.queryByText(key)).toBeNull();
+  });
+
   it('当前成员 Key 显示网关来源并隐藏另一个公共队列地址', async () => {
     const key = 'STA1N-settings-gateway';
     sessionStorage.setItem('nai_api_key', key);
@@ -273,6 +316,7 @@ describe('GlobalSettings', () => {
     cleanup();
     setLanguage('zh-CN');
     vi.unstubAllGlobals();
+    delete (navigator as unknown as { clipboard?: unknown }).clipboard;
   });
   it('真实设置选择五种语言，保存选择并保留未完成的自定义主题名称', () => {
     render(React.createElement(SettingsHarness));

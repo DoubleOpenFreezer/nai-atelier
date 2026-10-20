@@ -24,6 +24,7 @@ it('设置只加载模型与 API，保留生图协作，不再请求或展示注
   expect(fetch.mock.calls.some(([url]) => String(url).includes('creative-presets'))).toBe(false);
   fireEvent.click(screen.getByRole('button', { name: '连接 API' }));
   expect(screen.getByRole('dialog', { name: '连接 API' })).toBeTruthy();
+  fireEvent.click(screen.getByRole('tab', { name: '自定义模型 API' }));
   expect(screen.getByLabelText('API 地址')).toBeTruthy();
   expect(notify).not.toHaveBeenCalledWith('读取 AI 模型服务失败', 'error');
 });
@@ -103,4 +104,36 @@ it('破限规则可编辑保存并恢复内置默认，失败保留草稿与提�
   await waitFor(() => expect(notify).toHaveBeenCalledWith('已恢复内置默认规则'));
   expect(writes.at(-1)).toEqual({ rules: '' });
   await waitFor(() => expect(field().value).toBe('synthetic default rules'));
+});
+
+it('联网搜索可保存独立地址与 Key，未配置时提示回退免费搜索', async () => {
+  let enabled = false, baseUrl = 'https://api.deepseek.com', custom = false;
+  const config = () => ({ provider: '', model: '', configured: false, configuredProviders: [], backendVersion: 'synthetic', sourceVersion: 'synthetic', creativeDirect: false, creativeDirectRules: '', creativeDirectRulesCustom: false, searchEnabled: enabled, searchApiBaseUrl: baseUrl, searchApiKeyConfigured: custom, searchApiKeyCustom: custom });
+  const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.endsWith('/config')) return Response.json(config());
+    if (url.endsWith('/available-models') || url.endsWith('/custom-providers')) return Response.json({ items: [] });
+    if (url.endsWith('/library-prompts')) return Response.json({ spec: '', extra: '' });
+    if (url.endsWith('/search-api')) {
+      expect(init?.method).toBe('PUT');
+      const body = JSON.parse(String(init?.body));
+      if (body.enabled !== undefined) enabled = body.enabled;
+      if (body.baseUrl) baseUrl = body.baseUrl;
+      if (typeof body.apiKey === 'string') custom = Boolean(body.apiKey.trim());
+      return Response.json(config());
+    }
+    throw new Error(`不应调用的接口：${url}`);
+  });
+  vi.stubGlobal('fetch', fetch);
+  render(<ConfirmDialogProvider><PromptAgentSettings notify={vi.fn()} /></ConfirmDialogProvider>);
+  const toggle = screen.getByRole('checkbox', { name: '使用搜索 API' }) as HTMLInputElement;
+  await waitFor(() => expect(toggle.disabled).toBe(false));
+  expect(toggle.checked).toBe(false);
+  expect(screen.getByText('未检测到可用 Key，开启后仍使用免费搜索。')).toBeTruthy();
+  fireEvent.click(toggle);
+  await waitFor(() => expect(toggle.checked).toBe(true));
+  fireEvent.change(screen.getByLabelText(/API Key/), { target: { value: 'synthetic-key' } });
+  fireEvent.click(screen.getByRole('button', { name: '保存搜索设置' }));
+  await waitFor(() => expect(screen.getByText('已保存搜索专用 Key。')).toBeTruthy());
+  expect(fetch.mock.calls.some(([url, init]) => String(url).endsWith('/search-api') && JSON.parse(String(init?.body)).apiKey === 'synthetic-key')).toBe(true);
 });

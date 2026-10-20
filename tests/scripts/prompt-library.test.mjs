@@ -87,4 +87,9 @@ test('Android 共用的真实路由无需额外全局函数，设置读取、保
   assert.equal((await invoke(rulesEndpoint, 'PUT', { rules: '' })).value.creativeDirectRules, rulesDefault);
   assert.equal((await invoke(rulesEndpoint, 'PUT', { rules: 1 })).status, 400);
   assert.equal((await invoke(rulesEndpoint, 'POST', { rules: 'x' })).status, 405);
+  const searchEndpoint = '/api/prompt-agent/search-api';
+  assert.equal(service.publicConfig().searchEnabled, false);
+  assert.equal((await invoke(searchEndpoint, 'PUT', { enabled: true, baseUrl: 'https://api.deepseek.com', apiKey: 'synthetic' })).value.searchEnabled, true);
+  assert.equal((await invoke(searchEndpoint, 'PUT', { enabled: 'true' })).status, 400);
+  assert.equal((await invoke(searchEndpoint, 'POST', { enabled: true })).status, 405);
 });
