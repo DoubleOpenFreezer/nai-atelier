@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight, Copy, Dice5, Lock, LockOpen, RefreshCw } from 'lucide-react';
 import { t } from '../services/i18n';
 import type { PromptChain } from '../types';
@@ -6,7 +6,7 @@ import { KINDS, META } from '../services/contentRoll';
 import type { RollRow } from '../services/contentRoll';
 import { draw, evidenceOf, rerollOne } from '../services/contentRollDraw';
 import type { ContentRollApplyPlan, ContentRollTarget } from '../services/contentRollApply';
-import { planContentRollApply } from '../services/contentRollApply';
+import { pickByParticipation, planContentRollApply } from '../services/contentRollApply';
 import type { NAIParams } from '../types';
 
 interface ContentRollWorkspaceProps {
@@ -106,9 +106,21 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ acti
       return next;
     });
     setSaveName(seedRecord.seed);
+    setChecks({});
+    setLocked({});
     notify(t('已把内容库的这一组载入为当前一组；点「填入实验室」继续确认'));
     onSeedConsumed?.();
   }, [seedRecord, notify, onSeedConsumed]);
+
+  /* 上一组 / 下一组：连参与与固定范围一起恢复，避免用新范围读旧结果 */
+  const historyRef = useRef(history);
+  useEffect(() => { historyRef.current = history; }, [history]);
+  useEffect(() => {
+    const record = historyRef.current[cursor];
+    if (!record) return;
+    setChecks(record.checks || {});
+    setLocked(record.locked || {});
+  }, [cursor]);
 
   const commit = useCallback((record: RollRecord) => {
     setHistory(previous => {
@@ -196,7 +208,12 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ acti
   };
 
   const applyTarget: ContentRollTarget = targetId && targetId !== 'new' ? { mode: 'existing', id: targetId } : { mode: 'new' };
-  const plan = current ? planContentRollApply(current.picks, playgroundParams, applyTarget) : null;
+  /* 参与范围：取消勾选的栏位即使还留着上次抽到的内容，也不进计划、不入库 */
+  const activePicks = useMemo(
+    () => (current ? pickByParticipation(current.picks, checks) : {}),
+    [current, checks],
+  );
+  const plan = current ? planContentRollApply(activePicks, playgroundParams, applyTarget) : null;
 
   const doApply = async () => {
     if (!current || !onApplyRoll || !plan) return;
@@ -218,7 +235,7 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ acti
     if (!name) { notify(t('先给这条记录起个名字'), 'error'); return; }
     setSaving(true);
     try {
-      const id = await onSaveRoll(name, current.picks, current.seed, current.seeds);
+      const id = await onSaveRoll(name, activePicks, current.seed, current.seeds);
       setSavedId(String(id || ''));
       setSaveOpen(false);
       notify(t('已存为 Roll 内容「{0}」（六类内容与约束，不含画师风格与生图参数）', [name]));

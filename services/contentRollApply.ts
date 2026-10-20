@@ -130,6 +130,22 @@ export const planContentRollApply = (
   };
 };
 
+/**
+ * 参与范围过滤：**抽取、预览、填入、保存必须用同一个范围**。
+ * 取消勾选的分类视为「本次不参与」—— 即使这一栏还留着上次抽到的内容，也不进计划、不入库。
+ */
+export const pickByParticipation = (
+  picks: Record<string, RollRow>,
+  checks?: Record<string, boolean> | null,
+): Record<string, RollRow> => {
+  const out: Record<string, RollRow> = {};
+  for (const [kind, row] of Object.entries(picks || {})) {
+    if (checks && checks[kind] === false) continue;
+    out[kind] = row;
+  }
+  return out;
+};
+
 export interface ContentRollApplyResult {
   params: NAIParams;
   /** 撤销用：改动前的 params 快照 */

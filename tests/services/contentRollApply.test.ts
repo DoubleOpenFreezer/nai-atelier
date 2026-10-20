@@ -3,6 +3,7 @@ import type { NAIParams } from '../../types';
 import type { RollRow } from '../../services/contentRoll';
 import {
   applyContentRollToParams,
+  pickByParticipation,
   planContentRollApply,
   undoContentRollApply,
 } from '../../services/contentRollApply';
@@ -118,5 +119,28 @@ describe('一键 Roll → 实验室：写值与撤销', () => {
     expect(written).toEqual([]);
     expect(next.characters?.[0].prompt).toBe('old_role_text');
     expect(next._promptSections?.extra).toBe('old_extra');
+  });
+});
+
+
+describe('参与范围：取消勾选的栏位一律不参与', () => {
+  it('即使这一栏还留着上次抽到的内容，也不进计划、不入库', () => {
+    const checked = pickByParticipation(picks, { wardrobe: false });
+    expect(Object.keys(checked).sort()).toEqual(['appearance', 'camera', 'expression', 'pose', 'scene']);
+    expect(checked.wardrobe).toBeUndefined();
+
+    const plan = planContentRollApply(checked, baseParams(), { mode: 'existing', id: 'c1' });
+    expect(plan.rows.find(item => item.kind === 'wardrobe')?.action).toBe('keep');
+    expect(plan.characterText).not.toContain('white_dress');
+    expect(plan.written).not.toContain('wardrobe');
+
+    const { params: next, written } = applyContentRollToParams(baseParams(), plan, () => 'x');
+    expect(next.characters?.[0].prompt).not.toContain('white_dress');
+    expect(written).not.toContain('wardrobe');
+  });
+
+  it('没有勾选信息时按「全部参与」处理', () => {
+    expect(Object.keys(pickByParticipation(picks)).sort()).toEqual(['appearance', 'camera', 'expression', 'pose', 'scene', 'wardrobe']);
+    expect(Object.keys(pickByParticipation(picks, {})).length).toBe(6);
   });
 });

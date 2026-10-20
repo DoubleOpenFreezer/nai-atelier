@@ -6,6 +6,7 @@
 
 ## 2026-10-20
 
+- **DeepSeek Harness（deepseek/deepseek-v4.1-flash）**：按本机核查文档修三处断点 —— ① 后端 `scripts/prompt-agent.mjs` 的 `PROMPT_LIBRARY_KINDS` 补 `expression` / `camera`（含越界词表、facet 与 systemPrompt），新两类库 AI 生成不再 400；② `services/contentRoll.ts` 的 `metaOf` 改为**双格式读取**（`_wardrobe` 优先、回落 `_promptLibrary`），本机旧条目与源码新条目都能复用中文对照与 facets；③ 参与范围统一：新增 `pickByParticipation`，抽取/预览/填入/保存共用同一范围，取消勾选即使留着旧结果也不进计划不入库，切换历史组时连参与与固定范围一起恢复。补 3 项单测（25/25）。版本由 2.0.2 递增至 2.1.0。
 - **DeepSeek Harness（deepseek/deepseek-v4.1-flash）**：把补丁工具链纳入 CI 可验证范围 —— 新增 `tests/integration/naiRollParity.test.ts`（5 项：池子与指纹、同随机码抽取、固定/未参与/空库、单栏重抽与还原、快照/白名单读取/四态约束/证据，逐项比对**产物片段 `tools/nai-roll/patches/roll/core.mjs`** 与 **源码服务** 的结果）与 `.github/workflows/nai-roll.yml`（npm ci → tsc → build → 19 个工具脚本 node --check → 34 项单测 → 一致性比对；需要已安装应用的端到端套件仍为手工验收）。`npx tsc --noEmit` 零错误、定向 vitest 39/39。版本由 2.0.1 递增至 2.0.2。
 - **DeepSeek Harness（deepseek/deepseek-v4.1-flash）**：补齐两个新库**全部限定项选项值**的四语言译文（98 个键：情绪 / 表情 / 眼睛 / 眉部 / 嘴部 / 泪水 / 脸红 / 汗水，以及景别 / 视角 / 透视 / 构图 / 对焦 / 景深 / 倾斜 / 清晰度 / 成像效果），词典总数 4677，两个库的 120 个选项已无中文回退。版本由 2.0.0 递增至 2.0.1。
 - **DeepSeek Harness（deepseek/deepseek-v4.1-flash）**：场景与镜头成为**独立提示词栏位** —— `PromptSections` 增加 `scene` / `camera`，`normalizePromptSections`、`mergePromptSections`（顺序：人物 → 服饰 → 姿势 → 场景 → 镜头 → 补充）、`resolvePromptSections` 回退同步，`ChainEditorPromptInputs` 的 `SECTION_FIELDS` 增两栏（各自可接场景库 / 镜头库），`contentRollApply` 改为把场景、镜头分别写进 `_promptSections.scene` / `.camera`（不再占用补充栏），界面文案与单测同步。`npx tsc --noEmit` 零错误、`npm run build` 通过、定向 vitest 34/34。版本由 1.99.0 递增至 2.0.0（`PromptSections` 结构变更）。

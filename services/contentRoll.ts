@@ -174,9 +174,19 @@ export const joinTags = (...lists: Json[]) => {
 };
 
 /* ---- 词库条目读取（只读派生，绝不改写条目） ---- */
+/**
+ * 词库条目元数据的**双格式读取**（本机旧格式与源码新条目并存）：
+ * - `params._wardrobe`：本机部署版的词库条目（bilingual / facets / references / ...）；
+ * - `params._promptLibrary`：源码管理页新建的条目（同一批字段）。
+ * 读取顺序固定为 _wardrobe → _promptLibrary，写回仍由各自管理页负责，互不覆盖。
+ */
 export const metaOf = (chain: ChainLike | null | undefined): Record<string, Json> => {
   const params = chain?.params;
-  return isObj(params) && isObj(params['_wardrobe']) ? (params['_wardrobe'] as Record<string, Json>) : {};
+  if (!isObj(params)) return {};
+  const local = params['_wardrobe'];
+  if (isObj(local)) return local as Record<string, Json>;
+  const library = params['_promptLibrary'];
+  return isObj(library) ? (library as Record<string, Json>) : {};
 };
 export const idOf = (chain: ChainLike | null | undefined) => String((chain && chain.id) || '');
 export const nameOf = (chain: ChainLike | null | undefined) => {

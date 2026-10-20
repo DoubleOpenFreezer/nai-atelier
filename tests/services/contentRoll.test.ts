@@ -77,6 +77,16 @@ describe('四态约束派生', () => {
     expect(constraintsOf(null).needsReview).toBe(false);
   });
 
+  it('词库元数据双格式：优先 _wardrobe，缺失时回落到 _promptLibrary', () => {
+    const local = { params: { _wardrobe: { bilingual: 'blonde_hair（金发）', facets: { hair: 'blonde' } } } };
+    const source = { params: { _promptLibrary: { bilingual: 'blue_eyes（蓝瞳）', facets: { eyes: 'blue' } } } };
+    const both = { params: { _wardrobe: { bilingual: '金发优先' }, _promptLibrary: { bilingual: '不应被读到' } } };
+    expect(metaOf(local)['bilingual']).toBe('blonde_hair（金发）');
+    expect(metaOf(source)['bilingual']).toBe('blue_eyes（蓝瞳）');
+    expect(metaOf(both)['bilingual']).toBe('金发优先');
+    expect(constraintsOf(source).values.map(item => item.key)).toEqual(['eyes']);
+  });
+
   it('只读：派生过程不改写入参', () => {
     const facets = { hair: ['blonde'], accessory: FACET_NONE };
     const chain = entry(facets);
