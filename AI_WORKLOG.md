@@ -6,6 +6,7 @@
 
 ## 2026-10-20
 
+- **DeepSeek Harness（deepseek/deepseek-v4.1-flash）**：补齐两个新库**全部限定项选项值**的四语言译文（98 个键：情绪 / 表情 / 眼睛 / 眉部 / 嘴部 / 泪水 / 脸红 / 汗水，以及景别 / 视角 / 透视 / 构图 / 对焦 / 景深 / 倾斜 / 清晰度 / 成像效果），词典总数 4677，两个库的 120 个选项已无中文回退。版本由 2.0.0 递增至 2.0.1。
 - **DeepSeek Harness（deepseek/deepseek-v4.1-flash）**：场景与镜头成为**独立提示词栏位** —— `PromptSections` 增加 `scene` / `camera`，`normalizePromptSections`、`mergePromptSections`（顺序：人物 → 服饰 → 姿势 → 场景 → 镜头 → 补充）、`resolvePromptSections` 回退同步，`ChainEditorPromptInputs` 的 `SECTION_FIELDS` 增两栏（各自可接场景库 / 镜头库），`contentRollApply` 改为把场景、镜头分别写进 `_promptSections.scene` / `.camera`（不再占用补充栏），界面文案与单测同步。`npx tsc --noEmit` 零错误、`npm run build` 通过、定向 vitest 34/34。版本由 1.99.0 递增至 2.0.0（`PromptSections` 结构变更）。
 - **DeepSeek Harness（deepseek/deepseek-v4.1-flash）**：Roll 内容库接通封面 —— 卡片显示封面缩略图/无封面占位，新增「从历史选封面 / 换封面」复用 `HistoryImagePicker`，选中后按图片提示词库同一约定写 `previewImage = /api/local-history/<id>/image`（Worker 转独立资产）。源码版冒烟：内容库列出 1 条、封面按钮就位、选图器可打开、无控制台报错。版本由 1.98.1 递增至 1.99.0。
 - **DeepSeek Harness（deepseek/deepseek-v4.1-flash）**：补齐两个新库的界面文案译文 —— `locales/messages.json` 增 38 个键（库名 / 名词 / 期限标签 / 生成按钮与提示 / 新建与空态 / 占位符 / 19 个限定项标签），四语言齐备、既有条目格式与顺序不变（总数 4576）。限定项**选项值**仍回退中文，避免机翻污染术语表。`npx tsc --noEmit` 零错误、`npm run build` 通过。版本由 1.98.0 递增至 1.98.1（仅文案）。
