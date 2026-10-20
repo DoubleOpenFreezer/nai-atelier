@@ -6,7 +6,8 @@ import { KINDS, META } from '../services/contentRoll';
 import type { RollRow } from '../services/contentRoll';
 import { draw, evidenceOf, rerollOne } from '../services/contentRollDraw';
 import type { ContentRollApplyPlan, ContentRollTarget } from '../services/contentRollApply';
-import { pickByParticipation, planContentRollApply } from '../services/contentRollApply';
+import { filterPicksByScope, pickByParticipation, planContentRollApply } from '../services/contentRollApply';
+import type { ContentRollScope } from '../services/contentRollApply';
 import type { NAIParams } from '../types';
 
 interface ContentRollWorkspaceProps {
@@ -77,6 +78,8 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ acti
   const [busy, setBusy] = useState(false);
   const [showEvidence, setShowEvidence] = useState(false);
   const [targetId, setTargetId] = useState<string>('new');
+  const [range, setRange] = useState<ContentRollScope>('all');
+  const targetTouched = useRef(false);
   const [confirming, setConfirming] = useState(false);
   const [applying, setApplying] = useState(false);
   const [saveOpen, setSaveOpen] = useState(false);
@@ -85,6 +88,22 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ acti
   const [savedId, setSavedId] = useState('');
 
   const current = cursor >= 0 ? history[cursor] : null;
+
+  /* 默认目标＝当前启用角色；用户手动改过就不再覆盖 */
+  useEffect(() => {
+    if (targetTouched.current) return;
+    const first = playgroundRoles[0];
+    setTargetId(first ? first.id : 'new');
+  }, [playgroundRoles]);
+
+  /* 范围决定哪些分类参与抽取与应用（角色四类 / 场景镜头 / 全部） */
+  const scopeChecks = useMemo(() => {
+    if (range === 'all') return {} as Record<string, boolean>;
+    const out: Record<string, boolean> = {};
+    for (const kind of KINDS) out[kind] = range === 'global' ? META[kind].scope === 'global' : META[kind].scope !== 'global';
+    return out;
+  }, [range]);
+  const effectiveChecks = useMemo(() => ({ ...scopeChecks, ...checks }), [scopeChecks, checks]);
 
   /* 会话草稿只留在本机：刷新后仍能看到上次这一组，但不会写库 */
   useEffect(() => {
@@ -134,14 +153,14 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ acti
   const rollOnce = useCallback(() => {
     setBusy(true);
     try {
-      const result = draw({ chains, seed: newSeed(), checks, locked });
+      const result = draw({ chains, seed: newSeed(), checks: effectiveChecks, locked });
       commit({ seed: result.seed, seeds: result.seeds, picks: result.picks, locked: result.locked, checks: result.checks, at: Date.now() });
       const missing = result.notes.filter(note => note.code !== 'pool_empty').length;
       notify(missing ? t('已抽取；有 {0} 条说明需要看一眼', [String(missing)]) : t('已抽取一组六类内容'));
     } finally {
       setBusy(false);
     }
-  }, [chains, checks, locked, commit, notify]);
+  }, [chains, effectiveChecks, locked, commit, notify]);
 
   /* 「再抽未固定项」：只换没固定的栏，并排除当前条目（候选不足时核会如实保留并说明） */
   const rollAgain = useCallback(() => {
@@ -153,14 +172,14 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ acti
         if (locked[kind]) continue;
         avoid[kind] = current.picks[kind]?.id || undefined;
       }
-      const result = draw({ chains, seed: newSeed(), checks, locked, avoid });
+      const result = draw({ chains, seed: newSeed(), checks: effectiveChecks, locked, avoid });
       commit({ seed: result.seed, seeds: result.seeds, picks: result.picks, locked: result.locked, checks: result.checks, at: Date.now() });
       const kept = result.notes.filter(note => note.code === 'avoid_short').length;
       notify(kept ? t('已重抽；{0} 栏只有一条候选，已保留并说明', [String(kept)]) : t('已重新抽取未固定的栏'));
     } finally {
       setBusy(false);
     }
-  }, [chains, current, checks, locked, commit, notify]);
+  }, [chains, current, effectiveChecks, locked, commit, notify]);
 
   const rerollKind = useCallback((kind: string) => {
     if (!current) return;
@@ -207,11 +226,13 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ acti
     }
   };
 
-  const applyTarget: ContentRollTarget = targetId && targetId !== 'new' ? { mode: 'existing', id: targetId } : { mode: 'new' };
+  const applyTarget: ContentRollTarget = targetId === 'all-enabled'
+    ? { mode: 'all-enabled' }
+    : targetId && targetId !== 'new' ? { mode: 'existing', id: targetId } : { mode: 'new' };
   /* 参与范围：取消勾选的栏位即使还留着上次抽到的内容，也不进计划、不入库 */
   const activePicks = useMemo(
-    () => (current ? pickByParticipation(current.picks, checks) : {}),
-    [current, checks],
+    () => (current ? pickByParticipation(filterPicksByScope(current.picks, range), effectiveChecks) : {}),
+    [current, range, effectiveChecks],
   );
   const plan = current ? planContentRollApply(activePicks, playgroundParams, applyTarget) : null;
 
@@ -369,10 +390,21 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ acti
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="text-xs font-semibold text-gray-700 dark:text-gray-200">{t('填入实验室')}</span>
               <label className="flex items-center gap-1 text-[11px] text-gray-500 dark:text-gray-400">
+                {t('范围')}
+                <select value={range} onChange={event => setRange(event.target.value as ContentRollScope)}
+                  aria-label={t('选择抽取范围')}
+                  className="rounded-lg border border-gray-200 bg-white px-2 py-1 text-[11px] dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">
+                  <option value="all">{t('角色＋场景')}</option>
+                  <option value="character">{t('仅角色')}</option>
+                  <option value="global">{t('仅场景与镜头')}</option>
+                </select>
+              </label>
+              <label className="flex items-center gap-1 text-[11px] text-gray-500 dark:text-gray-400">
                 {t('目标角色')}
-                <select value={targetId} onChange={event => { setTargetId(event.target.value); setConfirming(false); }}
+                <select value={targetId} onChange={event => { targetTouched.current = true; setTargetId(event.target.value); setConfirming(false); }}
                   aria-label={t('选择写入的目标角色')}
                   className="rounded-lg border border-gray-200 bg-white px-2 py-1 text-[11px] dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">
+                  {playgroundRoles.length ? <option value="all-enabled">{t('所有启用角色')}</option> : null}
                   <option value="new">{t('新建角色')}</option>
                   {playgroundRoles.map(role => <option key={role.id} value={role.id}>{role.label}</option>)}
                 </select>

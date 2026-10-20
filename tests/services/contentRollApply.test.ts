@@ -3,6 +3,7 @@ import type { NAIParams } from '../../types';
 import type { RollRow } from '../../services/contentRoll';
 import {
   applyContentRollToParams,
+  filterPicksByScope,
   pickByParticipation,
   planContentRollApply,
   undoContentRollApply,
@@ -152,5 +153,50 @@ describe('参与范围：取消勾选的栏位一律不参与', () => {
   it('没有勾选信息时按「全部参与」处理', () => {
     expect(Object.keys(pickByParticipation(picks))).toHaveLength(6);
     expect(Object.keys(pickByParticipation(picks, {}))).toHaveLength(6);
+  });
+});
+
+
+describe('抽取范围：角色四类 / 场景镜头 / 全部', () => {
+  it('范围过滤只保留对应分类，多余分类不参与', () => {
+    expect(Object.keys(filterPicksByScope(picks, 'character')).sort()).toEqual(['appearance', 'expression', 'pose', 'wardrobe']);
+    expect(Object.keys(filterPicksByScope(picks, 'global')).sort()).toEqual(['camera', 'scene']);
+    expect(Object.keys(filterPicksByScope(picks, 'all')).sort()).toEqual(['appearance', 'camera', 'expression', 'pose', 'scene', 'wardrobe']);
+  });
+
+  it('仅角色范围下，场景与镜头不会被写入', () => {
+    const params = baseParams();
+    const plan = planContentRollApply(filterPicksByScope(picks, 'character'), params, { mode: 'existing', id: 'c1' });
+    expect(plan.globalSections).toEqual({});
+    const { params: next } = applyContentRollToParams(params, plan, () => 'x');
+    expect(next._promptSections?.scene).toBe('old_scene');
+    expect(next.characters?.[0].sections?.wardrobe).toBe('white_dress');
+  });
+});
+
+describe('多角色应用：所有启用角色写同一套搭配', () => {
+  const multiParams = (): NAIParams => ({
+    width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler_ancestral',
+    characters: [
+      { id: 'a', prompt: 'a_body', x: 0.3, y: 0.5 },
+      { id: 'b', prompt: 'b_body', x: 0.7, y: 0.5, enabled: false },
+      { id: 'c', prompt: 'c_body', x: 0.5, y: 0.5, enabled: true },
+    ],
+  } as unknown as NAIParams);
+
+  it('启用角色都拿到同一套分栏，停用角色被跳过，正文与角色数量不变', () => {
+    const params = multiParams();
+    const plan = planContentRollApply({ wardrobe: picks.wardrobe, appearance: picks.appearance }, params, { mode: 'all-enabled' });
+    expect(plan.roleName).toContain('所有启用角色');
+    const { params: next, written } = applyContentRollToParams(params, plan, () => 'x');
+    expect(next.characters).toHaveLength(3);
+    expect(next.characters?.[0].sections?.wardrobe).toBe('white_dress');
+    expect(next.characters?.[1].sections?.wardrobe).toBeUndefined();
+    expect(next.characters?.[2].sections?.wardrobe).toBe('white_dress');
+    expect(next.characters?.[0].prompt).toBe('a_body');
+    expect(next.characters?.[2].prompt).toBe('c_body');
+    expect(written).toContain('character:a:wardrobe');
+    expect(written).toContain('character:c:wardrobe');
+    expect(written).not.toContain('character:b:wardrobe');
   });
 });

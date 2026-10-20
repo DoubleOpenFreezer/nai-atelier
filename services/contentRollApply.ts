@@ -18,7 +18,32 @@ import { CHARACTER_SECTION_KEYS } from './characterPrompts';
  * 撤销：调用方保留 `undo`（改动前的 params 快照 + 新建角色 id），一次撤销恢复全部范围。
  */
 
-export type ContentRollTarget = { mode: 'new' } | { mode: 'existing'; id: string };
+export type ContentRollTarget =
+  | { mode: 'new' }
+  | { mode: 'existing'; id: string }
+  /** 把同一套搭配写进所有启用角色（停用角色跳过，不新建） */
+  | { mode: 'all-enabled' };
+
+/** 抽取范围：只角色四类 / 只场景镜头 / 全部（与界面上的「范围」选择一致）。 */
+export type ContentRollScope = 'all' | 'character' | 'global';
+
+/** 按范围过滤要参与抽取的机型：角色四类进目标角色，场景镜头进全局栏位。 */
+export const filterPicksByScope = (
+  picks: Record<string, RollRow>,
+  scope: ContentRollScope,
+): Record<string, RollRow> => {
+  if (scope === 'all') return { ...picks };
+  const out: Record<string, RollRow> = {};
+  for (const [kind, row] of Object.entries(picks || {})) {
+    const isGlobal = META[kind]?.scope === 'global';
+    if (scope === 'global' ? isGlobal : !isGlobal) out[kind] = row;
+  }
+  return out;
+};
+
+/** 启用中的目标角色（用于「所有启用角色」与默认目标）。 */
+export const enabledCharactersOf = (params: NAIParams | null | undefined): CharacterParams[] =>
+  charactersOf((params || {}) as NAIParams).filter(item => item.enabled !== false);
 
 export interface ContentRollApplyRow {
   kind: string;
@@ -156,7 +181,9 @@ export const planContentRollApply = (
   return {
     target,
     roleId: existing ? String(existing.id) : '',
-    roleName: existing ? '角色 ' + (characters.findIndex(item => String(item.id) === String(existing.id)) + 1) : '角色 1',
+    roleName: target.mode === 'all-enabled'
+      ? '所有启用角色（' + enabledCharactersOf(safeParams).length + ' 个）'
+      : existing ? '角色 ' + (characters.findIndex(item => String(item.id) === String(existing.id)) + 1) : '角色 1',
     rows,
     characterText: joinTags(characterParts),
     globalText: joinTags(globalParts),
@@ -197,7 +224,24 @@ export const applyContentRollToParams = (
   }));
   let createdRoleId = '';
 
-  if (plan.roleWrites.length) {
+  if (plan.roleWrites.length && target.mode === 'all-enabled') {
+    characters.forEach((character, index) => {
+      if (character.enabled === false) return;
+      for (const write of plan.roleWrites) {
+        characters[index] = {
+          ...characters[index],
+          sections: { ...(characters[index].sections || {}), [write.kind]: write.text },
+          sectionNegatives: write.negative
+            ? { ...(characters[index].sectionNegatives || {}), [write.kind]: write.negative }
+            : characters[index].sectionNegatives,
+          sectionMeta: { ...(characters[index].sectionMeta || {}), [write.kind]: { ...write.meta } },
+        };
+        written.push('character:' + String(character.id) + ':' + write.kind);
+      }
+    });
+  }
+
+  if (plan.roleWrites.length && target.mode !== 'all-enabled') {
     let index = target.mode === 'existing'
       ? characters.findIndex(item => String(item.id) === String(target.id))
       : -1;

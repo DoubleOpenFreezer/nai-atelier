@@ -902,7 +902,7 @@ const App = () => {
           chains={chains}
           notify={notify}
           playgroundParams={playgroundChain?.params || null}
-          playgroundRoles={(playgroundChain?.params?.characters || []).map((item, index) => ({ id: String(item.id), label: t('角色 {0}', [String(index + 1)]) }))}
+          playgroundRoles={(playgroundChain?.params?.characters || []).map((item, index) => ({ id: String(item.id), enabled: item.enabled !== false, label: t('角色 {0}', [String(index + 1)]) })).filter(item => item.enabled)}
           canUndo={!!contentRollUndo}
           onApplyRoll={handleApplyContentRoll}
           onUndoApply={handleUndoContentRoll}
