@@ -3619,6 +3619,29 @@ const serveDistFile = async (req, res, url) => {
             tagDictionary: method => requestTagDictionaryControl(method),
           }));
         }
+        if (url.pathname === '/api/prompt-agent/library-prompts/preview') {
+          // 预览某个库最终使用的 system prompt；带上当前输入框内容即可在保存前预览
+          if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
+          const body = JSON.parse((await readRequestBody(req, 64 * 1024)).toString('utf8') || '{}');
+          return sendJson(res, 200, promptAgent.previewLibrarySystemPrompt(body));
+        }
+        if (url.pathname === '/api/prompt-agent/library-prompts') {
+          if (req.method === 'GET') return sendJson(res, 200, promptAgent.getLibraryPrompts());
+          if (req.method === 'PUT' || req.method === 'POST') {
+            const body = JSON.parse((await readRequestBody(req, 64 * 1024)).toString('utf8') || '{}');
+            return sendJson(res, 200, await promptAgent.saveLibraryPrompts(body));
+          }
+          return sendJson(res, 405, { error: 'Method not allowed' });
+        }
+        if (url.pathname === '/api/prompt-agent/library' || url.pathname === '/api/prompt-agent/wardrobe') {
+          if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
+          const body = JSON.parse((await readRequestBody(req, 64 * 1024)).toString('utf8') || '{}');
+            // 四类库统一由请求体 kind 选择；/wardrobe 固定为服饰。
+          const result = url.pathname === '/api/prompt-agent/wardrobe'
+            ? await promptAgent.generateWardrobePrompt(body)
+            : await promptAgent.generateLibraryPrompt(body);
+          return sendJson(res, 200, result);
+        }
         if (url.pathname === '/api/prompt-agent/run') {
           if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed' });
           // Four 6 MB images become roughly 32 MB after Base64 encoding; leave

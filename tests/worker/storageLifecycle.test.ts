@@ -33,6 +33,34 @@ const fixture = () => {
   return { sqlite, db, env, bucket, queries, invoke, fail: (pattern: RegExp) => { fail = pattern; } };
 };
 
+it('提示词库引用历史原件，删历史仍可用，最后一个库引用释放后才清理', async () => {
+  const f = fixture(), key = 'local-history/owner/synthetic.png';
+  f.sqlite.prepare('INSERT INTO local_generation_history (id,user_id,image_key,created_at) VALUES (?,?,?,1)').run('ref-history', 'owner', key);
+  f.sqlite.exec("INSERT INTO chains (id,user_id,name,type) VALUES ('lib-a','owner','A','appearance'), ('lib-b','owner','B','scene')");
+  const params = { seed: 19, _promptLibrary: { bilingual: 'synthetic', references: [{ id: 'ref-history', url: '/api/local-history/ref-history/image', prompt: 'synthetic' }] } };
+  expect((await f.invoke('/api/chains/lib-a', 'PUT', { params }))?.status).toBe(200);
+  const saved = JSON.parse(f.sqlite.prepare("SELECT params FROM chains WHERE id='lib-a'").get()!.params as string);
+  expect(saved.seed).toBe(19); expect(saved._promptLibrary.references[0].url).toBe('/api/assets/' + encodeURIComponent(key));
+  expect((await f.invoke('/api/chains/lib-b', 'PUT', { params: saved }))?.status).toBe(200);
+  expect((await f.invoke('/api/local-history/ref-history'))?.status).toBe(200);
+  expect(f.bucket.delete).not.toHaveBeenCalledWith(key);
+  await f.invoke('/api/chains/lib-a'); expect(f.bucket.delete).not.toHaveBeenCalledWith(key);
+  await f.invoke('/api/chains/lib-b'); expect(f.bucket.delete).toHaveBeenCalledWith(key);
+});
+
+it('提示词库参数保存失败保留旧参考图，非法或已删除的来源不覆盖旧参数', async () => {
+  const f = fixture();
+  const params = { seed: 17, _promptLibrary: { references: [{ id: 'original', url: '/api/assets/original.png' }] } };
+  f.sqlite.prepare('INSERT INTO chains (id,user_id,name,type,params) VALUES (?,?,?,?,?)').run('lib', 'owner', 'synthetic', 'pose', JSON.stringify(params));
+  f.fail(/UPDATE chains/);
+  await expect(f.invoke('/api/chains/lib', 'PUT', { params: { ...params, _promptLibrary: { references: [] } } })).rejects.toThrow('synthetic database failure');
+  expect(f.bucket.delete).not.toHaveBeenCalled();
+  for (const url of ['/api/local-history/missing/image', 'https://example.com/synthetic.png']) {
+    expect((await f.invoke('/api/chains/lib', 'PUT', { params: { _promptLibrary: { references: [{ url }] } } }))?.status).toBe(422);
+  }
+  expect(JSON.parse(f.sqlite.prepare("SELECT params FROM chains WHERE id='lib'").get()!.params as string)).toEqual(params);
+});
+
 it.each(['history', 'chain', 'artist'])('删除 %s 的数据库写入失败时保留记录和全部图片', async kind => {
   const f = fixture();
   f.sqlite.exec("INSERT INTO chains (id,user_id,name,preview_image) VALUES ('c','owner','synthetic','/api/assets/cover.png'); INSERT INTO artists (id,name,image_url,preview_url,benchmarks) VALUES ('a','synthetic','/api/assets/original.png','/api/assets/preview.png','[\"/api/assets/old-benchmark.png\"]'); INSERT INTO local_generation_history (id,user_id,image_key,created_at) VALUES ('h','owner','synthetic.png',1)");

@@ -35,7 +35,7 @@ import { ImagePreviewPortal } from './ImagePreviewPortal';
 
 const GlobalSettings = React.lazy(() => import('./GlobalSettings').then(module => ({ default: module.GlobalSettings })));
 
-type AppView = 'list' | 'characters' | 'edit' | 'library' | 'aitag' | 'danbooru' | 'pixiv' | 'codex' | 'inspiration' | 'history' | 'footprint' | 'playground' | 'roll';
+type AppView = 'list' | 'characters' | 'prompts' | 'edit' | 'library' | 'aitag' | 'danbooru' | 'pixiv' | 'codex' | 'inspiration' | 'history' | 'footprint' | 'playground' | 'roll';
 type SettingsSection = 'home' | 'appearance' | 'generation' | 'novelai' | 'agent' | 'maintenance';
 
 interface LayoutProps {
@@ -138,6 +138,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
     { label: '资源库', items: [
       { id: 'library', label: '画师库', icon: icons.artist },
       { id: 'characters', label: '角色库', icon: icons.character },
+      { id: 'prompts', label: '图片提示词库', icon: icons.tag },
       { id: 'inspiration', label: '收藏库', icon: icons.inspiration },
       { id: 'external-browse', label: '素材浏览', icon: Images },
     ] },
@@ -178,6 +179,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
     { id: 'roll', label: 'Roll 串', icon: Dice5 },
     { id: 'library', label: '画师库', icon: icons.artist },
     { id: 'characters', label: '角色库', icon: icons.character },
+    { id: 'prompts', label: '图片提示词库', icon: icons.tag },
     ...externalItems,
     { id: 'inspiration', label: '收藏库', icon: icons.inspiration },
   ];

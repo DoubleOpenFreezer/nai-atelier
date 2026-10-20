@@ -194,6 +194,20 @@ describe('新建风格串的立即打开与封面保存（隔离 SQLite／R2）'
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  it('提示词库在详情选择历史封面时保存独立资产，保留原图与生图参数', async () => {
+    const b = bucketFixture(), f = fixture(b.bucket);
+    b.data.set('local-history/test-owner/synthetic.png', new Uint8Array([7, 8, 9]));
+    f.sqlite.exec("CREATE TABLE IF NOT EXISTS local_generation_history (id TEXT, user_id TEXT, image_key TEXT, image_type TEXT)");
+    f.sqlite.prepare('INSERT INTO local_generation_history (id,user_id,image_key,image_type,created_at) VALUES (?,?,?,?,1)')
+      .run('cover-history', 'test-owner', 'local-history/test-owner/synthetic.png', 'image/png');
+    const created = await (await f.invoke('/api/chains', 'POST', { name: 'synthetic', type: 'scene', params: { seed: 19 } })).json() as any;
+    expect((await f.invoke(`/api/chains/${created.id}`, 'PUT', { previewImage: '/api/local-history/cover-history/image' })).status).toBe(200);
+    const saved = await (await f.invoke(`/api/chains/${created.id}`)).json() as any;
+    expect(saved.previewImage).toMatch(/^\/api\/assets\/covers\//);
+    expect(saved.params.seed).toBe(19); expect(b.data.has('local-history/test-owner/synthetic.png')).toBe(true);
+    expect(b.del).not.toHaveBeenCalled();
+  });
+
   it.each(['/api/assets/missing.png', '/api/assets/../private.png', 'blob:synthetic', 'https://127.0.0.1/private.png'])('封面失败 %s 不创建半套条目或删除来源', async previewImage => {
     const b = bucketFixture(); const f = fixture(b.bucket);
     const fetchMock = vi.fn(); vi.stubGlobal('fetch', fetchMock);

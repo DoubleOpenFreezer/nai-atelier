@@ -219,6 +219,8 @@ export async function deleteR2File(env: Env, url: string, db: D1Database) {
           `/api/assets/${key.split('/').map(encodeURIComponent).join('/')}`])];
         const reference = await db.prepare(`WITH asset_urls AS (SELECT value FROM json_each(?)) SELECT
           EXISTS(SELECT 1 FROM chains WHERE preview_image IN (SELECT value FROM asset_urls)) OR
+          EXISTS(SELECT 1 FROM chains c, json_each(CASE WHEN json_valid(c.params) THEN c.params ELSE '{}' END, '$._promptLibrary.references') r
+            WHERE json_extract(CASE WHEN json_valid(r.value) THEN r.value ELSE '{}' END, '$.url') IN (SELECT value FROM asset_urls)) OR
           EXISTS(SELECT 1 FROM inspirations WHERE image_url IN (SELECT value FROM asset_urls) OR image_key = ?) OR
           EXISTS(SELECT 1 FROM local_generation_history WHERE image_key = ?) OR
           EXISTS(SELECT 1 FROM artists WHERE image_url IN (SELECT value FROM asset_urls) OR preview_url IN (SELECT value FROM asset_urls)) OR
@@ -336,6 +338,29 @@ const createChainCover = async (env: Env, db: D1Database, value: unknown, id: st
     const source = await env.BUCKET.get(key);
     if (!source) throw new Error('本地封面图片不存在');
     return copyChainCover(env, source, id, imageType);
+};
+
+const promptLibraryReferenceUrls = (params: any): string[] => Array.isArray(params?._promptLibrary?.references)
+    ? params._promptLibrary.references.map((reference: any) => reference?.url).filter((url: unknown): url is string => typeof url === 'string') : [];
+
+/** 将历史条目地址转为原件资产引用；删除历史后参考图继续可用，同一原件不重复复制。 */
+const preparePromptLibraryParams = async (params: any, db: D1Database, userId: string) => {
+    if (!Array.isArray(params?._promptLibrary?.references)) return params;
+    const references = [];
+    for (const reference of params._promptLibrary.references) {
+        if (!reference || typeof reference.url !== 'string') throw new Error('提示词库参考图地址无效');
+        let url = reference.url;
+        const history = url.match(/^\/api\/local-history\/([^/]+)\/image$/);
+        if (history) {
+            const row = await db.prepare('SELECT image_key FROM local_generation_history WHERE id = ? AND user_id = ?')
+                .bind(decodeURIComponent(history[1]), userId).first<{ image_key: string }>();
+            if (!row?.image_key) throw new Error('提示词库参考图已不存在');
+            url = `/api/assets/${encodeURIComponent(row.image_key)}`;
+        }
+        if (!url.startsWith('/api/assets/')) throw new Error('提示词库参考图必须是本地图片');
+        references.push({ id: String(reference.id || ''), url, prompt: String(reference.prompt || '') });
+    }
+    return { ...params, _promptLibrary: { ...params._promptLibrary, references } };
 };
 
 // Helper: Process Base64 Image and Upload to R2 with Quota Check
@@ -686,9 +711,10 @@ export async function handleSettingsRoute(ctx: RouteContext): Promise<Response |
     const guestHidden = body.guestHidden ? 1 : 0;
     const tags = JSON.stringify(normalizeChainTags(Array.isArray(body.tags)
       ? body.tags.map((tag: unknown) => typeof tag === 'string' ? tag.trim().substring(0, 50) : '') : []));
-    const paramsToStore = JSON.stringify({ ...DEFAULT_CHAIN_PARAMS, ...(body.params && typeof body.params === 'object' ? body.params : {}) });
+    let paramsToStore: string;
     let previewImage: string | null;
     try {
+      paramsToStore = JSON.stringify(await preparePromptLibraryParams({ ...DEFAULT_CHAIN_PARAMS, ...(body.params && typeof body.params === 'object' ? body.params : {}) }, db, currentUser.id));
       previewImage = await createChainCover(env, db, body.previewImage, id, currentUser);
     } catch (e: any) { return error(e.message || '保存封面失败', 422); }
     const now = Date.now();
@@ -741,10 +767,17 @@ export async function handleSettingsRoute(ctx: RouteContext): Promise<Response |
     if (currentUser.role === 'guest') return error('Forbidden', 403);
     const id = chainIdMatch[1];
     const updates = await request.json() as any;
-    const chain = await db.prepare('SELECT user_id, preview_image, name, type FROM chains WHERE id = ?').bind(id).first<{user_id: string, preview_image: string, name: string, type: string}>();
+    const chain = await db.prepare('SELECT user_id, preview_image, name, type, params FROM chains WHERE id = ?').bind(id).first<{user_id: string, preview_image: string, name: string, type: string, params: string}>();
     if (!chain) return error('Not Found', 404);
     if (chain.user_id && chain.user_id !== currentUser.id && currentUser.role !== 'admin') return error('Permission Denied', 403);
     
+    try {
+      if (updates.params !== undefined) updates.params = await preparePromptLibraryParams(updates.params, db, currentUser.id);
+      if (typeof updates.previewImage === 'string' && /^\/api\/(local-history|inspirations)\//.test(updates.previewImage)) {
+        updates.previewImage = await createChainCover(env, db, updates.previewImage, id, currentUser);
+      }
+    } catch (e: any) { return error(e.message || '保存提示词库图片失败', 422); }
+
     // Handle Chain Cover Cleanup
     if (updates.previewImage && updates.previewImage.startsWith('data:')) {
          try { 
@@ -792,16 +825,23 @@ export async function handleSettingsRoute(ctx: RouteContext): Promise<Response |
     if (updates.previewImage !== undefined && chain.preview_image && chain.preview_image !== updates.previewImage) {
       await deleteR2File(env, chain.preview_image, db);
     }
+    if (updates.params !== undefined) {
+      const retained = new Set(promptLibraryReferenceUrls(updates.params));
+      for (const url of promptLibraryReferenceUrls(parseStoredJson(chain.params, {}))) {
+        if (!retained.has(url)) await deleteR2File(env, url, db);
+      }
+    }
     return json({ success: true });
   }
   if (chainIdMatch && method === 'DELETE') {
     if (currentUser.role === 'guest') return error('Forbidden', 403);
     const id = chainIdMatch[1];
-    const chain = await db.prepare('SELECT user_id, preview_image, name, type FROM chains WHERE id = ?').bind(id).first<{user_id: string, preview_image: string, name: string, type: string}>();
+    const chain = await db.prepare('SELECT user_id, preview_image, name, type, params FROM chains WHERE id = ?').bind(id).first<{user_id: string, preview_image: string, name: string, type: string, params: string}>();
     if (chain) {
         if (chain.user_id && chain.user_id !== currentUser.id && currentUser.role !== 'admin') return error('Permission Denied', 403);
         await db.prepare('DELETE FROM chains WHERE id = ?').bind(id).run();
         if (chain.preview_image) await deleteR2File(env, chain.preview_image, db);
+        for (const url of promptLibraryReferenceUrls(parseStoredJson(chain.params, {}))) await deleteR2File(env, url, db);
     }
     return json({ success: true });
   }

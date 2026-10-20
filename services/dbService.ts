@@ -30,7 +30,7 @@ class DBService {
     return chains.map(sanitizeChain);
   }
 
-  private async postChain(name: string, description: string, copyFrom?: PromptChain, type: ChainType = 'style'): Promise<{ id: string; chain?: PromptChain }> {
+  private async postChain(name: string, description: string, copyFrom?: Partial<PromptChain>, type: ChainType = 'style'): Promise<{ id: string; chain?: PromptChain }> {
     const payload: any = { name, description, type };
     if (copyFrom) {
       payload.basePrompt = copyFrom.basePrompt;
@@ -51,7 +51,7 @@ class DBService {
 
       // Default Subject for NEW chains is '1girl'.
       // User can clear this in editor (it will save as "" string), avoiding forced reset.
-      payload.variableValues = { subject: '1girl' };
+      payload.variableValues = { subject: type === 'style' || type === 'character' ? '1girl' : '' };
       // Initialize with empty tags
       payload.tags = [];
     }
@@ -62,7 +62,7 @@ class DBService {
     return (await this.postChain(name, description, copyFrom, type)).id;
   }
 
-  async createChainWithData(name: string, description: string, copyFrom: PromptChain, type: ChainType = 'style'): Promise<PromptChain> {
+  async createChainWithData(name: string, description: string, copyFrom?: Partial<PromptChain>, type: ChainType = 'style'): Promise<PromptChain> {
     const result = await this.postChain(name, description, copyFrom, type);
     // 兼容尚未重启的旧 Worker：只读新条目，仍不等待整份列表。
     const chain: PromptChain = result.chain || await api.get(`/chains/${encodeURIComponent(result.id)}`);

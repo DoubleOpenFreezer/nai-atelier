@@ -250,7 +250,8 @@ export async function handleAgentRoute(ctx: RouteContext): Promise<Response | nu
       await ensureVibeSchema(db);
       await ensureCharacterReferenceSchema(db);
       const [chains, inspirations, artists, vibes, groups, characterReferences, history] = await Promise.all([
-          db.prepare(`SELECT COUNT(*) AS total, SUM(CASE WHEN type = 'character' THEN 1 ELSE 0 END) AS characters FROM chains`).first<any>(),
+          db.prepare(`SELECT COUNT(*) AS total, SUM(CASE WHEN type = 'character' THEN 1 ELSE 0 END) AS characters,
+            SUM(CASE WHEN COALESCE(type, 'style') = 'style' THEN 1 ELSE 0 END) AS styles FROM chains`).first<any>(),
           db.prepare('SELECT COUNT(*) AS total FROM inspirations').first<any>(),
           db.prepare('SELECT COUNT(*) AS total FROM artists').first<any>(),
           db.prepare('SELECT COUNT(*) AS total FROM vibe_assets').first<any>(),
@@ -260,7 +261,8 @@ export async function handleAgentRoute(ctx: RouteContext): Promise<Response | nu
       ]);
       const characterCount = Number(chains?.characters || 0);
       return json({
-          styleChains: Math.max(0, Number(chains?.total || 0) - characterCount),
+          styleChains: Number(chains?.styles || 0),
+          promptLibraryItems: Math.max(0, Number(chains?.total || 0) - characterCount - Number(chains?.styles || 0)),
           characterChains: characterCount,
           inspirations: Number(inspirations?.total || 0),
           artists: Number(artists?.total || 0),

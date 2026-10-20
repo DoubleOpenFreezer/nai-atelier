@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React, { useState } from 'react';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ChainEditorPromptInputs, ChainEditorPromptInputsProps } from '../../../components/chain/ChainEditorPromptInputs';
 
@@ -27,9 +27,10 @@ describe('提示词上下文工具隔离', () => {
         activeLabLayout={{ order: ['prompt'], collapsed: {} }} mobileEditorTab="global" />;
     };
     render(<Harness />);
-    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
-    const clear = screen.getByRole('button', { name: '清空当前提示词' });
-    expect(clear.parentElement!.parentElement!.contains(screen.getByTitle('复制全局提示词'))).toBe(true);
+    const group = within(screen.getByRole('group', { name: '画师串' }));
+    const textarea = group.getByRole('textbox') as HTMLTextAreaElement;
+    const clear = group.getByRole('button', { name: '清空当前提示词' });
+    expect(clear.parentElement!.parentElement!.contains(screen.getByTitle('复制画师串'))).toBe(true);
     expect(textarea.parentElement!.contains(clear)).toBe(false);
     fireEvent.click(clear); expect(textarea.value).toBe(''); expect(document.activeElement).toBe(textarea);
     expect(preset).toHaveBeenLastCalledWith('base'); expect(mark).toHaveBeenCalledOnce();
@@ -38,9 +39,9 @@ describe('提示词上下文工具隔离', () => {
   it('实验室未传入资料工具时维持复制按钮，输入及复制行为不变', () => {
     const props = setup();
     expect(screen.queryByRole('button', { name: /识别|辅助/ })).toBeNull();
-    fireEvent.click(screen.getByTitle('复制全局提示词'));
-    expect(props.copyPromptToClipboard).toHaveBeenCalledWith('original prompt', '全局提示词');
-    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'updated prompt' } });
+    fireEvent.click(screen.getByTitle('复制画师串'));
+    expect(props.copyPromptToClipboard).toHaveBeenCalledWith('original prompt', '画师串');
+    fireEvent.change(screen.getByRole('textbox', { name: '画师串' }), { target: { value: 'updated prompt' } });
     expect(props.setPrompt).toHaveBeenCalledWith('updated prompt');
     expect(props.markPresetSectionModified).toHaveBeenCalledWith('base');
     expect(props.markChange).toHaveBeenCalledOnce();
@@ -49,9 +50,42 @@ describe('提示词上下文工具隔离', () => {
   it('提示词区不重复顶栏的识别和辅助入口，只读时仍可复制', () => {
     const props = setup({ canEdit: false });
     expect(screen.queryByRole('button', { name: /识别|辅助/ })).toBeNull();
-    expect((screen.getByRole('textbox') as HTMLTextAreaElement).disabled).toBe(true);
-    expect((screen.getByRole('button', { name: '清空当前提示词' }) as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.click(screen.getByTitle('复制全局提示词'));
-    expect(props.copyPromptToClipboard).toHaveBeenCalledWith('original prompt', '全局提示词');
+    expect(screen.getAllByRole('textbox').every(input => (input as HTMLTextAreaElement).disabled)).toBe(true);
+    expect(screen.getAllByRole('button', { name: '清空当前提示词' }).every(button => (button as HTMLButtonElement).disabled)).toBe(true);
+    expect(screen.getAllByRole('button', { name: '库导入' }).every(button => (button as HTMLButtonElement).disabled)).toBe(true);
+    fireEvent.click(screen.getByTitle('复制画师串'));
+    expect(props.copyPromptToClipboard).toHaveBeenCalledWith('original prompt', '画师串');
+  });
+
+  it('旧主体首次编辑保留在补充栏，各分栏清空与撤销只改变本栏', () => {
+    const Harness = () => {
+      const [subject, setSubject] = useState('legacy subject');
+      const [sections, setSections] = useState<import('../../../types').PromptSections>();
+      return <><ChainEditorPromptInputs {...{
+        prompt: 'artist', setPrompt: vi.fn(), presetSources: {}, tagAssistEnabled: false, canEdit: true,
+        copyPromptToClipboard: vi.fn(), markPresetSectionModified: vi.fn(), markChange: vi.fn(),
+        activeLabLayout: { order: ['prompt'], collapsed: {} }, mobileEditorTab: 'global' as const,
+      }} sections={sections} setSections={setSections} supplementPrompt={subject} setSupplementPrompt={setSubject} />
+      <output>{subject}</output></>;
+    };
+    render(<Harness />);
+    expect((screen.getByRole('textbox', { name: '补充' }) as HTMLTextAreaElement).value).toBe('legacy subject');
+    fireEvent.change(screen.getByRole('textbox', { name: '人物' }), { target: { value: 'silver_hair' } });
+    fireEvent.change(screen.getByRole('textbox', { name: '服饰' }), { target: { value: 'blue_dress' } });
+    expect(screen.getByRole('status').textContent).toBe('silver_hair, blue_dress, legacy subject');
+    const group = within(screen.getByRole('group', { name: '人物' }));
+    fireEvent.click(group.getByRole('button', { name: '清空当前提示词' }));
+    expect(screen.getByRole('status').textContent).toBe('blue_dress, legacy subject');
+    fireEvent.click(group.getByRole('button', { name: '撤销清空' }));
+    expect(screen.getByRole('status').textContent).toBe('silver_hair, blue_dress, legacy subject');
+  });
+
+  it('助手只改合并文本后，不显示旧分栏；继续编辑也不覆盖助手的新内容', () => {
+    const setSubject = vi.fn();
+    setup({ sections: { wardrobe: 'red_dress' }, supplementPrompt: 'blue_dress', setSupplementPrompt: setSubject });
+    expect((screen.getByRole('textbox', { name: '服饰' }) as HTMLTextAreaElement).value).toBe('');
+    expect((screen.getByRole('textbox', { name: '补充' }) as HTMLTextAreaElement).value).toBe('blue_dress');
+    fireEvent.change(screen.getByRole('textbox', { name: '姿势' }), { target: { value: 'sitting' } });
+    expect(setSubject).toHaveBeenCalledWith('sitting, blue_dress');
   });
 });
