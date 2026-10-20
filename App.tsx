@@ -9,6 +9,7 @@ import { db } from './services/dbService';
 import { collectionRevision, collectionSnapshot, subscribeCollection } from './services/collectionFavorites';
 import { NAI_ACCOUNTING_ERROR_EVENT } from './services/api';
 import { useCollectorAppearance } from './services/collectorAppearance';
+import { LAB_DEFAULT_PARAMS } from './services/labWorkspace';
 import { deleteLabWorkspaceSession, getLabWorkspaceSessionKey, markEditorSessionDiscarded } from './services/labWorkspace';
 import type { ChainEditorSaveHandle } from './components/ChainEditor';
 import {
@@ -541,7 +542,10 @@ const App = () => {
 
   /* 一键 Roll → 实验室：写目标角色 prompt 与「补充」栏，其它一字节不动；保留撤销快照 */
   const handleApplyContentRoll = async (plan: ContentRollApplyPlan): Promise<boolean> => {
-    const result = applyContentRollToParams(playgroundChain?.params, plan, createUuid);
+    /* 先确保实验室这个伪链存在，并以默认参数为基底 —— 否则「从没进过实验室」时写入的 params 会缺模型/尺寸等字段 */
+    ensurePlayground();
+    const base = playgroundChain?.params || LAB_DEFAULT_PARAMS;
+    const result = applyContentRollToParams(base, plan, createUuid);
     setContentRollUndo({ params: result.undoParams, createdRoleId: result.createdRoleId });
     await handleUpdatePlaygroundChain('playground', { params: result.params });
     return true;
