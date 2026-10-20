@@ -251,7 +251,7 @@ export const formatModelOptionTitle = (
 
 
 /* ---------- 提示词库（人物形象 / 服饰 / 姿势 / 场景） ---------- */
-export type PromptLibraryKind = 'appearance' | 'wardrobe' | 'pose' | 'scene';
+export type PromptLibraryKind = 'appearance' | 'wardrobe' | 'pose' | 'expression' | 'scene' | 'camera';
 
 /** 一次生成产出的单条方案。 */
 export interface PromptLibraryItem {
@@ -283,7 +283,9 @@ export const PROMPT_LIBRARY_KIND_LABELS: Record<PromptLibraryKind, string> = {
   appearance: '人物形象',
   wardrobe: '服饰',
   pose: '姿势',
+  expression: '表情状态',
   scene: '场景',
+  camera: '镜头画面',
 };
 
 export const promptAgentService = {

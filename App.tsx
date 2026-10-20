@@ -41,7 +41,7 @@ type KeepAliveView = Exclude<ViewState, 'edit'>;
 // 手机端实验室返回箭头的落点：只记录内容页，编辑器/实验室本身不作为返回落点。
 const LAB_ENTRY_VIEWS: ViewState[] = ['list', 'characters', 'prompts', 'library', 'aitag', 'danbooru', 'pixiv', 'codex', 'inspiration', 'history', 'footprint', 'roll'];
 const chainLibraryView = (type?: ChainType): ViewState => type === 'character' ? 'characters'
-  : type && ['appearance', 'wardrobe', 'pose', 'scene'].includes(type) ? 'prompts' : 'list';
+  : type && ['appearance', 'wardrobe', 'pose', 'expression', 'scene', 'camera'].includes(type) ? 'prompts' : 'list';
 
 const CACHE_TTL = 60 * 60 * 1000; // 1 Hour Cache
 

@@ -27,7 +27,9 @@ import {
   LoaderCircle,
   PersonStanding,
   Plus,
+  Aperture,
   Shirt,
+  Smile,
   Sparkles,
   Trash2,
   UserRound,
@@ -57,7 +59,9 @@ const KIND_ICONS: Record<PromptLibraryKind, React.FC<{ className?: string }>> = 
   appearance: UserRound,
   wardrobe: Shirt,
   pose: PersonStanding,
+  expression: Smile,
   scene: Image,
+  camera: Aperture,
 };
 
 /* ---------------- 存储约定 ---------------- */
@@ -1089,8 +1093,8 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
   );
 };
 
-const ALL_CONFIG: PromptLibraryKindConfig = {...PROMPT_LIBRARY_KINDS.appearance, type: ['appearance','wardrobe','pose','scene'], title:'图片提示词库', itemNoun:'提示词', emptyTitle:'图片提示词库还是空的', hideActions:true, emptyHint:'选择分类后可新建或生成提示词。'};
-const LIBRARY_CATEGORIES = ['all','appearance','wardrobe','pose','scene'] as const;
+const ALL_CONFIG: PromptLibraryKindConfig = {...PROMPT_LIBRARY_KINDS.appearance, type: ['appearance','wardrobe','pose','expression','scene','camera'], title:'图片提示词库', itemNoun:'提示词', emptyTitle:'图片提示词库还是空的', hideActions:true, emptyHint:'选择分类后可新建或生成提示词。'};
+const LIBRARY_CATEGORIES = ['all','appearance','wardrobe','pose','expression','scene','camera'] as const;
 type LibraryCategory = typeof LIBRARY_CATEGORIES[number];
 export const PromptLibraryHub: React.FC<PromptLibraryProps> = props => {
   useLanguage();
