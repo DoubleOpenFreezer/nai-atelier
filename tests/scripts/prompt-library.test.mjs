@@ -130,15 +130,24 @@ test('界面上的六类字段都能到达模型（后端 facets 清单与前端
     ['pose', 'gaze', '视线目标', '看镜头'],
     ['scene', 'light_dir', '光源方向', '逆光'],
     ['scene', 'env_event', '环境事件', '下雨'],
-    ['expression', 'eye_tone', '瞳色构成', '异色瞳'],
+    ['expression', 'eye_glow', '发光瞳', '强烈'],
     ['camera', 'motion', '运动趋势', '运动模糊'],
+    /* 本轮按本机字段名补齐的项 */
+    ['appearance', 'hair_detail', '发型细节', '层次'],
+    ['appearance', 'eye_left', '左眼瞳色', '红色'],
+    ['appearance', 'breasts_shape', '胸部·形态', '圆润'],
+    ['appearance', 'temp_hair', '头发临时状态', '湿润'],
+    ['wardrobe', 'outfit_scope', '生成范围', '完整穿搭'],
+    ['scene', 'light_intensity', '光源强度', '柔和'],
+    ['scene', 'light_softness', '光源软硬', '软光'],
+    ['pose', 'direction', '方位（拍摄方向）', '侧面'],
   ];
   for (const [kind, key, label, value] of cases) {
     const facets = library.collectLibraryFacets(kind, { [key]: value });
     assert.deepEqual(facets, [[label, value]], kind + '.' + key + ' 没有到达模型');
   }
-  /* 全量核对：六库字段数与本机一致（25/29/15/15/12/11 = 107） */
-  const counts = { appearance: 25, wardrobe: 29, pose: 15, scene: 15, expression: 12, camera: 11 };
+  /* 全量核对：六库字段数与本机对齐（28/29/16/17/10/11 = 111；职责划分也按本机调整） */
+  const counts = { appearance: 28, wardrobe: 29, pose: 16, scene: 17, expression: 10, camera: 11 };
   for (const [kind, expected] of Object.entries(counts)) {
     const spec = library.PROMPT_LIBRARY_KIND_FACETS(kind);
     assert.equal(spec.length, expected, kind + ' 的后端字段数不对');
