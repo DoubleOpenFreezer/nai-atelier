@@ -208,6 +208,32 @@ const setup = (entry: PromptChain = chain, rememberGenerationSettings = true, ge
 };
 const textPrompt = () => screen.getByRole('textbox', { name: '画师串' }) as HTMLTextAreaElement;
 
+it.each([
+  { name: '空正文', subject: '', sections: {}, expected: '' },
+  { name: '旧版手写正文', subject: 'legacy_subject', sections: {}, expected: 'legacy_subject' },
+  { name: '只有分栏的旧记录', subject: undefined, sections: { scene: 'restored_scene' }, expected: 'restored_scene' },
+])('Roll 撤销恢复$name后，编辑框、草稿回写与生成请求一致', async ({ subject, sections, expected }) => {
+  sessionStorage.setItem('nai_api_key', 'synthetic-key');
+  const initial = { ...chain, id: 'playground', variableValues: { subject: '' }, params: { ...chain.params, _promptSections: {} } };
+  const view = setup(initial);
+  const applied = { ...initial, variableValues: { subject: 'new_scene' }, params: { ...initial.params, _promptSections: { scene: 'new_scene' } } };
+  view.rerender(<ChainEditor {...view.props} chain={applied} sectionsRevision={1} />);
+  await waitFor(() => expect((screen.getByRole('textbox', { name: '场景' }) as HTMLTextAreaElement).value).toBe('new_scene'));
+
+  view.props.onUpdateChain.mockClear();
+  const restored: PromptChain = { ...initial, variableValues: subject === undefined ? {} : { subject }, params: { ...initial.params, _promptSections: sections } };
+  view.rerender(<ChainEditor {...view.props} chain={restored} sectionsRevision={2} />);
+  await waitFor(() => expect((screen.getByRole('textbox', { name: '场景' }) as HTMLTextAreaElement).value).toBe(sections.scene || ''));
+  expect((screen.getByRole('textbox', { name: '补充' }) as HTMLTextAreaElement).value).toBe(subject === 'legacy_subject' ? subject : '');
+  await waitFor(() => expect(view.props.onUpdateChain).toHaveBeenLastCalledWith('playground', expect.objectContaining({ variableValues: { subject: expected } })));
+  expect(loadLabWorkspaceSession('playground', fallback()).textToImage.subjectPrompt).toBe(expected);
+
+  fireEvent.click(screen.getByRole('button', { name: '生成合成文生图' }));
+  await waitFor(() => expect(state.buildDescriptor).toHaveBeenCalledOnce());
+  expect(state.buildDescriptor.mock.calls[0][0].history.subjectPrompt).toBe(expected);
+  expect(state.buildDescriptor.mock.calls[0][0].prompt).not.toContain('new_scene');
+});
+
 it('画师样张取用不自动生成，固定 Seed 不被随机偏好覆盖，保存真实新结果', async () => {
   sessionStorage.setItem('nai_api_key', 'synthetic-key');
   const templateParams = { ...chain.params, seed: 123, characters: [] };

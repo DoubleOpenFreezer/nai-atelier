@@ -489,14 +489,14 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
     }, [chain.id, params, subjectPrompt]);
 
     /* 一键 Roll 等外部入口写入 params 后，按版本号重新同步一次编辑区：
-       正文（subject）、分区与角色都取最新 chain.params，避免旧草稿覆盖新内容。 */
+       正文（subject）、分区与角色一起恢复；空正文也必须同步，避免旧草稿回写残留内容。 */
     useEffect(() => {
         if (!sectionsRevision) return;
         const incoming = chain.params;
         if (!incoming) return;
         setParams(normalizeParams(incoming));
         const merged = mergePromptSections(incoming._promptSections);
-        if (merged) setSubjectPrompt(merged);
+        setSubjectPrompt(chain.variableValues?.subject ?? merged);
     }, [sectionsRevision]);
 
     useEffect(() => {

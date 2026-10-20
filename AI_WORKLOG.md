@@ -6,6 +6,7 @@
 
 ## 2026-10-20
 
+- **Codex（GPT-6）**：修复 Roll 撤销的编辑器外部同步，保留明确空正文与旧版手写正文，缺省时回落到分栏合并；补充组件回归，检查编辑框、延迟草稿回写、持久草稿与生成请求使用同一恢复结果。
 - **DeepSeek Harness（deepseek/deepseek-v4.1-flash）**：修四处缺陷 —— ① **空白正文撤销不彻底**：撤销时用真值判断决定是否写回 `variableValues.subject`，应用前正文为空串时会被跳过，留下新正文；改为**无条件写回**。② **多人应用残留旧负面**：`all-enabled` 分支只在新负面非空时覆盖、从不删除，补上与单目标一致的「无负面即删除」。③ **旧格式读取变成 `[object Object]`**：`_characterSectionsNegatives` 里的值可能是 `{ text, note }` 对象，`String()` 会拼坏；改为取 `text`／`negative`，退回 `note`。④ **来源被覆盖**：选择器同时调用 `onPickEntry` 与 `onPick`，后一次把 `entryId` / `entryName` 冲掉；改为有 `onPickEntry` 时不再调 `onPick`。补 3 项回归用例（多人旧负面、旧格式对象、来源不被覆盖），`contentRollApply`+`characterPrompts`+选择器 30/30。版本由 2.13.0 递增至 2.13.1。
 - **DeepSeek Harness（deepseek/deepseek-v4.1-flash）**：复查 §8 第三条 —— **候选来源标记**：新增 `services/promptProvenance.ts`（按需求文本与限定项取值反推每个 Tag 是「用户要求 / AI 补全 / 未标注」，保守判定、没有需求信息时一律未标注，另给出 `summarizePromptSources` 计数）+ 5 项单测；候选卡片的标签 chip 现在带 `U`/`A`/`·` 前缀与配色，并在旁边显示「用户 N · AI M」。`tsc` 零错误、i18n 与 locale 门禁仍全绿。版本由 2.12.1 递增至 2.13.0。
 - **DeepSeek Harness（deepseek/deepseek-v4.1-flash）**：复查 §8 前两条 —— ① 工作区范围的**默认改为「仅角色」**并把选择记进 localStorage（下次沿用，对应本机约定）；② **append 与 fill-missing 语义分开**：append 去重追加，fill-missing 只在栏位为空时填入、已有内容原样保留（对应本地「补充未设置项」），选择器按钮改名为「只填空白栏位」。`promptApply` 4/4、tsc 零错误。版本由 2.12.0 递增至 2.12.1。
