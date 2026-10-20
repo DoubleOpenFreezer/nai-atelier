@@ -6,6 +6,7 @@
 
 ## 2026-10-20
 
+- **DeepSeek Harness（deepseek/deepseek-v4.1-flash）**：统一选择器（第一版）—— 新增 `services/promptApply.ts`（三种应用模式 replace / append / fill-missing、跨类冲突判定、已覆盖项计数，含 4 项单测）；`PromptLibraryPicker` 重写为带模式切换、跨类提示、当前栏位覆盖提示的选择面板，新增可选的 `targetKind` / `current` / `onPickEntry` 参数（保留旧的 `onPick(string)` 契约，既有测试不改仍通过），并接到 `ChainEditorPromptInputs` 的分区栏位（替换/追加/只补缺失，不再是唯一追加）。词典补 6 个键。`tsc` 零错误、选择器 + i18n + 新模式共 27 项测试通过。版本由 2.8.1 递增至 2.9.0。
 - **DeepSeek Harness（deepseek/deepseek-v4.1-flash）**：把六库 107 个限定项的全部文案补齐四语言 —— `locales/messages.json` 增 249 个键（发型 / 发色 / 瞳色 / 眼型 / 腰线 / 上装下装外套连体装及颜色 / 版型 / 袖型 / 材质 / 纹样 / 层次 / 穿着状态 / 活动 / 朝向 / 手臂腿部 / 手势 / 持物 / 视线 / 支撑物 / 地点 / 陈设 / 背景人群 / 环境事件 / 季节标志物 / 光源方向 / 运动趋势），`promptLibraryLocale` 测试（814 条配置字符串全覆盖）由失败转通过。全套 `tests/services` + `tests/integration` 回到 95/98 文件、1033/1037 用例，剩余 3 个失败仍是既有问题。版本由 2.8.0 递增至 2.8.1。
 - **DeepSeek Harness（deepseek/deepseek-v4.1-flash）**：工作台 UI 的第一块 —— 新增 `components/chain/CharacterSectionSummary.tsx`：角色卡片下的**分栏摘要卡**（填了哪几栏 / 正文合计字数 / 四个分栏 chip 的填充状态）+ **来源详情折叠**（展开后逐栏显示来源条目名、约束备注、内容负面，明确标注这些字段只用于追溯、不进入请求）。挂在 `ChainEditorCharacters` 的分栏编辑区之后，词典补 7 个键。`tsc` 零错误、i18n 与外观审计均未因新增组件产生新违规（外观审计剩余 5 条仍在两个未修改文件里）。版本由 2.7.1 递增至 2.8.0。
 - **DeepSeek Harness（deepseek/deepseek-v4.1-flash）**：给四态标签表补上配置里已在用、但表里缺失的四个键（`hairstyle` / `view` / `scene` / `framing`），六库 107 个限定项现在全部有中文标签，不会再被派生逻辑误判成「结构待确认」。版本由 2.7.0 递增至 2.7.1。

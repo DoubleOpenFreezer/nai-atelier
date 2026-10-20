@@ -36,8 +36,8 @@ const PromptField: React.FC<PromptFieldProps> = ({ label, value, placeholder, li
         <div className="flex min-w-0 items-center justify-between gap-2">
             <label htmlFor={id} className="truncate text-sm font-semibold text-gray-800 dark:text-gray-100">{t(label)}</label>
             <div className="flex shrink-0 items-center gap-1">
-                {library && <PromptLibraryPicker kind={library} disabled={disabled}
-                    onPick={picked => onChange(appendPromptText(value, picked))} />}
+                {library && <PromptLibraryPicker kind={library} disabled={disabled} targetKind={library} current={value}
+                    onPick={picked => onChange(picked)} />}
                 <span ref={clearSlot} />
                 <PromptCopyButton onClick={() => onCopy(value, label)} title={t('复制{0}', [t(label)])} />
             </div>
