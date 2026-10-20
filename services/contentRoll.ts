@@ -30,7 +30,7 @@ export type RollKind = 'appearance' | 'wardrobe' | 'pose' | 'expression' | 'scen
 export type ChainLike = {
   id?: string; name?: string; description?: string; tags?: string[]; previewImage?: string;
   basePrompt?: string; negativePrompt?: string; updatedAt?: number; type?: string;
-  params?: { _wardrobe?: Record<string, unknown> } & Record<string, unknown>;
+  params?: unknown;
 };
 /** 一次抽取记录（本文件只读它的 picks / checks）。 */
 export type RollRecordLike = {

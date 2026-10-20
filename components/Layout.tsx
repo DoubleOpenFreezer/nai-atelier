@@ -35,7 +35,7 @@ import { ImagePreviewPortal } from './ImagePreviewPortal';
 
 const GlobalSettings = React.lazy(() => import('./GlobalSettings').then(module => ({ default: module.GlobalSettings })));
 
-type AppView = 'list' | 'characters' | 'prompts' | 'edit' | 'library' | 'aitag' | 'danbooru' | 'pixiv' | 'codex' | 'inspiration' | 'history' | 'footprint' | 'playground' | 'roll';
+type AppView = 'list' | 'characters' | 'prompts' | 'edit' | 'library' | 'aitag' | 'danbooru' | 'pixiv' | 'codex' | 'inspiration' | 'history' | 'footprint' | 'playground' | 'roll' | 'content-roll';
 type SettingsSection = 'home' | 'appearance' | 'generation' | 'novelai' | 'agent' | 'maintenance';
 
 interface LayoutProps {
@@ -133,6 +133,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
     { label: '工作区', items: [
       { id: 'list', label: '风格串', icon: icons.list },
       { id: 'playground', label: '实验室', icon: icons.lab },
+      { id: 'content-roll', label: '一键 Roll', icon: Dice5 },
       { id: 'roll', label: 'Roll 串', icon: Dice5 },
     ] },
     { label: '资源库', items: [
