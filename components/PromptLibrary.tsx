@@ -52,6 +52,7 @@ import { isTopmostModal, useModalA11y } from './useModalA11y';
 
 import { PROMPT_LIBRARY_KINDS, type PromptLibraryKindConfig } from './promptLibraryConfig';
 import { removePromptTag, tagDetails } from '../services/promptTagFilter';
+import { classifyPromptTags, summarizePromptSources } from '../services/promptProvenance';
 export { PROMPT_LIBRARY_KINDS } from './promptLibraryConfig';
 export type { PromptLibraryFacet, PromptLibraryKindConfig } from './promptLibraryConfig';
 
@@ -1026,10 +1027,20 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
                     </label>
                     {(() => {
                       const chips = tagDetails(draft.prompt || '', draft.bilingual || '');
+                      const marks = classifyPromptTags(draft.prompt || '', { brief, facets });
+                      const sourceOf = (tag: string) => marks.find(mark => mark.tag === tag)?.source || 'unmarked';
                       if (!chips.length) return null;
                       return (
                         <div className="mt-1 flex flex-wrap items-center gap-1" data-candidate-tags={index}>
                           <span className="text-micro text-gray-400">{t('逐标签删除')}</span>
+                          {(() => {
+                            const summary = summarizePromptSources(marks);
+                            return (
+                              <span className="text-micro text-gray-400" data-candidate-source-summary={index}>
+                                {t('用户 {0} · AI {1}', [String(summary.user), String(summary.ai)])}
+                              </span>
+                            );
+                          })()}
                           {chips.map(chip => (
                             <button key={chip.raw} type="button"
                               title={chip.weighted ? t('带权重标签默认不拆，先去掉权重再删') : t('删除这个标签')}
@@ -1040,7 +1051,11 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
                               }}
                               className={`inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 font-mono text-micro ${chip.weighted
                                 ? 'border-amber-300 text-amber-600 dark:border-amber-800 dark:text-amber-400'
-                                : 'border-gray-200 text-gray-600 hover:border-red-400 hover:text-red-600 dark:border-gray-700 dark:text-gray-300'}`}>
+                                : 'border-gray-200 text-gray-600 hover:border-red-400 hover:text-red-600 dark:border-gray-700 dark:text-gray-300'}`}
+                              data-candidate-tag-source={sourceOf(chip.tag)}>
+                              <span aria-hidden className={sourceOf(chip.tag) === 'user' ? 'text-emerald-600 dark:text-emerald-400' : sourceOf(chip.tag) === 'ai' ? 'text-indigo-500 dark:text-indigo-300' : 'text-gray-400'}>
+                                {sourceOf(chip.tag) === 'user' ? 'U' : sourceOf(chip.tag) === 'ai' ? 'A' : '·'}
+                              </span>
                               {chip.tag}
                               {chip.bilingual ? <span className="font-sans text-gray-400">{chip.bilingual}</span> : null}
                               <span aria-hidden>×</span>
