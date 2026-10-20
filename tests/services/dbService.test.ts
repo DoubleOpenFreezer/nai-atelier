@@ -41,6 +41,13 @@ const makeChain = (overrides: Partial<PromptChain> = {}): PromptChain => ({
   ...overrides,
 });
 
+it('新提示词库条目不夹带默认人物词，创建回执直接返回完整数据', async () => {
+  const chain = makeChain({ type: 'wardrobe' });
+  apiMock.post.mockResolvedValue({ id: chain.id, chain });
+  expect(await db.createChainWithData('synthetic', '', undefined, 'wardrobe')).toEqual(chain);
+  expect(apiMock.post).toHaveBeenLastCalledWith('/chains', expect.objectContaining({ type: 'wardrobe', variableValues: { subject: '' } }));
+});
+
 describe('dbService 会话级 blob: 封面防护', () => {
   beforeEach(() => {
     vi.clearAllMocks();

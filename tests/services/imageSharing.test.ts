@@ -55,6 +55,19 @@ const withStealth = (raw: Record<string, unknown>, magic: string) => {
 };
 
 describe('独立图片分享副本', () => {
+  it('仅清提示词也移除分栏和库对照等隐藏副本，保留真实生成参数', async () => {
+    const base = encode({ width: 1, height: 1, data: new Uint8Array([1, 2, 3, 255]), text: {
+      Comment: JSON.stringify({ prompt: 'private prompt', steps: 28, width: 832, height: 1216,
+        _promptSections: { wardrobe: 'private wardrobe' }, _promptLibrary: { bilingual: 'private translation', references: [{ prompt: 'private reference' }] },
+        params: { _promptSections: { extra: 'nested private scene' } } }),
+    } });
+    const cleaned = readComment(await cleanPngForSharing(base, '', 'prompts'));
+    expect(cleaned).toMatchObject({ steps: 28, width: 832, height: 1216 });
+    expect(JSON.stringify(cleaned)).not.toContain('private');
+    expect(cleaned).not.toHaveProperty('_promptSections');
+    expect(cleaned).not.toHaveProperty('_promptLibrary');
+  });
+
   it('用户提供的 NAI 样例保留已记录参数与空值，移除提示词、生成耗时和签名', async () => {
     const comment = { prompt: '👻👻👻', uc: '', steps: 28, width: 1024, height: 1024, scale: 5, uncond_scale: 1, cfg_rescale: 0, seed: null,
       n_samples: 1, noise_schedule: 'native', sampler: 'k_euler_ancestral', request_type: 'PromptGenerateRequest', signed_hash: '',

@@ -52,7 +52,10 @@ const state = vi.hoisted(() => ({
   delayedSubscription: null as Promise<NovelaiSubscriptionInfo | null> | null,
 }));
 
-vi.mock('../../services/promptAgent', () => ({ promptAgentService: { getConfig: state.agentConfig } }));
+vi.mock('../../services/promptAgent', async importOriginal => ({
+  ...await importOriginal<typeof import('../../services/promptAgent')>(),
+  promptAgentService: { getConfig: state.agentConfig },
+}));
 vi.mock('../../services/artistSampleDrafts', async original => ({ ...await original<typeof import('../../services/artistSampleDrafts')>(), saveArtistOwnSample: state.saveArtistSample }));
 vi.mock('../../services/generationJob', async importOriginal => {
   const actual = await importOriginal<typeof import('../../services/generationJob')>();
@@ -203,7 +206,7 @@ const setup = (entry: PromptChain = chain, rememberGenerationSettings = true, ge
     tagAssistEnabled: false, onTagAssistEnabledChange: vi.fn(), generationStreamPreview: false, rememberGenerationSettings, generationMemory, labPageLayouts: cloneDefaultLabPageLayouts(), safeMode: false, onBack: vi.fn() };
   return { ...render(<ChainEditor {...props} />), props };
 };
-const textPrompt = () => screen.getByPlaceholderText('输入全局提示词，英文逗号分隔') as HTMLTextAreaElement;
+const textPrompt = () => screen.getByRole('textbox', { name: '画师串' }) as HTMLTextAreaElement;
 
 it('画师样张取用不自动生成，固定 Seed 不被随机偏好覆盖，保存真实新结果', async () => {
   sessionStorage.setItem('nai_api_key', 'synthetic-key');

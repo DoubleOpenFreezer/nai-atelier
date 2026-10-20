@@ -42,10 +42,10 @@ it('详情中的菜单和确认仍优先，保活页里的旧详情不进入当�
   const modal = document.createElement('div'); modal.setAttribute('role', 'dialog'); modal.setAttribute('aria-label', '确认窗口'); modal.style.zIndex = '2000'; document.body.append(modal);
   expect(readAgentPage().title).toBe('确认窗口'); modal.remove(); expect(readAgentPage().title).toContain('合成作品');
 });
-it('页面切换等待 App 回执，返回切换后的真实页面', async () => {
+it.each([['characters', '角色库'], ['prompts', '图片提示词库']])('页面切换 %s 等待 App 回执，返回切换后的真实页面', async (view, title) => {
   const listener = (event: Event) => { const detail = (event as CustomEvent).detail; document.querySelector<HTMLElement>('main')!.dataset.agentView = detail.view; detail.resolve(); };
   window.addEventListener('nai-agent-page-navigate', listener);
-  try { expect((await operateAgentPage({ action: 'navigate', view: 'characters' })).title).toBe('角色库'); }
+  try { expect((await operateAgentPage({ action: 'navigate', view })).title).toBe(title); }
   finally { window.removeEventListener('nai-agent-page-navigate', listener); }
 });
 it('填写前校验选择项与数值边界，拒绝时不改变原字段', async () => {

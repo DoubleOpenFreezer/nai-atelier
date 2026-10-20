@@ -31,13 +31,16 @@ const DanbooruGallery = lazy(() => import('./components/DanbooruGallery').then(m
 const PixivGallery = lazy(() => import('./components/PixivGallery').then(module => ({ default: module.PixivGallery })));
 const CodexGallery = lazy(() => import('./components/CodexGallery').then(module => ({ default: module.CodexGallery })));
 const CharacterLibrary = lazy(() => import('./components/CharacterLibrary').then(module => ({ default: module.CharacterLibrary })));
+const PromptLibraryHub = lazy(() => import('./components/PromptLibrary').then(module => ({ default: module.PromptLibraryHub })));
 const StyleRollPage = lazy(() => import('./components/StyleRollPage').then(module => ({ default: module.StyleRollPage })));
 
-type ViewState = 'list' | 'characters' | 'edit' | 'library' | 'aitag' | 'danbooru' | 'pixiv' | 'codex' | 'inspiration' | 'history' | 'footprint' | 'playground' | 'roll';
+type ViewState = 'list' | 'characters' | 'prompts' | 'edit' | 'library' | 'aitag' | 'danbooru' | 'pixiv' | 'codex' | 'inspiration' | 'history' | 'footprint' | 'playground' | 'roll';
 type KeepAliveView = Exclude<ViewState, 'edit'>;
 
 // 手机端实验室返回箭头的落点：只记录内容页，编辑器/实验室本身不作为返回落点。
-const LAB_ENTRY_VIEWS: ViewState[] = ['list', 'characters', 'library', 'aitag', 'danbooru', 'pixiv', 'codex', 'inspiration', 'history', 'footprint', 'roll'];
+const LAB_ENTRY_VIEWS: ViewState[] = ['list', 'characters', 'prompts', 'library', 'aitag', 'danbooru', 'pixiv', 'codex', 'inspiration', 'history', 'footprint', 'roll'];
+const chainLibraryView = (type?: ChainType): ViewState => type === 'character' ? 'characters'
+  : type && ['appearance', 'wardrobe', 'pose', 'scene'].includes(type) ? 'prompts' : 'list';
 
 const CACHE_TTL = 60 * 60 * 1000; // 1 Hour Cache
 
@@ -150,13 +153,13 @@ const App = () => {
     };
     const navigate = (event: Event) => {
       const detail = (event as CustomEvent).detail || {};
-      if (['list', 'characters', 'library', 'aitag', 'danbooru', 'pixiv', 'codex', 'inspiration', 'history', 'playground', 'roll'].includes(detail.view)) {
+      if (['list', 'characters', 'prompts', 'library', 'aitag', 'danbooru', 'pixiv', 'codex', 'inspiration', 'history', 'playground', 'roll'].includes(detail.view)) {
         void handleNavigateRef.current(detail.view, detail.id, { externalImport: detail.externalImport === true });
       }
     };
     const navigatePage = (event: Event) => {
       const detail = (event as CustomEvent).detail;
-      if (!detail || !['list', 'characters', 'library', 'aitag', 'danbooru', 'pixiv', 'codex', 'inspiration', 'history', 'playground', 'roll'].includes(detail.view)) { detail?.reject?.(new Error('页面不存在')); return; }
+      if (!detail || !['list', 'characters', 'prompts', 'library', 'aitag', 'danbooru', 'pixiv', 'codex', 'inspiration', 'history', 'playground', 'roll'].includes(detail.view)) { detail?.reject?.(new Error('页面不存在')); return; }
       void handleNavigateRef.current(detail.view).then(detail.resolve, detail.reject);
     };
     window.addEventListener('nai-agent-ui-preferences', applyPreferences);
@@ -503,7 +506,7 @@ const App = () => {
     if (newView === 'playground') ensurePlayground();
 
     // Auto-load data based on view, respecting cache
-    if ((newView === 'list' || newView === 'characters') && options.refreshData !== false) refreshData();
+    if (['list', 'characters', 'prompts'].includes(newView) && options.refreshData !== false) refreshData();
     if (newView === 'inspiration') loadInspirations();
 
   };
@@ -539,6 +542,14 @@ const App = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const createLibraryChain = async (name: string, description: string, type: ChainType, data?: Partial<PromptChain>) => {
+    const saved = await db.createChainWithData(name, description, data, type);
+    recentCreatedChainsRef.current.set(saved.id, { chain: saved, revision: ++chainCreateRevisionRef.current });
+    setChains(current => [saved, ...current.filter(item => item.id !== saved.id)]);
+    setLastChainFetch(0);
+    return saved.id;
   };
 
   const handleForkChain = async (chain: PromptChain, targetType?: ChainType) => {
@@ -622,7 +633,7 @@ const App = () => {
     // 1. 确保列表渲染批次（visibleCount）包含该卡片及之前的所有卡片，保证容器拥有足够的高度恢复原滚动位置；
     // 2. useKeepAliveScrollRestore 精确恢复离开前的像素级滚动位置；
     // 3. 若目标卡片仍在视口内则不强制居中，若因排序变动离开视口则由 useRestoreListAnchor 兜底滚回可见范围。
-    void handleNavigate(selectedChain?.type === 'character' ? 'characters' : 'list', selectedChain?.id || selectedId, { refreshData: false });
+    void handleNavigate(chainLibraryView(selectedChain?.type), selectedChain?.id || selectedId, { refreshData: false });
   };
 
   if (!currentUser && !dbConfigError) {
@@ -664,6 +675,9 @@ const App = () => {
           isGuest={false}
           returnTargetId={view === 'list' ? selectedId : undefined}
         />;
+      case 'prompts':
+        return <PromptLibraryHub chains={chains} onCreate={createLibraryChain} onUpdateChain={handleUpdateChain}
+          onDelete={handleDelete} notify={notify} />;
       case 'characters':
         return <CharacterLibrary
           chains={chains}
@@ -845,7 +859,7 @@ const App = () => {
 
   const getActiveView = (): ViewState => {
     if (view === 'edit') {
-      return getSelectedChain()?.type === 'character' ? 'characters' : 'list';
+      return chainLibraryView(getSelectedChain()?.type);
     }
     return view;
   };

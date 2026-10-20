@@ -131,6 +131,19 @@ export interface NAIParams {
     enabled: boolean;
     slots: CharacterReferenceSelection[];
   };
+  /**
+   * 提示词分栏（人物 / 服饰 / 姿势 / 补充）的原文。
+   * 合并结果仍写入 PromptChain.variableValues.subject，这里只用于回填各栏；旧数据没有该字段。
+   */
+  _promptSections?: PromptSections;
+}
+
+/** 实验室提示词分栏原文；缺省或全为空表示尚未使用分栏（旧数据）。 */
+export interface PromptSections {
+  appearance?: string;
+  wardrobe?: string;
+  pose?: string;
+  extra?: string;
 }
 
 export type ImageEditOperation = 'image-to-image' | 'inpaint' | 'outpaint';
@@ -244,10 +257,10 @@ export type PromptAgentAction =
   | { kind: 'request_generation'; patch: { reason?: string; requestId?: string; count?: number; placement?: 'end' | 'next' } }
   | { kind: 'set_client_preferences'; patch: { themeMode?: 'light' | 'dark' | 'system'; safeMode?: boolean; safeModeStartup?: boolean; imageLayout?: 'masonry' | 'portrait' | 'square'; imageColumns?: 'auto' | 1 | 2 | 3; mobileCacheLimit?: 0 | 25 | 50 | 100 } }
   | { kind: 'manage_artist_favorite'; patch: { name: string; favorite: boolean } }
-  | { kind: 'navigate_view'; patch: { view: 'list' | 'characters' | 'library' | 'aitag' | 'inspiration' | 'history' | 'playground'; id?: string } }
+  | { kind: 'navigate_view'; patch: { view: 'list' | 'characters' | 'prompts' | 'library' | 'aitag' | 'inspiration' | 'history' | 'playground'; id?: string } }
   | { kind: 'request_project_action'; patch: { action: string; resourceId?: string; title: string; consequence: string; payload?: Record<string, unknown>; requestId?: string } };
 
-export type ChainType = 'style' | 'character';
+export type ChainType = 'style' | 'character' | 'appearance' | 'wardrobe' | 'pose' | 'scene';
 
 // Flattened Chain Structure (No more separate versions table)
 export interface PromptChain {
