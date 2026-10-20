@@ -6,6 +6,7 @@
 
 ## 2026-10-20
 
+- **DeepSeek Harness（deepseek/deepseek-v4.1-flash）**：把补丁工具链纳入 CI 可验证范围 —— 新增 `tests/integration/naiRollParity.test.ts`（5 项：池子与指纹、同随机码抽取、固定/未参与/空库、单栏重抽与还原、快照/白名单读取/四态约束/证据，逐项比对**产物片段 `tools/nai-roll/patches/roll/core.mjs`** 与 **源码服务** 的结果）与 `.github/workflows/nai-roll.yml`（npm ci → tsc → build → 19 个工具脚本 node --check → 34 项单测 → 一致性比对；需要已安装应用的端到端套件仍为手工验收）。`npx tsc --noEmit` 零错误、定向 vitest 39/39。版本由 2.0.1 递增至 2.0.2。
 - **DeepSeek Harness（deepseek/deepseek-v4.1-flash）**：补齐两个新库**全部限定项选项值**的四语言译文（98 个键：情绪 / 表情 / 眼睛 / 眉部 / 嘴部 / 泪水 / 脸红 / 汗水，以及景别 / 视角 / 透视 / 构图 / 对焦 / 景深 / 倾斜 / 清晰度 / 成像效果），词典总数 4677，两个库的 120 个选项已无中文回退。版本由 2.0.0 递增至 2.0.1。
 - **DeepSeek Harness（deepseek/deepseek-v4.1-flash）**：场景与镜头成为**独立提示词栏位** —— `PromptSections` 增加 `scene` / `camera`，`normalizePromptSections`、`mergePromptSections`（顺序：人物 → 服饰 → 姿势 → 场景 → 镜头 → 补充）、`resolvePromptSections` 回退同步，`ChainEditorPromptInputs` 的 `SECTION_FIELDS` 增两栏（各自可接场景库 / 镜头库），`contentRollApply` 改为把场景、镜头分别写进 `_promptSections.scene` / `.camera`（不再占用补充栏），界面文案与单测同步。`npx tsc --noEmit` 零错误、`npm run build` 通过、定向 vitest 34/34。版本由 1.99.0 递增至 2.0.0（`PromptSections` 结构变更）。
 - **DeepSeek Harness（deepseek/deepseek-v4.1-flash）**：Roll 内容库接通封面 —— 卡片显示封面缩略图/无封面占位，新增「从历史选封面 / 换封面」复用 `HistoryImagePicker`，选中后按图片提示词库同一约定写 `previewImage = /api/local-history/<id>/image`（Worker 转独立资产）。源码版冒烟：内容库列出 1 条、封面按钮就位、选图器可打开、无控制台报错。版本由 1.98.1 递增至 1.99.0。
