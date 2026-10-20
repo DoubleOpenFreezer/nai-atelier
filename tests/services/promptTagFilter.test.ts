@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parsePromptTags, removePromptTag, tagDetails } from '../../services/promptTagFilter';
+import { parsePromptTags, removePromptTag, splitPromptSegments, tagDetails } from '../../services/promptTagFilter';
 
 describe('候选逐标签筛选', () => {
   const prompt = 'blonde_hair, blue_eyes, (school_uniform:1.2), white_dress';
@@ -53,5 +53,33 @@ describe('候选逐标签筛选', () => {
     expect(hit.removed).toBe(true);
     expect(hit.prompt).toBe('wave');
     expect(removePromptTag('', '', 'x').removed).toBe(false);
+  });
+});
+
+describe('权重组分词（复查 §6 的复现用例）', () => {
+  const prompt = '1.3::silver hair, long hair::, blue eyes';
+
+  it('::…:: 组内部的逗号不当作分隔符', () => {
+    expect(splitPromptSegments(prompt)).toEqual(['1.3::silver hair, long hair::', 'blue eyes']);
+    const tokens = parsePromptTags(prompt);
+    expect(tokens).toHaveLength(2);
+    expect(tokens[0].weighted).toBe(true);
+    expect(tokens[0].weight).toBe(1.3);
+    expect(tokens[1].tag).toBe('blue eyes');
+  });
+
+  it('默认不拆权重组，删组内 tag 被拒绝；显式允许时整组删除且不留残骸', () => {
+    const blocked = removePromptTag(prompt, '', 'silver hair');
+    expect(blocked.removed).toBe(false);
+    expect(blocked.reason).toBe('weighted');
+    const allowed = removePromptTag(prompt, '', 'silver hair, long hair', { allowWeighted: true });
+    expect(allowed.removed).toBe(true);
+    expect(allowed.prompt).toBe('blue eyes');
+    expect(allowed.prompt).not.toContain('::');
+  });
+
+  it('括号内的逗号同样不拆，普通逗号仍然正常分隔', () => {
+    expect(splitPromptSegments('(a, b), c')).toEqual(['(a, b)', 'c']);
+    expect(splitPromptSegments('a, b, c')).toEqual(['a', 'b', 'c']);
   });
 });
