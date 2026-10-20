@@ -140,7 +140,8 @@ export const FACET_LABELS: Record<string, string> = {
   skin: '肤色', sleeve: '袖型', spot: '地点与室内外', style: '风格', subject: '角色数量（全局）', subject_gender: '性别组成',
   support: '接触／支撑物', sweat: '汗水', target: '作用角色', tears: '眼泪', temp_body: '身体与衣物的临时状态', temp_hair: '头发临时状态',
   tilt: '身体倾斜', time: '时间', top: '上装', top_color: '上装颜色', traits: '固有特征', translucency: '材质·透光', viewpoint: '视点',
-  waist: '腰线', wear_state: '穿着状态', weather: '天气'
+  waist: '腰线', wear_state: '穿着状态', weather: '天气',
+  hairstyle: '发型（整体）', view: '视角（取景）', scene: '场景地点', framing: '构图'
 };
 export const facetLabel = (key: string) => FACET_LABELS[String(key)] || String(key);
 export const clip = (value: Json, max: Json) => {
