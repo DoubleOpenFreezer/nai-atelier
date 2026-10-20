@@ -73,6 +73,63 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); localStorage.clear(); applyAppearancePreferences(DEFAULT_APPEARANCE_PREFERENCES, false); });
 
 describe('全局外观覆盖审计', () => {
+  it('助手挤窄时不再由 1180px 容器查询强制纵排，字段和生成栏按剩余宽度收纳', () => {
+    expect(css).not.toContain('@container workspace (max-width: 1180px)');
+    expect(declarations('.agent-panel-docked .workspace-container.workspace-editor-compact .chain-editor-body', '(min-width: 1024px)', css)['flex-direction']).toBe('column');
+    expect(declarations('.agent-panel-docked .chain-editor-param-grid', '(min-width: 1024px)', css)['grid-template-columns']).toBe('repeat(auto-fit, minmax(min(100%, 10rem), 1fr))');
+    const count = '.agent-panel-docked .chain-editor-preview .generation-count-control';
+    const container = parse(css).nodes.flatMap(node => node.type === 'atrule' ? node.nodes || [] : [])
+      .find(node => node.type === 'atrule' && node.name === 'container' && node.params === 'workspace (max-width: 980px)');
+    expect(container).toBeTruthy();
+    const narrowCss = container!.toString();
+    expect(declarations('.agent-panel-docked .chain-editor-header', undefined, narrowCss)['padding-inline']).toBe('.5rem');
+    expect(declarations('.agent-panel-docked .chain-editor-header-main', undefined, narrowCss)['padding-right']).toBe('0');
+    expect(declarations('.agent-panel-docked .chain-editor-header .generation-mode-nav > button', undefined, narrowCss)['padding-inline']).toBe('0');
+    expect(declarations(count, undefined, narrowCss)).toMatchObject({ display: 'grid', width: '100%', 'max-width': '100%' });
+    expect(declarations(`${count} > .generation-action-button`, undefined, narrowCss)).toMatchObject({ 'grid-column': '1 / -1', 'grid-row': '1' });
+    expect(declarations(`${count} > :not(.generation-action-button)`, undefined, narrowCss)).toMatchObject({ position: 'static', 'grid-row': '2' });
+    for (const file of ['ChainEditor.tsx', 'ImageEditControls.tsx', 'ChainEditorPreview.tsx']) {
+      const text = readFileSync(`components/${file}`, 'utf8');
+      expect(text).toMatch(/className="[^"]*chain-editor-(?:main|preview) [^"]*min-w-0/);
+    }
+  });
+  it('角色动作行图标紧凑但保留触屏高度，正文不再有坐标侧栏或额外横向内边距', () => {
+    const source = readFileSync('components/chain/ChainEditorCharacters.tsx', 'utf8');
+    expect(source).not.toContain('sm:w-28');
+    expect(source).toContain('className="lab-character relative min-w-0 py-3"');
+    expect(declarations(".character-tools [data-appearance='control']", undefined, css)).toMatchObject({ height: '24px', width: '24px', background: 'transparent', border: '0' });
+    expect(declarations(".character-tools button", '(pointer: coarse)', css)).toMatchObject({ height: '44px', 'min-height': '44px' });
+  });
+  it('电脑编辑分区占左栏且固定在滚动外，玻璃顶栏避让与助手窄栏同步', () => {
+    const detailCss = readFileSync('components/themeDetails.css', 'utf8');
+    expect(declarations('.workspace-mode-tabs', '(min-width: 1024px)', css)).toMatchObject({ width: 'var(--lab-tabs-width, calc(50% - 1.5rem))', height: 'var(--lab-tabs-height)', 'margin-left': 'var(--lab-tabs-left, .75rem)', 'margin-bottom': 'calc(var(--lab-tabs-chrome-gap, 0px) - var(--lab-tabs-height))' });
+    expect(declarations('.chain-editor-workspace', '(min-width: 1024px)', css)).toMatchObject({ '--lab-tabs-height': '36px', '--lab-tabs-padding': '2px' });
+    expect(declarations('.workspace-mode-tabs', undefined, css).height).toBe('44px');
+    const root = "html[data-surfaces='translucent']";
+    expect(declarations(`${root} .workspace-mode-tabs`, undefined, detailCss)['margin-bottom']).toBe('calc(-1 * (var(--workspace-chrome-height, 0px) + 44px))');
+    expect(declarations(`${root} .chain-editor-workspace .chain-editor-main`, '(min-width: 1024px)', detailCss)['padding-top']).toBe('calc(var(--workspace-chrome-height, 0px) + var(--lab-tabs-height) - var(--lab-tabs-chrome-gap, 0px))');
+    const tabs = declarations(`${root} .chain-editor-workspace .workspace-mode-tabs`, '(min-width: 1024px)', detailCss);
+    expect(tabs['margin-top']).toBe('calc(var(--workspace-chrome-height, 0px) - var(--lab-tabs-chrome-gap, 0px))');
+    expect(tabs['margin-bottom']).toBe('calc(var(--lab-tabs-chrome-gap, 0px) - var(--workspace-chrome-height, 0px) - var(--lab-tabs-height))');
+    for (const file of ['ChainEditor.tsx', 'ImageEditControls.tsx', 'chain/ChainEditorCharacters.tsx', 'chain/ChainEditorPromptInputs.tsx']) {
+      expect(readFileSync(`components/${file}`, 'utf8')).not.toContain("'hidden lg:block'");
+    }
+  });
+  it('桌面两排导航只绘制一块连续底板，保留点击区域、选中颜色和触屏高度', () => {
+    const root = 'html:root .chain-editor-workspace .workspace-mode-tabs';
+    const nav = declarations(root, '(min-width: 1024px)', css);
+    expect(nav).toMatchObject({ background: 'transparent', border: '0', 'border-radius': '0', padding: 'var(--lab-tabs-padding) 0', gap: '2px' });
+    expect(css).not.toContain('.workspace-mode-tabs::before');
+    const header = "html:root .chain-editor-workspace .chain-editor-header[data-lab-navigation='joined']";
+    expect(declarations(header, '(min-width: 1024px)', css)).toMatchObject({ background: 'transparent', 'border-color': 'transparent', 'box-shadow': 'none', 'backdrop-filter': 'none' });
+    const plate = "html:root .chain-editor-header[data-lab-navigation='joined'] .lab-navigation-surface";
+    expect(declarations(plate, '(min-width: 1024px)', css)).toMatchObject({ display: 'block', 'pointer-events': 'none', height: 'auto', 'clip-path': 'var(--lab-navigation-outline)', bottom: 'calc(-1 * var(--lab-tabs-height))' });
+    expect(declarations('.lab-navigation-surface', undefined, css).display).toBe('none');
+    expect(declarations("html:root .chain-editor-header[data-lab-navigation='joined'] .generation-mode-nav", '(min-width: 1024px)', css)).toMatchObject({ background: 'transparent', 'border-color': 'transparent', 'box-shadow': 'none' });
+    expect(declarations(`${root} > button`, '(min-width: 1024px)', css)['box-shadow']).toBe('none');
+    expect(declarations('.chain-editor-workspace', '(min-width: 1024px) and (any-pointer: coarse)', css)['--lab-tabs-height']).toBe('48px');
+    expect(readFileSync('components/chain/ChainEditorHeader.tsx', 'utf8')).toContain('aria-hidden="true" className="lab-navigation-surface workspace-command-bar"');
+  });
   it('全局透明度覆盖通用表面与嵌套填充，实验室隔离变量，历史手机详情独立承托', () => {
     const source = readFileSync('components/themeDetails.css', 'utf8');
     const root = "html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-material='frosted'])";
@@ -173,12 +230,12 @@ describe('全局外观覆盖审计', () => {
     expect(readFileSync(resolve('components/roll/StyleRollGallery.tsx'), 'utf8')).toContain('workspace-scroll-viewport');
     expect(sources.find(source => source.file === 'components/PromptLibrary.tsx')!.text).toContain('<WorkspaceChrome>{categoryNavigation}');
     for (const file of ['ChainEditor', 'ImageEditPanel']) {
-      expect(sources.find(source => source.file === `components/${file}.tsx`)!.text).toContain('workspace-mode-tabs');
+      expect(sources.find(source => source.file === `components/${file}.tsx`)!.text).toContain('<LabEditorTabs');
     }
     const desktop = declarations(`${root} .chain-editor-workspace :is(.chain-editor-main, .chain-editor-preview)`, '(min-width: 1024px)', detailCss);
     expect(desktop['padding-top']).toBe('var(--workspace-chrome-height, 0px)');
     const mobile = declarations(`${root} .chain-editor-workspace .chain-editor-body`, '(max-width: 1023px)', detailCss);
-    expect(mobile['padding-top']).toBe('calc(var(--workspace-chrome-height, 0px) + var(--spacing) * 10)');
+    expect(mobile['padding-top']).toBe('calc(var(--workspace-chrome-height, 0px) + 44px)');
     expect(declarations(`${root} .aitag-detail-panel`, undefined, detailCss)['margin-top']).toBeUndefined();
     expect(declarations(`${root} .aitag-detail-panel`, '(min-width: 1024px)', detailCss)['margin-top']).toBe('var(--workspace-chrome-height, 0px)');
   });
@@ -381,6 +438,7 @@ describe('全局外观覆盖审计', () => {
     const nav = declarations("html[data-control-style='filled'] .generation-mode-nav > button[aria-current='page']", undefined, source);
     expect(nav['background-color']).toBe('var(--color-indigo-600)');
     expect(nav.color).toBe('var(--nai-on-accent-600)');
+    expect(declarations("html[data-control-style='filled'] .workspace-mode-tabs > button[aria-selected='true']", undefined, source)).toEqual(nav);
     const surface = declarations(`${root} .lab-editor-surface`, undefined, source);
     expect(surface['background-color']).toContain('transparent');
     expect(surface.width).toBe('calc(100% - 1.5rem)');

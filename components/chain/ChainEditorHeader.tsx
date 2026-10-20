@@ -95,7 +95,7 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
     const closeActions = React.useCallback(() => setActionsOpen(false), []);
     const saveAnchorRef = useRef<HTMLDivElement>(null);
     const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768);
-    const [compact, setCompact] = useState(() => window.innerWidth <= 1180);
+    const [compact, setCompact] = useState(() => window.innerWidth < 1024);
     const [saveActionsOpen, setSaveActionsOpen] = useState(false);
     const closeSaveActions = React.useCallback(() => setSaveActionsOpen(false), []);
     const entityLabel = isCharacterMode ? '自定义角色' : '风格串';
@@ -108,17 +108,15 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
         <button type="button" className={`${TOOLBAR_MENU_CLASS} disabled:cursor-not-allowed disabled:opacity-40`} disabled={!canSaveCurrentChain || isUploading} onClick={() => { closeSaveActions(); handleSaveAll(); }}><Save />{saveDetail}</button>
         <button type="button" className={`${TOOLBAR_MENU_CLASS} disabled:cursor-not-allowed disabled:opacity-40`} disabled={isUploading} onClick={() => { closeSaveActions(); handleFork(); }}><Copy />{t("另存为新串")}</button>
     </div>;
-    // Agent 改变的是工作区宽度；窄栏与手机共用动作，桌面仍使用锚定菜单。
+    // 顶栏与编辑／预览共用 Layout 的分栏状态，不能单独提前展开成整行。
     useLayoutEffect(() => {
         const header = headerRef.current;
         if (!header) return;
-        let measuredWidth = header.getBoundingClientRect().width || window.innerWidth;
+        const workspace = header.closest('.workspace-container');
         let previousLayout: string | undefined;
-        const update = (width: number) => {
-            measuredWidth = width;
+        const measure = () => {
             const mobile = window.innerWidth < 768;
-            const fontSize = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
-            const nextCompact = mobile || width <= 73.75 * fontSize;
+            const nextCompact = window.innerWidth < 1024 || Boolean(workspace?.classList.contains('workspace-editor-compact'));
             const layout = `${mobile}/${nextCompact}`;
             setIsMobile(mobile);
             setCompact(nextCompact);
@@ -128,16 +126,11 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
             }
             previousLayout = layout;
         };
-        const measure = () => update(header.getBoundingClientRect().width || measuredWidth);
         measure();
-        const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(entries => {
-            update(header.getBoundingClientRect().width || entries[0]?.contentRect.width || measuredWidth);
-        });
-        observer?.observe(header);
-        const themeObserver = new MutationObserver(measure);
-        themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-font-scale', 'data-density', 'style'] });
+        const observer = new MutationObserver(measure);
+        if (workspace) observer.observe(workspace, { attributes: true, attributeFilter: ['class'] });
         window.addEventListener('resize', measure);
-        return () => { observer?.disconnect(); themeObserver.disconnect(); window.removeEventListener('resize', measure); };
+        return () => { observer.disconnect(); window.removeEventListener('resize', measure); };
     }, [closeActions, closeSaveActions]);
     // 切入编辑模式时关闭保存面板，不能从旧面板提交不完整的底图／蒙版配置。
     React.useEffect(() => { closeActions(); closeSaveActions(); }, [activeGenerationMode, closeActions, closeSaveActions]);
@@ -145,6 +138,7 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
     return (
         <>
         <header ref={headerRef} className={`chain-editor-header workspace-command-bar relative z-30 h-auto flex-shrink-0 items-center overflow-visible border-b border-gray-200 bg-white px-2 py-1 dark:border-gray-800/80 dark:bg-gray-900/90 md:px-5 lg:py-0 grid ${compact ? 'grid-cols-1' : 'grid-cols-2'}`}>
+            <div aria-hidden="true" className="lab-navigation-surface workspace-command-bar" />
             <div className={`chain-editor-header-main relative flex min-w-0 items-center gap-2 md:gap-4 ${compact ? '' : 'pr-4'}`}>
                 <ChainEditorModeHeader
                     isLaboratory={isPlayground}

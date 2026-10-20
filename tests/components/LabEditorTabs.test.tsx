@@ -1,0 +1,102 @@
+// @vitest-environment jsdom
+import React, { useState } from 'react';
+import { afterEach, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { LabEditorTabs } from '../../components/LabEditorTabs';
+
+afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+const Harness = () => {
+  const [value, setValue] = useState<'global' | 'character' | 'params'>('global');
+  return <>
+    <LabEditorTabs value={value} options={[['global', '全局'], ['character', '角色'], ['params', '参数']]} onChange={setValue} />
+    <div className="chain-editor-body">
+      <div className="chain-editor-main">
+        <textarea aria-label="全局草稿" hidden={value !== 'global'} defaultValue="保留的提示词" />
+        <div hidden={value !== 'character'}>角色编辑</div>
+        <div hidden={value !== 'params'}>参数编辑</div>
+      </div>
+      <div data-testid="preview">当前作品</div>
+    </div>
+  </>;
+};
+
+it('三分区对齐首尾模式按钮选中块，排除导航外框留白并紧贴顶栏', () => {
+  let modeLeft = 110, modeWidth = 560;
+  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+    const rect = this.classList.contains('generation-mode-nav') ? { left: modeLeft, right: modeLeft + modeWidth, width: modeWidth, bottom: 52 }
+      : this.dataset.mode === 'first' ? { left: modeLeft + 4 }
+      : this.dataset.mode === 'last' ? { right: modeLeft + modeWidth - 4 }
+      : this.classList.contains('chain-editor-body') ? { left: 80 }
+      : this.classList.contains('workspace-chrome') ? { bottom: 64 }
+      : this.classList.contains('chain-editor-header') ? { left: 80, width: 1000, height: 58, bottom: 58 }
+      : this.classList.contains('workspace-mode-tabs') ? { height: 36 } : {};
+    return { x: 0, y: 0, top: 0, right: 0, bottom: 0, left: 0, width: 0, height: 0, toJSON: () => ({}), ...rect };
+  });
+  const { container } = render(<div className="chain-editor-workspace">
+    <div className="workspace-chrome"><header className="chain-editor-header"><nav className="generation-mode-nav">
+      <button data-mode="first">文生图</button><button>图生图</button><button>局部重绘</button><button data-mode="last">扩图</button>
+    </nav></header></div>
+    <LabEditorTabs value="global" options={[['global', '全局'], ['character', '角色'], ['params', '参数']]} onChange={() => {}} />
+    <div className="chain-editor-body" />
+  </div>);
+  const tabs = screen.getByRole('tablist');
+  expect(tabs.classList.contains('grid-cols-3')).toBe(true);
+  expect(tabs.classList.contains('appearance-segmented')).toBe(true);
+  expect(tabs.classList.contains('appearance-group')).toBe(false);
+  expect(tabs.style.getPropertyValue('--lab-tabs-width')).toBe('552px');
+  expect(tabs.style.getPropertyValue('--lab-tabs-left')).toBe('34px');
+  const header = container.querySelector<HTMLElement>('.chain-editor-header')!;
+  expect(header.dataset.labNavigation).toBe('joined');
+  const outline = header.style.getPropertyValue('--lab-navigation-outline');
+  expect(outline).toContain('H 990 Q 1000 0 1000 10');
+  expect(outline).toContain('Q 590 94 580 94 H 40 Q 30 94 30 84');
+  expect(container.querySelector<HTMLElement>('.chain-editor-workspace')?.style.getPropertyValue('--lab-tabs-chrome-gap')).toBe('6px');
+  modeLeft = 100; modeWidth = 500;
+  fireEvent(window, new Event('resize'));
+  expect(tabs.style.getPropertyValue('--lab-tabs-width')).toBe('492px');
+  expect(tabs.style.getPropertyValue('--lab-tabs-left')).toBe('24px');
+  expect(header.style.getPropertyValue('--lab-navigation-outline')).toContain('Q 520 94 510 94 H 30 Q 20 94 20 84');
+  cleanup();
+  expect(header.dataset.labNavigation).toBeUndefined();
+  expect(header.style.getPropertyValue('--lab-navigation-outline')).toBe('');
+});
+
+it('跨端三分区独立恢复滚动，切换不卸载输入或右侧预览', () => {
+  const { container } = render(<Harness />);
+  const nav = screen.getByRole('tablist', { name: '编辑分区' });
+  expect(nav.className).not.toContain('lg:hidden');
+  const body = container.querySelector<HTMLElement>('.chain-editor-body')!;
+  const main = container.querySelector<HTMLElement>('.chain-editor-main')!;
+  const draft = screen.getByLabelText('全局草稿') as HTMLTextAreaElement;
+  const preview = screen.getByTestId('preview');
+  fireEvent.change(draft, { target: { value: '新的提示词' } });
+  main.scrollTop = 600; body.scrollTop = 300;
+  fireEvent.click(screen.getByRole('tab', { name: '参数' }));
+  expect(main.scrollTop).toBe(0); expect(body.scrollTop).toBe(0);
+  expect(draft.hidden).toBe(true);
+  main.scrollTop = 120; body.scrollTop = 80;
+  fireEvent.click(screen.getByRole('tab', { name: '全局' }));
+  expect(main.scrollTop).toBe(600); expect(body.scrollTop).toBe(300);
+  expect(draft.hidden).toBe(false); expect(draft.value).toBe('新的提示词');
+  expect(screen.getByLabelText('全局草稿')).toBe(draft);
+  expect(screen.getByTestId('preview')).toBe(preview);
+  fireEvent.click(screen.getByRole('tab', { name: '参数' }));
+  expect(main.scrollTop).toBe(120); expect(body.scrollTop).toBe(80);
+});
+
+it('左右键与首尾键切换分区并同步选中和键盘焦点', () => {
+  render(<Harness />);
+  const global = screen.getByRole('tab', { name: '全局' });
+  const character = screen.getByRole('tab', { name: '角色' });
+  const params = screen.getByRole('tab', { name: '参数' });
+  fireEvent.keyDown(global, { key: 'ArrowRight' });
+  expect(character.getAttribute('aria-selected')).toBe('true');
+  expect(character.tabIndex).toBe(0); expect(global.tabIndex).toBe(-1);
+  expect(document.activeElement).toBe(character);
+  fireEvent.keyDown(character, { key: 'End' });
+  expect(document.activeElement).toBe(params);
+  fireEvent.keyDown(params, { key: 'Home' });
+  expect(document.activeElement).toBe(global);
+  fireEvent.keyDown(global, { key: 'ArrowLeft' });
+  expect(document.activeElement).toBe(params);
+});

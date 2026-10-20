@@ -1,3 +1,4 @@
+import { LabEditorTabs } from './LabEditorTabs';
 import type { GenerationPlacement } from '../services/generationTask';
 import { t, useLanguage } from '../services/i18n';
 import type { GenerationCountControlProps } from './GenerationCountControl';
@@ -1137,21 +1138,7 @@ export const ImageEditPanel: React.FC<ImageEditPanelProps> = ({
 
   return (
     <div ref={agentScopeRef} data-agent-command-scope={agentCommandScope} data-agent-canvas-state={JSON.stringify({ operation, width: state.width, height: state.height, outputSize, imageToImageSizeMode: draft.imageToImageSizeMode || 'original', focusedRect: state.focusedRect, focused, revision: agentCanvasRevision, busy: isLoading || isImportingImage || isApplyingOutpaint, error })} aria-busy={isLoading || isImportingImage || isApplyingOutpaint} className="flex min-h-0 flex-1 flex-col">
-      <nav className="workspace-mode-tabs appearance-group grid h-10 flex-none grid-cols-3 border-b border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950 lg:hidden">
-        {mobileTabs.map(([value, label]) => (
-          <button
-            key={value}
-            type="button"
-            role="tab"
-            aria-selected={mobileTab === value}
-            onClick={() => setMobileTab(value)}
-            className={`relative min-w-0 text-sm font-bold ${mobileTab === value ? 'text-indigo-600 dark:text-indigo-300' : 'text-gray-500 dark:text-gray-400'}`}
-          >
-            {t(label)}
-            {mobileTab === value && <span className="absolute inset-x-6 bottom-0 h-0.5 rounded-full bg-indigo-500" />}
-          </button>
-        ))}
-      </nav>
+      <LabEditorTabs key={operation} value={mobileTab} options={mobileTabs} onChange={setMobileTab} />
       <div
         data-image-edit-drop-zone="true"
         tabIndex={-1}

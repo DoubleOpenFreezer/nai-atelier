@@ -1,3 +1,4 @@
+import { LabEditorTabs } from './LabEditorTabs';
 import { confirmationCostScope } from '../services/dailyConfirmation';
 import { t, useLanguage, getLanguage } from '../services/i18n';
 import { ImageLightbox } from './ImageLightbox';
@@ -2101,14 +2102,12 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
             />
             {agentProposal && <AgentDraftReview current={currentAgentDraft()} proposed={agentProposal} onClose={() => setAgentProposal(null)} onApply={draft => { setAgentUndoSnapshot(currentAgentDraft()); applyAgentDraft(draft); setAgentProposal(null); }}/>}
             {activeGenerationMode === 'text-to-image' ? <>
-            <nav className="workspace-mode-tabs appearance-group grid h-10 grid-cols-3 border-b border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950 lg:hidden">
-                {([['global', '全局'], ['character', '角色'], ['params', '参数']] as const).map(([value, label]) => <button key={value} onClick={() => setMobileEditorTab(value)} className={`relative min-w-0 text-sm font-bold ${mobileEditorTab === value ? 'text-indigo-600 dark:text-indigo-300' : 'text-gray-500 dark:text-gray-400'}`}>{t(label)}{mobileEditorTab === value && <span className="absolute inset-x-6 bottom-0 h-0.5 rounded-full bg-indigo-500" />}</button>)}
-            </nav>
+            <LabEditorTabs key={chain.id} value={mobileEditorTab} options={[['global', '全局'], ['character', '角色'], ['params', '参数']]} onChange={setMobileEditorTab} />
 
             {/* Editor Content */}
             <div className="appearance-content chain-editor-body flex-1 flex flex-col lg:flex-row overflow-y-auto lg:overflow-hidden bg-white dark:bg-gray-900">
                 {/* Left Panel - Editor */}
-                <div className="appearance-content chain-editor-main flex w-full lg:w-1/2 min-h-full flex-col border-b lg:border-b-0 lg:border-r border-gray-200 dark:border-gray-800 lg:overflow-y-auto bg-white dark:bg-gray-900 relative order-2 lg:order-1 lg:flex-1 shrink-0">
+                <div className="appearance-content chain-editor-main flex min-w-0 w-full lg:w-1/2 min-h-full flex-col border-b lg:border-b-0 lg:border-r border-gray-200 dark:border-gray-800 lg:overflow-y-auto bg-white dark:bg-gray-900 relative order-2 lg:order-1 lg:flex-1 shrink-0">
                     <div className="lab-editor-surface flex w-full max-w-3xl flex-col gap-6 p-4 pb-36 md:p-6 md:pb-24 mx-auto">
                         <ChainEditorPromptInputs
                             prompt={basePrompt}
@@ -2158,7 +2157,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                             label={t("角色参考")}
                             order={activeLabLayout.order.indexOf('characterReference')}
                             defaultCollapsed={Boolean(activeLabLayout.collapsed.characterReference)}
-                            className={mobileEditorTab === 'character' ? 'block' : 'hidden lg:block'}
+                            className={mobileEditorTab === 'character' ? 'block' : 'hidden'}
                         >
                             <CharacterReferenceManager
                                 params={params}
@@ -2173,7 +2172,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                             label="Vibe Transfer"
                             order={activeLabLayout.order.indexOf('vibe')}
                             defaultCollapsed={Boolean(activeLabLayout.collapsed.vibe)}
-                            className={mobileEditorTab === 'global' ? 'block' : 'hidden lg:block'}
+                            className={mobileEditorTab === 'global' ? 'block' : 'hidden'}
                         >
                             <VibeManager
                                 params={params}
@@ -2190,7 +2189,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                             label={t("全局负面提示词")}
                             order={activeLabLayout.order.indexOf('negative')}
                             defaultCollapsed={Boolean(activeLabLayout.collapsed.negative)}
-                            className={mobileEditorTab === 'global' ? 'block' : 'hidden lg:block'}
+                            className={mobileEditorTab === 'global' ? 'block' : 'hidden'}
                         >
                         <section className={isNaiMediumModel(params.model) ? 'nai-model-locked' : undefined} title={isNaiMediumModel(params.model) ? t('Medium 不支持负面提示词') : undefined}>
                             <div className="mb-2 flex items-center justify-between gap-3">
@@ -2216,7 +2215,7 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                             label={t("参数设置")}
                             order={activeLabLayout.order.indexOf('params')}
                             defaultCollapsed={Boolean(activeLabLayout.collapsed.params)}
-                            className={mobileEditorTab === 'params' ? 'block' : 'hidden lg:block'}
+                            className={mobileEditorTab === 'params' ? 'block' : 'hidden'}
                         >
                         <ChainEditorParams
                             params={params}

@@ -99,8 +99,8 @@ export const ChainEditorPromptInputs: React.FC<ChainEditorPromptInputsProps> = (
     };
     return <LabModuleSection moduleId="prompt" label={t('全局提示词')}
         order={activeLabLayout.order.indexOf('prompt')} defaultCollapsed={Boolean(activeLabLayout.collapsed.prompt)}
-        className={mobileEditorTab === 'global' ? 'block' : 'hidden lg:block'}>
-        <section className={mobileEditorTab === 'global' ? 'block' : 'hidden lg:block'}>
+        className={mobileEditorTab === 'global' ? 'block' : 'hidden'}>
+        <section className={mobileEditorTab === 'global' ? 'block' : 'hidden'}>
             <div className="mb-2 flex min-w-0 flex-wrap items-center gap-2">
                 <PresetSourceBadges sources={Object.fromEntries(Object.entries({ base: presetSources.base, subject: presetSources.subject })
                     .filter((entry): entry is [string, PresetSource] => Boolean(entry[1])))} />

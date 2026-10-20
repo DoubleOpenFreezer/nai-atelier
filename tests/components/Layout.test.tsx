@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import React from 'react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { Layout } from '../../components/Layout';
 
 vi.mock('../../services/anlasBudget', () => ({ useAnlasBudget: () => ({}) }));
@@ -27,7 +27,36 @@ beforeEach(() => {
   vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => window.setTimeout(() => callback(0), 0));
   vi.stubGlobal('cancelAnimationFrame', (id: number) => window.clearTimeout(id));
 });
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); document.documentElement.classList.remove('agent-panel-docked'); });
+
+it('桌面助手打开后中间栏达到 560px 即保持并排，缩窄和再拉宽同步恢复', () => {
+  localStorage.setItem('nai_sidebar_collapsed', 'true');
+  document.documentElement.classList.add('agent-panel-docked');
+  let availableWidth = 1180;
+  let resizeWorkspace = () => {};
+  vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(function (this: HTMLElement) {
+    return this.classList.contains('workspace-container') ? availableWidth : 0;
+  });
+  vi.stubGlobal('ResizeObserver', class {
+    constructor(private callback: () => void) {}
+    observe(element: HTMLElement) { if (element.classList.contains('workspace-container')) resizeWorkspace = this.callback; }
+    disconnect() {}
+  });
+  const { container, rerender } = renderLayout('playground');
+  const workspace = container.querySelector('.workspace-container')!;
+  for (const width of [1180, 1000, 766, 680, 560, 559, 450, 560, 1000]) {
+    availableWidth = width;
+    act(() => resizeWorkspace());
+    expect(workspace.classList.contains('workspace-editor-compact'), `剩余 ${width}px`).toBe(width < 560);
+  }
+  availableWidth = 680;
+  rerender(<div className="agent-stage"><Layout {...createProps('edit')} /></div>);
+  expect(workspace.classList.contains('workspace-editor-compact')).toBe(false);
+  document.documentElement.classList.remove('agent-panel-docked');
+  availableWidth = 450;
+  act(() => resizeWorkspace());
+  expect(workspace.classList.contains('workspace-editor-compact')).toBe(false);
+});
 
 it('素材浏览分组默认收起，手动展开状态跨Layout重挂载保存', () => {
   const first = renderLayout();

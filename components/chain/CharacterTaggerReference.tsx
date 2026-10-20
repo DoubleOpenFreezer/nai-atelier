@@ -1,5 +1,6 @@
 import { t, useLanguage } from '../../services/i18n';
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { ClipboardPaste, LoaderCircle, X } from 'lucide-react';
 import { getPastedImageFile, readClipboardImage } from '../../services/imageClipboard';
 import { imageTaggerService } from '../../services/imageTaggerService';
@@ -9,13 +10,16 @@ import { useModalA11y } from '../useModalA11y';
 import { taggerProgressText, useImageTaggerStatus } from '../useImageTaggerStatus';
 
 interface CharacterTaggerReferenceProps {
+  buttonSlotRef?: React.RefObject<HTMLElement | null>;
   canEdit: boolean;
   onAppend: (tags: string) => void;
 }
 
 /** 参考图片只驻留当前角色编辑组件，不进入生成参数、参考编码或永久资料库。 */
-export const CharacterTaggerReference: React.FC<CharacterTaggerReferenceProps> = ({ canEdit, onAppend }) => {
+export const CharacterTaggerReference: React.FC<CharacterTaggerReferenceProps> = ({ canEdit, onAppend, buttonSlotRef }) => {
   useLanguage();
+  const [buttonTarget, setButtonTarget] = useState<HTMLElement | null>(null);
+  useLayoutEffect(() => { setButtonTarget(buttonSlotRef?.current || null); }, [buttonSlotRef]);
   const [preview, setPreview] = useState('');
   const [expanded, setExpanded] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -84,22 +88,22 @@ export const CharacterTaggerReference: React.FC<CharacterTaggerReferenceProps> =
     void recognize(() => file);
   };
 
-  return <div className="w-full min-w-0 space-y-2">
-    <button type="button" disabled={!canEdit || busy} onPaste={handlePaste}
+  const trigger = <button type="button" aria-label={t(busy ? "反推中…" : "粘贴反推")} aria-busy={busy} disabled={!canEdit || busy} onPaste={handlePaste}
       onClick={() => void recognize(() => readClipboardImage({ pasteHint: '在「粘贴反推」按钮上按 Ctrl+V', imagePurpose: '反推参考' }))}
       title={t("识别剪贴板图片并追加到此角色，也可聚焦按钮后按 Ctrl+V")}
-      className="appearance-group flex h-9 w-full items-center justify-center gap-1 rounded border border-gray-200 bg-white px-1 text-xs font-medium text-gray-600 outline-none hover:bg-gray-50 focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700">
-      {busy ? <LoaderCircle className="h-3.5 w-3.5 shrink-0 animate-spin" /> : <ClipboardPaste className="h-3.5 w-3.5 shrink-0" />}
-      {busy ? t("反推中…") : t("粘贴反推")}
-    </button>
-    {preview && <div className="appearance-media relative overflow-hidden rounded border border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900">
-      <button type="button" aria-label={t("放大反推参考图")} title={t("反推参考图，仅作提示词对照")} onClick={() => setExpanded(true)} className="flex min-h-16 w-full items-center justify-center focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500">
-        <img src={preview} alt={t("反推参考图")} className="max-h-40 w-full object-contain" />
+      className="mobile-touch inline-flex shrink-0 items-center justify-center rounded p-1 text-gray-400 outline-none hover:bg-gray-100 hover:text-gray-700 focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-25 dark:hover:bg-gray-700 dark:hover:text-gray-200">
+      {busy ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <ClipboardPaste className="h-4 w-4" />}
+    </button>;
+  return <div className="flex min-w-0 max-w-full flex-wrap items-center justify-end gap-2">
+    {buttonTarget ? createPortal(trigger, buttonTarget) : trigger}
+    {preview && <div className="appearance-media relative h-12 w-16 shrink-0 overflow-hidden rounded border border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900">
+      <button type="button" aria-label={t("放大反推参考图")} title={t("反推参考图，仅作提示词对照")} onClick={() => setExpanded(true)} className="flex h-full w-full items-center justify-center focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500">
+        <img src={preview} alt={t("反推参考图")} className="h-full w-full object-contain" />
       </button>
       <button type="button" aria-label={t("移除反推参考图")} title={t("移除参考图，保留提示词")} onClick={() => { setPreview(''); setExpanded(false); }}
         className="absolute right-1 top-1 flex h-7 w-7 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80 focus-visible:ring-2 focus-visible:ring-indigo-500"><X className="h-3.5 w-3.5" /></button>
     </div>}
-    {(error || progress) && <p role={error ? 'alert' : 'status'} title={t(error) || progress} className={`truncate text-micro ${error ? 'text-red-600 dark:text-red-400' : 'text-gray-500 dark:text-gray-400'}`}>{t(error) || progress}</p>}
+    {(error || progress) && <p role={error ? 'alert' : 'status'} title={t(error) || progress} className={`w-full break-words text-right text-micro ${error ? 'text-red-600 dark:text-red-400' : 'text-gray-500 dark:text-gray-400'}`}>{t(error) || progress}</p>}
     {previewOpen && <ImagePreviewPortal><div ref={dialogRef} role="dialog" aria-modal="true" aria-label={t("反推参考图")}
       className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/90 p-4 backdrop-blur-sm"
       onClick={event => { event.stopPropagation(); if (event.target === event.currentTarget) setExpanded(false); }}>

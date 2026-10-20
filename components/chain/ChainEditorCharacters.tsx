@@ -15,6 +15,7 @@ import { isNaiMediumModel } from '../../services/naiModels';
 import { ImagePreviewPortal } from '../ImagePreviewPortal';
 import { useModalA11y, isTopmostModal } from '../useModalA11y';
 import { SmartImage } from '../SmartImage';
+import { ToolbarPopover } from '../ToolbarPopover';
 
 const CoordinateInput: React.FC<{ value: number; freeform: boolean; disabled: boolean; label: string; onCommit: (value: number) => void }> = ({ value, freeform, disabled, label, onCommit }) => {
   useLanguage();
@@ -95,10 +96,10 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
     notify,
 }) => {
   useLanguage();
-    const clearActionSlots = useRef(new Map<string, React.RefObject<HTMLSpanElement | null>>());
-    const clearActionSlot = (key: string) => {
-        if (!clearActionSlots.current.has(key)) clearActionSlots.current.set(key, React.createRef<HTMLSpanElement>());
-        return clearActionSlots.current.get(key)!;
+    const actionSlots = useRef(new Map<string, React.RefObject<HTMLSpanElement | null>>());
+    const actionSlot = (key: string) => {
+        if (!actionSlots.current.has(key)) actionSlots.current.set(key, React.createRef<HTMLSpanElement>());
+        return actionSlots.current.get(key)!;
     };
     const [positionOpen, setPositionOpen] = useState(false);
     const [activeAction, setActiveAction] = useState<{ kind: 'save'; character: CharacterParams } | { kind: 'reference'; index: number } | null>(null);
@@ -139,9 +140,9 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
         label={t("角色专属提示词")}
         order={activeLabLayout.order.indexOf('characters')}
         defaultCollapsed={Boolean(activeLabLayout.collapsed.characters)}
-        className={mobileEditorTab === 'character' ? 'block' : 'hidden lg:block'}
+        className={mobileEditorTab === 'character' ? 'block' : 'hidden'}
     >
-        <section className={mobileEditorTab === 'character' ? 'block' : 'hidden lg:block'}>
+        <section className={mobileEditorTab === 'character' ? 'block' : 'hidden'}>
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                 <div className="flex min-w-0 flex-wrap items-center gap-2">
                     <PresetSourceBadges sources={characterPresetSources} />
@@ -180,22 +181,38 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
                     updateCharacter(index, position, true);
                     markPresetSectionModified('settings');
                 }} />}
-            <div className="space-y-3">
+            <div className="space-y-3 divide-y divide-gray-200 dark:divide-gray-700">
                 {(characters || []).length === 0 && (
                     <div className="text-xs text-gray-400 text-center py-2">{t("暂无角色，点击上方添加")}</div>
                 )}
                 {(characters || []).map((char, idx) => {
-                    const positiveSlotRef = clearActionSlot(`${scopeKey}:${char.id}:positive`);
-                    const negativeSlotRef = clearActionSlot(`${scopeKey}:${char.id}:negative`);
+                    const positiveSlotRef = actionSlot(`${scopeKey}:${char.id}:positive`);
+                    const negativeSlotRef = actionSlot(`${scopeKey}:${char.id}:negative`);
+                    const taggerSlotRef = actionSlot(`${scopeKey}:${char.id}:tagger`);
                     return (
-                    <div key={`${scopeKey}:${char.id}`} className="appearance-group bg-white dark:bg-gray-800 rounded p-3 border border-gray-200 dark:border-gray-700 shadow-sm relative">
-                        <div className="mb-2 flex items-center justify-between gap-2">
+                    <div key={`${scopeKey}:${char.id}`} className="lab-character relative min-w-0 py-3">
+                        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                             <label className="flex cursor-pointer items-center gap-1.5 text-xs text-gray-600 dark:text-gray-300">
                                 <input type="checkbox" aria-label={t("启用角色 {0}", [idx + 1])} checked={char.enabled !== false} disabled={!canEdit}
                                     onChange={event => updateCharacter(idx, { enabled: event.target.checked })} className="h-3.5 w-3.5 rounded" />
                                 {t("角色 ")}{idx + 1}{char.enabled === false && <span className="text-gray-400">{t("· 已停用")}</span>}
                             </label>
-                            <div className="flex items-center gap-1">
+                            <div className="character-tools ml-auto flex flex-wrap items-center justify-end gap-1">
+                                <ToolbarPopover label="坐标" title={t("角色 {0} 坐标", [idx + 1])} icon={<MapPin />} iconOnly width={240}>
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <label className="text-micro font-bold text-gray-500 dark:text-gray-400">
+                                            <span className="mb-1 block">{t("水平位置 (X)")}</span>
+                                            <CoordinateInput label={t("角色 {0} 水平位置", [idx + 1])} value={char.x} freeform={freeformPosition}
+                                                disabled={!canEdit || params.useCoords !== true || char.enabled === false} onCommit={x => updateCharacter(idx, { x })} />
+                                        </label>
+                                        <label className="text-micro font-bold text-gray-500 dark:text-gray-400">
+                                            <span className="mb-1 block">{t("垂直位置 (Y)")}</span>
+                                            <CoordinateInput label={t("角色 {0} 垂直位置", [idx + 1])} value={char.y} freeform={freeformPosition}
+                                                disabled={!canEdit || params.useCoords !== true || char.enabled === false} onCommit={y => updateCharacter(idx, { y })} />
+                                        </label>
+                                    </div>
+                                </ToolbarPopover>
+                                <span ref={taggerSlotRef} />
                                 <span ref={positiveSlotRef} />
                                 {canSaveCharacter && onSaveCharacter && <button type="button" aria-label={t("保存到角色库")} title={t("保存到角色库")} disabled={(!char.prompt.trim() && !hasCharacterSections(char)) || savingCharacter} onClick={() => { setCharacterName(''); setActiveAction({ kind: 'save', character: char }); }} className="mobile-touch rounded p-1 text-gray-400 hover:bg-emerald-50 hover:text-emerald-600 disabled:opacity-25 dark:hover:bg-emerald-950/30 dark:hover:text-emerald-300"><Save className="h-4 w-4" /></button>}
                                 {showCharacterReference && <button type="button" aria-label={t("从角色库引用")} title={t("从角色库引用")} onClick={() => setActiveAction({ kind: 'reference', index: idx })} className="mobile-touch rounded p-1 text-gray-400 hover:bg-indigo-50 hover:text-indigo-600 dark:hover:bg-indigo-950/30 dark:hover:text-indigo-300"><UserRound className="h-4 w-4" /></button>}
@@ -204,8 +221,8 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
                                 <button type="button" title={t("移除角色提示词")} aria-label={t("移除角色提示词")} disabled={!canEdit} onClick={() => removeCharacter(idx)} className="rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-500 disabled:opacity-25 dark:hover:bg-red-950/30"><Trash2 className="h-4 w-4" /></button>
                             </div>
                         </div>
-                        <div className="flex flex-wrap gap-3 items-start sm:flex-nowrap">
-                            <div className="min-w-0 flex-1 space-y-2">
+                        <CharacterTaggerReference buttonSlotRef={taggerSlotRef} canEdit={canEdit} onAppend={tags => updateCharacter(idx, { prompt: mergePromptFields(char.prompt, tags) })} />
+                        <div className="min-w-0 space-y-2">
                                 <div>
                                     <label className="text-micro text-gray-500 font-bold mb-1 block">{t("角色提示词")}</label>
                                     <TagAutocompleteTextarea
@@ -266,22 +283,6 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
                                     </div>
                                 </div>
                                 <CharacterSectionSummary character={char} />
-                            </div>
-                            <div className="order-3 grid w-full grid-cols-2 items-start gap-3 sm:order-none sm:flex sm:w-28 sm:shrink-0 sm:flex-col">
-                              <div className="w-full space-y-2">
-                                <div>
-                                    <label className="text-micro text-gray-500 font-bold mb-1 block">{t("水平位置 (X)")}</label>
-                                    <CoordinateInput label={t("角色 {0} 水平位置", [idx + 1])} value={char.x} freeform={freeformPosition}
-                                        disabled={!canEdit || params.useCoords !== true || char.enabled === false} onCommit={x => updateCharacter(idx, { x })} />
-                                </div>
-                                <div>
-                                    <label className="text-micro text-gray-500 font-bold mb-1 block">{t("垂直位置 (Y)")}</label>
-                                    <CoordinateInput label={t("角色 {0} 垂直位置", [idx + 1])} value={char.y} freeform={freeformPosition}
-                                        disabled={!canEdit || params.useCoords !== true || char.enabled === false} onCommit={y => updateCharacter(idx, { y })} />
-                                </div>
-                              </div>
-                              <CharacterTaggerReference canEdit={canEdit} onAppend={tags => updateCharacter(idx, { prompt: mergePromptFields(char.prompt, tags) })} />
-                            </div>
                         </div>
                     </div>
                     );

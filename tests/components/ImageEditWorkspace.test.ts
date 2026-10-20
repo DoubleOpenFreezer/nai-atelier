@@ -184,7 +184,8 @@ describe('ImageEditControls', () => {
     const { onDraftChange } = renderControls('image-to-image', false, false, false, {}, mobileTab);
     const select = screen.getByRole('combobox', { name: '图生图输出尺寸' });
     const section = select.closest('[data-lab-module="params"]');
-    expect(section?.className).toContain(mobileTab === 'params' ? 'block' : 'hidden lg:block');
+    expect(section?.classList.contains('hidden')).toBe(mobileTab !== 'params');
+    expect(section?.classList.contains('lg:block')).toBe(false);
     fireEvent.change(select, { target: { value: 'free' } });
     expect(onDraftChange).toHaveBeenCalledWith({ imageToImageSizeMode: 'free' });
     cleanup();
@@ -240,7 +241,7 @@ describe('ImageEditControls', () => {
     const baseImageSection = container.querySelector('[data-lab-module="baseImage"]');
     expect(baseImageSection?.contains(slider)).toBe(true);
     expect(baseImageSection?.className).toContain('block');
-    expect(baseImageSection?.className).not.toContain('hidden lg:block');
+    expect(baseImageSection?.classList.contains('hidden')).toBe(false);
   });
 
   it.each(['image-to-image', 'inpaint', 'outpaint'] as const)('%s 去掉常驻教程后仍可粘贴、取用底图和编辑提示词', operation => {
@@ -290,6 +291,12 @@ describe('ImageEditControls', () => {
     vi.spyOn(imageTaggerService, 'getStatus').mockResolvedValue({ model: 'selected', downloaded: true, models: [], busy: false, downloadingModel: null });
     try {
       const { onDraftChange, onPromptChange, onSelectImageSource, onPasteImage } = renderControls(operation, false, false, false, { characters: [character] }, 'prompt');
+      const tools = screen.getByRole('button', { name: '粘贴反推' }).closest('.character-tools')!;
+      expect(tools.contains(screen.getByRole('button', { name: '坐标' }))).toBe(true);
+      expect(tools.contains(screen.getByRole('button', { name: '下移角色 1' }))).toBe(true);
+      expect(screen.getByRole('button', { name: '粘贴反推' }).textContent).toBe('');
+      expect(screen.getByRole('button', { name: '坐标' }).textContent).toBe('');
+      expect(tools.compareDocumentPosition(screen.getByPlaceholderText('角色提示词')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
       fireEvent.paste(screen.getByRole('button', { name: '粘贴反推' }), { clipboardData: { files: [new File(['synthetic'], 'role.png', { type: 'image/png' })] } });
       await waitFor(() => expect(onDraftChange).toHaveBeenCalledOnce());
       expect(onDraftChange).toHaveBeenCalledWith({ params: expect.objectContaining({ characters: [{ ...character, prompt: 'blue hair, sitting' }] }) });
@@ -791,7 +798,7 @@ describe('ImageEditPreview', () => {
       expect(screen.getByRole('tab', { name: '参数' })).toBeTruthy();
     });
 
-    it('ImageEditControls 根据 mobileTab 属性精准应用响应式显示隐藏类名', () => {
+    it('ImageEditControls 在电脑与手机按同一分区显隐，保持非活动内容挂载', () => {
       const draft = createLabImageEditDraft('inpaint', 'test prompt', 'low quality', params);
       const baseProps = {
         operation: 'inpaint' as const,
@@ -842,7 +849,7 @@ describe('ImageEditPreview', () => {
         tagAssistEnabled: false,
       };
 
-      // mobileTab = 'canvas' 时：baseImage 是 block，prompt 和 params 是 hidden lg:block
+      // mobileTab = 'canvas' 时：baseImage 是 block，prompt 和 params 是 hidden
       const { container, rerender } = render(React.createElement(ImageEditControls, { ...baseProps, mobileTab: 'canvas' }));
       const baseImageSection = container.querySelector('[data-lab-module="baseImage"]');
       const promptSection = container.querySelector('[data-lab-module="prompt"]');
@@ -851,29 +858,29 @@ describe('ImageEditPreview', () => {
       const charactersSection = container.querySelector('[data-lab-module="characters"]');
 
       expect(baseImageSection?.className).toContain('block');
-      expect(baseImageSection?.className).not.toContain('hidden lg:block');
-      expect(promptSection?.className).toContain('hidden lg:block');
-      expect(paramsSection?.className).toContain('hidden lg:block');
-      expect(editSettingsSection?.className).toContain('hidden lg:block');
-      expect(charactersSection?.className).toContain('hidden lg:block');
+      expect(baseImageSection?.classList.contains('hidden')).toBe(false);
+      expect(promptSection?.classList.contains('hidden')).toBe(true);
+      expect(paramsSection?.classList.contains('hidden')).toBe(true);
+      expect(editSettingsSection?.classList.contains('hidden')).toBe(true);
+      expect(charactersSection?.classList.contains('hidden')).toBe(true);
 
-      // mobileTab = 'prompt' 时：prompt 是 block，baseImage 和 params 是 hidden lg:block
+      // mobileTab = 'prompt' 时：prompt 是 block，baseImage 和 params 是 hidden
       rerender(React.createElement(ImageEditControls, { ...baseProps, mobileTab: 'prompt' }));
-      expect(baseImageSection?.className).toContain('hidden lg:block');
+      expect(baseImageSection?.classList.contains('hidden')).toBe(true);
       expect(promptSection?.className).toContain('block');
-      expect(promptSection?.className).not.toContain('hidden lg:block');
+      expect(promptSection?.classList.contains('hidden')).toBe(false);
       expect(charactersSection?.classList.contains('hidden')).toBe(false);
-      expect(paramsSection?.className).toContain('hidden lg:block');
+      expect(paramsSection?.classList.contains('hidden')).toBe(true);
 
-      // mobileTab = 'params' 时：params 与 editSettings 是 block，baseImage 和 prompt 是 hidden lg:block
+      // mobileTab = 'params' 时：params 与 editSettings 是 block，baseImage 和 prompt 是 hidden
       rerender(React.createElement(ImageEditControls, { ...baseProps, mobileTab: 'params' }));
-      expect(baseImageSection?.className).toContain('hidden lg:block');
-      expect(promptSection?.className).toContain('hidden lg:block');
-      expect(charactersSection?.className).toContain('hidden lg:block');
+      expect(baseImageSection?.classList.contains('hidden')).toBe(true);
+      expect(promptSection?.classList.contains('hidden')).toBe(true);
+      expect(charactersSection?.classList.contains('hidden')).toBe(true);
       expect(paramsSection?.className).toContain('block');
-      expect(paramsSection?.className).not.toContain('hidden lg:block');
+      expect(paramsSection?.classList.contains('hidden')).toBe(false);
       expect(editSettingsSection?.className).toContain('block');
-      expect(editSettingsSection?.className).not.toContain('hidden lg:block');
+      expect(editSettingsSection?.classList.contains('hidden')).toBe(false);
     });
   });
 });

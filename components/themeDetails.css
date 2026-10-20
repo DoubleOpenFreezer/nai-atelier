@@ -63,18 +63,25 @@ html[data-surfaces='translucent'] .workspace-fixed-pane { margin-top: var(--work
 @media (min-width: 1024px) {
   html[data-surfaces='translucent'] .aitag-detail-panel { margin-top: var(--workspace-chrome-height, 0px); }
   html[data-surfaces='translucent'] .chain-editor-workspace :is(.chain-editor-main, .chain-editor-preview) { padding-top: var(--workspace-chrome-height, 0px); }
-  html[data-surfaces='translucent'] .chain-editor-workspace .chain-editor-main { scroll-padding-top: var(--workspace-chrome-height, 0px); }
+  html[data-surfaces='translucent'] .chain-editor-workspace .chain-editor-main {
+    padding-top: calc(var(--workspace-chrome-height, 0px) + var(--lab-tabs-height) - var(--lab-tabs-chrome-gap, 0px));
+    scroll-padding-top: calc(var(--workspace-chrome-height, 0px) + var(--lab-tabs-height) - var(--lab-tabs-chrome-gap, 0px));
+  }
+  html[data-surfaces='translucent'] .chain-editor-workspace .workspace-mode-tabs {
+    margin-top: calc(var(--workspace-chrome-height, 0px) - var(--lab-tabs-chrome-gap, 0px));
+    margin-bottom: calc(var(--lab-tabs-chrome-gap, 0px) - var(--workspace-chrome-height, 0px) - var(--lab-tabs-height));
+  }
 }
-@media (max-width: 1023px) {
-  html[data-surfaces='translucent'] .workspace-mode-tabs {
+html[data-surfaces='translucent'] .workspace-mode-tabs {
     position: relative;
     z-index: 30;
     margin-top: var(--workspace-chrome-height, 0px);
-    margin-bottom: calc(-1 * (var(--workspace-chrome-height, 0px) + var(--spacing) * 10));
+    margin-bottom: calc(-1 * (var(--workspace-chrome-height, 0px) + 44px));
   }
+@media (max-width: 1023px) {
   html[data-surfaces='translucent'] .chain-editor-workspace .chain-editor-body {
-    padding-top: calc(var(--workspace-chrome-height, 0px) + var(--spacing) * 10);
-    scroll-padding-top: calc(var(--workspace-chrome-height, 0px) + var(--spacing) * 10);
+    padding-top: calc(var(--workspace-chrome-height, 0px) + 44px);
+    scroll-padding-top: calc(var(--workspace-chrome-height, 0px) + 44px);
   }
 }
 html:root[data-theme-details='true']:is([data-theme-material='glass'], [data-theme-material='frosted']) :is(.app-workspace, .workspace-canvas, .appearance-content) { background-color: transparent !important; }
@@ -351,7 +358,8 @@ html[data-control-style='filled'] :is([role='tablist'], .appearance-segmented) >
   background-color: var(--nai-control-surface) !important;
   color: var(--nai-segment-text) !important;
 }
-html[data-control-style='filled'] .generation-mode-nav > button[aria-current='page'] {
+html[data-control-style='filled'] .generation-mode-nav > button[aria-current='page'],
+html[data-control-style='filled'] .workspace-mode-tabs > button[aria-selected='true'] {
   background-color: var(--color-indigo-600) !important;
   color: var(--nai-on-accent-600) !important;
 }

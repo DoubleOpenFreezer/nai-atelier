@@ -167,7 +167,8 @@ export const Layout: React.FC<LayoutProps> = ({ children, onNavigate, currentVie
     if (!workspace) return;
     const syncEditorLayout = () => {
       const agentDocked = document.documentElement.classList.contains('agent-panel-docked');
-      workspace.classList.toggle('workspace-editor-compact', agentDocked && workspace.clientWidth <= 1180);
+      // 编辑与预览各保留至少 280px；不能因打开助手就把常规桌面降成上下长页。
+      workspace.classList.toggle('workspace-editor-compact', agentDocked && workspace.clientWidth < 560);
     };
     syncEditorLayout();
     const observer = new ResizeObserver(syncEditorLayout);

@@ -9,6 +9,7 @@ let observers: Set<{ callback: ResizeObserverCallback; element?: HTMLElement }>;
 const resizeWorkspace = (width: number, viewport = window.innerWidth) => act(() => {
   workWidth = width;
   vi.stubGlobal('innerWidth', viewport);
+  document.querySelectorAll('.workspace-container').forEach(workspace => workspace.classList.toggle('workspace-editor-compact', width < 560));
   for (const observer of observers) if (observer.element) {
     observer.callback([{
       target: observer.element,
@@ -80,7 +81,7 @@ const renderHeader = (props: Partial<Parameters<typeof ChainEditorHeader>[0]> = 
   });
   const shell = (content: React.ReactNode) => React.createElement('div', { className: 'agent-stage safe-mode dark' },
     React.createElement('aside', { className: 'relative z-40' }, '侧边栏'),
-    React.createElement('main', { className: 'isolate overflow-hidden' }, content),
+    React.createElement('main', { className: `workspace-container isolate overflow-hidden ${workWidth < 560 ? 'workspace-editor-compact' : ''}` }, content),
   );
   const view = render(shell(element));
   return { ...view, rerenderHeader: (next: Partial<Parameters<typeof ChainEditorHeader>[0]>) => view.rerender(shell(React.createElement(ChainEditorHeader, { ...element.props, ...next }))) };
@@ -146,7 +147,7 @@ describe('ChainEditorHeader 工具栏', () => {
     expect(onTranslateMissingPrompts).toHaveBeenCalledOnce();
     fireEvent.click(within(actions).getByRole('button', { name: '重置当前模式' }));
     expect(handleReset).toHaveBeenCalledOnce();
-    resizeWorkspace(900);
+    resizeWorkspace(550);
     fireEvent.click(screen.getByRole('button', { name: '更多操作' }));
     const more = screen.getByRole('dialog', { name: '更多操作' });
     expect(within(more).getAllByRole('button').map(button => button.textContent?.trim()).filter(Boolean)).toEqual([
@@ -198,12 +199,19 @@ describe('ChainEditorHeader 工具栏', () => {
     expect(screen.queryByRole('button', { name: /另存为新串|保存风格串|导入/ })).toBeNull();
   });
 
-  it.each(['text-to-image', 'image-to-image', 'inpaint', 'outpaint'] as const)('Agent 挤窄桌面工作区时当前模式 %s 的整组动作进入锚定菜单，拉宽后恢复', activeGenerationMode => {
+  it.each(['text-to-image', 'image-to-image', 'inpaint', 'outpaint'] as const)('模式 %s 的顶栏跟随预览分栏，只有纵排时整组动作进入锚定菜单', activeGenerationMode => {
     const handleFork = vi.fn();
     const view = renderHeader({ activeGenerationMode, handleFork });
     expect(view.container.querySelector('.chain-editor-actions')).toBeTruthy();
     resizeWorkspace(1180);
     expect(window.innerWidth).toBe(1600);
+    expect(view.container.querySelector('.chain-editor-actions')).toBeTruthy();
+    expect(view.container.querySelector('header')?.classList.contains('grid-cols-2')).toBe(true);
+    expect(screen.queryByRole('button', { name: '更多操作' })).toBeNull();
+    resizeWorkspace(560);
+    expect(view.container.querySelector('.chain-editor-actions')).toBeTruthy();
+    expect(view.container.querySelector('header')?.classList.contains('grid-cols-2')).toBe(true);
+    resizeWorkspace(559);
     expect(view.container.querySelector('.chain-editor-actions')).toBeNull();
     expect(view.container.querySelector('header')?.classList.contains('grid-cols-1')).toBe(true);
     fireEvent.click(screen.getByRole('button', { name: '更多操作' }));
@@ -219,7 +227,7 @@ describe('ChainEditorHeader 工具栏', () => {
     expect(handleFork).toHaveBeenCalledOnce();
     expect(screen.queryByRole('dialog')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: '更多操作' }));
-    resizeWorkspace(1181);
+    resizeWorkspace(560);
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(screen.queryByRole('button', { name: '更多操作' })).toBeNull();
     expect(view.container.querySelector('header')?.classList.contains('grid-cols-2')).toBe(true);
@@ -227,7 +235,7 @@ describe('ChainEditorHeader 工具栏', () => {
   });
 
   it.each([false, true])('桌面窄栏的预设保存入口仍直接可达并有有效锚点，角色模式=%s', isCharacterMode => {
-    workWidth = 900;
+    workWidth = 550;
     const handleSaveAll = vi.fn();
     renderHeader({ chainId: 'asset-1', isCharacterMode, handleSaveAll, hasChanges: true });
     const save = screen.getByRole('button', { name: isCharacterMode ? '保存自定义角色' : '保存风格串' });
@@ -240,21 +248,34 @@ describe('ChainEditorHeader 工具栏', () => {
     expect(handleSaveAll).toHaveBeenCalledOnce();
   });
 
-  it('放大字号时提前收纳，桌面切手机或模式切换关闭原菜单', async () => {
+  it('字号不单独改变分栏，桌面切手机或模式切换关闭原菜单', async () => {
     const view = renderHeader();
     document.documentElement.style.fontSize = '20px';
-    await waitFor(() => expect(screen.getByRole('button', { name: '更多操作' })).toBeTruthy());
+    expect(screen.queryByRole('button', { name: '更多操作' })).toBeNull();
+    expect(view.container.querySelector('header')?.classList.contains('grid-cols-2')).toBe(true);
+    resizeWorkspace(550);
     fireEvent.click(screen.getByRole('button', { name: '更多操作' }));
     resizeWorkspace(390, 390);
     expect(screen.queryByRole('dialog')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: '更多操作' }));
     expect(screen.getByRole('dialog').closest('.mobile-layer')).toBeTruthy();
-    resizeWorkspace(900, 1600);
+    resizeWorkspace(550, 1600);
     expect(screen.queryByRole('dialog')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: '更多操作' }));
     view.rerenderHeader({ activeGenerationMode: 'inpaint', canSaveActiveModeToLibrary: false });
     expect(screen.queryByRole('dialog')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: '更多操作' }));
     expect(within(screen.getByRole('dialog')).queryByRole('button', { name: '保存到库' })).toBeNull();
+  });
+
+  it('Layout 只更新分栏状态时顶栏同步，不依赖独立宽度阈值或窗口 resize', async () => {
+    const view = renderHeader();
+    const workspace = view.container.querySelector('.workspace-container')!;
+    act(() => workspace.classList.add('workspace-editor-compact'));
+    await waitFor(() => expect(screen.getByRole('button', { name: '更多操作' })).toBeTruthy());
+    expect(view.container.querySelector('header')?.classList.contains('grid-cols-1')).toBe(true);
+    act(() => workspace.classList.remove('workspace-editor-compact'));
+    await waitFor(() => expect(screen.queryByRole('button', { name: '更多操作' })).toBeNull());
+    expect(view.container.querySelector('header')?.classList.contains('grid-cols-2')).toBe(true);
   });
 });

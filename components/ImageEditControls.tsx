@@ -70,7 +70,7 @@ interface ImageEditControlsProps {
   onResetFocusedRect?: () => void;
   normalization?: { sourceWidth: number; sourceHeight: number; targetWidth: number; targetHeight: number } | null;
   onNormalize?: (mode: ImageEditNormalizationMode) => void;
-  /** 移动端当前选中的 Tab（canvas: 底图/画板/画布, prompt: 提示词与约束, params: 技术参数）。桌面端忽略此字段，全部展开展示。 */
+  /** 当前编辑分区（canvas: 底图/画板/画布, prompt: 提示词与约束, params: 技术参数），电脑与手机共用。 */
   mobileTab?: 'canvas' | 'prompt' | 'params';
 }
 
@@ -147,9 +147,9 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
     );
   };
 
-  return <><div className="appearance-content chain-editor-main order-2 flex min-h-full w-full shrink-0 flex-col border-b border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900 lg:order-1 lg:w-1/2 lg:flex-1 lg:overflow-y-auto lg:border-b-0 lg:border-r">
+  return <><div className="appearance-content chain-editor-main order-2 flex min-w-0 min-h-full w-full shrink-0 flex-col border-b border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900 lg:order-1 lg:w-1/2 lg:flex-1 lg:overflow-y-auto lg:border-b-0 lg:border-r">
     <div className="lab-editor-surface mx-auto flex w-full max-w-3xl flex-col gap-6 p-4 pb-36 md:p-6 md:pb-24">
-      <LabModuleSection moduleId="prompt" label={t("全局提示词")} order={getModuleOrder(layout, 'prompt')} defaultCollapsed={isModuleCollapsed(layout, 'prompt')} className={mobileTab === 'prompt' ? 'block' : 'hidden lg:block'}>
+      <LabModuleSection moduleId="prompt" label={t("全局提示词")} order={getModuleOrder(layout, 'prompt')} defaultCollapsed={isModuleCollapsed(layout, 'prompt')} className={mobileTab === 'prompt' ? 'block' : 'hidden'}>
         <section className="space-y-4">
           <div>
             <div className="mb-2 flex items-center justify-between gap-3">
@@ -220,7 +220,7 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
         coordinateHint={operation === 'outpaint' ? t("按原图定位，扩图自动换算") : undefined}
       />
 
-      <LabModuleSection moduleId="baseImage" label={t("底图与导入")} order={getModuleOrder(layout, 'baseImage')} defaultCollapsed={isModuleCollapsed(layout, 'baseImage')} className={mobileTab === 'canvas' ? 'block' : 'hidden lg:block'}>
+      <LabModuleSection moduleId="baseImage" label={t("底图与导入")} order={getModuleOrder(layout, 'baseImage')} defaultCollapsed={isModuleCollapsed(layout, 'baseImage')} className={mobileTab === 'canvas' ? 'block' : 'hidden'}>
         <section className="space-y-3">
           <div className="mb-3 flex items-center justify-between gap-3"><label className="text-sm font-semibold text-gray-800 dark:text-gray-100" title={draft.baseImageSource ? ({ history: t("历史图片"), inspiration: t("收藏库"), generated: t("文生图结果"), upload: t("本地上传"), clipboard: t("剪贴板图片") }[draft.baseImageSource]) : undefined}>{t("底图来源")}</label></div>
           <div className="grid grid-cols-3 gap-2">
@@ -383,7 +383,7 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
         </section>
       </LabModuleSection>
 
-      <LabModuleSection moduleId="params" label={t("参数设置")} order={getModuleOrder(layout, 'params')} defaultCollapsed={isModuleCollapsed(layout, 'params')} className={mobileTab === 'params' ? 'block' : 'hidden lg:block'}>
+      <LabModuleSection moduleId="params" label={t("参数设置")} order={getModuleOrder(layout, 'params')} defaultCollapsed={isModuleCollapsed(layout, 'params')} className={mobileTab === 'params' ? 'block' : 'hidden'}>
         {operation === 'image-to-image' && <div className="mb-4 space-y-2 text-xs">
           <label className="flex items-center justify-between gap-2 font-semibold text-gray-600 dark:text-gray-300">
             {t("输出尺寸")}<select aria-label={t("图生图输出尺寸")} disabled={isBusy} value={sizeMode} onChange={event => onDraftChange({ imageToImageSizeMode: event.target.value as ImageToImageSizeMode })} className="min-w-0 rounded-lg border border-gray-200 bg-gray-50 px-2 py-1.5 text-xs outline-none focus:border-indigo-500 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-800">
@@ -405,7 +405,7 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
         <ChainEditorParams params={selectableParams} prompt={draft.prompt} setParams={params => onDraftChange({ params })} canEdit={!isBusy} markChange={() => undefined} hideResolution mode={operation} forceEmptySeed={forceEmptySeed} onForceEmptySeedChange={onForceEmptySeedChange} enforceFreeStepLimit={enforceFreeStepLimit} />
       </LabModuleSection>
 
-      <LabModuleSection moduleId="editSettings" label={t("编辑参数")} order={getModuleOrder(layout, 'editSettings')} defaultCollapsed={isModuleCollapsed(layout, 'editSettings')} className={mobileTab === 'params' ? 'block' : 'hidden lg:block'}>
+      <LabModuleSection moduleId="editSettings" label={t("编辑参数")} order={getModuleOrder(layout, 'editSettings')} defaultCollapsed={isModuleCollapsed(layout, 'editSettings')} className={mobileTab === 'params' ? 'block' : 'hidden'}>
         <section className="space-y-4">
           <div>
             <div className="mb-1 flex items-center justify-between">
@@ -470,11 +470,11 @@ export const ImageEditControls: React.FC<ImageEditControlsProps> = ({
         </section>
       </LabModuleSection>
 
-      {supportsCharacterReference && <LabModuleSection moduleId="characterReference" label={t("角色参考")} order={getModuleOrder(layout, 'characterReference')} defaultCollapsed={isModuleCollapsed(layout, 'characterReference')} className={mobileTab === 'prompt' ? 'block' : 'hidden lg:block'}>
+      {supportsCharacterReference && <LabModuleSection moduleId="characterReference" label={t("角色参考")} order={getModuleOrder(layout, 'characterReference')} defaultCollapsed={isModuleCollapsed(layout, 'characterReference')} className={mobileTab === 'prompt' ? 'block' : 'hidden'}>
         <CharacterReferenceManager params={selectableParams} setParams={params => onDraftChange({ params })} markChange={() => undefined} notify={notify} operation={operation} />
       </LabModuleSection>}
 
-      {supportsVibe && <LabModuleSection moduleId="vibe" label="Vibe Transfer" order={getModuleOrder(layout, 'vibe')} defaultCollapsed={isModuleCollapsed(layout, 'vibe')} className={mobileTab === 'prompt' ? 'block' : 'hidden lg:block'}>
+      {supportsVibe && <LabModuleSection moduleId="vibe" label="Vibe Transfer" order={getModuleOrder(layout, 'vibe')} defaultCollapsed={isModuleCollapsed(layout, 'vibe')} className={mobileTab === 'prompt' ? 'block' : 'hidden'}>
         <VibeManager params={selectableParams} setParams={params => onDraftChange({ params })} markChange={() => undefined} apiKey={apiKey} notify={notify} operation={operation} />
       </LabModuleSection>}
     </div>

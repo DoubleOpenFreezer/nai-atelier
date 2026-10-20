@@ -52,6 +52,8 @@ describe('角色就地粘贴反推', () => {
     await act(async () => job.resolve(result));
     expect(rows()).toEqual([{ ...initial[1], prompt: 'red hair, looking at viewer, sitting' }, initial[0]]);
     expect(screen.getByAltText('反推参考图')).toBeTruthy();
+    expect(screen.getByAltText('反推参考图').closest('.character-tools')).toBeNull();
+    expect(screen.getAllByRole('button', { name: '粘贴反推' })[0].closest('.character-tools')).not.toBeNull();
     expect(URL.revokeObjectURL).not.toHaveBeenCalled();
   });
   it('一次点击直接追加到对应角色，保留其他角色、负面词和坐标，沿用模型默认阈值', async () => {

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import React, { useState } from 'react';
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ChainEditorCharacters } from '../../../components/chain/ChainEditorCharacters';
 import { DEFAULT_LAB_PAGE_LAYOUTS } from '../../../services/appearancePreferences';
 import type { NAIParams } from '../../../types';
@@ -23,9 +23,36 @@ const Harness = ({ freeform = false, canEdit = true, model }: { freeform?: boole
     <output data-testid="draft">{JSON.stringify(params)}</output></>;
 };
 const draft = (): NAIParams => JSON.parse(screen.getByTestId('draft').textContent!);
+beforeEach(() => {
+  vi.stubGlobal('matchMedia', vi.fn((media: string) => ({ matches: false, media, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
+});
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); mark.mockClear(); });
 
 describe('共用角色编辑器', () => {
+  it.each([1280, 390])('%spx 下坐标图标与原有角色动作同排，展开后仍只修改对应角色并可关闭', async width => {
+    vi.stubGlobal('innerWidth', width);
+    render(<Harness freeform />);
+    expect(screen.queryByRole('spinbutton', { name: '角色 1 水平位置' })).toBeNull();
+    fireEvent.click(screen.getByRole('checkbox', { name: 'AI 自动构图' }));
+    const trigger = screen.getAllByRole('button', { name: '坐标' })[0];
+    const prompt = screen.getAllByPlaceholderText('角色提示词')[0];
+    const tools = trigger.closest('.character-tools')!;
+    expect(trigger.textContent).toBe('');
+    expect(tools.contains(screen.getByRole('button', { name: '下移角色 1' }))).toBe(true);
+    expect(tools.contains(prompt)).toBe(false);
+    expect(tools.compareDocumentPosition(prompt) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    trigger.focus();
+    fireEvent.click(trigger);
+    expect(screen.getByRole('dialog', { name: '角色 1 坐标' })).toBeTruthy();
+    const x = screen.getByRole('spinbutton', { name: '角色 1 水平位置' });
+    fireEvent.change(x, { target: { value: '0.42' } }); fireEvent.blur(x);
+    expect(draft().characters?.[0]).toEqual({ ...initial.characters![0], x: 0.42 });
+    expect(draft().characters?.[1]).toEqual(initial.characters![1]);
+    if (width < 768) fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: '关闭' }));
+    else fireEvent.keyDown(window, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(document.activeElement).toBe(trigger);
+  });
   it('角色正词清空在卡片顶栏，负词清空在负面标题行，两者分别撤销且保留其他角色', () => {
     render(<Harness />);
     const positive = screen.getAllByPlaceholderText('角色提示词')[0] as HTMLTextAreaElement;
@@ -66,8 +93,11 @@ describe('共用角色编辑器', () => {
   it('旧资料默认自动构图，坐标真正禁用；开启手动后清空／越界归一化，模型切换不改存量草稿', () => {
     const { rerender } = render(<Harness />);
     expect((screen.getByRole('checkbox', { name: 'AI 自动构图' }) as HTMLInputElement).checked).toBe(true);
+    fireEvent.click(screen.getAllByRole('button', { name: '坐标' })[0]);
     expect((screen.getByRole('spinbutton', { name: '角色 1 水平位置' }) as HTMLInputElement).disabled).toBe(true);
+    fireEvent.keyDown(window, { key: 'Escape' });
     fireEvent.click(screen.getByRole('checkbox', { name: 'AI 自动构图' }));
+    fireEvent.click(screen.getAllByRole('button', { name: '坐标' })[0]);
     const x = screen.getByRole('spinbutton', { name: '角色 1 水平位置' });
     expect((x as HTMLInputElement).value).toBe('0.3');
     fireEvent.change(x, { target: { value: '' } });
@@ -125,6 +155,9 @@ describe('共用角色编辑器', () => {
     for (const name of ['启用角色 1', 'AI 自动构图']) expect((screen.getByRole('checkbox', { name }) as HTMLInputElement).disabled).toBe(true);
     expect((screen.getByRole('button', { name: '下移角色 1' }) as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getAllByRole('button', { name: '移除角色提示词' })[0] as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getAllByRole('button', { name: '坐标' })[0]);
+    expect((screen.getByRole('spinbutton', { name: '角色 1 水平位置' }) as HTMLInputElement).disabled).toBe(true);
+    fireEvent.keyDown(window, { key: 'Escape' });
     fireEvent.click(screen.getByRole('button', { name: '角色定位' }));
     fireEvent.keyDown(screen.getByRole('button', { name: '定位角色 1' }), { key: 'ArrowRight' });
     expect(draft()).toEqual(initial);

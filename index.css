@@ -727,6 +727,65 @@ body,
 .workspace-aitag-grid { --workspace-card-min: 175px; }
 
 /* 实验室命令栏在组件内按实际宽度收纳，宽栏左右等分，窄栏保持单行。 */
+/* 分区入口固定在滚动内容外；电脑只占左栏，预览保持原位置。 */
+.workspace-mode-tabs { height: 44px; padding: 0 !important; gap: 0 !important; border-radius: 0; }
+.workspace-mode-tabs > button { height: 100% !important; }
+.lab-navigation-surface { display: none; }
+.character-tools { --nai-control-height: 24px; }
+.character-tools [data-appearance='control'] { height: 24px; min-height: 24px; width: 24px; min-width: 24px; padding: 0; border: 0; background: transparent; box-shadow: none; }
+@media (pointer: coarse) {
+  .character-tools button { height: 44px; min-height: 44px; width: 44px; min-width: 44px; }
+}
+@media (min-width: 1024px) {
+  .chain-editor-workspace { --lab-tabs-height: 36px; --lab-tabs-padding: 2px; }
+  .workspace-mode-tabs { width: var(--lab-tabs-width, calc(50% - 1.5rem)); height: var(--lab-tabs-height); margin-left: var(--lab-tabs-left, .75rem); margin-top: calc(-1 * var(--lab-tabs-chrome-gap, 0px)); margin-bottom: calc(var(--lab-tabs-chrome-gap, 0px) - var(--lab-tabs-height)); }
+  /* 主次导航只由同一个底板绘制背景，中间没有边框、阴影或独立圆角。 */
+  html:root .chain-editor-workspace .chain-editor-header[data-lab-navigation='joined'] {
+    isolation: isolate;
+    background: transparent !important;
+    border-color: transparent !important;
+    box-shadow: none !important;
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+  html:root .chain-editor-header[data-lab-navigation='joined'] .lab-navigation-surface {
+    display: block;
+    position: absolute;
+    z-index: -1;
+    pointer-events: none;
+    inset: -1px;
+    bottom: calc(-1 * var(--lab-tabs-height));
+    height: auto;
+    min-height: 0;
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+    background-color: var(--nai-toolbar-surface);
+    clip-path: var(--lab-navigation-outline);
+  }
+  html:root .chain-editor-header[data-lab-navigation='joined'] .generation-mode-nav {
+    background: transparent !important;
+    border-color: transparent !important;
+    box-shadow: none !important;
+  }
+  html:root .chain-editor-workspace .workspace-mode-tabs {
+    isolation: isolate;
+    padding: var(--lab-tabs-padding) 0 !important;
+    gap: 2px !important;
+    border: 0;
+    border-radius: 0;
+    background: transparent !important;
+    box-shadow: none;
+  }
+  html:root .chain-editor-workspace .workspace-mode-tabs > button { min-height: 0; box-shadow: none; border-radius: max(4px, calc(var(--workspace-control-radius) - 2px)); }
+  .workspace-mode-tabs > button { font-size: .8125rem; font-weight: 500; }
+  .workspace-mode-tabs > button[aria-selected='true'] { font-weight: 600; }
+  .chain-editor-workspace .chain-editor-main { padding-top: calc(var(--lab-tabs-height) - var(--lab-tabs-chrome-gap, 0px)); scroll-padding-top: calc(var(--lab-tabs-height) - var(--lab-tabs-chrome-gap, 0px)); }
+}
+@media (min-width: 1024px) and (any-pointer: coarse) {
+  .chain-editor-workspace { --lab-tabs-height: 48px; }
+}
+
 .chain-editor-header {
   height: auto;
 }
@@ -778,61 +837,11 @@ body,
 
 }
 
-@container workspace (max-width: 1180px) {
-  .agent-panel-docked .chain-editor-body {
-    flex-direction: column !important;
-    overflow-x: hidden !important;
-    overflow-y: auto !important;
-  }
-
-  .agent-panel-docked .chain-editor-main {
-    order: 1 !important;
-    min-height: auto !important;
-    width: 100% !important;
-    flex: 0 0 auto !important;
-    overflow: visible !important;
-    border-right-width: 0 !important;
-    border-bottom-width: 1px !important;
-  }
-
-  .agent-panel-docked .chain-editor-preview-wrapper {
-    order: 2;
-    display: block !important;
-    height: min(900px, calc(100dvh - 3rem));
-    min-height: 720px;
-    width: 100%;
-    flex: 0 0 auto;
-  }
-
-  .agent-panel-docked .chain-editor-preview {
-    height: 100%;
-    min-height: 0;
-    width: 100% !important;
-    border-bottom-width: 0 !important;
-  }
-
-  /* 编辑模式（图生图/局部重绘/扩图）预览卡在窄容器下按内容自适应，避免固定高度遮挡下方控制区。 */
-  .agent-panel-docked .image-edit-preview-shell {
-    height: auto;
-    min-height: 0;
-  }
-
-  .agent-panel-docked .image-edit-preview-shell .chain-editor-preview {
-    height: auto;
-    min-height: 0;
-  }
-
-  .agent-panel-docked .chain-editor-param-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-  }
-
+.agent-panel-docked .chain-editor-param-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr)) !important;
 }
 
-/*
- * Chromium can defer container-query evaluation when an editor mounts beneath
- * an already-open portal. Layout.tsx mirrors the measured state onto this
- * class so the first frame and subsequent Agent/sidebar resizes agree.
- */
+/* 仅由 Layout 的实际宽度测量决定纵排，避免容器查询与 JS 两套阈值冲突。 */
 .agent-panel-docked .workspace-container.workspace-editor-compact .chain-editor-body {
   flex-direction: column !important;
   overflow-x: hidden !important;
@@ -876,11 +885,28 @@ body,
   min-height: 0;
 }
 
-.agent-panel-docked .workspace-container.workspace-editor-compact .chain-editor-param-grid {
-  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-}
-
 @container workspace (max-width: 980px) {
+  /* 并列工作区的顶栏仍左右等分，仅收紧留白，让四模式与两排导航留在编辑列。 */
+  .agent-panel-docked .chain-editor-header { padding-inline: .5rem; }
+  .agent-panel-docked .chain-editor-header-main { padding-right: 0; }
+  .agent-panel-docked .chain-editor-header .generation-mode-nav > button { padding-inline: 0; }
+
+  /* 窄预览保留完整生成按钮，辅助进度移到下一行，不在图片两侧溢出。 */
+  .agent-panel-docked .chain-editor-preview .generation-count-control {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    width: 100%;
+    max-width: 100%;
+  }
+  .agent-panel-docked .chain-editor-preview .generation-count-control > .generation-action-button { grid-column: 1 / -1; grid-row: 1; }
+  .agent-panel-docked .chain-editor-preview .generation-count-control > :not(.generation-action-button) {
+    position: static;
+    margin: 0;
+    grid-row: 2;
+    justify-self: start;
+  }
+  .agent-panel-docked .chain-editor-preview .generation-count-control > div { grid-column: 2; justify-self: end; }
+
   .agent-panel-docked .aitag-split {
     grid-template-columns: minmax(0, 1fr) !important;
   }

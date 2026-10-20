@@ -144,7 +144,7 @@ export const GenerationCountControl: React.FC<GenerationCountControlProps> = ({ 
       </div>)}
     </div>}
   </>;
-  return <div className={'relative inline-flex w-fit max-w-full min-w-0 items-stretch gap-2 lg:w-80 ' + (showProgress && showCloudQueue ? 'lg:max-w-[calc(100%-14rem)]' : showProgress || showCloudQueue ? 'lg:max-w-[calc(100%-8rem)]' : '')}>
+  return <div className={'generation-count-control relative inline-flex w-fit max-w-full min-w-0 items-stretch gap-2 lg:w-80 ' + (showProgress && showCloudQueue ? 'lg:max-w-[calc(100%-14rem)]' : showProgress || showCloudQueue ? 'lg:max-w-[calc(100%-8rem)]' : '')}>
     {showProgress && <ToolbarButton onClick={onTogglePause || onStop} disabled={pausePending || series?.stopping || queueState?.pausing || (!occupied && !paused)}
       aria-label={t(queueState?.pausing ? "暂停中…" : paused ? "继续生成" : "暂停生成")}
       title={t(queueState?.pausing ? "当前图片保存后暂停" : paused ? "继续生成" : "暂停生成")}
