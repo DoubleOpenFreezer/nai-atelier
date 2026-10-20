@@ -824,6 +824,17 @@ const spendAnlasBudget = async (req, workerPort, amount, reason, personal = null
   return budget;
 };
 
+/** 成功消费在后端记一次；不依赖前台观察、历史保存或之后是否删图。 */
+const recordNaiUsage = async (req, workerPort, keyHash, action, model, images, cost, opusImages) => {
+  const result = await requestWorkerJson('/api/local-usage/events', req, workerPort, {
+    method: 'POST', body: {
+      category: 'nai', action, target: keyHash, amount: images, value: cost,
+      meta: { model, billingKnown: Number.isFinite(cost), opusImages },
+    },
+  });
+  if (result?.inserted !== 1) throw new Error('本地 Key 用量记录回执无效');
+};
+
 export class VibeEncodingMemoryCache {
   constructor(limit = VIBE_ENCODING_CACHE_LIMIT) {
     this.limit = limit;
@@ -993,14 +1004,19 @@ const prepareNovelAiBilling = ({ authorization, runtime = getNaiRuntime() }) => 
 /** 成功生成统一走这里结算，保证 ZIP 与 SSE 使用同一 Key 隔离和个人用量口径。 */
 const settleSuccessfulNovelAiGeneration = async ({ payload, keyHash, req, workerPort, billing }) => {
   // 未取得订阅时不猜测本地扣费，官方仍直接处理生成和实际扣费。
-  if (!billing.subscription) return { anlasBudget: null };
   const { runtime, exhausted, opusSubscriber } = billing;
-  const estimatedCost = billingForPayload(payload, runtime, opusSubscriber, exhausted).cost;
-  const personalUsage = computeGenerationPersonalUsage(payload, estimatedCost, exhausted, runtime, true, opusSubscriber);
-  const anlasBudget = estimatedCost > 0 || personalUsage.opusImagesDelta > 0
-    ? await spendAnlasBudget(req, workerPort, estimatedCost, 'generation', { keyHash, ...personalUsage })
-    : null;
-  return { estimatedCost, personalUsage, anlasBudget };
+  const estimatedCost = billing.subscription ? billingForPayload(payload, runtime, opusSubscriber, exhausted).cost : undefined;
+  const personalUsage = billing.subscription
+    ? computeGenerationPersonalUsage(payload, estimatedCost, exhausted, runtime, true, opusSubscriber) : undefined;
+  const images = Math.max(1, Math.floor(Number(payload.parameters?.n_samples) || 1));
+  // 两份本地记录分别落下；一处故障不能阻止另一处，也不能重发生图。
+  const [recorded, budget] = await Promise.allSettled([
+    recordNaiUsage(req, workerPort, keyHash, 'generation', payload.model, images, estimatedCost, personalUsage?.opusImagesDelta),
+    estimatedCost > 0 || personalUsage?.opusImagesDelta > 0
+      ? spendAnlasBudget(req, workerPort, estimatedCost, 'generation', { keyHash, ...personalUsage }) : null,
+  ]);
+  return { estimatedCost, personalUsage, anlasBudget: budget.status === 'fulfilled' ? budget.value : null,
+    accountingFailed: recorded.status === 'rejected' || budget.status === 'rejected' };
 };
 
 // ===== NovelAI Web 应用常量自动同步 =====
@@ -1942,7 +1958,7 @@ export const handleGenerateRequest = async (req, res, lanSecret, workerPort, clo
     let estimatedCost, anlasBudget, accountingFailed = false;
     if (response.ok) {
       try {
-        ({ estimatedCost, anlasBudget } = await settleGeneration({ payload: settlementPayload, authorization, keyHash, req, workerPort, requestRemote, billing }));
+        ({ estimatedCost, anlasBudget, accountingFailed = false } = await settleGeneration({ payload: settlementPayload, authorization, keyHash, req, workerPort, requestRemote, billing }));
       } catch {
         // 已收到成品，记账失败不能变成生图失败并诱发重复付费；ZIP 与 SSE 语义相同。
         accountingFailed = true;
@@ -2160,7 +2176,7 @@ export const handleGenerateStreamRequest = async (req, res, lanSecret, workerPor
     }
 
     try {
-      const { estimatedCost, anlasBudget } = await settleGeneration({
+      const { estimatedCost, anlasBudget, accountingFailed } = await settleGeneration({
         payload: settlementPayload, authorization, keyHash, req, workerPort, requestRemote, billing,
       });
       res.write(`\nevent: nai_usage\ndata: ${JSON.stringify({
@@ -2169,6 +2185,7 @@ export const handleGenerateStreamRequest = async (req, res, lanSecret, workerPor
         estimatedSpent: estimatedCost,
         refreshPersonal: true,
       })}\n\n`);
+      if (accountingFailed) res.write(`\nevent: nai_usage_error\ndata: ${JSON.stringify({ message: '本地用量记录未完整保存' })}\n\n`);
     } catch (accountingError) {
       // 图片已经由 NovelAI 成功生成，结算异常单独上报，绝不能触发前端再次生图。
       res.write(`\nevent: nai_usage_error\ndata: ${JSON.stringify({ message: accountingError?.message || '本地用量结算失败' })}\n\n`);
@@ -2265,13 +2282,13 @@ export const handleVibeEncodeRequest = async (req, res, lanSecret, workerPort, v
           throw error;
         }
         const encodeKeyHash = createHash('sha256').update(authorization.slice(7)).digest('hex');
-        let anlasBudget, anlasAccountingFailed = false;
-        try {
-          anlasBudget = await spendAnlasBudget(req, workerPort, cost, 'vibe-encoding', { keyHash: encodeKeyHash, anlasDelta: cost, opusImagesDelta: 0 });
-        } catch {
-          // 已付费取得的编码必须继续保存，记账故障不能丢弃它并诱发再次编码。
-          anlasAccountingFailed = true;
-        }
+        const [recorded, budget] = await Promise.allSettled([
+          recordNaiUsage(req, workerPort, encodeKeyHash, 'encoding', 'nai-diffusion-4-5-full', 0, cost, 0),
+          spendAnlasBudget(req, workerPort, cost, 'vibe-encoding', { keyHash: encodeKeyHash, anlasDelta: cost, opusImagesDelta: 0 }),
+        ]);
+        // 已付费取得的编码必须继续保存，记账故障不能丢弃它并诱发再次编码。
+        const anlasBudget = budget.status === 'fulfilled' ? budget.value : undefined;
+        const anlasAccountingFailed = recorded.status === 'rejected' || budget.status === 'rejected';
         const recovery = { vibeId, informationExtracted, encodingBase64: encoding.toString('base64'), createdAt: Date.now() };
         try {
           const stored = await commitVibeRecovery(recovery, req, workerPort);
