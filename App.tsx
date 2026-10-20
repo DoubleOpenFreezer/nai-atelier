@@ -18,7 +18,9 @@ import {
   saveAppearancePreferences,
   ThemeMode,
 } from './services/appearancePreferences';
-import { PromptChain, User, Inspiration, ChainType } from './types';
+import { PromptChain, User, Inspiration, ChainType, NAIParams } from './types';
+import { applyContentRollToParams, undoContentRollApply, type ContentRollApplyPlan } from './services/contentRollApply';
+import { createUuid } from './services/id';
 import type { HistoryBrowseQuery } from './services/historyBrowse';
 
 const ChainEditor = lazy(() => import('./components/ChainEditor').then(module => ({ default: module.ChainEditor })));
@@ -57,6 +59,8 @@ const App = () => {
     return () => { window.history.scrollRestoration = previous; };
   }, []);
   const [view, setView] = useState<ViewState>('list');
+  /* 一键 Roll 填入的撤销快照（只保留最近一次；刷新即失效） */
+  const [contentRollUndo, setContentRollUndo] = useState<{ params: NAIParams; createdRoleId: string } | null>(null);
   const viewSessionRef = useRef({ view });
   if (viewSessionRef.current.view !== view) viewSessionRef.current = { view };
   useEffect(() => { window.dispatchEvent(new Event('nai-workspace-changed')); }, [view]);
@@ -531,6 +535,21 @@ const App = () => {
     setPlaygroundChain(prev => prev ? { ...prev, ...updates } : null);
   };
 
+  /* 一键 Roll → 实验室：写目标角色 prompt 与「补充」栏，其它一字节不动；保留撤销快照 */
+  const handleApplyContentRoll = async (plan: ContentRollApplyPlan): Promise<boolean> => {
+    const result = applyContentRollToParams(playgroundChain?.params, plan, createUuid);
+    setContentRollUndo({ params: result.undoParams, createdRoleId: result.createdRoleId });
+    await handleUpdatePlaygroundChain('playground', { params: result.params });
+    return true;
+  };
+  const handleUndoContentRoll = async (): Promise<boolean> => {
+    if (!contentRollUndo) return false;
+    const restored = undoContentRollApply(playgroundChain?.params, contentRollUndo.params, contentRollUndo.createdRoleId);
+    setContentRollUndo(null);
+    await handleUpdatePlaygroundChain('playground', { params: restored });
+    return true;
+  };
+
   const handleCreateChain = async (name: string, desc: string, type: ChainType) => {
     setLoading(true);
     try {
@@ -805,7 +824,16 @@ const App = () => {
             return saved;
           }} />;
       case 'content-roll':
-        return <ContentRollWorkspace active={view === 'content-roll'} chains={chains} notify={notify} />;
+        return <ContentRollWorkspace
+          active={view === 'content-roll'}
+          chains={chains}
+          notify={notify}
+          playgroundParams={playgroundChain?.params || null}
+          playgroundRoles={(playgroundChain?.params?.characters || []).map((item, index) => ({ id: String(item.id), label: t('角色 {0}', [String(index + 1)]) }))}
+          canUndo={!!contentRollUndo}
+          onApplyRoll={handleApplyContentRoll}
+          onUndoApply={handleUndoContentRoll}
+        />;
       case 'playground':
         if (!playgroundChain) return <div>Loading...</div>;
         return <ChainEditor

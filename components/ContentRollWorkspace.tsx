@@ -5,11 +5,24 @@ import type { PromptChain } from '../types';
 import { KINDS, META } from '../services/contentRoll';
 import type { RollRow } from '../services/contentRoll';
 import { draw, evidenceOf, rerollOne } from '../services/contentRollDraw';
+import type { ContentRollApplyPlan, ContentRollTarget } from '../services/contentRollApply';
+import { planContentRollApply } from '../services/contentRollApply';
+import type { NAIParams } from '../types';
 
 interface ContentRollWorkspaceProps {
   active: boolean;
   chains: PromptChain[];
   notify: (message: string, kind?: 'success' | 'error') => void;
+  /** 实验室当前已有角色（来自 playground 的 params.characters），用于「填入实验室」的目标选择 */
+  playgroundRoles?: Array<{ id: string; label: string }>;
+  /** 实验室当前参数（只读，用来显示「当前 → 将填入」） */
+  playgroundParams?: NAIParams | null;
+  /** 组好的应用计划交给 App 落盘（App 负责写 playground 参数）；返回是否成功 */
+  onApplyRoll?: (plan: ContentRollApplyPlan) => Promise<boolean>;
+  /** 撤销上一次填入（App 用改动前的快照恢复） */
+  onUndoApply?: () => Promise<boolean>;
+  /** 是否有可撤销的填入 */
+  canUndo?: boolean;
 }
 
 /** 一次抽取的结果（会话内保留最近 20 组；只存派生数据，不存条目对象）。 */
@@ -50,7 +63,7 @@ const shortText = (value: string, max = 48): string => {
  * 全部随机与证据逻辑在 services/contentRoll（快照/约束）与 services/contentRollDraw（池子/随机流），
  * 本组件只负责界面与本地草稿，不写库、不触发生成。
  */
-export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ active, chains, notify }) => {
+export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ active, chains, notify, playgroundRoles = [], playgroundParams = null, onApplyRoll, onUndoApply, canUndo = false }) => {
   const [initial] = useState(readStore);
   const [history, setHistory] = useState<RollRecord[]>(initial.history);
   const [cursor, setCursor] = useState(initial.cursor);
@@ -58,6 +71,9 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ acti
   const [locked, setLocked] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [showEvidence, setShowEvidence] = useState(false);
+  const [targetId, setTargetId] = useState<string>('new');
+  const [confirming, setConfirming] = useState(false);
+  const [applying, setApplying] = useState(false);
 
   const current = cursor >= 0 ? history[cursor] : null;
 
@@ -156,6 +172,23 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ acti
     }
   };
 
+  const applyTarget: ContentRollTarget = targetId && targetId !== 'new' ? { mode: 'existing', id: targetId } : { mode: 'new' };
+  const plan = current ? planContentRollApply(current.picks, playgroundParams, applyTarget) : null;
+
+  const doApply = async () => {
+    if (!current || !onApplyRoll || !plan) return;
+    setApplying(true);
+    try {
+      const ok = await onApplyRoll(plan);
+      if (ok) {
+        setConfirming(false);
+        notify(t('已填入实验室：角色 {0} 类、补充栏 {1} 类（可撤销）', [String(plan.rows.filter(item => item.action === 'replace' && META[item.kind].scope === 'character').length), String(plan.rows.filter(item => item.action === 'replace' && META[item.kind].scope === 'global').length)]));
+      }
+    } finally {
+      setApplying(false);
+    }
+  };
+
   const rows = KINDS.map(kind => ({ kind, meta: META[kind], row: current?.picks[kind] || null }));
 
   return (
@@ -240,6 +273,58 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ acti
             );
           })}
         </section>
+
+        {current ? (
+          <section className="rounded-2xl border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-900" data-content-roll-apply="true">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="text-xs font-semibold text-gray-700 dark:text-gray-200">{t('填入实验室')}</span>
+              <label className="flex items-center gap-1 text-[11px] text-gray-500 dark:text-gray-400">
+                {t('目标角色')}
+                <select value={targetId} onChange={event => { setTargetId(event.target.value); setConfirming(false); }}
+                  aria-label={t('选择写入的目标角色')}
+                  className="rounded-lg border border-gray-200 bg-white px-2 py-1 text-[11px] dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">
+                  <option value="new">{t('新建角色')}</option>
+                  {playgroundRoles.map(role => <option key={role.id} value={role.id}>{role.label}</option>)}
+                </select>
+              </label>
+            </div>
+            <p className="mt-1 text-[11px] leading-4 text-gray-400">
+              {t('角色四类写进目标角色的提示词；场景与镜头写进「补充」栏。画师串、风格负面与生图参数不会改动。')}
+            </p>
+            {confirming && plan ? (
+              <div className="mt-2 space-y-1" data-content-roll-apply-preview="true">
+                {plan.rows.map(item => (
+                  <div key={item.kind} className="rounded-lg border border-gray-200 px-2 py-1 text-[11px] dark:border-gray-700" data-content-roll-apply-row={item.kind} data-content-roll-apply-action={item.action}>
+                    <span className="font-semibold text-indigo-600 dark:text-indigo-300">{t(item.title)}</span>
+                    <span className="ml-1 text-gray-400">{item.action === 'replace' ? t('改为填入') : t('保持原值')}</span>
+                    <span className="ml-1 break-all font-mono text-gray-500 dark:text-gray-400">
+                      {item.action === 'replace' ? shortText(item.next, 60) : t('本次未提供')}
+                    </span>
+                    {item.note ? <span className="ml-1 text-amber-600 dark:text-amber-400">{item.note}</span> : null}
+                  </div>
+                ))}
+                <div className="flex items-center gap-2 pt-1">
+                  <button type="button" onClick={() => void doApply()} disabled={applying}
+                    className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50">
+                    {applying ? t('写入中…') : t('确认填入')}
+                  </button>
+                  <button type="button" onClick={() => setConfirming(false)}
+                    className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-600 dark:border-gray-700 dark:text-gray-300">{t('取消')}</button>
+                </div>
+              </div>
+            ) : (
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <button type="button" onClick={() => setConfirming(true)} disabled={!onApplyRoll}
+                  className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40">{t('填入实验室…')}</button>
+                {canUndo ? (
+                  <button type="button" onClick={() => void onUndoApply?.()} data-content-roll-undo="true"
+                    className="rounded-lg border border-amber-300 px-3 py-1.5 text-xs text-amber-700 dark:border-amber-800 dark:text-amber-300">{t('撤销上次填入')}</button>
+                ) : null}
+                {!onApplyRoll ? <span className="text-[11px] text-gray-400">{t('当前视图不支持写入，请进入实验室后再试')}</span> : null}
+              </div>
+            )}
+          </section>
+        ) : null}
 
         {current ? (
           <section className="rounded-2xl border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-900">
