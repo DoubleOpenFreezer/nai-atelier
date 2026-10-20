@@ -145,3 +145,19 @@ test('Android 复用成功消费记录，免费 V4.5 也计张数，未知费用
   assert.equal(mobile.writes[1].body.value, undefined);
   assert.equal(mobile.writes[1].body.meta.billingKnown, false);
 });
+
+test('Android 提取后的角色参考与额度降级共用桌面实现，构建显式导出判定函数', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const source = extractAndroidShared(join(projectRoot, 'scripts/media-gateway.mjs'), ['toCachedPreciseReferenceParameters', 'isSubscriptionUnsupported'],
+    "import { createHmac, randomBytes } from 'node:crypto';");
+  const mobile = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
+  const converted = mobile.toCachedPreciseReferenceParameters({ director_reference_images: ['synthetic-image-data'], director_reference_strength_values: [0.6] });
+  assert.equal(converted.director_reference_images, undefined);
+  assert.equal(converted.director_reference_images_cached[0].data, 'synthetic-image-data');
+  assert.match(converted.director_reference_images_cached[0].cache_secret_key, /^[a-f0-9]{64}$/);
+  assert.deepEqual(converted.director_reference_strength_values, [0.6]);
+  for (const status of [404, 405, 501]) assert.equal(mobile.isSubscriptionUnsupported('https://gateway.example', status), true);
+  assert.equal(mobile.isSubscriptionUnsupported('', 404), false);
+  const build = await readFile(join(projectRoot, 'scripts/build-android.mjs'), 'utf8');
+  assert.match(build, /'isSubscriptionUnsupported'/);
+});

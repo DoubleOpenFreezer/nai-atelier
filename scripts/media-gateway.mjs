@@ -750,6 +750,22 @@ export const buildPreciseReferenceParameters = (slots, resolvedAssets) => {
   };
 };
 
+/**
+ * 第三方生图网关（中转站）通常只接受与官方网页端一致的缓存形式 `director_reference_images_cached`，
+ * 拒收原始 `director_reference_images`。改写为缓存形式并且每张都附带原图数据，不依赖网关侧缓存命中；
+ * 缓存键沿用 Vibe 的本机 HMAC，不暴露图片内容。官方直连保持原始字段不变。
+ */
+export const toCachedPreciseReferenceParameters = parameters => {
+  const images = parameters?.director_reference_images;
+  if (!Array.isArray(images) || !images.length) return parameters;
+  parameters.director_reference_images_cached = images.map(data => ({ cache_secret_key: getVibeCacheSecretKey(data), data }));
+  delete parameters.director_reference_images;
+  return parameters;
+};
+
+/** 第三方生图网关可能没有 `/user/subscription`：仅把明确的“接口不存在”视为额度未知，鉴权失败、网络错误仍按失败处理。 */
+export const isSubscriptionUnsupported = (gatewayUrl, status) => Boolean(gatewayUrl) && [404, 405, 501].includes(Number(status));
+
 /** Remove every browser-controlled Precise Reference field before rebuilding it. */
 export const clearPreciseReferenceParameters = parameters => {
   for (const key of [
@@ -994,7 +1010,8 @@ export const sanitizeNovelAiSubscription = (payload, gatewayUrl = '') => {
 
 // 复用界面正常查询的订阅；普通生成不额外联网，也不等待官方常量同步。
 const novelAiSubscriptions = new Map();
-export const cacheNovelAiSubscription = (authorization, subscription) => novelAiSubscriptions.set(authorization, subscription);
+export const cacheNovelAiSubscription = (authorization, subscription) => subscription
+  ? novelAiSubscriptions.set(authorization, subscription) : novelAiSubscriptions.delete(authorization);
 const prepareNovelAiBilling = ({ authorization, runtime = getNaiRuntime() }) => {
   const subscription = novelAiSubscriptions.get(authorization);
   return { runtime, subscription, opusSubscriber: subscription?.active === true && subscription.tier >= 3,
@@ -1913,6 +1930,7 @@ export const handleGenerateRequest = async (req, res, lanSecret, workerPort, clo
         }));
         try {
           Object.assign(payload.parameters, buildPreciseReferenceParameters(characterSlots, resolved));
+          if (gatewayUrl) toCachedPreciseReferenceParameters(payload.parameters);
         } catch (error) {
           return sendJson(res, 400, { error: error?.message || '角色参考参数无效' });
         }
@@ -3088,24 +3106,31 @@ const serveDistFile = async (req, res, url) => {
     readCleanup: job => job.lastQueueTaskId ? cloudQueue.get(job.key, job.lastQueueTaskId)?.cleanupError : undefined,
     estimate: async (job, fresh) => {
       const authorization = job.context.authorization;
+      let subscriptionUnsupported = false;
       if (fresh) {
         try {
           const gatewayUrl = await readNaiGatewayUrl({ ...internalWorkerRequest, headers: { authorization } }, workerPort);
           const response = await fetchNovelAiSubscription(authorization, AbortSignal.timeout(30_000), remoteFetch, gatewayUrl);
-          if (!response.ok) throw new Error('账号额度刷新失败');
-          cacheNovelAiSubscription(authorization, sanitizeNovelAiSubscription(await response.json(), gatewayUrl));
+          if (isSubscriptionUnsupported(gatewayUrl, response.status)) {
+            subscriptionUnsupported = true;
+            // 接口明确缺失后，旧免费权益不能继续当成当前额度，也不能用于本次结算。
+            cacheNovelAiSubscription(authorization, null);
+          } else if (!response.ok) throw new Error('账号额度刷新失败');
+          else cacheNovelAiSubscription(authorization, sanitizeNovelAiSubscription(await response.json(), gatewayUrl));
         } catch {
           throw Object.assign(new Error('无法核实当前额度，已停止后续生成'), { code: 'quota_refresh_failed', status: 503 });
         }
       }
       const subscription = novelAiSubscriptions.get(authorization);
       if (!subscription && !fresh) return job.approvedCost;
-      if (!subscription) throw Object.assign(new Error('无法核实当前额度，已停止后续生成'), { code: 'quota_refresh_failed', status: 503 });
+      if (!subscription && !subscriptionUnsupported) throw Object.assign(new Error('无法核实当前额度，已停止后续生成'), { code: 'quota_refresh_failed', status: 503 });
       const payload = job.descriptor.payload, p = payload.parameters;
       const priced = { ...payload, parameters: { ...p,
         ...(p._local_character_references?.enabled ? { director_reference_images_cached: p._local_character_references.slots } : {}),
         ...(p._local_vibes?.enabled ? { reference_image_multiple_cached: p._local_vibes.slots } : {}),
       } };
+      // 网关不提供额度接口时降级而不中止：按“无 Opus 免费档”的保守价估算，超过已确认费用仍会请求确认。
+      if (!subscription) return estimateNovelAiGenerationCost(priced, false, false);
       return estimateNovelAiGenerationCost(priced, subscription.usage?.isNegative === true, subscription.active === true && subscription.tier >= 3);
     },
   });
