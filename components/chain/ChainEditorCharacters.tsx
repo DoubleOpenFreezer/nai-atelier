@@ -8,7 +8,7 @@ import { TagAutocompleteTextarea } from '../TagAutocompleteTextarea';
 import { PresetSection, PresetSource, PresetSourceBadges } from './PresetSourceBadges';
 import { compilePrompt, mergePromptFields } from '../../services/promptUtils';
 import { CharacterTaggerReference } from './CharacterTaggerReference';
-import { moveCharacter, normalizeCharacterCoordinate } from '../../services/characterPrompts';
+import { CHARACTER_SECTION_KEYS, moveCharacter, normalizeCharacterCoordinate } from '../../services/characterPrompts';
 import { CharacterPositionStage } from './CharacterPositionStage';
 import { isNaiMediumModel } from '../../services/naiModels';
 import { ImagePreviewPortal } from '../ImagePreviewPortal';
@@ -30,6 +30,13 @@ const CoordinateInput: React.FC<{ value: number; freeform: boolean; disabled: bo
         }}
         onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); event.currentTarget.blur(); } }}
         className="w-full rounded border bg-gray-50 p-1 text-xs disabled:opacity-40 dark:border-gray-600 dark:bg-gray-900 dark:text-white" />;
+};
+
+const CHARACTER_SECTION_LABELS: Record<(typeof CHARACTER_SECTION_KEYS)[number], string> = {
+    appearance: '形象',
+    wardrobe: '服饰',
+    pose: '动作',
+    expression: '表情',
 };
 
 export interface ChainEditorCharactersProps {
@@ -218,6 +225,33 @@ export const ChainEditorCharacters: React.FC<ChainEditorCharactersProps> = ({
                                         className="w-full text-xs p-2 border border-gray-300 dark:border-gray-600 rounded bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-200 h-10 resize-none focus:ring-1 focus:ring-indigo-500 outline-none placeholder-gray-400"
                                         placeholder={t("选填")}
                                     />
+                                </div>
+                                {/* 分栏内容：写入 character.sections，实际请求时与正文按固定顺序编译合并 */}
+                                <div className="rounded border border-dashed border-gray-300 p-2 dark:border-gray-600">
+                                    <div className="mb-1 flex items-center justify-between gap-2">
+                                        <span className="text-micro font-bold text-gray-500">{t("分栏内容")}</span>
+                                        <span className="text-[10px] text-gray-400">{t("请求时与正文合并")}</span>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        {CHARACTER_SECTION_KEYS.map(key => (
+                                            <div key={key} className="min-w-0">
+                                                <label className="mb-0.5 block text-[10px] font-semibold text-gray-500" htmlFor={`char-section-${idx}-${key}`}>
+                                                    {t(CHARACTER_SECTION_LABELS[key])}
+                                                </label>
+                                                <TagAutocompleteTextarea
+                                                    id={`char-section-${idx}-${key}`}
+                                                    tagAssistEnabled={tagAssistEnabled && !negativeLocked}
+                                                    disabled={!canEdit}
+                                                    value={char.sections?.[key] || ''}
+                                                    onValueChange={nextValue => updateCharacter(idx, {
+                                                        sections: { ...(char.sections || {}), [key]: nextValue },
+                                                    })}
+                                                    className="h-10 w-full resize-none rounded border border-gray-300 bg-gray-50 p-1.5 text-xs text-gray-800 outline-none focus:ring-1 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200"
+                                                    placeholder={t("留空则不参与")}
+                                                />
+                                            </div>
+                                        ))}
+                                    </div>
                                 </div>
                             </div>
                             <div className="order-3 grid w-full grid-cols-2 items-start gap-3 sm:order-none sm:flex sm:w-28 sm:shrink-0 sm:flex-col">
