@@ -20254,5 +20254,8 @@
   "所有启用角色": ["所有启用角色","All enabled characters","有効なキャラ全部","활성 캐릭터 전체"],
   "选择抽取范围": ["选择抽取范围","Choose the roll scope","抽選範囲を選択","추첨 범위 선택"],
   "Roll 场景 / 镜头": ["Roll 场景 / 镜头","Roll scene / camera","シーン / カメラをロール","장면 / 카메라 롤"],
-  "Roll 当前角色": ["Roll 当前角色","Roll this character","このキャラをロール","이 캐릭터 롤"]
+  "Roll 当前角色": ["Roll 当前角色","Roll this character","このキャラをロール","이 캐릭터 롤"],
+  "逐标签删除": ["逐标签删除","Remove tags one by one","タグ単位で削除","태그별 삭제"],
+  "删除这个标签": ["删除这个标签","Remove this tag","このタグを削除","이 태그 삭제"],
+  "带权重标签默认不拆，先去掉权重再删": ["带权重标签默认不拆，先去掉权重再删","Weighted tags are not split by default; remove the weight first","重み付きタグは既定で分割しません。先に重みを外してください","가중치 태그는 기본적으로 분리하지 않습니다. 먼저 가중치를 제거하세요"]
 }

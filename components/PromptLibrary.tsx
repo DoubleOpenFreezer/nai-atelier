@@ -51,6 +51,7 @@ import { TOOLBAR_FIELD_CLASS, ToolbarPopover } from './ToolbarPopover';
 import { isTopmostModal, useModalA11y } from './useModalA11y';
 
 import { PROMPT_LIBRARY_KINDS, type PromptLibraryKindConfig } from './promptLibraryConfig';
+import { removePromptTag, tagDetails } from '../services/promptTagFilter';
 export { PROMPT_LIBRARY_KINDS } from './promptLibraryConfig';
 export type { PromptLibraryFacet, PromptLibraryKindConfig } from './promptLibraryConfig';
 
@@ -998,6 +999,31 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
                         className={`${DETAIL_FIELD_CLASS} h-20 resize-y`}
                       />
                     </label>
+                    {(() => {
+                      const chips = tagDetails(draft.prompt || '', draft.bilingual || '');
+                      if (!chips.length) return null;
+                      return (
+                        <div className="mt-1 flex flex-wrap items-center gap-1" data-candidate-tags={index}>
+                          <span className="text-[10px] text-gray-400">{t('逐标签删除')}</span>
+                          {chips.map(chip => (
+                            <button key={chip.raw} type="button"
+                              title={chip.weighted ? t('带权重标签默认不拆，先去掉权重再删') : t('删除这个标签')}
+                              onClick={() => {
+                                const next = removePromptTag(draft.prompt || '', draft.bilingual || '', chip.tag);
+                                if (!next.removed) return;
+                                patchDraft(index, { prompt: next.prompt, bilingual: next.bilingual });
+                              }}
+                              className={`inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 font-mono text-[10px] ${chip.weighted
+                                ? 'border-amber-300 text-amber-600 dark:border-amber-800 dark:text-amber-400'
+                                : 'border-gray-200 text-gray-600 hover:border-red-400 hover:text-red-600 dark:border-gray-700 dark:text-gray-300'}`}>
+                              {chip.tag}
+                              {chip.bilingual ? <span className="font-sans text-gray-400">{chip.bilingual}</span> : null}
+                              <span aria-hidden>×</span>
+                            </button>
+                          ))}
+                        </div>
+                      );
+                    })()}
                     {draft.tags && draft.tags.length > 0 && (
                       <div className="mt-2 flex flex-wrap gap-1">
                         {draft.tags.map(value => <span key={value} className="rounded bg-gray-100 px-1.5 py-0.5 text-micro text-gray-500 dark:bg-gray-800 dark:text-gray-400">{value}</span>)}
