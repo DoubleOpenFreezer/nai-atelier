@@ -469,6 +469,22 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         }
     };
 
+    /* 实验室伪链把编辑区状态回推给 App：一键 Roll 的默认目标 / 写入基底与这里保持一致。
+       其它真实链路（保存动作）仍按各自流程提交，这里只在 playground 上做轻量同步。 */
+    const playgroundSyncRef = useRef(0);
+    useEffect(() => {
+        if (chain.id !== 'playground') return;
+        const revision = ++playgroundSyncRef.current;
+        const timer = setTimeout(() => {
+            if (playgroundSyncRef.current !== revision) return;
+            void onUpdateChain(chain.id, {
+                params,
+                variableValues: { ...(chain.variableValues || {}), subject: subjectPrompt },
+            });
+        }, 400);
+        return () => clearTimeout(timer);
+    }, [chain.id, params, subjectPrompt]);
+
     /* 一键 Roll 等外部入口写入 params 后，按版本号重新同步一次编辑区：
        正文（subject）、分区与角色都取最新 chain.params，避免旧草稿覆盖新内容。 */
     useEffect(() => {

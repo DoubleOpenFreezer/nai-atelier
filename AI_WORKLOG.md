@@ -6,6 +6,7 @@
 
 ## 2026-10-20
 
+- **DeepSeek Harness（deepseek/deepseek-v4.1-flash）**：补上「实验室状态回推」（核查文档的原子提交缺口）—— `ChainEditor` 在 playground 伪链上把编辑区的 `params` 与 `variableValues.subject` 以 400ms 去抖回推给 App，使一键 Roll 的**默认目标、目标列表与写入基底**都基于同一份当前状态。真机验证：在编辑区新加角色（尚未保存）后进一键 Roll，目标下拉自动变为「所有启用角色 / 新建角色 / 角色 1」且默认选中角色 1，控制台无报错。版本由 2.3.0 递增至 2.3.1。
 - **DeepSeek Harness（deepseek/deepseek-v4.1-flash）**：迁入**角色优先 Roll 与多角色应用** —— 工作区新增「范围」选择（角色＋场景 / 仅角色 / 仅场景与镜头），范围同时约束抽取、预览、填入与保存；目标角色新增「所有启用角色」（同一套搭配写进每个启用角色，停用角色跳过、不新建、正文不动）；实验室已有启用角色时默认目标改为第一个启用角色（手动改过则不再覆盖），目标列表只列启用角色。真机验证：切到「仅场景与镜头」再抽，角色四栏自动变为「本次不参与」，场景与镜头正常抽取。定向 15/15（apply）。版本由 2.2.0 递增至 2.3.0。
 - **DeepSeek Harness（deepseek/deepseek-v4.1-flash）**：迁入**角色分栏编辑器 UI** —— `ChainEditorCharacters` 在每个角色下新增「分栏内容」区（形象 / 服饰 / 动作 / 表情 四个输入框，接 Tag 补全，留空即不参与），写入 `character.sections`；请求侧仍由 `compileCharacterContent` 把四栏按固定顺序与手动正文合并。词典补 4 个键（分栏内容 / 请求时与正文合并 / 留空则不参与 / 形象）。源码版真机：添加角色后四个输入框出现，输入 `white_dress` 后值保留、无控制台报错。定向 51/51、`npm run build` 通过。版本由 2.1.2 递增至 2.2.0。
 - **DeepSeek Harness（deepseek/deepseek-v4.1-flash）**：给六类库分类补后端回归测试（`tests/scripts/prompt-library.test.mjs`：六类都能生成系统提示、非法分类仍被拒），并在源码版真机验收场景/镜头落点：抽六栏 → 填入 → 进实验室，**场景框读到 `scene2_a, scene2_b`、镜头框读到 `camera2_a, camera2_b`**，控制台无报错（此前这两栏会因主体正文不同步而回落为空）。版本由 2.1.1 递增至 2.1.2。
