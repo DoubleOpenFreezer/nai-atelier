@@ -17,7 +17,7 @@
  * 因此统一用这个别名表达「尚未收窄的 JSON」，不在此层重复建模。
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-type Json = any;
+export type Json = any;
 
 /** 算法版本：同 seed 复现必须连算法版本一起限定。 */
 export const ALGO = 'nai-roll-2';
@@ -35,8 +35,12 @@ export type ChainLike = {
 /** 一次抽取记录（本文件只读它的 picks / checks）。 */
 export type RollRecordLike = {
   seed?: string; seeds?: Record<string, string>; checks?: Record<string, boolean>;
-  locks?: Record<string, string>; picks?: Record<string, Partial<ChainLike> & { filled?: boolean; text?: string; negative?: string; constraintNotes?: string; constraints?: { notes?: string }; meta?: Record<string, unknown> | null; name?: string; kind?: string }>;
+  locks?: Record<string, string>; locked?: Record<string, string>;
+  algo?: string; at?: number; chains?: ChainLike[];
+  picks?: Record<string, Json>;
   roll?: { seed?: string; seeds?: Record<string, string>; checks?: Record<string, boolean>; locks?: Record<string, string> };
+  /** 历史记录里还可能有其它字段（例如 summary / reasonText），按 JSON 处理 */
+  [key: string]: Json;
 };
 /** 四态约束派生结果。 */
 export interface ConstraintSummary {
@@ -67,6 +71,35 @@ export interface ContentRead {
 }
 
 /* ---- 四态约束派生 ---- */
+/** 六个库 + 界面顺序（type 常量沿用旧标识，不新增、不改名）。 */
+export const KINDS: string[] = ['appearance', 'wardrobe', 'pose', 'expression', 'scene', 'camera'];
+/** 抽取输入：参与状态（checks）与固定项（locks），avoid 用于「排除当前条目」。 */
+export interface RollDrawInput {
+  chains?: ChainLike[] | null;
+  seed?: string | number;
+  checks?: Record<string, boolean>;
+  locks?: Record<string, string>;
+  /** 旧字段名（历史记录里出现过），与 locks 同义 */
+  locked?: Record<string, string>;
+  /** 上一版结果，用于「还原这组」与单栏重抽 */
+  picks?: RollPicks;
+  /** 每栏要排除的条目 id（单栏换一个 / 排除当前项） */
+  avoid?: Record<string, string | undefined>;
+}
+/** 一栏的抽取结果行（派生出的纯数据副本，不含条目对象本身，避免被顺手改到词库）。 */
+export interface RollRow {
+  kind: string;
+  scope?: string; label?: string; title?: string; key?: string;
+  id?: string; name?: string; text?: string; negative?: string; bilingual?: string;
+  description?: string; preview?: string; tags?: string[]; updatedAt?: number | null;
+  summary?: { text: string; englishOnly: boolean }; constraints?: ConstraintSummary;
+  filled?: boolean; reason?: string; poolSize?: number; locked?: unknown;
+  code?: string; message?: string;
+  [key: string]: Json;
+}
+export type RollPicks = Record<string, RollRow>;
+export type RollRng = () => number;
+
 export const META: Record<string, { short: string; title: string; scope: string }> = {
   appearance: { short: '形象', title: '人物形象', scope: 'character' },
   wardrobe: { short: '服饰', title: '服饰穿搭', scope: 'character' },

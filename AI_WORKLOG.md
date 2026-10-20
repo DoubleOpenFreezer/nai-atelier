@@ -6,6 +6,7 @@
 
 ## 2026-10-20
 
+- **DeepSeek Harness（deepseek/deepseek-v4.1-flash）**：继续把「一键 Roll」的抽取内核搬进源码 —— 新增 `services/contentRollDraw.ts`（池子按 id 排序、**每栏独立随机流** seed#kind、单栏重抽可排除当前项、按记录还原、落点分工、证据）与 `tests/services/contentRollDraw.test.ts`（12 项：顺序无关 / 同码复现 / 让一栏不参与不影响其它栏 / 空库与固定失效的说明 / 四种拒绝理由 / 还原与条目删除后重抽 / 旧记录按旧算法版本解释 / 证据含池指纹）。`npx tsc --noEmit` 零错误、定向 vitest 合计 26/26 通过；仍未接界面，版本由 1.92.0 递增至 1.93.0。
 - **DeepSeek Harness（deepseek/deepseek-v4.1-flash）**：按用户确认的范围，把「一键 Roll」里契约最清晰的一块搬进源码 —— 新增 `services/contentRoll.ts`（纯内容快照的白名单构造/读取/范围摘要/从完整搭配提取，以及四态约束派生）与 `tests/services/contentRoll.test.ts`（14 项）。整文件按 `strict` 类型收窄（JSON 边界统一为一处 `Json` 别名并注明理由），`npx tsc --noEmit` 零错误、定向 vitest 14/14 通过；未接入界面、不改用户可见行为，因此不写 CHANGELOG；版本由 1.91.1 递增至 1.92.0。六库抽取/随机流/历史证据那段仍留在 `tools/nai-roll/` 的补丁片段里，待后续移植。
 - **DeepSeek Harness（deepseek/deepseek-v4.1-flash）**：整理「一键 Roll / Roll 内容搭配库」这批改动并作为可复现交付物提交：新增 `tools/nai-roll/`（注入脚本、九个功能片段、发布与版本串归一工具、端到端验收套件与说明），不修改源码与 `dist`，交付前按分级验证复用既有结果（纯逻辑核 71/71、真机 R01–R18 62/62、内容库 C01–C23 41/41、生产只读冒烟 10/10）；版本由 1.91.0 递增至 1.91.1，仅新增工具与文档，不产生用户可见行为变化、不进行真实付费调用。
 - **Codex（GPT-6）**：按用户授权提交并推送「破限模式」完整批次，版本由 1.90.1 递增至 1.91.0，同步版本徽章与连接器版本；复用已通过的后端 654 项 Node＋229 项 Worker、前端 30 项及 Android 共用检查，改名后的前端 23 项与助手 Node 75 项亦通过，提交门禁统一执行密钥扫描、ESLint 与 TypeScript 检查。不进行真实付费调用或重启本地服务。
