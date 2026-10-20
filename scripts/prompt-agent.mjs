@@ -1075,12 +1075,33 @@ export const isLibraryKind = value => Object.prototype.hasOwnProperty.call(PROMP
 const normalizeLibraryPrompts = input => ({ spec: text(input?.spec).slice(0, 8000), extra: text(input?.extra).slice(0, 8000) });
 
 /** 预览与实际请求共用纯拼接函数；配置持久化复用助手的原子保存，兼容 Android。 */
+/**
+ * 详细补全的三档指令（纯函数，预览与实际请求共用）：
+ *   strict   只写需求里明确提到的内容，不补充任何想象细节；
+ *   moderate 允许补最少量的合理细节（默认不加新主题）；
+ *   detailed 按常见搭配补齐（默认），但不得与需求矛盾。
+ * keepEmpty：需求没有提到的限定项保持留空，不擅自选取（默认 true）。
+ * singleColor：需求只给了一个颜色/单色时，不要引入第二个同族颜色（默认 true）。
+ */
+export const buildLibraryDetailInstruction = (detail, keepEmpty = true, singleColor = true) => {
+  const mode = detail === 'strict' || detail === 'moderate' || detail === 'detailed' ? detail : 'detailed';
+  const lines = [];
+  if (mode === 'strict') lines.push('- 详细程度：严格。只写需求里明确出现的内容，不补充任何未被要求的细节。');
+  else if (mode === 'moderate') lines.push('- 详细程度：适度。允许补充最少量、与原意一致的合理细节，但不新增主题类别。');
+  else lines.push('- 详细程度：详细。按常见搭配补齐到可用的完整度，但任何补充都不得与需求矛盾。');
+  if (keepEmpty) lines.push('- 需求未提到的限定项保持留空：不要为了凑满字段而自选一个值。');
+  if (singleColor) lines.push('- 单色依赖：需求只给出一种颜色或明确单一配色时，不要引入同族的第二种颜色。');
+  return lines.join('\n');
+};
+
 export const buildLibrarySystemPrompt = (kind, overrides = {}) => {
   const spec = PROMPT_LIBRARY_KINDS[resolveLibraryKind(kind)];
   const prompts = normalizeLibraryPrompts(overrides);
+  const detail = buildLibraryDetailInstruction(overrides?.detail, overrides?.keepEmpty !== false, overrides?.singleColor !== false);
   const head = [];
   if (prompts.spec) head.push(`【输出规范】\n${prompts.spec}`);
   if (prompts.extra) head.push(`【附加指令】\n${prompts.extra}`);
+  if (detail) head.push(`【详细补全】\n${detail}`);
   return head.length ? `${head.join('\n\n')}\n\n${spec.systemPrompt}` : spec.systemPrompt;
 };
 

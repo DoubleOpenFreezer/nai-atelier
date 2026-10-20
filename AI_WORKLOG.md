@@ -6,6 +6,7 @@
 
 ## 2026-10-20
 
+- **DeepSeek Harness（deepseek/deepseek-v4.1-flash）**：迁入**详细补全三档** —— 后端新增纯函数 `buildLibraryDetailInstruction(detail, keepEmpty, singleColor)`（严格 / 适度 / 详细，缺省与非法值回落详细；保持留空与单色依赖默认开启），并拼进预览与实际请求共用的系统提示 `【详细补全】` 块；前端生成面板新增「详细程度」下拉与「未提到的限定项保持留空」勾选，请求带上 `detail` / `keepEmpty`。后端测试 8/8。版本由 2.5.0 递增至 2.6.0。
 - **DeepSeek Harness（deepseek/deepseek-v4.1-flash）**：迁入**候选逐标签筛选** —— 新增 `services/promptTagFilter.ts`（解析 `(tag:1.2)` 与 `1.2::tag::` 两种带权重写法、中英对照按归一化 Tag 对齐删除、带权重组默认拒绝拆分、同名重复一并删除）与 6 项单测；提示词库生成候选下新增逐标签 chip（带中文对照与受保护标记），点 × 只删这一个标签并同步删中文对照。版本由 2.4.0 递增至 2.5.0。
 - **DeepSeek Harness（deepseek/deepseek-v4.1-flash）**：补完**工作台局部 Roll 的就地入口** —— 角色分栏区加「Roll 当前角色」（带上该角色作为目标），全局提示词分区加「Roll 场景 / 镜头」；两者都在实验室里直接发起，`App` 用 `contentRollScopeRequest` 把范围与目标带给一键 Roll（工作区消费一次），不必先切页再选范围。版本由 2.3.1 递增至 2.4.0。
 - **DeepSeek Harness（deepseek/deepseek-v4.1-flash）**：补上「实验室状态回推」（核查文档的原子提交缺口）—— `ChainEditor` 在 playground 伪链上把编辑区的 `params` 与 `variableValues.subject` 以 400ms 去抖回推给 App，使一键 Roll 的**默认目标、目标列表与写入基底**都基于同一份当前状态。真机验证：在编辑区新加角色（尚未保存）后进一键 Roll，目标下拉自动变为「所有启用角色 / 新建角色 / 角色 1」且默认选中角色 1，控制台无报错。版本由 2.3.0 递增至 2.3.1。

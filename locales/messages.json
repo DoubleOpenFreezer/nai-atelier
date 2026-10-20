@@ -20257,5 +20257,10 @@
   "Roll 当前角色": ["Roll 当前角色","Roll this character","このキャラをロール","이 캐릭터 롤"],
   "逐标签删除": ["逐标签删除","Remove tags one by one","タグ単位で削除","태그별 삭제"],
   "删除这个标签": ["删除这个标签","Remove this tag","このタグを削除","이 태그 삭제"],
-  "带权重标签默认不拆，先去掉权重再删": ["带权重标签默认不拆，先去掉权重再删","Weighted tags are not split by default; remove the weight first","重み付きタグは既定で分割しません。先に重みを外してください","가중치 태그는 기본적으로 분리하지 않습니다. 먼저 가중치를 제거하세요"]
+  "带权重标签默认不拆，先去掉权重再删": ["带权重标签默认不拆，先去掉权重再删","Weighted tags are not split by default; remove the weight first","重み付きタグは既定で分割しません。先に重みを外してください","가중치 태그는 기본적으로 분리하지 않습니다. 먼저 가중치를 제거하세요"],
+  "详细程度": ["详细程度","Detail level","詳細度","상세 수준"],
+  "严格：只写需求提到的": ["严格：只写需求提到的","Strict: only what the brief says","厳密：要望にある内容のみ","엄격: 요청에 있는 것만"],
+  "适度：少量合理补充": ["适度：少量合理补充","Moderate: a few sensible additions","適度：わずかな補足","적당: 약간의 합리적 보충"],
+  "详细：按常见搭配补齐": ["详细：按常见搭配补齐","Detailed: fill in common combinations","詳細：よくある組み合わせで補完","상세: 흔한 조합으로 보충"],
+  "未提到的限定项保持留空": ["未提到的限定项保持留空","Leave unmentioned facets empty","指定のない項目は空欄のまま","언급되지 않은 항목은 비워 둠"]
 }

@@ -92,3 +92,27 @@ test('六类库分类都可生成系统提示（表情状态 / 镜头画面不�
   /* previewLibrarySystemPrompt 是同步方法：用 throws 断言，而不是 rejects */
   assert.throws(() => service.previewLibrarySystemPrompt({ kind: 'not-a-kind' }), /分类无效/);
 });
+
+test('详细补全三档与「保持留空」进入系统提示，未指定时默认详细', async () => {
+  const strict = library.buildLibraryDetailInstruction('strict');
+  const moderate = library.buildLibraryDetailInstruction('moderate');
+  const detailed = library.buildLibraryDetailInstruction('detailed');
+  assert.match(strict, /严格/);
+  assert.match(moderate, /适度/);
+  assert.match(detailed, /详细/);
+  /* 非法/缺省值回落到详细 */
+  assert.equal(library.buildLibraryDetailInstruction(undefined), detailed);
+  assert.equal(library.buildLibraryDetailInstruction('whatever'), detailed);
+  /* 保持留空与单色依赖默认开启，可显式关闭 */
+  assert.match(detailed, /保持留空/);
+  assert.match(detailed, /单色依赖/);
+  assert.doesNotMatch(library.buildLibraryDetailInstruction('detailed', false, false), /保持留空/);
+
+  /* 三档同时进入预览与实际请求共用的系统提示 */
+  for (const detail of ['strict', 'moderate', 'detailed']) {
+    const prompt = library.buildLibrarySystemPrompt('expression', { detail });
+    assert.match(prompt, /【详细补全】/);
+    assert.ok(prompt.includes(library.buildLibraryDetailInstruction(detail)), detail + ' 的指令没有进入系统提示');
+  }
+  assert.match(library.buildLibrarySystemPrompt('camera', { detail: 'strict' }), /严格/);
+});

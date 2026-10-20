@@ -191,6 +191,9 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
   const [brief, setBrief] = useState('');
   const [facets, setFacets] = useState<Record<string, string | string[]>>({});
   const [count, setCount] = useState(1);
+  /* 详细补全：三档（默认详细）+ 需求未提到的限定项保持留空 */
+  const [detailMode, setDetailMode] = useState<'strict' | 'moderate' | 'detailed'>('detailed');
+  const [keepEmpty, setKeepEmpty] = useState(true);
   const [drafts, setDrafts] = useState<PromptLibraryItem[] | null>(null);
   const [picked, setPicked] = useState<Set<number>>(new Set());
   const [generating, setGenerating] = useState(false);
@@ -461,6 +464,8 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
         kind: config.kind,
         brief: text,
         count,
+        detail: detailMode,
+        keepEmpty,
         ...facetInput,
       });
       const list = (Array.isArray(result?.items) ? result.items : []).filter(item => item && String(item.prompt || '').trim());
@@ -945,6 +950,20 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
                 <select value={count} onChange={event => setCount(Number(event.target.value))} aria-label={t('生成数量')} className={TOOLBAR_FIELD_CLASS}>
                   {COUNT_OPTIONS.map(value => <option key={value} value={value}>{t('{0} 条', [value])}</option>)}
                 </select>
+              </label>
+              <label className="block">
+                <span className="text-xs font-semibold text-gray-600 dark:text-gray-300">{t('详细程度')}</span>
+                <select value={detailMode} onChange={event => setDetailMode(event.target.value as 'strict' | 'moderate' | 'detailed')}
+                  aria-label={t('详细程度')} className={TOOLBAR_FIELD_CLASS} data-detail-mode="true">
+                  <option value="strict">{t('严格：只写需求提到的')}</option>
+                  <option value="moderate">{t('适度：少量合理补充')}</option>
+                  <option value="detailed">{t('详细：按常见搭配补齐')}</option>
+                </select>
+              </label>
+              <label className="flex items-center gap-2 self-end pb-1.5 text-xs text-gray-600 dark:text-gray-300">
+                <input type="checkbox" checked={keepEmpty} onChange={event => setKeepEmpty(event.target.checked)}
+                  aria-label={t('未提到的限定项保持留空')} data-keep-empty="true" className="h-3.5 w-3.5 accent-indigo-500" />
+                {t('未提到的限定项保持留空')}
               </label>
             </div>
 
