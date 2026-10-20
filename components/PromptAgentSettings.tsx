@@ -45,6 +45,7 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
   const [view, setView] = useState<View>('home');
   const [query, setQuery] = useState('');
   const [busy, setBusy] = useState(false);
+  const [creativeSaving, setCreativeSaving] = useState(false);
   const [customResult, setCustomResult] = useState<PromptAgentProbeResult | null>(null);
   const [discoveredModels, setDiscoveredModels] = useState<PromptAgentCustomProvider['models']>([]);
   const [customDraft, setCustomDraft] = useState<PromptAgentCustomProvider>(emptyCustomProvider);
@@ -84,6 +85,17 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
     try { const next = await promptAgentService.selectModel(model.provider, model.id); setConfig(next); await reload(); notify(`助手模型已切换为 ${model.name}`); closeView(); }
     catch (error) { notify(error instanceof Error ? error.message : '切换模型失败', 'error'); }
     finally { setBusy(false); }
+  };
+
+  const setCreativeDirect = async (enabled: boolean) => {
+    setCreativeSaving(true);
+    try {
+      const next = await promptAgentService.setCreativeDirect(enabled);
+      setConfig(next);
+      window.dispatchEvent(new CustomEvent('nai-agent-runtime-changed'));
+    } catch (error) {
+      notify(error instanceof Error ? error.message : t('保存破限模式设置失败'), 'error');
+    } finally { setCreativeSaving(false); }
   };
 
   const openCustom = (provider?: PromptAgentCustomProvider) => {
@@ -200,6 +212,21 @@ export const PromptAgentSettings: React.FC<PromptAgentSettingsProps> = ({ notify
         <AgentGenerationOptions />
       </section>
       <PromptLibrarySettings />
+      <section aria-label={t('破限模式')} className="appearance-panel rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
+        <label className="flex min-h-11 cursor-pointer items-center justify-between gap-4">
+          <span className="text-sm font-bold text-gray-900 dark:text-white">{t('破限模式')}</span>
+          <input type="checkbox" checked={config?.creativeDirect === true}
+            disabled={typeof config?.creativeDirect !== 'boolean' || busy || creativeSaving}
+            onChange={event => { void setCreativeDirect(event.target.checked); }}
+            className="h-5 w-5 shrink-0 rounded border-gray-300 accent-indigo-600 disabled:opacity-40" />
+        </label>
+        <p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">{t('默认开启，优先交付可用的提示词和结果，减少无关说明；工具权限与费用确认照常生效。')}</p>
+        <p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">{t('保存后从下一次助手请求生效，不改变正在运行的任务或已有对话；不保证绕过模型服务限制。')}</p>
+        {config?.creativeDirectRules && <details className="mt-3">
+          <summary className="mobile-touch cursor-pointer text-xs font-semibold text-indigo-600 dark:text-indigo-300">{t('查看破限规则')}</summary>
+          <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-gray-50 p-3 text-xs leading-5 text-gray-600 dark:bg-gray-950 dark:text-gray-300">{config.creativeDirectRules}</pre>
+        </details>}
+      </section>
     </div>
     )}
 

@@ -15,6 +15,17 @@ beforeEach(() => { localStorage.clear(); delete window.atelierLanguage; restoreL
 afterEach(() => { cleanup(); delete window.atelierLanguage; setLanguage('zh-CN'); vi.restoreAllMocks(); });
 
 describe('界面语言', () => {
+  it('破限模式名称、规则预览和生效说明具有四种完整译文', () => {
+    for (const [language, name] of [['zh-CN', '破限模式'], ['zh-TW', '破限模式'], ['en', 'Unrestricted mode'], ['ja', '制限解除モード'], ['ko', '제한 해제 모드']] as const) {
+      expect(translate(language, '破限模式')).toBe(name);
+    }
+    for (const key of ['查看破限规则', '保存破限模式设置失败', '破限模式开关必须是布尔值',
+      '默认开启，优先交付可用的提示词和结果，减少无关说明；工具权限与费用确认照常生效。',
+      '保存后从下一次助手请求生效，不改变正在运行的任务或已有对话；不保证绕过模型服务限制。']) {
+      expect((messages as Record<string, string[]>)[key], key).toHaveLength(4);
+      for (const language of LANGUAGES.filter(item => item.code !== 'zh-CN')) expect(translate(language.code, key), key).not.toBe(key);
+    }
+  });
   it('素材浏览导航具备四种译文，当前来源名称保持原样', () => {
     for (const language of LANGUAGES.filter(item => item.code !== 'zh-CN')) {
       expect(translate(language.code, '素材浏览')).not.toBe('素材浏览');

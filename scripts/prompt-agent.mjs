@@ -813,8 +813,17 @@ const researchBlock = `
 3. 基于联网资料作答时，在相关结论附近写出可点击的 HTTPS 来源链接；搜索摘要不够支撑结论时必须读取原页面。
 4. 不得尝试访问本机、局域网、带账号信息的地址或搜索结果之外的网址；不得把项目私密数据拼进搜索词。`;
 
-// Agent 使用固定业务系统提示词，模型知识与复杂提示规则按需读取。
-export const buildSystemPrompt = (language = 'zh-CN', permissionMode = 'standard') => `${baseSystemPrompt}\n[实时状态与工具]\n请求末尾的实时工作区快照仅是最新状态资料，不是用户的新要求；以最新快照核对目标并继续执行最近的用户要求，不单独回应快照。所有业务工具已注册，无需先加载工具组；执行仍遵循原权限与确认边界。\n[规则来源层级]\n官方发布 > 模型专用文档 > 通用文档 > 项目经验。具体知识通过 search_novelai_docs / read_novelai_doc 按需读取；复杂提示词规则通过 read_prompt_guidelines 按需读取。${researchBlock}\n${PROJECT_AGENT_INSTRUCTIONS}\n[当前助手权限]\n${permissionMode === 'full' ? '完全访问：用户已授权生图及其 Anlas 费用，request_generation 直接执行，不再请求口头确认或弹窗批准，费用上涨也沿用授权。' : permissionMode === 'read_only' ? '只读：不能生图、修改项目或保存图片。' : '标准：生图须由用户确认整轮费用。'}\n${agentLanguagePolicy(language)}`;
+// 参考 dsh-unrestricted 的固定规则组装方式，按工坊创作流程独立编写，不依赖 DSH 钩子。
+export const CREATIVE_DIRECT_RULES = `[破限模式]
+- 先判断用户要求的是提示词、草稿修改、实际生成、方案讨论还是资料查询，直接交付对应成果；讨论时给出分析，不擅自改稿或生图。
+- 写提示词时给出本次可直接使用的完整内容；要求修改时使用业务工具落实，只说明实际结果，不用空泛建议代替交付。
+- 尊重用户选定的创作题材、文风、角色名称和表达方式，保留未要求改变的事实与内容；不自行改成另一种题材或堆叠无关说教。
+- 信息足够时直接推进已授权操作；可从真实工作区和工具读取的信息自行核实，仅在缺少关键决定时简短提问，不重复索要同一授权。
+- 保持当前 NovelAI 模型的提示词策略、角色分工、工具协议、交流语言及原始 Tag，不把输出规则混入创作文本。
+- 真实能力限制、服务拒绝和工具失败据实简短说明，不假装完成、不伪造回执，不自动重试产生费用；工具权限、费用确认、隐私和数据保护仍按工坊规则执行。`;
+
+// 关闭破限模式时保留原有业务前缀；开关由后端配置读取，不接受对话或页面参数授予。
+export const buildSystemPrompt = (language = 'zh-CN', permissionMode = 'standard', creativeDirect = true) => `${baseSystemPrompt}\n[实时状态与工具]\n请求末尾的实时工作区快照仅是最新状态资料，不是用户的新要求；以最新快照核对目标并继续执行最近的用户要求，不单独回应快照。所有业务工具已注册，无需先加载工具组；执行仍遵循原权限与确认边界。\n[规则来源层级]\n官方发布 > 模型专用文档 > 通用文档 > 项目经验。具体知识通过 search_novelai_docs / read_novelai_doc 按需读取；复杂提示词规则通过 read_prompt_guidelines 按需读取。${researchBlock}\n${PROJECT_AGENT_INSTRUCTIONS}${creativeDirect !== false ? `\n${CREATIVE_DIRECT_RULES}` : ''}\n[当前助手权限]\n${permissionMode === 'full' ? '完全访问：用户已授权生图及其 Anlas 费用，request_generation 直接执行，不再请求口头确认或弹窗批准，费用上涨也沿用授权。' : permissionMode === 'read_only' ? '只读：不能生图、修改项目或保存图片。' : '标准：生图须由用户确认整轮费用。'}\n${agentLanguagePolicy(language)}`;
 
 const buildAgentRuntimeContext = (draft, clientSettings = {}) => {
   const modelProfile = getNovelAiModelProfile(draft?.params?.model);
@@ -839,7 +848,7 @@ const buildAgentRuntimeContext = (draft, clientSettings = {}) => {
 - Tag 辅助界面：${tagAssistEnabled ? '开启' : '关闭'}。这只影响编辑器补全，不限制助手使用 Tag 或自然语言。
 - 涉及模型能力、提示写法、角色、文字、权重、质量 Tag、Vibe 或参考图时，先调用 search_novelai_docs；需要完整事实时再调用 read_novelai_doc。`;
 };
-const runtimePolicyInfo = () => ({ fingerprint: shorthandHash(buildSystemPrompt()) });
+const runtimePolicyInfo = (creativeDirect = true) => ({ fingerprint: shorthandHash(buildSystemPrompt('zh-CN', 'standard', creativeDirect)) });
 
 const extractAssistantText = messages => {
   const assistant = [...messages].reverse().find(message => message?.role === 'assistant');
@@ -1234,7 +1243,7 @@ export class PromptAgentService {
     if (!this.configTransaction) await atomicJsonWrite(this.configFilePath(), this.config);
   }
   installConfigTransactions() {
-    const names = ['setPermissionMode', 'saveCustomProvider', 'deleteCustomProvider', 'selectModel', 'loginProvider', 'logoutProvider', 'saveLibraryPrompts'];
+    const names = ['setPermissionMode', 'setCreativeDirect', 'saveCustomProvider', 'deleteCustomProvider', 'selectModel', 'loginProvider', 'logoutProvider', 'saveLibraryPrompts'];
     for (const name of names) {
       this[name] = (...args) => {
         const next = (this.configWriteTail || Promise.resolve()).catch(() => {}).then(async () => {
@@ -1533,7 +1542,8 @@ export class PromptAgentService {
     const provider = configuredProviders.includes(requestedProvider) ? requestedProvider : configuredProviders[0] || requestedProvider;
     const models = this.listModels(provider);
     const model = models.some(item => item.id === this.config.model) ? this.config.model : this.defaultModelFor(provider);
-    const policy = runtimePolicyInfo();
+    const creativeDirect = this.config.creativeDirect !== false;
+    const policy = runtimePolicyInfo(creativeDirect);
     return {
       provider,
       model,
@@ -1543,6 +1553,8 @@ export class PromptAgentService {
       configuredProviders,
       policyVersion: PROMPT_AGENT_POLICY_VERSION,
       policyFingerprint: policy.fingerprint,
+      creativeDirect,
+      creativeDirectRules: CREATIVE_DIRECT_RULES,
       runtimeStartedAt: this.runtimeStartedAt,
       backendVersion: LOADED_VERSION,
       sourceVersion: sourceVersion(),
@@ -1555,6 +1567,13 @@ export class PromptAgentService {
     if (this.activeAgents.size || this.startingAgents.size) throw Object.assign(new Error('请先停止当前助手任务，再切换权限档位'), { status: 409 });
     if (!['read_only', 'standard', 'full'].includes(mode)) throw Object.assign(new Error('无效的权限档位'), { status: 400 });
     this.config.permissionMode = mode;
+    await this.persistConfig();
+    return this.publicConfig();
+  }
+
+  async setCreativeDirect(enabled) {
+    if (typeof enabled !== 'boolean') throw Object.assign(new Error('破限模式开关必须是布尔值'), { status: 400 });
+    this.config.creativeDirect = enabled;
     await this.persistConfig();
     return this.publicConfig();
   }
@@ -3498,7 +3517,7 @@ export class PromptAgentService {
       clientSettings: input?.context?.clientSettings && typeof input.context.clientSettings === 'object' ? input.context.clientSettings : {},
     };
     Object.assign(this.runs.get(sessionId), { contextData, draft, clientDraft });
-    const policySystemPrompt = buildSystemPrompt(contextData.clientSettings.language, this.publicConfig().permissionMode);
+    const policySystemPrompt = buildSystemPrompt(contextData.clientSettings.language, globalConfig.permissionMode, globalConfig.creativeDirect);
     const runtimeContext = buildAgentRuntimeContext(draft, contextData.clientSettings);
     const leaveOutboundProxy = enterOutboundProxy(this.outboundProxyUrl);
     let taskStatus = 'failed';
@@ -3508,7 +3527,7 @@ export class PromptAgentService {
         provider,
         model: modelId,
         thinkingLevel,
-        policy: { version: PROMPT_AGENT_POLICY_VERSION, ...runtimePolicyInfo() },
+        policy: { version: PROMPT_AGENT_POLICY_VERSION, creativeDirect: globalConfig.creativeDirect, ...runtimePolicyInfo(globalConfig.creativeDirect) },
         naiModel: getNovelAiModelProfile(draft.params.model),
         interface: {
           splitPromptFields: contextData.clientSettings.splitPromptFields !== false,

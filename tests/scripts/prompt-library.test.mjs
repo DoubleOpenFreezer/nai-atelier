@@ -73,4 +73,10 @@ test('Android 共用的真实路由无需额外全局函数，设置读取、保
   assert.doesNotMatch(preview.value.systemPrompt, /saved extra/);
   assert.equal(service.getLibraryPrompts().spec, 'saved spec');
   assert.equal((await invoke(endpoint + '/preview', 'POST', { kind: 'unknown' })).status, 400);
+  const directEndpoint = '/api/prompt-agent/creative-direct';
+  assert.equal(service.publicConfig().creativeDirect, true);
+  assert.equal((await invoke(directEndpoint, 'PUT', { enabled: false })).value.creativeDirect, false);
+  assert.equal((await invoke(directEndpoint, 'PUT', { enabled: 'true' })).status, 400);
+  assert.equal((await invoke(directEndpoint, 'POST', { enabled: true })).status, 405);
+  assert.equal(service.publicConfig().creativeDirect, false);
 });

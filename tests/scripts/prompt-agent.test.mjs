@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm, mkdir, writeFile, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { PromptAgentService, buildSystemPrompt, assemblePromptContext, estimateContextTokens, sanitizeAgentImages, detectModelCapabilities, sanitizeCustomProvider, customProviderRuntime, createPromptAgentModelRuntime } from '../../scripts/prompt-agent.mjs';
+import { PromptAgentService, buildSystemPrompt, assemblePromptContext, estimateContextTokens, sanitizeAgentImages, detectModelCapabilities, sanitizeCustomProvider, customProviderRuntime, createPromptAgentModelRuntime, CREATIVE_DIRECT_RULES } from '../../scripts/prompt-agent.mjs';
 import { getSupportedThinkingLevels, InMemoryCredentialStore } from '@earendil-works/pi-ai';
 import { createAgentThinkingMap } from '../../services/agentThinking.mjs';
 
@@ -77,6 +77,55 @@ const syntheticAgentStream = (round, { input = 20000, output = 100 } = {}) => ne
   choices: [{ index: 0, delta: { role: 'assistant', ...(round.tool ? { tool_calls: [{ index: 0, id: 'call-' + round.id, type: 'function', function: { name: round.tool, arguments: JSON.stringify(round.args || {}) } }] } : { content: round.text || '合成任务完成' }) }, finish_reason: round.tool ? 'tool_calls' : 'stop' }],
   usage: { prompt_tokens: input, completion_tokens: output, total_tokens: input + output },
 }) + '\n\ndata: [DONE]\n\n', { headers: { 'content-type': 'text/event-stream' } });
+
+test('破限模式默认开启，严格校验开关，与权限原子保存且失败不覆盖最后成功配置', () => isolated(async service => {
+  const original = service.publicConfig();
+  assert.equal(original.creativeDirect, true);
+  assert.equal(original.creativeDirectRules, CREATIVE_DIRECT_RULES);
+  assert.match(CREATIVE_DIRECT_RULES, /^\[破限模式\]/);
+  assert.ok(buildSystemPrompt().includes(CREATIVE_DIRECT_RULES));
+  assert.ok(!buildSystemPrompt('zh-CN', 'standard', false).includes(CREATIVE_DIRECT_RULES));
+  await Promise.all([service.setCreativeDirect(false), service.setPermissionMode('read_only')]);
+  const stored = JSON.parse(await readFile(service.configFilePath(), 'utf8'));
+  assert.equal(stored.creativeDirect, false); assert.equal(stored.permissionMode, 'read_only');
+  assert.equal(service.publicConfig().creativeDirect, false);
+  assert.notEqual(service.publicConfig().policyFingerprint, original.policyFingerprint);
+  await assert.rejects(service.setCreativeDirect('false'), /布尔值/);
+  service.configFileOverride = service.isolatedRoot;
+  await assert.rejects(service.setCreativeDirect(true));
+  assert.equal(service.publicConfig().creativeDirect, false);
+}));
+
+test('破限模式进入真实 Pi 请求，切换只影响下一次任务，客户端不能覆盖开关且工具和历史不变', () => isolated(async service => {
+  const originalFingerprint = service.publicConfig().policyFingerprint;
+  await service.saveCustomProvider({ ...customInput(), apiKey: 'synthetic', select: true });
+  const previous = globalThis.fetch, requests = [];
+  globalThis.fetch = async (_url, options) => {
+    requests.push(JSON.parse(options.body));
+    if (requests.length === 1) {
+      await service.setCreativeDirect(false);
+      return syntheticAgentStream({ id: 'read-state', tool: 'get_lab_state', args: {} });
+    }
+    return syntheticAgentStream({ text: 'synthetic result' });
+  };
+  try {
+    const session = await service.createSession();
+    await service.run({ sessionId: session.id, message: 'synthetic first request', draft: { params: {} } }, () => {});
+    assert.equal(requests.length, 2);
+    for (const request of requests) assert.ok(request.messages[0].content.includes(CREATIVE_DIRECT_RULES));
+    await service.run({ sessionId: session.id, message: 'synthetic second request', draft: { params: {} }, context: { clientSettings: { creativeDirect: true } } }, () => {});
+    assert.ok(!requests[2].messages[0].content.includes(CREATIVE_DIRECT_RULES));
+    assert.deepEqual(requests[2].tools, requests[0].tools);
+    assert.match(requests[2].messages[0].content, /标准：生图须由用户确认整轮费用/);
+    assert.match(requests[2].messages[0].content, /不得要求或泄露 API Key/);
+    const history = JSON.stringify(await service.readSession(session.id));
+    assert.ok(history.includes('synthetic first request'));
+    assert.ok(history.includes('synthetic second request'));
+    assert.ok(!history.includes(CREATIVE_DIRECT_RULES));
+    await service.setCreativeDirect(true);
+    assert.equal(service.publicConfig().policyFingerprint, originalFingerprint);
+  } finally { globalThis.fetch = previous; }
+}));
 
 test('五种界面语言实际进入模型请求，切换会话语言保留原始 Tag，未知值回退且不可注入', () => isolated(async service => {
   await service.saveCustomProvider({ ...customInput(), apiKey: 'synthetic', select: true });

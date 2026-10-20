@@ -20,6 +20,8 @@ export interface PromptAgentConfig {
   configuredProviders: string[];
   policyVersion: string;
   policyFingerprint: string;
+  creativeDirect?: boolean;
+  creativeDirectRules?: string;
   runtimeStartedAt: number;
   backendVersion?: string;
   sourceVersion?: string;
@@ -285,6 +287,11 @@ export const PROMPT_LIBRARY_KIND_LABELS: Record<PromptLibraryKind, string> = {
 };
 
 export const promptAgentService = {
+  setCreativeDirect: async (enabled: boolean): Promise<PromptAgentConfig> => {
+    const response = await fetch('/api/prompt-agent/creative-direct', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled }) });
+    if (!response.ok) return readError(response) as never;
+    return response.json();
+  },
   setPermissionMode: async (mode: AgentPermissionMode): Promise<PromptAgentConfig> => {
     const response = await fetch('/api/prompt-agent/permissions', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode }) });
     if (!response.ok) throw await parseErrorResponse(response);
