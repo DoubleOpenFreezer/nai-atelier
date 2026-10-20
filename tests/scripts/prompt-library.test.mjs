@@ -103,10 +103,12 @@ test('详细补全三档与「保持留空」进入系统提示，未指定时�
   /* 非法/缺省值回落到详细 */
   assert.equal(library.buildLibraryDetailInstruction(undefined), detailed);
   assert.equal(library.buildLibraryDetailInstruction('whatever'), detailed);
-  /* 保持留空与单色依赖默认开启，可显式关闭 */
-  assert.match(detailed, /保持留空/);
+  /* 默认是「未提到也尽量补全」（用户确认的口径）；明确要求留空时才排除 */
+  assert.match(detailed, /按常见搭配补全/);
+  assert.doesNotMatch(detailed, /保持留空/);
+  assert.match(library.buildLibraryDetailInstruction('detailed', true), /保持留空/);
   assert.match(detailed, /单色依赖/);
-  assert.doesNotMatch(library.buildLibraryDetailInstruction('detailed', false, false), /保持留空/);
+  assert.doesNotMatch(library.buildLibraryDetailInstruction('detailed', false, false), /单色依赖/);
 
   /* 三档同时进入预览与实际请求共用的系统提示 */
   for (const detail of ['strict', 'moderate', 'detailed']) {

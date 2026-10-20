@@ -34,7 +34,7 @@ export interface PromptTagRemoval {
 const splitParts = (value: string): string[] =>
   String(value || '').split(/[,，]/).map(part => part.trim()).filter(Boolean);
 
-const probe = (value: string): string => String(value || '').trim().toLowerCase().replace(/[_s]+/g, ' ');
+const probe = (value: string): string => String(value || '').trim().toLowerCase().replace(/[_\s]+/g, ' ');
 
 /** 解析双语对照里每个 Tag 的中文：优先取全角括号里的释义，其次取纯中文片段。 */
 export const parseBilingualMap = (bilingual: string): Map<string, string> => {

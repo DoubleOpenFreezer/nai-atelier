@@ -64,7 +64,7 @@ const App = () => {
   }, []);
   const [view, setView] = useState<ViewState>('list');
   /* 一键 Roll 填入的撤销快照（只保留最近一次；刷新即失效） */
-  const [contentRollUndo, setContentRollUndo] = useState<{ params: NAIParams; createdRoleId: string } | null>(null);
+  const [contentRollUndo, setContentRollUndo] = useState<{ params: NAIParams; subject: string; createdRoleId: string } | null>(null);
   /* 从内容库「载入到一键 Roll」带过来的那一组（工作区挂载时消费一次） */
   const [contentRollSeed, setContentRollSeed] = useState<{ picks: Record<string, unknown>; seed: string; seeds: Record<string, string> } | null>(null);
   /* 存为内容的稳定操作标识 → 已创建记录 id：重复点击复用同一条，不产生重复记录 */
@@ -553,7 +553,7 @@ const App = () => {
     ensurePlayground();
     const base = playgroundChain?.params || LAB_DEFAULT_PARAMS;
     const result = applyContentRollToParams(base, plan, createUuid);
-    setContentRollUndo({ params: result.undoParams, createdRoleId: result.createdRoleId });
+    setContentRollUndo({ params: result.undoParams, subject: String(playgroundChain?.variableValues?.subject || ''), createdRoleId: result.createdRoleId });
     /* 分区与「主体正文」必须一起提交：resolvePromptSections 要求两者一致，否则场景/镜头会被判为不匹配而回落到补充栏 */
     const merged = mergePromptSections(result.params._promptSections);
     /* 主体正文在 chain.variableValues.subject 上（分区在 params 上），两者必须一起提交 */
@@ -631,8 +631,13 @@ const App = () => {
   const handleUndoContentRoll = async (): Promise<boolean> => {
     if (!contentRollUndo) return false;
     const restored = undoContentRollApply(playgroundChain?.params, contentRollUndo.params, contentRollUndo.createdRoleId);
+    /* 正文与分区必须一起回滚：resolvePromptSections 要求两者一致，否则场景/镜头会被判为不匹配而回落 */
+    const restoredSubject = contentRollUndo.subject;
     setContentRollUndo(null);
-    await handleUpdatePlaygroundChain('playground', { params: restored });
+    await handleUpdatePlaygroundChain('playground', {
+      params: restored,
+      ...(restoredSubject ? { variableValues: { ...(playgroundChain?.variableValues || {}), subject: restoredSubject } } : {}),
+    });
     setContentRollRevision(value => value + 1);
     return true;
   };

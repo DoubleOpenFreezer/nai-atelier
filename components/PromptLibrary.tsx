@@ -193,7 +193,7 @@ export const PromptLibrary: React.FC<PromptLibraryInternalProps> = ({
   const [count, setCount] = useState(1);
   /* 详细补全：三档（默认详细）+ 需求未提到的限定项保持留空 */
   const [detailMode, setDetailMode] = useState<'strict' | 'moderate' | 'detailed'>('detailed');
-  const [keepEmpty, setKeepEmpty] = useState(true);
+  const [keepEmpty, setKeepEmpty] = useState(false);
   const [drafts, setDrafts] = useState<PromptLibraryItem[] | null>(null);
   const [picked, setPicked] = useState<Set<number>>(new Set());
   const [generating, setGenerating] = useState(false);

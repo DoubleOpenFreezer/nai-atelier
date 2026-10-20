@@ -2,37 +2,35 @@ import { describe, expect, it, vi, afterEach } from 'vitest';
 import { promptAgentService } from '../../services/promptAgent';
 
 /**
- * 「结果未知先查询再重试」在库生成链路上的落地：
- * 只在**连接级失败**（没拿到响应）时用同一操作标识重试一次；
- * 服务器已应答的错误不重试；两次请求体里的 operationId 必须一致，服务端才能去重。
+ * 结果未知时的处理约定（按复查意见修正）：
+ * 服务端目前没有按 operationId 去重/查询的入口，因此**客户端不自动重发**付费请求 ——
+ * 连接中断时如实报错，避免重复消耗模型调用。请求体仍带 operationId，供网关侧将来做幂等。
  */
-describe('库生成的结果未知处理', () => {
+describe('库生成：结果未知时不自动重发', () => {
   afterEach(() => { vi.unstubAllGlobals(); });
 
-  it('连接级失败后用同一 operationId 重试一次并成功', async () => {
-    const fetch = vi.fn()
-      .mockRejectedValueOnce(new TypeError('fetch failed'))
-      .mockResolvedValueOnce(Response.json({ items: [{ name: 'a', prompt: 'blonde_hair' }], provider: 'p', model: 'm', count: 1, kind: 'appearance' }));
+  it('连接级失败只发一次，并把 operationId 放进请求体', async () => {
+    const fetch = vi.fn().mockRejectedValue(new TypeError('fetch failed'));
     vi.stubGlobal('fetch', fetch);
-    const result = await promptAgentService.generateLibraryPrompt({ kind: 'appearance', brief: '金发少女', count: 1 });
-    expect(result.items[0].prompt).toBe('blonde_hair');
-    expect(fetch).toHaveBeenCalledTimes(2);
-    const first = JSON.parse(String(fetch.mock.calls[0][1].body));
-    const second = JSON.parse(String(fetch.mock.calls[1][1].body));
-    expect(first.operationId).toBe(second.operationId);
-    expect(first.operationId).toMatch(/^[0-9a-f]{8}$/);
-  });
-
-  it('服务器已应答的错误不重试（结果确定，重试只会白花一次调用）', async () => {
-    const fetch = vi.fn().mockResolvedValue(Response.json({ error: '提示词库分类无效' }, { status: 400 }));
-    vi.stubGlobal('fetch', fetch);
-    await expect(promptAgentService.generateLibraryPrompt({ kind: 'appearance', brief: 'x' })).rejects.toBeTruthy();
+    await expect(promptAgentService.generateLibraryPrompt({ kind: 'appearance', brief: '金发少女', count: 1 })).rejects.toBeTruthy();
     expect(fetch).toHaveBeenCalledTimes(1);
+    const body = JSON.parse(String(fetch.mock.calls[0][1].body));
+    expect(body.operationId).toMatch(/^[0-9a-f]{8}$/);
   });
 
-  it('主动取消不重试', async () => {
-    const abort = Object.assign(new Error('aborted'), { name: 'AbortError' });
-    const fetch = vi.fn().mockRejectedValue(abort);
+  it('同一份输入得到同一个 operationId（可复现，便于服务端幂等）', async () => {
+    const fetch = vi.fn().mockRejectedValue(new TypeError('fetch failed'));
+    vi.stubGlobal('fetch', fetch);
+    const input = { kind: 'appearance' as const, brief: '金发少女', count: 1 };
+    await expect(promptAgentService.generateLibraryPrompt(input)).rejects.toBeTruthy();
+    await expect(promptAgentService.generateLibraryPrompt(input)).rejects.toBeTruthy();
+    const first = JSON.parse(String(fetch.mock.calls[0][1].body)).operationId;
+    const second = JSON.parse(String(fetch.mock.calls[1][1].body)).operationId;
+    expect(first).toBe(second);
+  });
+
+  it('服务器错误同样只发一次', async () => {
+    const fetch = vi.fn().mockResolvedValue(Response.json({ error: '提示词库分类无效' }, { status: 400 }));
     vi.stubGlobal('fetch', fetch);
     await expect(promptAgentService.generateLibraryPrompt({ kind: 'appearance', brief: 'x' })).rejects.toBeTruthy();
     expect(fetch).toHaveBeenCalledTimes(1);

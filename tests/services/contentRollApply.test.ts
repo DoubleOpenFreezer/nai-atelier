@@ -200,3 +200,17 @@ describe('多角色应用：所有启用角色写同一套搭配', () => {
     expect(written).not.toContain('character:b:wardrobe');
   });
 });
+
+
+describe('分类负面：替换分类时清掉旧值', () => {
+  it('新内容没有负面 → 旧分类负面不再参与编译', () => {
+    const params = {
+      width: 832, height: 1216, steps: 28, scale: 5, sampler: 'k_euler_ancestral',
+      characters: [{ id: 'c1', prompt: '', x: 0.5, y: 0.5, sections: { wardrobe: 'old_dress' }, sectionNegatives: { wardrobe: 'old_coat_negative' } }],
+    } as unknown as NAIParams;
+    const plan = planContentRollApply({ wardrobe: { kind: 'wardrobe', filled: true, text: 'new_dress', negative: '' } as unknown as RollRow }, params, { mode: 'existing', id: 'c1' });
+    const { params: next } = applyContentRollToParams(params, plan, () => 'x');
+    expect(next.characters?.[0].sections?.wardrobe).toBe('new_dress');
+    expect(next.characters?.[0].sectionNegatives?.wardrobe).toBeUndefined();
+  });
+});

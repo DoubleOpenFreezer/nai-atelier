@@ -1083,13 +1083,14 @@ const normalizeLibraryPrompts = input => ({ spec: text(input?.spec).slice(0, 800
  * keepEmpty：需求没有提到的限定项保持留空，不擅自选取（默认 true）。
  * singleColor：需求只给了一个颜色/单色时，不要引入第二个同族颜色（默认 true）。
  */
-export const buildLibraryDetailInstruction = (detail, keepEmpty = true, singleColor = true) => {
+export const buildLibraryDetailInstruction = (detail, keepEmpty = false, singleColor = true) => {
   const mode = detail === 'strict' || detail === 'moderate' || detail === 'detailed' ? detail : 'detailed';
   const lines = [];
   if (mode === 'strict') lines.push('- 详细程度：严格。只写需求里明确出现的内容，不补充任何未被要求的细节。');
   else if (mode === 'moderate') lines.push('- 详细程度：适度。允许补充最少量、与原意一致的合理细节，但不新增主题类别。');
   else lines.push('- 详细程度：详细。按常见搭配补齐到可用的完整度，但任何补充都不得与需求矛盾。');
-  if (keepEmpty) lines.push('- 需求未提到的限定项保持留空：不要为了凑满字段而自选一个值。');
+  if (keepEmpty) lines.push('- 需求未提到的限定项保持留空（明确留空）：不要为了凑满字段而自选一个值。');
+  else lines.push('- 需求未提到的限定项也按常见搭配补全（默认）：允许合理补全，由用户事后筛选；不要与需求矛盾。');
   if (singleColor) lines.push('- 单色依赖：需求只给出一种颜色或明确单一配色时，不要引入同族的第二种颜色。');
   return lines.join('\n');
 };
@@ -1097,7 +1098,7 @@ export const buildLibraryDetailInstruction = (detail, keepEmpty = true, singleCo
 export const buildLibrarySystemPrompt = (kind, overrides = {}) => {
   const spec = PROMPT_LIBRARY_KINDS[resolveLibraryKind(kind)];
   const prompts = normalizeLibraryPrompts(overrides);
-  const detail = buildLibraryDetailInstruction(overrides?.detail, overrides?.keepEmpty !== false, overrides?.singleColor !== false);
+  const detail = buildLibraryDetailInstruction(overrides?.detail, overrides?.keepEmpty === true, overrides?.singleColor !== false);
   const head = [];
   if (prompts.spec) head.push(`【输出规范】\n${prompts.spec}`);
   if (prompts.extra) head.push(`【附加指令】\n${prompts.extra}`);
@@ -1507,7 +1508,13 @@ export class PromptAgentService {
       //   规范提示词 = 输出规范（标签写法、数量、排序等）
       //   附加指令   = 自由文本
       // 两段都【置顶】拼在内置提示词之前；拼接逻辑见 buildLibrarySystemPrompt。
-      const librarySystemPrompt = buildLibrarySystemPrompt(kind, this.getLibraryPrompts());
+      /* 本次请求的模式与「保持留空」必须一起进系统提示，否则界面切了也不生效 */
+      const librarySystemPrompt = buildLibrarySystemPrompt(kind, {
+        ...this.getLibraryPrompts(),
+        detail: input?.detail,
+        keepEmpty: input?.keepEmpty,
+        singleColor: input?.singleColor,
+      });
       const agent = new Agent({
         initialState: {
           systemPrompt: librarySystemPrompt,

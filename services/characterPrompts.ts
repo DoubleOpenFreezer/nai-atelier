@@ -17,7 +17,7 @@ export const CHARACTER_SECTION_KEYS = ['appearance', 'wardrobe', 'pose', 'expres
 const splitTags = (value: unknown): string[] =>
   String(value == null ? '' : value).split(/[,，]/).map(item => String(item).trim()).filter(Boolean);
 
-const probeTag = (value: string): string => String(value || '').trim().toLowerCase().replace(/[_s]+/g, ' ');
+const probeTag = (value: string): string => String(value || '').trim().toLowerCase().replace(/[_\s]+/g, ' ');
 
 /** 按归一化 tag 去重合并（与实验室其它合并口径一致）。 */
 const joinTags = (lists: Array<string | undefined>): string => {

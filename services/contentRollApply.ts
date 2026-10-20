@@ -255,9 +255,11 @@ export const applyContentRollToParams = (
       const character = characters[index];
       for (const write of plan.roleWrites) {
         character.sections = { ...(character.sections || {}), [write.kind]: write.text };
-        if (write.negative) {
-          character.sectionNegatives = { ...(character.sectionNegatives || {}), [write.kind]: write.negative };
-        }
+        /* 替换分类时旧负面必须一起清掉：新内容没有负面就说明这一栏不再有负面，留着旧值会被编译进请求 */
+        const negatives = { ...(character.sectionNegatives || {}) };
+        if (write.negative) negatives[write.kind] = write.negative;
+        else delete negatives[write.kind];
+        character.sectionNegatives = negatives;
         character.sectionMeta = { ...(character.sectionMeta || {}), [write.kind]: { ...write.meta } };
         written.push('character:' + String(character.id) + ':' + write.kind);
       }

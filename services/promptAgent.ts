@@ -326,9 +326,8 @@ export const promptAgentService = {
   /**
    * 提示词库生成。
    *
-   * **结果未知时的处理**：只在「连接级失败」（fetch 抛错、根本没拿到响应）时用**同一个操作标识**重试一次；
-   * 服务器已经应答的错误（4xx/5xx）一律不重试 —— 那种情况结果确定，重试只会白花一次模型调用。
-   * 请求体带 `operationId`，服务端可据此做幂等（重复到达也只当一次）。
+   * 请求体带 `operationId`，但**不在客户端自动重发**：服务端目前没有按该 id 去重/查询的入口，
+   * 连接中断时「结果未知」，自动重发等于可能重复消耗模型调用。等网关侧提供幂等查询后再打开重试。
    */
   generateLibraryPrompt: async (input: {
     kind: PromptLibraryKind;
@@ -337,23 +336,11 @@ export const promptAgentService = {
     [facet: string]: unknown;
   }): Promise<PromptLibraryResult> => {
     const operationId = stableOperationId('library-generate', input);
-    const body = JSON.stringify({ ...input, operationId });
-    const send = () => fetch('/api/prompt-agent/library', {
+    const response = await fetch('/api/prompt-agent/library', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body,
+      body: JSON.stringify({ ...input, operationId }),
     });
-    let response: Response;
-    try {
-      response = await send();
-    } catch (error) {
-      /* 连接级失败：结果未知。先用同一 operationId 重试一次，仍失败才把错误抛给调用方。 */
-      if ((error as { name?: string })?.name !== 'AbortError') {
-        response = await send();
-      } else {
-        throw error;
-      }
-    }
     if (!response.ok) return readError(response) as never;
     return response.json();
   },
