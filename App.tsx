@@ -22,6 +22,7 @@ import {
 import { PromptChain, User, Inspiration, ChainType, NAIParams } from './types';
 import { applyContentRollToParams, undoContentRollApply, type ContentRollApplyPlan } from './services/contentRollApply';
 import { contentRead, contentSnapshotOf } from './services/contentRoll';
+import { stableOperationId } from './services/operationId';
 import { ContentRollLibrary } from './components/ContentRollLibrary';
 import { createUuid } from './services/id';
 import type { HistoryBrowseQuery } from './services/historyBrowse';
@@ -66,6 +67,8 @@ const App = () => {
   const [contentRollUndo, setContentRollUndo] = useState<{ params: NAIParams; createdRoleId: string } | null>(null);
   /* 从内容库「载入到一键 Roll」带过来的那一组（工作区挂载时消费一次） */
   const [contentRollSeed, setContentRollSeed] = useState<{ picks: Record<string, unknown>; seed: string; seeds: Record<string, string> } | null>(null);
+  /* 存为内容的稳定操作标识 → 已创建记录 id：重复点击复用同一条，不产生重复记录 */
+  const contentRollSaveIndexRef = useRef<Map<string, string>>(new Map());
   /* 一键 Roll 写入 params 的次数：让实验室按这个版本号重新同步编辑区 */
   const [contentRollRevision, setContentRollRevision] = useState(0);
   /* 实验室就地发起一键 Roll 的范围/目标请求（工作区消费一次） */
@@ -565,9 +568,17 @@ const App = () => {
   const handleSaveContentRoll = async (name: string, picks: Record<string, unknown>, seed: string, seeds: Record<string, string>) => {
     const snapshot = contentSnapshotOf({ picks, seed, seeds, checks: {}, locked: {} } as never, new Date().toISOString());
     if (!snapshot) throw new Error(t('这一组没有可保存的六类内容'));
+    /* 稳定操作标识：重复点击 / 网络重试复用同一条记录，不产生重复 */
+    const operationId = stableOperationId('content-roll', { name, seed, picks });
+    const existingId = contentRollSaveIndexRef.current.get(operationId);
+    if (existingId) {
+      await handleUpdateChain(existingId, { name, params: { _rollContentSnapshot: snapshot } as unknown as NAIParams });
+      return existingId;
+    }
     const created = await createLibraryChain(name, t('一键 Roll 存下的六类内容组合'), 'preset', {
       params: { _rollContentSnapshot: snapshot } as unknown as NAIParams,
     });
+    contentRollSaveIndexRef.current.set(operationId, created);
     return created;
   };
   /**
