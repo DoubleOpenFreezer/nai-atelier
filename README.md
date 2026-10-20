@@ -7,7 +7,7 @@
 
   **[简体中文](./README.md) · [繁體中文](./README.zh-TW.md) · [English](./README.en.md) · [日本語](./README.ja.md) · [한국어](./README.ko.md)**
 
-  [![Version](https://img.shields.io/badge/version-1.90.0-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.90.1-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4%20%7C%20V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据主权与备份)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网创作体验)
@@ -466,6 +466,7 @@ flowchart TD
 ## 📄 来源与致谢
 
 - 基于 [kirafishy/NaiPromptManager](https://github.com/kirafishy/NaiPromptManager) 二次开发并独立维护，保留原有 [MIT 许可证](./LICENSE)；
+- AI 辅助开发：[OpenAI Codex](https://github.com/codex) 参与功能实现、问题排查与代码审查，修改过程见 [AI 工作日志](./AI_WORKLOG.md)；
 - 感谢 [@ffdkj](https://github.com/ffdkj) 维护的高质量 [Danbooru 中英对照翻译数据库](https://github.com/ffdkj/ffdkj-Danbooru_Tag-Chinese-English-Translation-Table)；
 - 特别感谢 [@damoshen123](https://github.com/damoshen123) 的开源项目 [st-chatu8](https://github.com/damoshen123/st-chatu8)：工坊的「智慧姬互通联动」与「多人拼车云端排队协同」功能的设计与实现均深度参考了该项目；
 - 感谢 [@sdnwls](https://github.com/sdnwls) 的项目 [nai-style-lab](https://github.com/sdnwls/nai-style-lab)：Roll 串的一轮出图和画风库体验参考了该项目，结合工坊既有功能独立实现，未复制其代码或素材；
