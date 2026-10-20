@@ -300,12 +300,12 @@ export const CodexGallery: React.FC<{ active: boolean; selectionFocusEnabled?: b
       </div>
       <DetailSidePanel open={Boolean(selected)} title={selected?.title || ''} sensitiveTitle subInfo={selected ? [selected.bookTitle, selected.author, selected.images.length ? t('{0}页', [selected.images.length]) : t('纯文本')].filter(Boolean).join(' · ') : ''} sourceUrl={selected?.sourceUrl} onClose={closeDetail} onBack={closeDetail}>
         {selected && sourceEntry && detailEntry && <div className="space-y-3">
-          <div className="appearance-group overflow-hidden rounded-2xl border border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-900">
-          {selectedImage && <PressRevealSurface pressResetKey={`${selected.key}:${page}`} className="group relative mx-auto max-h-[42vh] w-full overflow-hidden bg-black/5 dark:bg-black/20" style={{ aspectRatio: `${selectedImage.width || 3} / ${selectedImage.height || 4}` }}>
+          <div className="appearance-content appearance-card overflow-hidden rounded-2xl border border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-900">
+          {selectedImage && <PressRevealSurface pressResetKey={`${selected.key}:${page}`} className="appearance-media group relative mx-auto max-h-[42vh] w-full overflow-hidden bg-black/5 dark:bg-black/20" style={{ aspectRatio: `${selectedImage.width || 3} / ${selectedImage.height || 4}` }}>
             <ViewableImage src={getMobileOriginalUrl(selectedImage.originalUrl || selectedImage.url)} alt={selected.title} width={selectedImage.width || 3} height={selectedImage.height || 4} className="absolute inset-0 h-full w-full object-contain" favorite={codexCollectionImage(selected, page)} notify={notify} />
             <ImageShareOverlay imageUrl={getMobileOriginalUrl(selectedImage.originalUrl || selectedImage.url)} filename={`${selected.id}-${page + 1}.png`} favorite={codexCollectionImage(selected, page)} notify={notify} />
           </PressRevealSurface>}
-          <div className="space-y-2 p-3">
+          <div className="appearance-group space-y-2 p-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex flex-none items-center gap-1 text-xs text-gray-500">
               {selected.images.length > 1 ? <>

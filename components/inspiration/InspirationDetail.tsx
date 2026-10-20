@@ -294,13 +294,13 @@ export const InspirationDetail: React.FC<Props> = ({
   };
 
   return (
-    <article data-safe-mode-work="true" data-collection-item={item.id} className="appearance-group overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950">
-      <PressRevealSurface as="section" pressResetKey={draft.id} className="group relative bg-gray-100 dark:bg-black/60">
+    <article data-safe-mode-work="true" data-collection-item={item.id} className="appearance-content appearance-card overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950">
+      <PressRevealSurface as="section" pressResetKey={draft.id} className="appearance-media group relative bg-gray-100 dark:bg-black/60">
         <ViewableImage src={draft.imageUrl} previewTransform={getCollectionPreviewTransform(draft)} alt={draft.title} filename={draft.title + '.png'} favorite={{ imageUrl: draft.imageUrl, collectionId: draft.id }} notify={notify} generationData={draft.params ? { prompt: draft.prompt, negativePrompt: draft.negativePrompt, params: draft.params } : undefined} loading="lazy" className="max-h-[62vh] w-full object-contain" data-safe-mode-ignore="true" />
         <ImageShareOverlay imageUrl={getMobileOriginalUrl(draft.imageUrl)} generationData={draft.params ? { prompt: draft.prompt, negativePrompt: draft.negativePrompt, params: draft.params } : undefined} filename={draft.title + '.png'} favorite={{ imageUrl: draft.imageUrl, collectionId: draft.id }} notify={notify} />
       </PressRevealSurface>
       {/* 每张图片的整理与生成信息 */}
-        <section className="w-full">
+        <section className="appearance-group w-full">
           <header className="flex items-center gap-2 border-b border-gray-200 px-4 py-3 dark:border-gray-800">
             {editingTitle ? <input
               ref={titleInputRef}

@@ -38,6 +38,19 @@ const openSuggestions = async (textarea: HTMLTextAreaElement, value: string, car
 };
 
 describe('TagAutocompleteTextarea 输入优先交互', () => {
+  it('空 Tag 辅助区收紧，填入和清空恢复对应高度且保留手动调整', async () => {
+    render(React.createElement(Harness, { showTranslations: true }));
+    const list = () => screen.getByLabelText('提示词中文翻译').firstElementChild as HTMLElement;
+    expect(list().classList.contains('h-10')).toBe(true);
+    expect(list().classList.contains('resize-y')).toBe(true);
+    fireEvent.change(screen.getByRole('combobox', { name: 'Prompt' }), { target: { value: 'masterpiece' } });
+    await waitFor(() => expect(list().classList.contains('h-36')).toBe(true));
+    list().style.height = '240px';
+    fireEvent.change(screen.getByRole('combobox', { name: 'Prompt' }), { target: { value: '' } });
+    await waitFor(() => expect(list().classList.contains('h-10')).toBe(true));
+    expect(list().style.height).toBe('240px');
+    expect(screen.getByRole('button', { name: '撤销' })).toBeTruthy();
+  });
   it('Agent 填写后保留焦点，读取 body 中真实候选并点击完成补全', async () => {
     render(React.createElement('main', { 'data-agent-view': 'playground' }, React.createElement(Harness)));
     const page = readAgentPage({ query: 'Prompt' }); let operation!: ReturnType<typeof operateAgentPage>;

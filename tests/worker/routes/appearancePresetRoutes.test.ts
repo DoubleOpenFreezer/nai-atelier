@@ -35,6 +35,14 @@ beforeEach(() => {
 afterEach(() => sqlite.close());
 
 describe('工坊共享主题库', () => {
+  it('全局与实验室不透明度独立保存明暗覆盖，越界值整份拒绝', async () => {
+    const details = { globalOpacity: .4, labEditorOpacity: .6, light: { globalOpacity: 1, labEditorOpacity: 0 }, dark: { globalOpacity: 0, labEditorOpacity: 1 } };
+    expect((await invoke('POST', '', [{ ...preset('lab'), details }])).status).toBe(200);
+    expect(((await (await invoke('GET')).json()) as { presets: { details: unknown }[] }).presets[0].details).toEqual(details);
+    expect((await invoke('PUT', '/lab', [{ ...preset('lab'), details: { labEditorOpacity: 1.01 } }])).status).toBe(400);
+    expect((await invoke('PUT', '/lab', [{ ...preset('lab'), details: { globalOpacity: 1.01 } }])).status).toBe(400);
+    expect(((await (await invoke('GET')).json()) as { presets: { details: unknown }[] }).presets[0].details).toEqual(details);
+  });
   it('背景随共享主题完整保存，非法外链背景不能部分写入', async () => {
     const background = { image: 'data:image/png;base64,AAAA', fit: 'tile', opacity: .7, tileSize: 64 };
     expect((await invoke('POST', '', [{ ...preset('bg'), background }])).status).toBe(200);

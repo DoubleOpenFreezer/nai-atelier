@@ -16,9 +16,11 @@ export const THEME_DETAIL_NUMBERS = {
   blur: [0, 40, 22, 1],
   saturation: [100, 200, 130, 5],
   opacity: [.55, 1, .85, .01],
+  globalOpacity: [0, 1, .6, .01],
   sidebarOpacity: [.55, 1, .76, .01],
   toolbarOpacity: [.55, 1, .82, .01],
   panelOpacity: [.55, 1, .94, .01],
+  labEditorOpacity: [0, 1, .6, .01],
   borderOpacity: [0, 1, .45, .05],
   controlShadow: [0, 1, .25, .05],
   highlight: [0, 1, .5, .05],
@@ -71,7 +73,11 @@ export const resolveThemeDetails = (input: ThemeDetails | undefined, isDark: boo
   const details = normalizeThemeDetails(input);
   if (!details) return undefined;
   const { light, dark, ...common } = details;
-  return { ...common, ...(isDark ? dark : light) };
+  const resolved = { ...common, ...(isDark ? dark : light) };
+  return {
+    ...resolved,
+    labEditorOpacity: resolved.labEditorOpacity ?? (isDark ? .6 : (resolved.panelOpacity ?? resolved.opacity ?? .85) * .5),
+  };
 };
 
 const DETAIL_VARIABLES = ['--font-sans', '--spacing', '--workspace-toolbar-height', '--workspace-control-radius', '--workspace-card-radius', '--nai-control-height', '--nai-panel-radius', '--nai-chrome-inset', '--nai-icon-stroke', '--nai-line-height', '--nai-letter-spacing', '--nai-strong-weight', '--nai-glass-sidebar', '--nai-glass-toolbar', '--nai-glass-blur', '--nai-glass-saturation', '--nai-glass-opacity', '--nai-glass-highlight', '--nai-shadow-strength', '--nai-motion-duration', '--nai-motion-curve'];
@@ -79,7 +85,7 @@ const DETAIL_VARIABLES = ['--font-sans', '--spacing', '--workspace-toolbar-heigh
 export const applyThemeDetails = (root: HTMLElement, input: ThemeDetails | undefined, options: { fontScale: string; density: string; surfaces: string; palette?: ThemePalettes }) => {
   const details = resolveThemeDetails(input, root.classList.contains('dark'));
   root.style.removeProperty('--nai-glass-refraction');
-  for (const field of ['sidebarOpacity', 'toolbarOpacity', 'panelOpacity', 'borderOpacity', 'controlShadow']) root.style.removeProperty('--nai-' + field.replace(/[A-Z]/g, letter => '-' + letter.toLowerCase()));
+  for (const field of ['globalOpacity', 'sidebarOpacity', 'toolbarOpacity', 'panelOpacity', 'labEditorOpacity', 'borderOpacity', 'controlShadow']) root.style.removeProperty('--nai-' + field.replace(/[A-Z]/g, letter => '-' + letter.toLowerCase()));
   for (const key of DETAIL_VARIABLES) root.style.removeProperty(key);
   root.style.removeProperty('font-size');
   delete root.dataset.themeDetails;
@@ -112,7 +118,7 @@ export const applyThemeDetails = (root: HTMLElement, input: ThemeDetails | undef
   if (details.blur !== undefined) set('--nai-glass-blur', `${details.blur}px`);
   if (details.saturation !== undefined) set('--nai-glass-saturation', `${details.saturation}%`);
   if (details.opacity !== undefined) set('--nai-glass-opacity', `${details.opacity * 100}%`);
-  for (const field of ['sidebarOpacity', 'toolbarOpacity', 'panelOpacity', 'borderOpacity', 'controlShadow'] as const) {
+  for (const field of ['globalOpacity', 'sidebarOpacity', 'toolbarOpacity', 'panelOpacity', 'labEditorOpacity', 'borderOpacity', 'controlShadow'] as const) {
     if (details[field] !== undefined) set('--nai-' + field.replace(/[A-Z]/g, letter => '-' + letter.toLowerCase()), field.endsWith('Opacity') ? `${details[field] * 100}%` : details[field]);
   }
   if (details.highlight !== undefined) set('--nai-glass-highlight', details.highlight);

@@ -27,7 +27,10 @@ describe('工作区背景设置', () => {
   });
   it('显示方式、强度、图案大小和恢复默认分别写回', () => {
     const onChange = vi.fn(() => true);
-    render(<AppearanceBackgroundEditor background={{ ...background, fit: 'tile' }} onChange={onChange} />);
+    const view = render(<AppearanceBackgroundEditor background={{ ...background, fit: 'tile' }} onChange={onChange} />);
+    const preview = view.container.querySelector<HTMLElement>('.theme-background-preview')!;
+    expect(preview.style.backgroundImage).toContain(background.image);
+    expect(preview.parentElement?.style.filter).toBe('');
     fireEvent.change(screen.getByLabelText('背景显示方式'), { target: { value: 'contain' } });
     expect(onChange).toHaveBeenLastCalledWith({ ...background, fit: 'contain' });
     fireEvent.change(screen.getByLabelText('背景显示强度'), { target: { value: '40' } });

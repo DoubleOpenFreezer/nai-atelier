@@ -283,6 +283,9 @@ export const FilterPill: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement> 
 }> = ({ active = false, className = '', children, ...props }) => (
   <button
     data-appearance="control"
+    data-tone="neutral"
+    data-active={active || undefined}
+    aria-pressed={active}
     type="button"
     className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors ${
       active

@@ -1,11 +1,47 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { applyAppearancePreferences, DEFAULT_APPEARANCE_PREFERENCES, appearanceValues, BUILTIN_APPEARANCE_PRESET, readAppearancePresetImport, serializeAppearancePresets } from '../../services/appearancePreferences';
+import { applyAppearancePreferences, DEFAULT_APPEARANCE_PREFERENCES, appearanceValues, BUILTIN_APPEARANCE_PRESET, readAppearancePresetImport, serializeAppearancePresets, saveAppearancePreferences, loadAppearancePreferences } from '../../services/appearancePreferences';
 import { initThemeLight, normalizeThemeDetails, resolveThemeDetails, THEME_DETAIL_NUMBERS, ThemeDetails } from '../../services/themeDetails';
 
-afterEach(() => { vi.unstubAllGlobals(); document.getElementById('nai-glass-optics')?.remove(); applyAppearancePreferences(DEFAULT_APPEARANCE_PREFERENCES, false); });
+afterEach(() => { vi.unstubAllGlobals(); localStorage.clear(); document.getElementById('nai-glass-optics')?.remove(); applyAppearancePreferences(DEFAULT_APPEARANCE_PREFERENCES, false); });
 describe('可分享的高级主题能力', () => {
+  it('全局不透明度单独保存、导出和清除，明暗覆盖不改写实验室与旧分层参数', () => {
+    const details = { material: 'glass' as const, globalOpacity: .4, panelOpacity: .8, labEditorOpacity: .6, light: { globalOpacity: 0, labEditorOpacity: .3 }, dark: { globalOpacity: 1 } };
+    saveAppearancePreferences({ ...DEFAULT_APPEARANCE_PREFERENCES, surfaces: 'translucent', details });
+    const preferences = loadAppearancePreferences();
+    expect(preferences.details).toEqual(details);
+    expect(readAppearancePresetImport(serializeAppearancePresets([{ ...BUILTIN_APPEARANCE_PRESET, details }]))[0].details).toEqual(details);
+    for (const [dark, global, lab] of [[false, '0%', '30%'], [true, '100%', '60%']] as const) {
+      applyAppearancePreferences(preferences, dark);
+      expect(document.documentElement.style.getPropertyValue('--nai-global-opacity')).toBe(global);
+      expect(document.documentElement.style.getPropertyValue('--nai-lab-editor-opacity')).toBe(lab);
+      expect(document.documentElement.style.getPropertyValue('--nai-panel-opacity')).toBe('80%');
+    }
+    applyAppearancePreferences({ ...preferences, details: { panelOpacity: .8 } }, true);
+    expect(document.documentElement.style.getPropertyValue('--nai-global-opacity')).toBe('');
+    expect(document.documentElement.style.getPropertyValue('--nai-panel-opacity')).toBe('80%');
+    expect(document.documentElement.style.getPropertyValue('--nai-lab-editor-opacity')).toBe('60%');
+  });
+  it('实验室暗度独立持久化与分享，旧主题默认深色 60%，清除后不残留覆盖', () => {
+    const legacy = { material: 'glass' as const, panelOpacity: .8, sidebarOpacity: .7 };
+    expect(resolveThemeDetails(legacy, true)?.labEditorOpacity).toBe(.6);
+    expect(resolveThemeDetails(legacy, false)?.labEditorOpacity).toBe(.4);
+    const details = { ...legacy, labEditorOpacity: .6, light: { labEditorOpacity: 0 }, dark: { labEditorOpacity: 1 } };
+    saveAppearancePreferences({ ...DEFAULT_APPEARANCE_PREFERENCES, surfaces: 'translucent', details });
+    const preferences = loadAppearancePreferences();
+    expect(preferences.details).toEqual(details);
+    const exported = serializeAppearancePresets([{ ...BUILTIN_APPEARANCE_PRESET, details }]);
+    expect(readAppearancePresetImport(exported)[0].details).toEqual(details);
+    for (const [dark, value] of [[false, '0%'], [true, '100%']] as const) {
+      applyAppearancePreferences(preferences, dark);
+      expect(document.documentElement.style.getPropertyValue('--nai-lab-editor-opacity')).toBe(value);
+      expect(document.documentElement.style.getPropertyValue('--nai-panel-opacity')).toBe('80%');
+      expect(document.documentElement.style.getPropertyValue('--nai-sidebar-opacity')).toBe('70%');
+    }
+    applyAppearancePreferences(DEFAULT_APPEARANCE_PREFERENCES, true);
+    expect(document.documentElement.style.getPropertyValue('--nai-lab-editor-opacity')).toBe('');
+  });
   it('交付的 Cupertino 示例通过真实导入器，并保留明暗覆盖与可分享参数', () => {
     const [preset] = readAppearancePresetImport(readFileSync('public/themes/cupertino-liquid-glass.json', 'utf8'));
     expect(preset.name).toBe('Cupertino Liquid Glass');

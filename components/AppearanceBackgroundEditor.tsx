@@ -30,7 +30,9 @@ export const AppearanceBackgroundEditor: React.FC<{ background?: ThemeBackground
       {background && <ToolbarButton disabled={busy} onClick={() => change(undefined)}>{t('恢复默认背景')}</ToolbarButton>}
     </div>
     {background && <>
-      <div aria-hidden="true" className="mt-3 h-24 rounded-lg border border-gray-200 dark:border-gray-700" style={{ backgroundColor: 'var(--nai-canvas)', ...themeBackgroundStyle(background, 'var(--nai-canvas)') }} />
+      <div aria-hidden="true" className="relative isolate mt-3 h-24 overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700" style={{ backgroundColor: 'var(--nai-canvas)' }}>
+        <div className="theme-background-preview pointer-events-none absolute inset-0 -z-10" style={{ ...themeBackgroundStyle(background, 'var(--nai-canvas)'), '--nai-background-blur': '6px' } as React.CSSProperties & { '--nai-background-blur': string }} />
+      </div>
       <div className="mt-3 grid gap-3 sm:grid-cols-2">
         <label className="text-meta text-gray-600 dark:text-gray-300">{t('背景显示方式')}<ToolbarSelect label="背景显示方式" value={background.fit} onChange={event => change({ ...background, fit: event.target.value as ThemeBackground['fit'] })} containerClassName="mt-1 w-full">
           <option value="cover">{t('铺满')}</option><option value="contain">{t('完整显示')}</option><option value="tile">{t('平铺图案')}</option>

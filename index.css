@@ -528,12 +528,28 @@ html[data-design-theme='nai-atelier'] .app-workspace {
 html[data-design-theme='nai-atelier'][data-custom-palette='true'] .workspace-canvas {
   background-color: var(--nai-canvas) !important;
 }
-/* 背景只铺一次，导航、工具栏与工作区共同透出同一张图，不在各容器重复裁切。 */
+/* 装饰壁纸独立柔化，不能在 body 或工作区上加滤镜而连文字、作品一起模糊。 */
 html[data-theme-background='true'] body {
+  isolation: isolate;
+  background-color: var(--nai-canvas);
+}
+html[data-theme-background='true'] body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
   background-image: var(--nai-background-image);
   background-size: var(--nai-background-size);
   background-repeat: var(--nai-background-repeat);
   background-position: center;
+}
+html[data-theme-background='true'] body::before,
+.theme-background-preview {
+  filter: blur(var(--nai-background-blur, 40px));
+}
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more), (forced-colors: active) {
+  html[data-theme-background='true'] body::before { display: none; }
 }
 html:root[data-theme-background='true'] :is(.workspace-canvas, .app-workspace) {
   background-color: transparent !important;

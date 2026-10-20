@@ -53,12 +53,36 @@ describe('四模式的分享入口', () => {
       operation, image: null, error: null, generationCostLabel: '免费', canGenerate: true,
       onGenerate: generate, onOpenLightbox: vi.fn(), getDownloadFilename: () => 'test.png',
     }));
-    expect(screen.getByText('暂无生成结果')).toBeTruthy();
+    const empty = screen.getByText('暂无生成结果');
+    expect(empty.tagName).toBe('P');
+    const stage = empty.closest('.lab-preview-stage')!;
+    expect(stage.classList.contains('appearance-group')).toBe(false);
+    expect(stage.classList.contains('nai-alpha-checker')).toBe(false);
+    expect(stage.classList.contains('lab-preview-image')).toBe(false);
+    expect(stage.classList.contains('cursor-zoom-in')).toBe(false);
     expect(screen.queryByText(/选择编辑模式|在左侧/)).toBeNull();
     const action = screen.getByRole('button', { name: /生成.*免费/ });
     fireEvent.click(action);
     expect(generate).toHaveBeenCalledOnce();
     expect(screen.queryByRole('button', { name: /上一张|下一张/ })).toBeNull();
+  });
+  it.each([false, true])('预览画布透明标记为 %s 时保留对应衬底，作品与放大行为不受壁纸影响', transparentPreview => {
+    const open = vi.fn();
+    render(React.createElement(ChainEditorPreview, {
+      isGenerating: false, handleGenerate: vi.fn(), errorMsg: null, generatedImage: '/synthetic.png', previewImage: undefined,
+      setLightboxImg: open, isOwner: false, isUploading: false, handleSavePreview: vi.fn(), handleUploadCover: vi.fn(),
+      getDownloadFilename: () => 'test.png', generationCostLabel: '免费', transparentPreview,
+    }));
+    const image = screen.getByRole('img');
+    const stage = image.closest('.lab-preview-stage')!;
+    expect(stage.classList.contains('nai-alpha-checker')).toBe(false);
+    expect(image.classList.contains('nai-alpha-checker')).toBe(transparentPreview);
+    expect(image.classList.contains('lab-preview-image')).toBe(!transparentPreview);
+    expect(stage.classList.contains('appearance-group')).toBe(false);
+    expect(image.getAttribute('src')).toBe('/synthetic.png');
+    expect(image.getAttribute('style')).toBeNull();
+    fireEvent.click(image);
+    expect(open).toHaveBeenCalledWith('/synthetic.png');
   });
 
   it('分享与删除使用紧凑尺寸，左右分组一致，点击不误开大图', () => {

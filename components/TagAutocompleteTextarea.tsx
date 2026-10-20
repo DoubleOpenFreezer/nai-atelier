@@ -599,14 +599,14 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
       />
 
       {tagAssistEnabled && showTranslations && (currentTranslations.length > 0 || editable) && (
-        <div className="appearance-group mt-1 rounded-lg border border-gray-200 bg-gray-50/80 px-2.5 py-2 dark:border-gray-700 dark:bg-gray-900/55" aria-label={t("提示词中文翻译")} tabIndex={0}
+        <div className="prompt-tag-assist appearance-group mt-1 rounded-lg border border-gray-200 bg-gray-50/80 px-2.5 py-2 dark:border-gray-700 dark:bg-gray-900/55" aria-label={t("提示词中文翻译")} tabIndex={0}
           onCopy={event => copySelection(event)} onCut={event => copySelection(event, true)}
           onPaste={event => {
             if ((event.target as HTMLElement).closest('input, textarea, [contenteditable="true"]') || !editable) return;
             const text = event.clipboardData.getData('text/plain');
             if (text.trim()) { event.preventDefault(); appendTags(text); }
           }}>
-          <div className="flex h-36 min-h-10 resize-y flex-wrap content-start items-start gap-1.5 overflow-y-auto overscroll-contain pr-1.5 pb-1.5">
+          <div className={`flex ${currentTranslations.length ? 'h-36' : 'h-10'} min-h-10 resize-y flex-wrap content-start items-start gap-1.5 overflow-y-auto overscroll-contain pr-1.5 pb-1.5`}>
             {(() => {
               // 权重组按连续区间渲染为单个胶囊：中间无间隔、强调色贯穿，选择粒度也是整组。
               const nodes: React.ReactNode[] = [];
@@ -711,26 +711,26 @@ export const TagAutocompleteTextarea: React.FC<TagAutocompleteTextareaProps> = (
               }}
               className="min-h-10 min-w-28 flex-1 rounded-md bg-transparent px-2 py-1 font-mono text-xs text-gray-700 outline-none placeholder:text-gray-400 focus:bg-white/70 focus:ring-1 focus:ring-[var(--nai-accent)] dark:text-gray-200 dark:focus:bg-gray-900/60" />}
           </div>
-          <div className="mt-1.5 flex min-h-7 flex-wrap items-center gap-1.5 border-t border-gray-200/70 pt-1.5 dark:border-gray-700/70">
+          <div className="mt-1.5 flex min-h-7 flex-wrap items-center gap-1 border-t border-gray-200/70 pt-1.5 dark:border-gray-700/70">
             <button type="button" aria-label={t("撤销")} title={t("撤销")} disabled={!editable || !historyRef.current.past.length} onClick={() => moveHistory()} className="mobile-touch flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 disabled:opacity-30 dark:text-gray-400 dark:hover:bg-gray-800"><RotateCcw className="h-4 w-4" /></button>
             {deleteMode ? <div className="ml-auto flex shrink-0 items-center gap-1.5">
               <button type="button" onClick={() => { setDeleteMode(false); clearSelection(); }} className="mobile-touch rounded-md px-2 py-1 text-meta font-medium text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800">{t("取消")}</button>
               <button type="button" disabled={!editable || !selectedTokens.length} onClick={deleteSelected} className="mobile-touch inline-flex items-center gap-1 rounded-md bg-red-600 px-2.5 py-1 text-meta font-bold text-white hover:bg-red-500 disabled:opacity-40"><Trash2 className="h-3.5 w-3.5" />{t("删除 {0} 个 Tag", [selectedTokens.length])}</button>
             </div> : <>
-            <div className="flex shrink-0 items-center gap-1.5 whitespace-nowrap">
+            <div className="flex shrink-0 items-center gap-1 whitespace-nowrap">
               <span className="text-meta text-gray-500 dark:text-gray-400">{t("权重类型")}</span>
-              <div role="group" aria-label={t("权重类型")} className="appearance-group flex items-stretch overflow-hidden rounded-md border border-gray-300 bg-gray-100 p-0.5 dark:border-gray-600 dark:bg-gray-800">
+              <div role="group" aria-label={t("权重类型")} className="appearance-group appearance-segmented flex items-stretch overflow-hidden rounded-md border border-gray-300 bg-gray-100 p-0.5 dark:border-gray-600 dark:bg-gray-800">
               <button
                 type="button"
                 onClick={() => setWeightKind('brace')}
                 aria-pressed={weightKind === 'brace'}
-                className={`appearance-group rounded px-2 py-0.5 text-meta font-bold transition-colors ${weightKind === 'brace' ? 'bg-white text-[var(--nai-accent)] shadow-sm dark:bg-gray-700' : 'text-gray-500 hover:text-[var(--nai-accent)] dark:text-gray-400'}`}
+                className={`appearance-group mobile-touch rounded px-1.5 py-0.5 text-meta font-bold transition-colors ${weightKind === 'brace' ? 'bg-white text-[var(--nai-accent)] shadow-sm dark:bg-gray-700' : 'text-gray-500 hover:text-[var(--nai-accent)] dark:text-gray-400'}`}
               >{t("括号")}</button>
               <button
                 type="button"
                 onClick={() => setWeightKind('numeric')}
                 aria-pressed={weightKind === 'numeric'}
-                className={`appearance-group rounded px-2 py-0.5 text-meta font-bold transition-colors ${weightKind === 'numeric' ? 'bg-white text-[var(--nai-accent)] shadow-sm dark:bg-gray-700' : 'text-gray-500 hover:text-[var(--nai-accent)] dark:text-gray-400'}`}
+                className={`appearance-group mobile-touch rounded px-1.5 py-0.5 text-meta font-bold transition-colors ${weightKind === 'numeric' ? 'bg-white text-[var(--nai-accent)] shadow-sm dark:bg-gray-700' : 'text-gray-500 hover:text-[var(--nai-accent)] dark:text-gray-400'}`}
               >{t("数值")}</button>
               </div>
               <button

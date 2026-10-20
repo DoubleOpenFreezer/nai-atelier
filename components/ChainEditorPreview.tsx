@@ -93,7 +93,7 @@ export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
             <div className="flex-1 flex flex-col p-4 md:p-6 overflow-hidden lg:min-h-[400px]">
                 {/* Generated Image */}
                 <PressRevealSurface pressResetKey={generatedImage || previewImage}
-                    className={`appearance-card flex-1 min-h-0 lg:min-h-[300px] rounded-xl border border-gray-200 dark:border-gray-800 flex items-center justify-center relative group overflow-hidden cursor-zoom-in ${transparentPreview ? 'nai-alpha-checker' : generatedImage || previewImage ? 'bg-white dark:bg-gray-950/50' : 'appearance-group bg-white dark:bg-gray-950/50'}`}
+                    className={`appearance-media lab-preview-stage flex-1 min-h-0 lg:min-h-[300px] flex items-center justify-center relative group overflow-hidden ${generatedImage || previewImage ? 'cursor-zoom-in' : 'cursor-default'}`}
                     onClick={() => {
                         const img = generatedImage || previewImage;
                         if (img) setLightboxImg(img);
@@ -132,7 +132,7 @@ export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
 
                     {generatedImage ? (
                         <>
-                            <OriginalImage src={generatedImage} alt={resultAlt} className="max-w-full max-h-full object-contain shadow-2xl" />
+                            <OriginalImage src={generatedImage} alt={resultAlt} className={`max-w-full max-h-full object-contain shadow-2xl ${transparentPreview ? 'nai-alpha-checker' : 'lab-preview-image'}`} />
                             {historyLabel && (
                                 <div className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded bg-black/60 px-3 py-1 text-xs text-white pointer-events-none">
                                     {historyLabel}
@@ -143,13 +143,13 @@ export const ChainEditorPreview: React.FC<ChainEditorPreviewProps> = ({
                     ) : (
                         previewImage ? (
                             <>
-                                <OriginalImage src={previewImage} alt={t("封面")} className="max-w-full max-h-full object-contain shadow-2xl opacity-50 grayscale hover:grayscale-0 transition-all duration-500" />
+                                <OriginalImage src={previewImage} alt={t("封面")} className={`max-w-full max-h-full object-contain shadow-2xl opacity-50 grayscale hover:grayscale-0 transition-all duration-500 ${transparentPreview ? 'nai-alpha-checker' : 'lab-preview-image'}`} />
                                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                                     <span className="bg-black/50 text-white px-3 py-1 rounded text-xs">{t("当前封面")}</span>
                                 </div>
 
                             </>
-                        ) : <div className="appearance-reading-surface rounded-lg border border-dashed border-gray-300 px-4 py-3 text-xs text-gray-500 dark:border-gray-700 dark:text-gray-400">{emptyLabel}</div>
+                        ) : <p className="lab-preview-empty px-4 py-3 text-sm text-gray-500 dark:text-gray-400">{emptyLabel}</p>
                     )}
 
                     {isGenerating && generationProgress && (

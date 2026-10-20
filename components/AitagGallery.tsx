@@ -1368,12 +1368,12 @@ export const AitagGallery: React.FC<AitagGalleryProps> = ({ active, selectionFoc
                     const modelLabel = getAitagModelLabel(image);
 
                     return (
-                      <div key={image.id || `${image.work_id}-${image.file_name}`} className="appearance-media rounded-2xl border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 overflow-hidden">
-                        <PressRevealSurface className="group relative">
+                      <div key={image.id || `${image.work_id}-${image.file_name}`} className="appearance-content appearance-card rounded-2xl border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 overflow-hidden">
+                        <PressRevealSurface className="appearance-media group relative">
                           <ViewableImage src={buildAitagImageUrl(image)} alt={t("AITAG 作品图片")} filename={`aitag-${image.work_id}-p${index + 1}.png`} favorite={aitagCollectionImages(selectedDetail).find(item => item.imageId === (image.file_name || String(image.id)))} notify={notify} className="w-full max-h-[62vh] object-contain bg-black/5 dark:bg-black/20" loading="lazy" />
                           <ImageShareOverlay imageUrl={getMobileOriginalUrl(buildAitagImageUrl(image))} filename={`aitag-${image.work_id}-p${index + 1}.png`} favorite={aitagCollectionImages(selectedDetail).find(item => item.imageId === (image.file_name || String(image.id)))} notify={notify} />
                         </PressRevealSurface>
-                        <div className="p-3 space-y-3">
+                        <div className="appearance-group p-3 space-y-3">
                           <div className="flex items-start justify-between gap-3">
                             <div className="min-w-0 space-y-1.5">
                               {generationLabels.length > 0 && (

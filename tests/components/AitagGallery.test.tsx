@@ -167,6 +167,12 @@ it('首图操作跟随实际候选，点击和回车不打开详情；详情逐�
   // 两张详情图都沿用各自的长按容器，操作不会收起详情。
   await waitFor(() => expect(document.querySelector('img[src="/synthetic/detail-2.png"]')).toBeTruthy());
   const surface = document.querySelector('img[src="/synthetic/detail-2.png"]')!.closest('.press-reveal-surface')!;
+  const detailCard = surface.closest('.appearance-card')!;
+  expect(surface.classList.contains('appearance-media')).toBe(true);
+  expect(detailCard.classList.contains('appearance-media')).toBe(false);
+  const prompt = within(detailCard as HTMLElement).getByText('synthetic prompt 1');
+  expect(prompt.closest('.appearance-group')).toBeTruthy();
+  expect(prompt.closest('.appearance-media')).toBeNull();
   fireEvent.click(within(surface as HTMLElement).getByRole('button', { name: '下载图片' }));
   await waitFor(() => expect(downloadSharedImage).toHaveBeenLastCalledWith('/synthetic/detail-2.png', 'aitag-1-p2.png', false));
   expect(first.getAttribute('aria-pressed')).toBe('true');

@@ -878,11 +878,10 @@ export const GlobalSettings: React.FC<GlobalSettingsProps> = ({ open, onClose, i
                           </span>
                         )}
 
-                        <div className="flex min-w-0 items-center gap-3">
-                          {/* 微缩界面骨架 */}
+                        <div className="flex min-w-0 flex-col gap-3">
                           <AppearancePresetPreview preset={preset} isDark={isDark} />
 
-                          <div className="min-w-0 flex-1">
+                          <div className="min-w-0 w-full flex-1">
                             {isEditing ? (
                               <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
                                 <input

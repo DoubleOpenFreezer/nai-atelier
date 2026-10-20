@@ -95,7 +95,7 @@ export const HistoryImageViewer: React.FC<Props> = props => {
               <button className="history-viewer-button" onClick={() => zoomAt(1 / fit)} title={t("快捷键 1")}>100%</button>
             </footer>
           </div>
-          {props.detailsOpen && <aside ref={detailsRef} className="history-viewer-details" aria-label={t("图片详情面板")}><div className="history-viewer-details-heading"><strong>{t("图片详情")}</strong><button className="history-viewer-button" aria-label={t("收起图片详情")} onClick={() => props.onDetailsChange(false)}><ChevronRight /></button></div>{props.children}</aside>}
+          {props.detailsOpen && <aside ref={detailsRef} className="history-viewer-details appearance-group" aria-label={t("图片详情面板")}><div className="history-viewer-details-heading"><strong>{t("图片详情")}</strong><button className="history-viewer-button" aria-label={t("收起图片详情")} onClick={() => props.onDetailsChange(false)}><ChevronRight /></button></div>{props.children}</aside>}
         </div>
       </div>
     </div>

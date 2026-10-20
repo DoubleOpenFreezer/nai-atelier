@@ -7,7 +7,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LocalGenItem, PromptAgentGenerationResult, PromptChain } from '../../types';
 import { cloneDefaultLabPageLayouts, DEFAULT_GENERATION_MEMORY_PREFERENCES, type GenerationMemoryPreferences } from '../../services/appearancePreferences';
-import { createLabWorkspaceSession, loadLabWorkspaceSession, saveLabWorkspaceSession } from '../../services/labWorkspace';
+import { blobToDataUrl, createLabWorkspaceSession, loadLabWorkspaceSession, saveLabWorkspaceSession } from '../../services/labWorkspace';
 import { ChainEditor, type ChainEditorSaveHandle } from '../../components/ChainEditor';
 import { getGenerationSeriesSession, getQueuedGenerationSeries, stopGenerationSeriesSession } from '../../services/generationSeries';
 import { GenerationCountControl } from '../../components/GenerationCountControl';
@@ -16,6 +16,14 @@ import type { NovelaiSubscriptionInfo } from '../../services/naiUsage';
 import type { GenerationJobDescriptor, GenerationJobSnapshot } from '../../services/generationJob';
 import type { GenerationJobDescriptorInput } from '../../services/naiService';
 type ImageEditPanelProps = React.ComponentProps<typeof import('../../components/ImageEditPanel').ImageEditPanel>;
+
+// Node 22 的 Response.blob() 返回原生 Blob，jsdom FileReader 只接受同一环境的 Blob。
+const syntheticImageResponse = () => {
+  const bytes = new Uint8Array([1, 2, 3]);
+  const response = new Response(bytes, { headers: { 'Content-Type': 'image/png' } });
+  vi.spyOn(response, 'blob').mockResolvedValue(new Blob([bytes], { type: 'image/png' }));
+  return response;
+};
 
 /** 脚本里的快照不含 token：真实网关只在响应时带上它，由 mock 注入，绝不改生产类型迁就测试。 */
 type JobScriptSnapshot = Omit<GenerationJobSnapshot, 'token'>;
@@ -607,7 +615,7 @@ it('离开前保存能力跟随模式与忙碌状态，不保存编辑模式或�
 it('图生图使用缩放副本的实际像素估费并只提交一次后台任务，当前草稿保持原坐标', async () => {
   sessionStorage.setItem('nai_api_key', 'image-size-fixture');
   state.subscription = { active: true, tier: 3, usage: { percent: 50, isNegative: false, timeUntilNextPercent: 0 } };
-  vi.stubGlobal('fetch', vi.fn(async () => new Response(new Uint8Array([1, 2, 3]), { headers: { 'Content-Type': 'image/png' } })));
+  vi.stubGlobal('fetch', vi.fn(async () => syntheticImageResponse()));
   vi.stubGlobal('createImageBitmap', vi.fn(async () => ({ width: 1024, height: 1024, close: vi.fn() })));
   setup({ ...chain, previewImage: '/synthetic/cover.png', params: { ...chain.params, model: 'nai-diffusion-5-full', width: 1664, height: 2432 } });
   await switchTo('图生图');
@@ -633,7 +641,7 @@ it.each(['图生图', '局部重绘', '扩图'])('%s 普通生成复用已有免
   state.refreshedSubscription = { ...state.subscription, usage: { percent: 0, isNegative: true, timeUntilNextPercent: 0 } };
   state.delayedSubscription = Promise.withResolvers<NovelaiSubscriptionInfo | null>().promise;
   state.confirm.mockResolvedValueOnce(false);
-  vi.stubGlobal('fetch', vi.fn(async () => new Response(new Uint8Array([1, 2, 3]), { headers: { 'Content-Type': 'image/png' } })));
+  vi.stubGlobal('fetch', vi.fn(async () => syntheticImageResponse()));
   vi.stubGlobal('createImageBitmap', vi.fn(async () => ({ width: 832, height: 1216, close: vi.fn() })));
   setup({ ...chain, params: { ...chain.params, model: 'nai-diffusion-5-full' } });
   await switchTo(label);
@@ -658,7 +666,7 @@ it.each(['图生图', '局部重绘', '扩图'])('%s 零点数估算在同步失
   state.subscription = state.refreshedSubscription = { active: true, tier: 3 };
   state.runtime = { ...DEFAULT_NAI_RUNTIME, health: { ok: false, reason: 'partial', missed: ['billing'] } };
   state.confirm.mockResolvedValueOnce(false);
-  vi.stubGlobal('fetch', vi.fn(async () => new Response(new Uint8Array([1, 2, 3]), { headers: { 'Content-Type': 'image/png' } })));
+  vi.stubGlobal('fetch', vi.fn(async () => syntheticImageResponse()));
   vi.stubGlobal('createImageBitmap', vi.fn(async () => ({ width: 832, height: 1216, close: vi.fn() })));
   setup(); await switchTo(label);
   await act(async () => fireEvent.click(screen.getByRole('button', { name: '生成合成编辑' })));
@@ -1003,9 +1011,16 @@ describe('自由实验室图片只保留本次打开', () => {
   const generation = { blob: new Blob([new Uint8Array([1, 2, 3])], { type: 'image/png' }) };
   const allowSyntheticGeneration = () => {
     sessionStorage.setItem('nai_api_key', 'synthetic-key');
-    vi.stubGlobal('fetch', vi.fn(async () => new Response(new Uint8Array([1, 2, 3]), { headers: { 'Content-Type': 'image/png' } })));
+    vi.stubGlobal('fetch', vi.fn(async () => syntheticImageResponse()));
     vi.stubGlobal('createImageBitmap', vi.fn(async () => ({ width: 832, height: 1216, close: vi.fn() })));
   };
+
+  it('合成网络图片使用与 FileReader 同一环境的 Blob，结果可真实恢复', async () => {
+    allowSyntheticGeneration();
+    const blob = await (await fetch('/synthetic/result.png')).blob();
+    expect(blob).toBeInstanceOf(Blob);
+    expect(await blobToDataUrl(blob)).toBe('data:image/png;base64,AQID');
+  });
 
   it.each(['text-to-image', 'image-to-image', 'inpaint', 'outpaint'] as const)('复开 %s 留空底图及结果，80 张历史不自动占位，文字参数仍恢复', async mode => {
     const session = fallback(); session.activeMode = mode;
@@ -1166,7 +1181,7 @@ describe('统一工作台真实状态链路', () => {
 
   it('图生图主动清空全局和角色后换底图，提交的描述符仍发送空提示词', async () => {
     sessionStorage.setItem('nai_api_key', 'synthetic-key');
-    vi.stubGlobal('fetch', vi.fn(async () => new Response(new Uint8Array([1, 2, 3]), { headers: { 'Content-Type': 'image/png' } })));
+    vi.stubGlobal('fetch', vi.fn(async () => syntheticImageResponse()));
     vi.stubGlobal('createImageBitmap', vi.fn(async () => ({ width: 832, height: 1216, close: vi.fn() })));
     state.startJob.mockRejectedValue(new Error('合成测试主动终止'));
     setup();
@@ -1224,7 +1239,7 @@ describe('统一工作台真实状态链路', () => {
 
   it('历史复制配置进入扩图；删除全局及角色后提交的描述符收到空内容，不补回文生图旧词', async () => {
     sessionStorage.setItem('nai_api_key', 'synthetic-key');
-    vi.stubGlobal('fetch', vi.fn(async () => new Response(new Uint8Array([1, 2, 3]), { headers: { 'Content-Type': 'image/png' } })));
+    vi.stubGlobal('fetch', vi.fn(async () => syntheticImageResponse()));
     vi.stubGlobal('createImageBitmap', vi.fn(async () => ({ width: 832, height: 1216, close: vi.fn() })));
     state.startJob.mockRejectedValue(new Error('合成测试主动终止'));
     setup();
@@ -1251,7 +1266,7 @@ describe('统一工作台真实状态链路', () => {
     const character = { id: 'original', prompt: 'original character', negativePrompt: 'original negative', x: 0.5, y: 0.5 };
     const entry = { ...chain, params: { ...chain.params, characters: [character], useCoords: true } };
     sessionStorage.setItem('nai_api_key', 'synthetic-key');
-    vi.stubGlobal('fetch', vi.fn(async () => new Response(new Uint8Array([1, 2, 3]), { headers: { 'Content-Type': 'image/png' } })));
+    vi.stubGlobal('fetch', vi.fn(async () => syntheticImageResponse()));
     vi.stubGlobal('createImageBitmap', vi.fn(async () => ({ width: 832, height: 1216, close: vi.fn() })));
     // 请求入口捕获后主动失败，不执行任何真实后台任务或结算。
     state.startJob.mockRejectedValueOnce(new Error('合成测试主动终止'));
@@ -1448,7 +1463,7 @@ it.each(['text-to-image', 'image-to-image', 'inpaint', 'outpaint'] as const)('�
   vi.stubGlobal('createImageBitmap', vi.fn(async () => ({ width: 832, height: 1216, close: vi.fn() })));
   vi.stubGlobal('fetch', vi.fn(async (input: string) => {
     if (!String(input).startsWith('/synthetic/') && !String(input).startsWith('data:image/')) throw new Error('测试禁止真实网络请求');
-    return new Response(new Uint8Array([1, 2, 3]), { headers: { 'Content-Type': 'image/png' } });
+    return syntheticImageResponse();
   }));
   const session = fallback(); session.activeMode = mode;
   saveLabWorkspaceSession(chain.id, session); setup();
@@ -1539,7 +1554,7 @@ describe('后台任务只提交一次并只观察后端状态', () => {
     state.subscription = state.refreshedSubscription = { active: true, tier: 3, usage: { percent: 50, isNegative: false, timeUntilNextPercent: 10 } };
     vi.stubGlobal('fetch', vi.fn(async (input: string) => {
       if (!String(input).startsWith('/synthetic/') && !String(input).startsWith('data:image/')) throw new Error('测试禁止真实网络请求');
-      return new Response(new Uint8Array([1, 2, 3]), { headers: { 'Content-Type': 'image/png' } });
+      return syntheticImageResponse();
     }));
   };
   const countInput = (regionName = '文生图预览') => {

@@ -62,7 +62,9 @@ material: "frosted" 或 "glass"；玻璃效果请选择 "glass"，并配合 surf
 blur: 0～40，px 背景模糊。
 saturation: 100～200，% 背景饱和度。
 opacity: 0.55～1，表面不透明度，1 完全不透明；过高会挡住折射。
+globalOpacity: 0～1，可选全局不透明度，统一覆盖通用表面的分层值，嵌套填充按比例变薄；实验室编辑面仍单独使用 labEditorOpacity。支持共用／明暗覆盖，不设置则沿用旧分层值；不可通过 CSS opacity 让文字和作品一起变淡。
 sidebarOpacity / toolbarOpacity / panelOpacity: 各 0.55～1，分别控制侧栏、工具栏、弹窗，未填继承 opacity。
+labEditorOpacity: 0～1，独立控制实验室左侧连续编辑面，支持共用与 light/dark 覆盖；缺省深色 0.6、浅色为有效 panelOpacity / opacity 的一半。设置中使用百分比滑条，不改变侧栏、工具栏或右侧预览。
 borderOpacity: 0～1，边框强度。
 controlShadow: 0～1，填充式中性按钮阴影强度。
 controlStyle: "outlined" 或 "filled"；后者提供柔和填充按钮、分段选择与清晰的导航选中态。

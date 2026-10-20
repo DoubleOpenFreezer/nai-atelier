@@ -20,6 +20,8 @@ export const AppearancePaletteEditor: React.FC<{ palette?: ThemePalettes; onChan
             </label>)}
           </div>
           {themeContrast(colors.text, colors.panel) < 4.5 && <p role="status" className="mt-2 text-meta text-amber-700 dark:text-amber-300">{t('正文与面板对比度较低，请调整配色')}</p>}
+          {themeContrast(colors.mutedText, colors.panel) < 4.5 && <p role="status" className="mt-2 text-meta text-amber-700 dark:text-amber-300">{t('次要文字与面板对比度较低，请调整配色')}</p>}
+          {Math.min(themeContrast(colors.text, colors.canvas), themeContrast(colors.mutedText, colors.canvas)) < 4.5 && <p role="status" className="mt-2 text-meta text-amber-700 dark:text-amber-300">{t('文字与工作区背景对比度较低，请调整配色')}</p>}
         </fieldset>;
       })}
     </div>

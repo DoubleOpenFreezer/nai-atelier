@@ -7,45 +7,69 @@ import { BUILTIN_APPEARANCE_PRESET } from '../../services/appearancePreferences'
 
 afterEach(cleanup);
 describe('主题卡片独立预览', () => {
+  it('全局明暗覆盖预览导航透明度，正文样例仍按实验室独立值', () => {
+    const preset = { ...BUILTIN_APPEARANCE_PRESET, surfaces: 'translucent' as const, details: { globalOpacity: .4, sidebarOpacity: .8, toolbarOpacity: .9, labEditorOpacity: .6, light: { globalOpacity: 0 } } };
+    const view = render(<AppearancePresetPreview preset={preset} isDark />);
+    for (const part of ['sidebar', 'toolbar']) {
+      expect(view.container.querySelector(`[data-preview-mode="light"] [data-preview-part="${part}"]`)?.getAttribute('style')).toContain('0%, transparent');
+      expect(view.container.querySelector(`[data-preview-mode="dark"] [data-preview-part="${part}"]`)?.getAttribute('style')).toContain('40%, transparent');
+    }
+    expect(view.container.querySelector('[data-preview-mode="dark"] [data-preview-part="content"]')?.getAttribute('style')).toContain('60%, transparent');
+  });
+  it('正文样例按保存的实验室明暗不透明度预览，零值不回落默认值', () => {
+    const preset = { ...BUILTIN_APPEARANCE_PRESET, surfaces: 'translucent' as const, details: { labEditorOpacity: .6, light: { labEditorOpacity: 0 } } };
+    const view = render(<AppearancePresetPreview preset={preset} isDark />);
+    expect(view.container.querySelector('[data-preview-mode="light"] [data-preview-part="content"]')?.getAttribute('style')).toContain('0%, transparent');
+    expect(view.container.querySelector('[data-preview-mode="dark"] [data-preview-part="content"]')?.getAttribute('style')).toContain('60%, transparent');
+  });
   it('预览取保存的背景显示参数，缺少背景不残留之前的图片', () => {
     const background = { image: 'data:image/png;base64,AAAA', fit: 'tile' as const, opacity: .8, tileSize: 64 };
     const view = render(<AppearancePresetPreview preset={{ ...BUILTIN_APPEARANCE_PRESET, background }} isDark />);
-    const preview = view.container.firstElementChild as HTMLElement;
+    const preview = view.container.querySelector('[data-preview-mode="dark"] [data-preview-part="background"]') as HTMLElement;
     expect(preview.style.backgroundSize).toBe('auto, 64px auto');
     view.rerender(<AppearancePresetPreview preset={BUILTIN_APPEARANCE_PRESET} isDark />);
     expect(preview.style.backgroundSize).toBe('');
   });
   it('预览使用自己的明暗覆盖，不借用当前界面的强调色或几何', () => {
     const view = render(<AppearancePresetPreview preset={{ ...BUILTIN_APPEARANCE_PRESET, details: { panelRadius: 16, dark: { accentColor: '#123456', panelRadius: 24 } } }} isDark />);
-    const preview = view.container.firstElementChild as HTMLElement;
+    const preview = view.container.querySelector('[data-preview-mode="dark"]') as HTMLElement;
     expect(preview.style.borderRadius).toBe('12px');
-    expect(view.container.querySelector('.w-8')?.getAttribute('style')).toContain('rgb(18, 52, 86)');
+    expect(preview.querySelector('[data-preview-part="action"]')?.getAttribute('style')).toContain('rgb(18, 52, 86)');
   });
-  it('浅色主题在深色界面仍预览自己的配色、圆角和密度，跟随系统时才使用当前明暗', () => {
+  it('同时展示明暗原件，当前模式只影响标记，不污染另一套配色', () => {
     const preset = { ...BUILTIN_APPEARANCE_PRESET, themeMode: 'light' as const, corners: 'sharp' as const, density: 'compact' as const, palette: { light: { canvas: '#fff4dd', sidebar: '#eee2ce', panel: '#fffaf0', text: '#362415', border: '#a08060' } } };
     const view = render(<AppearancePresetPreview preset={preset} isDark />);
-    const preview = view.container.firstElementChild as HTMLElement;
+    const preview = view.container.querySelector('[data-preview-mode="light"]') as HTMLElement;
     expect(preview.dataset.previewMode).toBe('light');
     expect(preview.style.backgroundColor).toBe('rgb(255, 244, 221)');
-    expect(preview.style.borderColor).toBe('rgb(160, 128, 96)');
     expect(preview.style.borderRadius).toBe('3px');
-    expect((preview.firstElementChild as HTMLElement).style.padding).toBe('3px');
+    expect(preview.querySelector<HTMLElement>('[data-preview-part="sidebar"]')?.style.padding).toBe('3px');
     expect(view.container.querySelector('[style*="rgb(54, 36, 21)"]')).toBeTruthy();
     view.rerender(<AppearancePresetPreview preset={{ ...preset, themeMode: 'system', corners: 'soft' }} isDark />);
-    expect(preview.dataset.previewMode).toBe('dark');
-    expect(preview.style.backgroundColor).toBe('rgb(13, 15, 20)');
+    expect(preview.dataset.previewMode).toBe('light');
+    expect(preview.dataset.previewActive).toBe('false');
+    expect(preview.style.backgroundColor).toBe('rgb(255, 244, 221)');
     expect(preview.style.borderRadius).toBe('12px');
+    const dark = view.container.querySelector('[data-preview-mode="dark"]') as HTMLElement;
+    expect(dark.dataset.previewActive).toBe('true');
+    expect(dark.style.backgroundColor).toBe('rgb(13, 15, 20)');
   });
   it('高级面板、控件和卡片几何各自预览，实色不显示玻璃高光', () => {
     const preset = { ...BUILTIN_APPEARANCE_PRESET, details: { controlRadius: 999, panelRadius: 24, cardRadius: 8, spacing: .2, material: 'glass' as const } };
     const view = render(<AppearancePresetPreview preset={preset} isDark={false} />);
-    const preview = view.container.firstElementChild as HTMLElement;
+    const preview = view.container.querySelector('[data-preview-mode="light"]') as HTMLElement;
     expect(preview.style.borderRadius).toBe('12px');
     expect(preview.style.boxShadow).toBe('');
-    expect(view.container.querySelector('.h-5')?.getAttribute('style')).toContain('border-radius: 499.5px');
-    expect(view.container.querySelector('.h-6')?.getAttribute('style')).toContain('border-radius: 4px');
-    expect((preview.firstElementChild as HTMLElement).style.padding).toBe('4px');
+    expect(preview.querySelector('[data-preview-part="selected"]')?.getAttribute('style')).toContain('border-radius: 499.5px');
+    expect(preview.querySelector('[data-preview-part="content"]')?.getAttribute('style')).toContain('border-radius: 4px');
+    expect(preview.querySelector<HTMLElement>('[data-preview-part="sidebar"]')?.style.padding).toBe('4px');
     view.rerender(<AppearancePresetPreview preset={{ ...preset, surfaces: 'translucent' }} isDark={false} />);
     expect(preview.style.boxShadow).toContain('inset');
+    expect(preview.querySelector<HTMLElement>('[data-preview-part="toolbar"]')?.style.backdropFilter).toContain('blur(');
+    expect(preview.querySelector('[data-preview-part="sidebar"]')?.getAttribute('style')).toContain('transparent');
+    expect(preview.textContent).toContain('搜索');
+    expect(preview.textContent).toContain('文生图');
+    expect(preview.textContent).toContain('生成');
+    expect(view.container.querySelector('button, input, [tabindex]')).toBeNull();
   });
 });
