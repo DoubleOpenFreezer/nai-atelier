@@ -7,7 +7,7 @@
 
   **[简体中文](./README.md) · [繁體中文](./README.zh-TW.md) · [English](./README.en.md) · [日本語](./README.ja.md) · [한국어](./README.ko.md)**
 
-  [![Version](https://img.shields.io/badge/version-1.100.0-6366f1?style=flat-square)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.101.0-6366f1?style=flat-square)](./CHANGELOG.md)
   [![NovelAI](https://img.shields.io/badge/NovelAI-V4%20%7C%20V4.5%20%7C%20V5-8b5cf6?style=flat-square)](https://novelai.net/)
   [![Local First](https://img.shields.io/badge/data-local--first-10b981?style=flat-square)](#-本地数据主权与备份)
   [![Mobile](https://img.shields.io/badge/mobile-LAN%20optimized-0ea5e9?style=flat-square)](#-手机局域网创作体验)
@@ -95,11 +95,12 @@ NAI Atelier 是一套运行在个人电脑或 Android 手机上的 NovelAI 本�
 
 ## 🚀 快速上手
 
-工坊提供 **Windows EXE 安装版**、**源码本地部署** 与 **Android 独立 APK**：
+工坊提供 **Windows EXE 安装版**、**macOS 应用**、**源码本地部署** 与 **Android 独立 APK**：
 
 | 使用方式 | 适合人群 | 运行准备 | 开启入口 |
 | :--- | :--- | :--- | :--- |
 | **EXE 安装版** | 普通使用者（推荐） | Windows 10/11 x64，无需配置 Node.js/Git | [下载已发布安装包](https://github.com/HelloQun54321/nai-atelier/releases)，双击安装向导 |
+| **macOS 应用** | Apple 芯片 Mac 使用者 | macOS 12+，本机执行一次 `npm run build:desktop` | 打开生成的 DMG 拖入「应用程序」；见 [macOS 安装版文档](./docs/MACOS_DESKTOP.md) |
 | **源码本地部署** | 开发者 / 自由定制者 | Node.js 22+ (推荐 24.x) 与 Git | 克隆仓库并执行本地启动命令 |
 | **Android 独立 APK** | 希望手机独立创作的使用者 | Android 8.0+、64 位 ARM、手机自身网络 | 安装本地构建的 APK；使用和构建见 [Android 说明](./docs/ANDROID_STANDALONE.md) |
 
@@ -112,6 +113,8 @@ NAI Atelier 是一套运行在个人电脑或 Android 手机上的 NovelAI 本�
 3. 安装完成后从桌面图标打开 **NAI Atelier**，按下方引导开启创作。
 
 > 💡 个人数据保存在 `%LOCALAPPDATA%\NAI Atelier\workspace\local-data`，独立于程序安装目录，卸载时默认安全保留。详细说明见 [Windows 安装版文档](./docs/WINDOWS_DESKTOP.md)。
+
+> 🍎 macOS（Apple 芯片）可在源码目录执行 `npm ci && npm run build:desktop`，得到 `release/NAI-Atelier-<版本>-mac-arm64.dmg`。数据保存在 `~/Library/Application Support/NAI Atelier/workspace/local-data`；应用为临时签名、需手动下载更新，收集悬浮窗等 Windows 专属功能不可用。详见 [macOS 安装版文档](./docs/MACOS_DESKTOP.md)。
 
 ### 方式二：源码本地部署
 

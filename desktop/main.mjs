@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, shell, Tray } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, shell, Tray } from 'electron';
 import { spawn } from 'node:child_process';
 import { createWriteStream } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
@@ -6,13 +6,14 @@ import { createRequire } from 'node:module';
 import { randomUUID } from 'node:crypto';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { desktopServerOptions, findDesktopPorts, isDesktopNavigation, isExternalWebLink, prepareDesktopWorkspace, pickDesktopDirectory } from '../scripts/desktop-runtime.mjs';
+import { desktopServerOptions, findDesktopPorts, isDesktopNavigation, isExternalWebLink, prepareDesktopWorkspace, pickDesktopDirectory, runtimeNodePath } from '../scripts/desktop-runtime.mjs';
 import { createDesktopUpdater } from './app-updater.mjs';
 import { LANGUAGES, normalizeLanguage, translate } from '../locales/index.mjs';
 import { resolveStorageDataRoot, launchStorageSwitch, getStoragePreferences, assertStorageNotSwitching } from '../scripts/storage-locations.mjs';
 import { exportWithPreferences } from '../scripts/export-locations.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
+const IS_MAC = process.platform === 'darwin';
 const startupFile = join(here, 'startup.html');
 const startupUrl = pathToFileURL(startupFile).href;
 const runtimeRoot = app.isPackaged ? join(process.resourcesPath, 'runtime') : resolve(here, '..', '.desktop-build', 'runtime');
@@ -21,7 +22,8 @@ const selectedDataRoot = await (async () => { await assertStorageNotSwitching(st
 const storageLaunchError = selectedDataRoot instanceof Error ? selectedDataRoot : null;
 const dataRoot = storageLaunchError ? storageAnchor : selectedDataRoot;
 app.setPath('userData', join(dataRoot, 'browser'));
-app.setAppUserModelId('com.naiatelier.desktop');
+// 仅 Windows 提供此接口；macOS 调用会在主进程加载时抛错。
+if (process.platform === 'win32') app.setAppUserModelId('com.naiatelier.desktop');
 // 下载由用户触发；关闭窗口仍进托盘，安装必须先结束本应用后台。
 let window, tray, backend, log, workspace, appUrl = '', quitting = false, starting = false;
 let updates;
@@ -66,7 +68,8 @@ function createWindow() {
     if (!quitting && !selfTestFile) { event.preventDefault(); window.hide(); tray?.setToolTip(t('NAI Atelier · 后台运行')); }
   });
   if (!selfTestFile) {
-    tray = new Tray(join(runtimeRoot, 'public', 'nai-atelier.ico'));
+    // macOS 菜单栏不识别 .ico，使用 PNG 缩放到菜单栏尺寸。
+    tray = new Tray(IS_MAC ? nativeImage.createFromPath(join(runtimeRoot, 'public', 'app-icon.png')).resize({ width: 18, height: 18 }) : join(runtimeRoot, 'public', 'nai-atelier.ico'));
     tray.setToolTip('NAI Atelier');
     tray.on('double-click', showWindow);
   }
@@ -77,11 +80,16 @@ function createWindow() {
 function updateMenus() {
   const roles = (items) => items.map(([role, label]) => ({ role, label: t(label) }));
   const dataItem = { label: t('打开数据目录'), click: () => void shell.openPath(workspace || dataRoot) };
-  const quitItem = { label: t('退出工坊'), accelerator: 'Alt+F4', click: quitApp };
+  const quitItem = { label: t('退出工坊'), accelerator: IS_MAC ? 'Cmd+Q' : 'Alt+F4', click: quitApp };
+  // macOS 首个菜单固定为应用菜单；关闭窗口（⌘W）与 Windows 一致，只收进后台。
+  const macMenus = IS_MAC ? { app: [{ label: app.name, submenu: [...roles([['about', '关于 NAI Atelier']]), { type: 'separator' }, ...roles([['hide', '隐藏'], ['hideOthers', '隐藏其他'], ['unhide', '全部显示']]), { type: 'separator' }, quitItem] }],
+    window: [{ label: t('窗口'), submenu: roles([['minimize', '最小化'], ['close', '关闭'], ['front', '全部置于顶层']]) }] } : { app: [], window: [] };
   Menu.setApplicationMenu(Menu.buildFromTemplate([
-    { label: t('工坊'), submenu: [dataItem, { label: t('查看启动日志'), click: () => void shell.openPath(logFile) }, { type: 'separator' }, quitItem] },
+    ...macMenus.app,
+    { label: t('工坊'), submenu: [dataItem, { label: t('查看启动日志'), click: () => void shell.openPath(logFile) }, ...(IS_MAC ? [] : [{ type: 'separator' }, quitItem])] },
     { label: t('编辑'), submenu: roles([['undo', '撤销'], ['redo', '重做'], ['cut', '剪切'], ['copy', '复制'], ['paste', '粘贴'], ['selectAll', '全选']]) },
     { label: t('视图'), submenu: roles([['reload', '刷新'], ['resetZoom', '实际大小'], ['zoomIn', '放大'], ['zoomOut', '缩小'], ['togglefullscreen', '全屏']]) },
+    ...macMenus.window,
   ]));
   tray?.setContextMenu(Menu.buildFromTemplate([{ label: t('打开工坊'), click: showWindow }, dataItem, { type: 'separator' }, quitItem]));
   tray?.setToolTip(window?.isVisible() ? 'NAI Atelier' : t('NAI Atelier · 后台运行'));
@@ -124,7 +132,7 @@ async function startBackend() {
         const preferences = await getStoragePreferences(workspace);
         await launchStorageSwitch({ ...message.request, anchor: storageAnchor, source: message.request.kind === 'data' ? dataRoot : preferences.cacheDir || join(workspace, 'local-cache'),
           workspace, mode: 'desktop', runtime: runtimeRoot, installRoot, currentCacheDir: preferences.cacheDir || '', currentResourceLayout: preferences.resourceLayout, waitPids: [process.pid, child.pid],
-          restart: { command: process.execPath, args: app.isPackaged ? [] : process.argv.slice(1), cwd: dirname(process.execPath), env: { ...process.env } } }, join(runtimeRoot, 'node.exe'), join(runtimeRoot, 'scripts', 'storage-locations.mjs'));
+          restart: { command: process.execPath, args: app.isPackaged ? [] : process.argv.slice(1), cwd: dirname(process.execPath), env: { ...process.env } } }, runtimeNodePath(runtimeRoot), join(runtimeRoot, 'scripts', 'storage-locations.mjs'));
         await stopForUpdate();
         await new Promise(done => log.end(done));
         app.quit();
@@ -257,7 +265,8 @@ async function stopForUpdate() {
 }
 
 async function startUpdates() {
-  if (!app.isPackaged) return;
+  // macOS 版没有发布者签名，自动更新器无法替换应用；设置页改为检查 GitHub 发行版并引导手动下载。
+  if (!app.isPackaged || IS_MAC) return;
   const preferenceFile = join(dataRoot, 'update-preferences.json');
   const preference = await readFile(preferenceFile, 'utf8').then(JSON.parse).catch(() => ({}));
   const { autoUpdater } = createRequire(import.meta.url)('./updater.cjs');

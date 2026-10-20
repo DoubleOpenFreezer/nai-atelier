@@ -1,10 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { dirname, join, relative, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { builtinModules } from 'node:module';
 import { createWorkspace, removeWorkspace } from '../support/workspace.mjs';
-import { RUNTIME_FILES, DESKTOP_FILES, DESKTOP_SCRIPT_FILES, copyDesktopScripts, RUNTIME_DEPENDENCIES, createRuntimePackage, sameDependencies, isPrivateDistributionPath, isDistributionMetadata, pruneRuntimeMetadata } from '../../scripts/build-desktop.mjs';
+import { DESKTOP_TARGETS, desktopTarget, RUNTIME_FILES, DESKTOP_FILES, DESKTOP_SCRIPT_FILES, copyDesktopScripts, RUNTIME_DEPENDENCIES, createRuntimePackage, sameDependencies, isPrivateDistributionPath, isDistributionMetadata, pruneRuntimeMetadata } from '../../scripts/build-desktop.mjs';
 import builder from '../../desktop/builder.config.mjs';
 
 test('分发边界识别数据、缓存、词库、环境变量与测试资料，公开运行文件均不落保护区', async () => {
@@ -56,6 +57,8 @@ test('Electron 主进程的脚本依赖同时放入 app 包，迁移后台使用
     await copyDesktopScripts(root);
     assert.deepEqual(DESKTOP_SCRIPT_FILES, ['desktop-runtime.mjs', 'storage-locations.mjs', 'export-locations.mjs']);
     for (const name of DESKTOP_SCRIPT_FILES) assert.ok((await readFile(join(root, 'scripts', name), 'utf8')).length > 0);
+    // 打包白名单必须放行主进程导入的每个脚本，否则 app.asar 缺文件，启动即报错。
+    for (const name of DESKTOP_SCRIPT_FILES) assert.ok(builder.files.includes(`scripts/${name}`), `builder.files 缺少 scripts/${name}`);
     const source = await readFile(new URL('../../desktop/main.mjs', import.meta.url), 'utf8');
     assert.match(source, /join\(runtimeRoot, 'scripts', 'storage-locations\.mjs'\)/);
   } finally { removeWorkspace(root); }
@@ -93,4 +96,35 @@ test('安装向导允许选择目录、保留用户数据，原生检查在解�
   assert.match(installer, /!macro customInit[\s\S]*Call AtelierCheckRuntime[\s\S]*SetErrorLevel 2/);
   assert.match(installer, /ExecShell "open" "https:\/\/learn\.microsoft\.com\//);
   assert.match(installer, /!insertmacro AtelierUnregisterPixiv/);
+});
+
+test('构建目标按本机平台选择官方 Node 包，macOS 版临时签名且不启用 Hardened Runtime', () => {
+  assert.deepEqual(Object.keys(DESKTOP_TARGETS), ['win32-x64', 'darwin-arm64', 'darwin-x64']);
+  assert.deepEqual(desktopTarget('win32', 'x64'), { os: 'win32', arch: 'x64', ...DESKTOP_TARGETS['win32-x64'] });
+  assert.equal(desktopTarget('darwin', 'arm64').node, 'darwin-arm64');
+  assert.equal(desktopTarget('darwin', 'arm64').archive, 'tar.gz');
+  assert.equal(desktopTarget('darwin', 'arm64').nodeFile, 'node');
+  assert.throws(() => desktopTarget('linux', 'x64'), /不支持 linux-x64/);
+  assert.deepEqual(builder.mac.target, [{ target: 'dmg', arch: ['arm64'] }]);
+  assert.equal(builder.mac.identity, '-');
+  assert.equal(builder.mac.hardenedRuntime, false);
+});
+
+test('公开运行脚本的相对导入全部列入分发清单，安装版后台不缺模块', async () => {
+  const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
+  // runtime/package.json 由打包脚本生成；SillyTavern 扩展的上级导入在酒馆内解析。
+  const generated = new Set(['package.json']);
+  const queue = RUNTIME_FILES.filter(name => /\.m?js$/.test(name) && !name.startsWith('sillytavern-extension/')), seen = new Set();
+  while (queue.length) {
+    const file = queue.pop();
+    if (seen.has(file)) continue;
+    seen.add(file);
+    const source = await readFile(join(root, file), 'utf8');
+    for (const [, specifier] of source.matchAll(/(?:from\s*|import\s*\(\s*)['"](\.{1,2}\/[^'"]+)['"]/g)) {
+      const target = relative(root, resolve(dirname(join(root, file)), specifier)).replaceAll('\\', '/');
+      if (generated.has(target)) continue;
+      assert.ok(RUNTIME_FILES.includes(target), `${file} 导入的 ${target} 未列入 RUNTIME_FILES`);
+      if (/\.m?js$/.test(target)) queue.push(target);
+    }
+  }
 });

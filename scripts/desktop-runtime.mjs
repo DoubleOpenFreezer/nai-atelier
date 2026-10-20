@@ -3,6 +3,8 @@ import { createServer } from 'node:net';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 
 export const DESKTOP_APP_ID = 'com.naiatelier.desktop';
+/** 内置 Node 的文件名随平台不同：Windows 为 node.exe，macOS 为无扩展名的 node。 */
+export const runtimeNodePath = (runtimeRoot, os = process.platform) => join(runtimeRoot, os === 'win32' ? 'node.exe' : 'node');
 
 export async function pickDesktopDirectory(dialog, window, initialPath = '') {
   if (!window || window.isDestroyed()) throw new Error('工坊窗口已关闭，请重新打开后选择文件夹');
@@ -33,7 +35,7 @@ export async function prepareDesktopWorkspace(runtimeRoot, dataRoot, installRoot
       ? await readFile(join(workspace, 'atelier-storage-workspace.json'), 'utf8').then(JSON.parse).catch(() => null) : null;
     if (entries.length && storageMarker?.app !== 'nai-atelier') throw new Error('数据目录已有未识别的工作区，已保留原文件');
   }
-  await access(join(runtime, 'node.exe'));
+  await access(runtimeNodePath(runtime));
   await access(join(runtime, 'dist', '_worker.js'));
   const pkg = JSON.parse(await readFile(join(runtime, 'package.json'), 'utf8'));
   await mkdir(workspace, { recursive: true });
@@ -66,7 +68,7 @@ export async function findDesktopPorts({ preferred = 3000, available = isPortFre
 export function desktopServerOptions({ runtimeRoot, workspace, executable, ports, documents, downloads, storageAnchor, dataRoot, installRoot, env = process.env }) {
   const inherited = Object.fromEntries(Object.entries(env).filter(([key]) => !/^NAI_|^NODE_OPTIONS$|^ELECTRON_RUN_AS_NODE$/i.test(key)));
   return {
-    command: join(runtimeRoot, 'node.exe'),
+    command: runtimeNodePath(runtimeRoot),
     args: ['--no-warnings', join(runtimeRoot, 'scripts', 'local-server.mjs')],
     options: {
       cwd: workspace, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe', 'ipc'],

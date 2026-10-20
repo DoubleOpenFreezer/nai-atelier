@@ -6,6 +6,8 @@
 
 ## 2026-10-21
 
+- **Claude Code (Opus 5.5)**：按用户要求制作 macOS 版本：`build-desktop.mjs` 按本机平台选择目标（下载校验官方 darwin Node、保留对应 ONNX、生成 icns、`--no-bin-links` 安装运行依赖、在 iCloud 目录外组装签名后回拷 DMG），桌面壳补 macOS 应用菜单／⌘Q／菜单栏图标并关闭应用内更新桥，`setAppUserModelId` 限 Windows；修复打包白名单遗漏 `storage-locations.mjs`／`export-locations.mjs` 与运行清单遗漏 `agent-errors.mjs`。新增 macOS 文档与回归测试，版本 1.100.0→1.101.0；桌面定向测试 14 项、多语言测试 22 项通过，Apple 芯片 DMG 实机自检渲染主界面。
+
 - **DeepSeek Harness (deepseek-flash)**：修复实验室与风格串编辑页顶栏收起后三分区与顶栏的连续底板丢失：收起时保持顶栏节点身份、只切可见性（避免 React 重建子树），LabEditorTabs 额外观察正文尺寸在就绪后重测；相关顶栏、三分区与外观覆盖 57 项定向测试通过。
 
 - **DeepSeek Harness (deepseek-flash)**：为所有主页面顶栏新增可收起把手：展开时把手位于顶栏上边中央、完全在顶栏内不跨界（悬停／聚焦显示「收起」），收起后留在页面顶边中央并变为向下三角（显示「展开」），不移动顶栏；收起状态跨页面与刷新保留，`--workspace-chrome-height` 同步归零。新增 `services/workspaceTopbar.ts` 与 WorkspaceChrome 折叠回归，补四语词条。相关 225 项定向测试通过。

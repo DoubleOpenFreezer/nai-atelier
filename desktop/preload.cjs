@@ -13,7 +13,8 @@ contextBridge.exposeInMainWorld('atelierDesktop', {
   quit: () => ipcRenderer.invoke('atelier-desktop', 'quit'),
   onStatus: callback => ipcRenderer.on('atelier-status', (_event, status) => callback(status)),
 });
-contextBridge.exposeInMainWorld('atelierUpdate', {
+// macOS 版不提供应用内安装，缺少此桥时设置页回退为检查发行版与打开下载页。
+if (process.platform !== 'darwin') contextBridge.exposeInMainWorld('atelierUpdate', {
   status: () => ipcRenderer.invoke('atelier-update', 'status'),
   check: () => ipcRenderer.invoke('atelier-update', 'check'),
   download: () => ipcRenderer.invoke('atelier-update', 'download'),
