@@ -369,7 +369,7 @@ export const contentSnapshotOf = (record: RollRecordLike | null | undefined, sav
   };
 };
 /* 白名单读取：只接受 format/version 正确的记录；字段缺失按「未提供」处理，不猜、不清空 */
-export const contentRead = (raw: Json) => {
+export const contentRead = (raw: Json): ContentRead => {
   const warnings: Json[] = [];
   if (!raw || typeof raw !== 'object') return { ok: false, reason: 'empty', warnings: ['记录里没有内容快照'], roles: [], global: {}, anyRole: false, anyGlobal: false };
   const format = String(raw.format || '');

@@ -260,7 +260,7 @@ export type PromptAgentAction =
   | { kind: 'navigate_view'; patch: { view: 'list' | 'characters' | 'prompts' | 'library' | 'aitag' | 'inspiration' | 'history' | 'playground'; id?: string } }
   | { kind: 'request_project_action'; patch: { action: string; resourceId?: string; title: string; consequence: string; payload?: Record<string, unknown>; requestId?: string } };
 
-export type ChainType = 'style' | 'character' | 'appearance' | 'wardrobe' | 'pose' | 'expression' | 'scene' | 'camera';
+export type ChainType = 'style' | 'character' | 'appearance' | 'wardrobe' | 'pose' | 'expression' | 'scene' | 'camera' | 'preset';
 
 // Flattened Chain Structure (No more separate versions table)
 export interface PromptChain {

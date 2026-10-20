@@ -20,6 +20,8 @@ import {
 } from './services/appearancePreferences';
 import { PromptChain, User, Inspiration, ChainType, NAIParams } from './types';
 import { applyContentRollToParams, undoContentRollApply, type ContentRollApplyPlan } from './services/contentRollApply';
+import { contentSnapshotOf } from './services/contentRoll';
+import { ContentRollLibrary } from './components/ContentRollLibrary';
 import { createUuid } from './services/id';
 import type { HistoryBrowseQuery } from './services/historyBrowse';
 
@@ -37,7 +39,7 @@ const PromptLibraryHub = lazy(() => import('./components/PromptLibrary').then(mo
 const ContentRollWorkspace = lazy(() => import('./components/ContentRollWorkspace').then(module => ({ default: module.ContentRollWorkspace })));
 const StyleRollPage = lazy(() => import('./components/StyleRollPage').then(module => ({ default: module.StyleRollPage })));
 
-type ViewState = 'list' | 'characters' | 'prompts' | 'edit' | 'library' | 'aitag' | 'danbooru' | 'pixiv' | 'codex' | 'inspiration' | 'history' | 'footprint' | 'playground' | 'roll' | 'content-roll';
+type ViewState = 'list' | 'characters' | 'prompts' | 'edit' | 'library' | 'aitag' | 'danbooru' | 'pixiv' | 'codex' | 'inspiration' | 'history' | 'footprint' | 'playground' | 'roll' | 'content-roll' | 'content-roll-library';
 type KeepAliveView = Exclude<ViewState, 'edit'>;
 
 // 手机端实验室返回箭头的落点：只记录内容页，编辑器/实验室本身不作为返回落点。
@@ -61,6 +63,8 @@ const App = () => {
   const [view, setView] = useState<ViewState>('list');
   /* 一键 Roll 填入的撤销快照（只保留最近一次；刷新即失效） */
   const [contentRollUndo, setContentRollUndo] = useState<{ params: NAIParams; createdRoleId: string } | null>(null);
+  /* 从内容库「载入到一键 Roll」带过来的那一组（工作区挂载时消费一次） */
+  const [contentRollSeed, setContentRollSeed] = useState<{ picks: Record<string, unknown>; seed: string; seeds: Record<string, string> } | null>(null);
   const viewSessionRef = useRef({ view });
   if (viewSessionRef.current.view !== view) viewSessionRef.current = { view };
   useEffect(() => { window.dispatchEvent(new Event('nai-workspace-changed')); }, [view]);
@@ -542,6 +546,29 @@ const App = () => {
     await handleUpdatePlaygroundChain('playground', { params: result.params });
     return true;
   };
+  /* 存为 Roll 内容：字段白名单在 contentSnapshotOf 里，这里只负责落库（type='preset'） */
+  const handleSaveContentRoll = async (name: string, picks: Record<string, unknown>, seed: string, seeds: Record<string, string>) => {
+    const snapshot = contentSnapshotOf({ picks, seed, seeds, checks: {}, locked: {} } as never, new Date().toISOString());
+    if (!snapshot) throw new Error(t('这一组没有可保存的六类内容'));
+    const created = await createLibraryChain(name, t('一键 Roll 存下的六类内容组合'), 'preset', {
+      params: { _rollContentSnapshot: snapshot } as unknown as NAIParams,
+    });
+    return created;
+  };
+  const handleLoadContentRoll = (chain: PromptChain) => {
+    const raw = (chain.params as { _rollContentSnapshot?: { roles?: Array<{ sections?: Record<string, string>; meta?: Record<string, unknown> }>; global?: Record<string, { text?: string }> } } | undefined)?._rollContentSnapshot;
+    const role = raw?.roles?.[0];
+    const picks: Record<string, unknown> = {};
+    for (const [kind, text] of Object.entries(role?.sections || {})) {
+      picks[kind] = { kind, filled: true, text, name: String((role?.meta as Record<string, { entryName?: string }> | undefined)?.[kind]?.entryName || ''), constraints: { notes: '' } };
+    }
+    for (const [kind, item] of Object.entries(raw?.global || {})) {
+      if (item && item.text) picks[kind] = { kind, filled: true, text: item.text, name: '', constraints: { notes: '' } };
+    }
+    setContentRollSeed({ picks, seed: t('内容库'), seeds: {} });
+    setView('content-roll');
+  };
+
   const handleUndoContentRoll = async (): Promise<boolean> => {
     if (!contentRollUndo) return false;
     const restored = undoContentRollApply(playgroundChain?.params, contentRollUndo.params, contentRollUndo.createdRoleId);
@@ -823,6 +850,15 @@ const App = () => {
             setLastChainFetch(0);
             return saved;
           }} />;
+      case 'content-roll-library':
+        return <ContentRollLibrary
+          active={view === 'content-roll-library'}
+          chains={chains}
+          notify={notify}
+          onLoad={handleLoadContentRoll}
+          onRename={async (chain, name) => { await handleUpdateChain(chain.id, { name }); }}
+          onDelete={async chain => { await handleDelete(chain.id); }}
+        />;
       case 'content-roll':
         return <ContentRollWorkspace
           active={view === 'content-roll'}
@@ -833,6 +869,9 @@ const App = () => {
           canUndo={!!contentRollUndo}
           onApplyRoll={handleApplyContentRoll}
           onUndoApply={handleUndoContentRoll}
+          onSaveRoll={handleSaveContentRoll}
+          seedRecord={contentRollSeed}
+          onSeedConsumed={() => setContentRollSeed(null)}
         />;
       case 'playground':
         if (!playgroundChain) return <div>Loading...</div>;

@@ -23,6 +23,11 @@ interface ContentRollWorkspaceProps {
   onUndoApply?: () => Promise<boolean>;
   /** 是否有可撤销的填入 */
   canUndo?: boolean;
+  /** 存为 Roll 内容（App 负责按白名单构造快照并落库），返回新记录 id */
+  onSaveRoll?: (name: string, picks: Record<string, RollRow>, seed: string, seeds: Record<string, string>) => Promise<string>;
+  /** 从内容库「载入到一键 Roll」带过来的一组（消费一次） */
+  seedRecord?: { picks: Record<string, unknown>; seed: string; seeds: Record<string, string> } | null;
+  onSeedConsumed?: () => void;
 }
 
 /** 一次抽取的结果（会话内保留最近 20 组；只存派生数据，不存条目对象）。 */
@@ -63,7 +68,7 @@ const shortText = (value: string, max = 48): string => {
  * 全部随机与证据逻辑在 services/contentRoll（快照/约束）与 services/contentRollDraw（池子/随机流），
  * 本组件只负责界面与本地草稿，不写库、不触发生成。
  */
-export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ active, chains, notify, playgroundRoles = [], playgroundParams = null, onApplyRoll, onUndoApply, canUndo = false }) => {
+export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ active, chains, notify, playgroundRoles = [], playgroundParams = null, onApplyRoll, onUndoApply, canUndo = false, onSaveRoll, seedRecord = null, onSeedConsumed }) => {
   const [initial] = useState(readStore);
   const [history, setHistory] = useState<RollRecord[]>(initial.history);
   const [cursor, setCursor] = useState(initial.cursor);
@@ -74,6 +79,10 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ acti
   const [targetId, setTargetId] = useState<string>('new');
   const [confirming, setConfirming] = useState(false);
   const [applying, setApplying] = useState(false);
+  const [saveOpen, setSaveOpen] = useState(false);
+  const [saveName, setSaveName] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [savedId, setSavedId] = useState('');
 
   const current = cursor >= 0 ? history[cursor] : null;
 
@@ -86,6 +95,20 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ acti
       /* localStorage 不可用时不影响使用 */
     }
   }, [active, history, cursor]);
+
+  /* 从内容库载入的一组：转成一条历史记录（草稿只在本机） */
+  useEffect(() => {
+    if (!seedRecord) return;
+    const picks = seedRecord.picks as Record<string, RollRow>;
+    setHistory(previous => {
+      const next = [...previous, { seed: seedRecord.seed, seeds: seedRecord.seeds || {}, picks, locked: {}, checks: {}, at: Date.now() }].slice(-HISTORY_LIMIT);
+      setCursor(next.length - 1);
+      return next;
+    });
+    setSaveName(seedRecord.seed);
+    notify(t('已把内容库的这一组载入为当前一组；点「填入实验室」继续确认'));
+    onSeedConsumed?.();
+  }, [seedRecord, notify, onSeedConsumed]);
 
   const commit = useCallback((record: RollRecord) => {
     setHistory(previous => {
@@ -189,6 +212,23 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ acti
     }
   };
 
+  const doSave = async () => {
+    if (!current || !onSaveRoll) return;
+    const name = saveName.trim();
+    if (!name) { notify(t('先给这条记录起个名字'), 'error'); return; }
+    setSaving(true);
+    try {
+      const id = await onSaveRoll(name, current.picks, current.seed, current.seeds);
+      setSavedId(String(id || ''));
+      setSaveOpen(false);
+      notify(t('已存为 Roll 内容「{0}」（六类内容与约束，不含画师风格与生图参数）', [name]));
+    } catch (error) {
+      notify(t('保存失败：{0}', [String((error as Error)?.message || error)]), 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const rows = KINDS.map(kind => ({ kind, meta: META[kind], row: current?.picks[kind] || null }));
 
   return (
@@ -273,6 +313,39 @@ export const ContentRollWorkspace: React.FC<ContentRollWorkspaceProps> = ({ acti
             );
           })}
         </section>
+
+        {current && onSaveRoll ? (
+          <section className="rounded-2xl border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-900" data-content-roll-save="true">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="text-xs font-semibold text-gray-700 dark:text-gray-200">{t('存为 Roll 内容')}</span>
+              <span className="text-[11px] text-gray-400">{savedId ? t('上次保存：{0}', [savedId.slice(0, 12)]) : ''}</span>
+            </div>
+            {saveOpen ? (
+              <div className="mt-2">
+                <input autoFocus value={saveName} maxLength={80} disabled={saving}
+                  aria-label={t('给这条记录起名')} onChange={event => setSaveName(event.target.value)}
+                  onKeyDown={event => { if (event.key === 'Enter') void doSave(); else if (event.key === 'Escape') setSaveOpen(false); }}
+                  className="h-8 w-full rounded-lg border border-gray-200 px-2 text-xs dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100" />
+                <p className="mt-1 text-[11px] leading-4 text-gray-400">
+                  {t('只保存六类内容与它们自己的约束，不含画师串、风格负面与生图参数。')}
+                </p>
+                <div className="mt-2 flex items-center gap-2">
+                  <button type="button" onClick={() => void doSave()} disabled={saving}
+                    className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50">
+                    {saving ? t('保存中…') : t('保存')}
+                  </button>
+                  <button type="button" onClick={() => setSaveOpen(false)}
+                    className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-600 dark:border-gray-700 dark:text-gray-300">{t('取消')}</button>
+                </div>
+              </div>
+            ) : (
+              <button type="button" onClick={() => { setSaveName(saveName || t('Roll 内容 {0}', [new Date().toLocaleString()])); setSaveOpen(true); }}
+                className="mt-2 rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-600 dark:border-gray-700 dark:text-gray-300">
+                {t('存为 Roll 内容…')}
+              </button>
+            )}
+          </section>
+        ) : null}
 
         {current ? (
           <section className="rounded-2xl border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-900" data-content-roll-apply="true">
