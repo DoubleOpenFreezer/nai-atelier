@@ -41,6 +41,8 @@ interface PromptAgentPanelProps {
   canUndo: boolean;
   tagAssistEnabled: boolean;
   splitPromptFields?: boolean;
+  /** 自定义角色工作台用全局人物栏定义角色本身；其他界面的人物内容写在角色槽 */
+  globalPersonSections?: boolean;
 }
 
 type ToolProgress = { id: string; name: string; state: 'running' | 'done' | 'error' | 'interrupted'; args?: unknown; result?: unknown };
@@ -701,7 +703,7 @@ export const PromptAgentPanel: React.FC<PromptAgentPanelProps> = props => {
         imageLayout: imageDisplay.layout, imageColumns: imageDisplay.columns, mobileCache: getMobileCacheStats(), novelAiKeyConfigured: Boolean(props.apiKey),
         timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         autoShowGenerated: displayPreferences.autoShowGenerated,
-        tagAssistEnabled: props.tagAssistEnabled, splitPromptFields: props.splitPromptFields ?? false,
+        tagAssistEnabled: props.tagAssistEnabled, splitPromptFields: props.splitPromptFields ?? false, globalPersonSections: props.globalPersonSections === true,
       } } }, event => {
         if (event.type === 'error' || event.type === 'done' && event.status && event.status !== 'completed') interruptGeneration();
         if (!uiActiveRef.current) return;

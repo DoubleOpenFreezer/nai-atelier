@@ -2,12 +2,15 @@ import { t, useLanguage } from '../../services/i18n';
 import React, { useId, useRef } from 'react';
 import { LabPageLayout } from '../../services/appearancePreferences';
 import { mergePromptSections, resolvePromptSections } from '../../services/labWorkspace';
+import { PERSON_SECTION_KEYS } from '../../services/promptSections.mjs';
 import { LabModuleSection } from '../LabModuleSection';
 import { TagAutocompleteTextarea } from '../TagAutocompleteTextarea';
 import { PromptLibraryPicker } from '../PromptLibraryPicker';
 import { PresetSection, PresetSource, PresetSourceBadges, PromptCopyButton } from './PresetSourceBadges';
 import type { PromptLibraryKind } from '../../services/promptAgent';
 import type { PromptSectionSource, PromptSections } from '../../types';
+
+const isPersonKey = (key: string) => (PERSON_SECTION_KEYS as string[]).includes(key);
 
 /** 文本型栏位（排除只用于追溯的 sectionMeta） */
 type SectionKey = Exclude<keyof PromptSections, 'sectionMeta' | 'sectionNegatives'>;
@@ -32,9 +35,12 @@ interface PromptFieldProps {
     onCopy: (value: string, label: string) => void;
     /** 该栏现有来源（条目名），显示在标签旁做追溯 */
     sourceName?: string;
+    /** 旧串遗留的全局人物栏：说明人物内容已改写在角色里，并提供移到角色 */
+    legacyNotice?: string;
+    onMoveToCharacter?: () => void;
 }
 
-const PromptField: React.FC<PromptFieldProps> = ({ label, value, placeholder, library, disabled, tagAssistEnabled, onChange, onCopy, sourceName }) => {
+const PromptField: React.FC<PromptFieldProps> = ({ label, value, placeholder, library, disabled, tagAssistEnabled, onChange, onCopy, sourceName, legacyNotice, onMoveToCharacter }) => {
     const id = useId();
     const clearSlot = useRef<HTMLSpanElement>(null);
     return <div role="group" aria-label={t(label)} className="flex min-w-0 flex-col gap-2">
@@ -44,6 +50,10 @@ const PromptField: React.FC<PromptFieldProps> = ({ label, value, placeholder, li
                 {sourceName ? <span className="ml-1 text-micro font-normal text-gray-400">{t('来源：{0}', [sourceName])}</span> : null}
             </label>
             <div className="flex shrink-0 items-center gap-1">
+                {onMoveToCharacter && <button type="button" disabled={disabled} onClick={onMoveToCharacter}
+                    className="rounded border border-indigo-200 px-2 py-1 text-meta font-semibold text-indigo-600 hover:bg-indigo-50 disabled:opacity-40 dark:border-indigo-800 dark:text-indigo-300 dark:hover:bg-indigo-950/40">
+                    {t('移到角色')}
+                </button>}
                 {library && <PromptLibraryPicker kind={library} disabled={disabled} targetKind={library} current={value}
                     onPick={picked => onChange(picked, { source: 'library' })}
                     onPickEntry={result => onChange(result.prompt, { entryId: result.entryId, entryName: result.entryName, source: 'library', mode: result.mode })} />}
@@ -51,6 +61,7 @@ const PromptField: React.FC<PromptFieldProps> = ({ label, value, placeholder, li
                 <PromptCopyButton onClick={() => onCopy(value, label)} title={t('复制{0}', [t(label)])} />
             </div>
         </div>
+        {legacyNotice && <p className="text-meta text-amber-700 dark:text-amber-300">{t(legacyNotice)}</p>}
         <TagAutocompleteTextarea id={id} aria-label={t(label)} clearActionSlotRef={clearSlot}
             tagAssistEnabled={tagAssistEnabled} disabled={disabled} value={value} onValueChange={onChange}
             placeholder={t(placeholder)}
@@ -77,12 +88,16 @@ export interface ChainEditorPromptInputsProps {
     markChange: () => void;
     activeLabLayout: LabPageLayout;
     mobileEditorTab: 'global' | 'character' | 'params';
+    /** 自定义角色工作台的全局各栏共同定义角色，人物栏常驻；其他界面人物内容写在「角色」里 */
+    personSectionsInGlobal?: boolean;
+    /** 把旧串遗留的全局人物栏内容移到角色槽对应分栏 */
+    onMoveSectionToCharacter?: (key: 'appearance' | 'wardrobe' | 'pose') => void;
 }
 
 export const ChainEditorPromptInputs: React.FC<ChainEditorPromptInputsProps> = ({
     prompt, setPrompt, sections, setSections, supplementPrompt = '', setSupplementPrompt, onContentRollForGlobal,
     presetSources, tagAssistEnabled, canEdit, copyPromptToClipboard,
-    markPresetSectionModified, markChange, activeLabLayout, mobileEditorTab,
+    markPresetSectionModified, markChange, activeLabLayout, mobileEditorTab, personSectionsInGlobal = false, onMoveSectionToCharacter,
 }) => {
     useLanguage();
     const current = resolvePromptSections(sections, supplementPrompt);
@@ -118,11 +133,17 @@ export const ChainEditorPromptInputs: React.FC<ChainEditorPromptInputsProps> = (
                     tagAssistEnabled={tagAssistEnabled} onCopy={copyPromptToClipboard} onChange={value => {
                         setPrompt(value); markPresetSectionModified('base'); markChange();
                     }} />
-                {SECTION_FIELDS.map(field => <PromptField key={field.key} label={field.label} library={field.library}
-                    value={String(current[field.key] || '')} placeholder={field.placeholder} disabled={!canEdit}
-                    sourceName={current.sectionMeta?.[field.key]?.entryName}
-                    tagAssistEnabled={tagAssistEnabled} onCopy={copyPromptToClipboard}
-                    onChange={(value, source) => writeSection(field.key, value, source)} />)}
+                {/* 人物内容写在「角色」里；旧串遗留的全局人物栏仅在仍有内容时显示，可移到角色，不自动搬动 */}
+                {SECTION_FIELDS.filter(field => personSectionsInGlobal || !isPersonKey(field.key) || String(current[field.key] || '').trim()).map(field => {
+                    const legacy = !personSectionsInGlobal && isPersonKey(field.key);
+                    return <PromptField key={field.key} label={field.label} library={field.library}
+                        value={String(current[field.key] || '')} placeholder={field.placeholder} disabled={!canEdit}
+                        sourceName={current.sectionMeta?.[field.key]?.entryName}
+                        tagAssistEnabled={tagAssistEnabled} onCopy={copyPromptToClipboard}
+                        legacyNotice={legacy ? '人物内容现在写在「角色」里；这是旧内容，可移到角色' : undefined}
+                        onMoveToCharacter={legacy && onMoveSectionToCharacter ? () => onMoveSectionToCharacter(field.key as 'appearance' | 'wardrobe' | 'pose') : undefined}
+                        onChange={(value, source) => writeSection(field.key, value, source)} />;
+                })}
             </div>
         </section>
     </LabModuleSection>;

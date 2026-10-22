@@ -1441,13 +1441,57 @@ describe('统一工作台真实状态链路', () => {
   });
 });
 
+it('风格串全局只显示整图栏，人物内容在角色里；旧串遗留的人物栏可移到角色，不自动搬动', async () => {
+  setup();
+  await waitFor(() => expect(screen.getByRole('textbox', { name: '场景' })).toBeTruthy());
+  for (const name of ['场景', '镜头', '补充']) expect(screen.getByRole('textbox', { name })).toBeTruthy();
+  for (const name of ['人物', '服饰', '姿势']) expect(screen.queryByRole('textbox', { name })).toBeNull();
+  expect(screen.queryByRole('button', { name: '移到角色' })).toBeNull();
+});
+
+it('旧串的全局人物栏移到角色 1 对应分栏：追加不覆盖、来源与分类负面随栏转移、原栏清空隐藏', async () => {
+  const legacy: PromptChain = { ...chain, id: 'legacy-person', variableValues: { subject: 'red hair, forest' }, params: { ...chain.params,
+    _promptSections: { appearance: 'red hair', scene: 'forest', sectionMeta: { appearance: { source: 'library', entryName: '红发' } }, sectionNegatives: { appearance: 'blonde' } },
+    characters: [{ id: 'c1', prompt: '1girl', x: 0.3, y: 0.5, sections: { appearance: 'horns' } }] } };
+  setup(legacy);
+  await waitFor(() => expect((screen.getByRole('textbox', { name: '人物' }) as HTMLTextAreaElement).value).toBe('red hair'));
+  expect(screen.getByText('人物内容现在写在「角色」里；这是旧内容，可移到角色')).toBeTruthy();
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: '移到角色' })); });
+  await waitFor(() => expect(screen.queryByRole('textbox', { name: '人物' })).toBeNull());
+  expect((screen.getByRole('textbox', { name: '场景' }) as HTMLTextAreaElement).value).toBe('forest');
+  const moved = state.agent!.draft;
+  expect(moved.subjectPrompt).toBe('forest');
+  expect(moved.params.characters![0]).toMatchObject({ id: 'c1', prompt: '1girl', x: 0.3, sections: { appearance: 'horns, red hair' }, sectionNegatives: { appearance: 'blonde' } });
+  expect(moved.params._promptSections?.sectionMeta?.appearance).toBeUndefined();
+});
+
+it('自定义角色工作台的全局人物栏常驻：这些栏共同定义角色本身', async () => {
+  setup({ ...chain, id: 'custom-character', type: 'character' });
+  await waitFor(() => expect(screen.getByRole('textbox', { name: '人物' })).toBeTruthy());
+  for (const name of ['服饰', '姿势']) expect(screen.getByRole('textbox', { name })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: '移到角色' })).toBeNull();
+  await waitFor(() => expect(state.agent?.globalPersonSections).toBe(true));
+});
+
+it('Agent 按栏修改的草稿回到对应分栏，画师串与未改栏保持原样', async () => {
+  setup();
+  await waitFor(() => expect(state.agent?.draft.target?.mode).toBe('text-to-image'));
+  const snapshot = state.agent!.draft;
+  const sections = { appearance: 'red hair', wardrobe: '', pose: '', scene: 'beach at sunset', camera: 'close-up', extra: '', sectionMeta: { scene: { source: 'manual' as const }, camera: { source: 'manual' as const } } };
+  await act(async () => state.agent!.onFinalDraft({ ...snapshot, subjectPrompt: 'red hair, beach at sunset, close-up', params: { ...snapshot.params, _promptSections: sections } }));
+  const box = (name: string) => (screen.getByRole('textbox', { name }) as HTMLTextAreaElement).value;
+  expect(textPrompt().value).toBe('saved style');
+  expect([box('人物'), box('场景'), box('镜头'), box('补充')]).toEqual(['red hair', 'beach at sunset', 'close-up', '']);
+});
+
 it.each(['text-to-image', 'image-to-image', 'inpaint', 'outpaint'] as const)('Agent 绑定 %s 草稿，不改写其他模式', async mode => {
   const session = fallback(); session.activeMode = mode;
   for (const edit of ['image-to-image', 'inpaint', 'outpaint'] as const) session.edits[edit].prompt = 'draft-' + edit;
   saveLabWorkspaceSession(chain.id, session); setup();
   await waitFor(() => expect(state.agent?.draft.target?.mode).toBe(mode));
   const snapshot = state.agent!.draft;
-  expect(state.agent!.splitPromptFields).toBe(false);
+  // 文生图为「画师串 + 六栏」分栏界面；编辑模式由服务端按 target.mode 改用单一提示词。
+  expect(state.agent!.splitPromptFields).toBe(true);
   expect(snapshot.basePrompt).toBe(mode === 'text-to-image' ? 'saved style' : 'draft-' + mode);
   await act(async () => state.agent!.onFinalDraft({ ...snapshot, basePrompt: 'Agent changed' }));
   if (mode === 'text-to-image') expect(textPrompt().value).toBe('Agent changed');

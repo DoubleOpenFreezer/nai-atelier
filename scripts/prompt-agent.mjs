@@ -1,10 +1,11 @@
-import { AGENT_TOOL_GROUPS, agentOutputLimit, agentTokenUsage, agentStopInfo, createAgentRunBudget, boundAgentToolResult, compactAuditEntries, isProjectImagePath, localTimeInfo, publicAgentToolContent } from './agent-runtime.mjs';
+import { AGENT_TOOL_GROUPS, agentOutputLimit, agentTokenUsage, agentStopInfo, agentTruncationInfo, createAgentRunBudget, boundAgentToolResult, compactAuditEntries, isProjectImagePath, localTimeInfo, publicAgentToolContent } from './agent-runtime.mjs';
 import { humanizeAgentError } from './agent-errors.mjs';
 import { normalizeAgentGenerationResult, agentOperationError, validateGenerationCount, validateGenerationPlacement } from '../services/agentOperation.mjs';
 import { AgentLocalImages } from './agent-local-images.mjs';
 import { AgentUiBridge } from './agent-ui-bridge.mjs';
 import { createAgentPageTools, isAgentPageTool } from './agent-page-tools.mjs';
 import { applyAgentClientChanges, diffAgentClientDraft } from '../services/agentLabSync.mjs';
+import { CHARACTER_SECTION_FIELDS, PERSON_SECTION_KEYS, PROMPT_SECTION_FIELDS, PROMPT_SECTION_KEYS, mergePromptSectionText, resolvePromptSectionText, writePromptSections } from '../services/promptSections.mjs';
 import { agentConnectionEndpoint, normalizeAgentConnectionUrl } from '../services/agentConnection.mjs';
 import { Agent } from '@earendil-works/pi-agent-core';
 import { InMemoryCredentialStore, Type, createModels, createProvider, getSupportedThinkingLevels } from '@earendil-works/pi-ai';
@@ -706,12 +707,62 @@ const SAFE_VIOLATION = /\b(?:nsfw|nude|naked|nipples|pussy|penis|vagina|anus|gen
 const DIGIT_GENDER = /\b[1-9]\s*(?:girls?|boys?|others?)\b/i;
 const NUDE_TAGS = /\{?nude\}?|\{?completely naked\}?|\{?fully nude\}?|\{?naked\}?/i;
 const CLOTHING_TAGS = /\b(?:shirt|skirt|dress|pants|jacket|coat|uniform|bikini|swimsuit|lingerie|underwear|bra|panties| stockings|socks|shoes|boots|hat|gloves|scarf|vest|sweater|hoodie|blouse|kimono|cheongsam|sweater|tank top|shorts|jeans)\b/i;
-const validatePromptDraft = draft => {
+// 风格串文生图的全局提示词分为「画师串」(basePrompt) 与六个分栏，六栏合并值即 subjectPrompt；编辑模式只有单一提示词。
+const promptSectionsActive = (draft, clientSettings = {}) => clientSettings.splitPromptFields !== false && (draft?.target?.mode || 'text-to-image') === 'text-to-image';
+// 风格串与实验室的人物内容写在角色槽；只有自定义角色工作台用全局人物栏定义角色本身。
+const globalPersonSections = (clientSettings = {}) => clientSettings.globalPersonSections === true;
+/** 按界面名称返回全局提示词各栏的当前内容；人物栏不属于全局时，只列出旧串遗留且有内容的栏。 */
+const promptSectionView = (draft, clientSettings = {}) => {
+  const sections = resolvePromptSectionText(draft?.params?._promptSections, draft?.subjectPrompt);
+  const person = globalPersonSections(clientSettings);
+  const fields = PROMPT_SECTION_FIELDS.filter(field => person || !PERSON_SECTION_KEYS.includes(field.key) || sections[field.key].trim());
+  return Object.fromEntries([['basePrompt', { label: '画师串', value: text(draft?.basePrompt) }], ...fields.map(field => [field.key, {
+    label: field.label, value: sections[field.key], ...(!person && PERSON_SECTION_KEYS.includes(field.key) ? { legacy: true } : {}),
+  }])]);
+};
+/** 按界面名称返回各角色槽，供助手按 id 对应修改。 */
+const characterSlotView = characters => (Array.isArray(characters) ? characters : []).map(character => ({
+  id: character.id, name: character.name || '', enabled: character.enabled !== false, prompt: text(character.prompt), negativePrompt: text(character.negativePrompt),
+  sections: Object.fromEntries(CHARACTER_SECTION_FIELDS.map(field => [field.label, text(character.sections?.[field.key])])), x: character.x, y: character.y,
+}));
+/**
+ * 传入的是完整角色列表（未列出的角色移除）。每项按 id、无 id 时按同名或顺序对应原角色，继承未提及的字段、坐标与分栏，
+ * 不因只改正文就清掉分栏或坐标；分栏只改给出的栏，清空的栏一并丢弃来源与分类负面。
+ */
+const mergeAgentCharacters = (existing = [], entries = []) => {
+  const byId = new Map(existing.map(character => [character.id, character]));
+  const named = new Set(entries.map(entry => entry.id).filter(id => byId.has(id)));
+  const unnamed = existing.filter(character => !named.has(character.id));
+  const used = new Set();
+  return entries.map(entry => {
+    // 无 id 时：带名称只对应同名角色（名称不同即新增），不带名称按顺序对应。
+    const free = unnamed.filter(character => !used.has(character.id));
+    const base = entry.id ? byId.get(entry.id) : typeof entry.name === 'string' && entry.name.trim() ? free.find(character => character.name === entry.name) : free[0];
+    if (base) used.add(base.id);
+    const next = { ...(base || { prompt: '' }) };
+    for (const key of ['id', 'name', 'enabled', 'prompt', 'negativePrompt', 'x', 'y']) if (entry[key] !== undefined) next[key] = entry[key];
+    if (entry.sections && typeof entry.sections === 'object') {
+      const sections = { ...(base?.sections || {}) }, meta = { ...(base?.sectionMeta || {}) }, negatives = { ...(base?.sectionNegatives || {}) };
+      for (const { key } of CHARACTER_SECTION_FIELDS) {
+        // 原文未变的栏保留来源与分类负面，只有真正改写才记为手动。
+        if (typeof entry.sections[key] !== 'string' || entry.sections[key] === text(base?.sections?.[key])) continue;
+        sections[key] = entry.sections[key];
+        if (entry.sections[key].trim()) meta[key] = { source: 'manual' };
+        else { delete meta[key]; delete negatives[key]; }
+      }
+      Object.assign(next, { sections, sectionMeta: meta, sectionNegatives: negatives });
+    }
+    return next;
+  });
+};
+const validatePromptDraft = (draft, { sectionsActive = false } = {}) => {
   const issues = [];
   const chars = Array.isArray(draft?.params?.characters) ? draft.params.characters : [];
-  // J: 角色外貌 DNA 不得写进 subjectPrompt
-  if (draft?.subjectPrompt && DNA_IN_SUBJECT.test(draft.subjectPrompt)) {
-    issues.push('subjectPrompt 含有角色外貌 DNA 词（hair/eyes/breasts 等），违反 J：角色专属外貌应进 characters.prompt（set_characters），subjectPrompt 只放整图共用信息。');
+  // J: 角色外貌 DNA 不得写进 subjectPrompt；分栏界面的「人物」栏本就用于整图人物外貌，不计入。
+  const sections = sectionsActive ? resolvePromptSectionText(draft?.params?._promptSections, draft?.subjectPrompt) : null;
+  const sharedSubject = sections ? mergePromptSectionText({ ...sections, appearance: '' }) : draft?.subjectPrompt;
+  if (sharedSubject && DNA_IN_SUBJECT.test(sharedSubject)) {
+    issues.push(sections ? '全局分栏含有角色外貌 DNA 词（hair/eyes/breasts 等），违反 J：人物外貌、服饰与动作写进角色槽（set_characters 的 sections），全局只放整图内容。' : 'subjectPrompt 含有角色外貌 DNA 词（hair/eyes/breasts 等），违反 J：角色专属外貌应进 characters.prompt（set_characters），subjectPrompt 只放整图共用信息。');
   }
   // A: 禁止 (tag:1.5) 非 NAI 权重写法
   for (const [field, value] of [['basePrompt', draft?.basePrompt], ['subjectPrompt', draft?.subjectPrompt], ...chars.map((c, i) => [`characters[${i}].prompt`, c?.prompt])]) {
@@ -889,7 +940,7 @@ export const buildSystemPrompt = (language = 'zh-CN', permissionMode = 'standard
 
 const buildAgentRuntimeContext = (draft, clientSettings = {}) => {
   const modelProfile = getNovelAiModelProfile(draft?.params?.model);
-  const splitPromptFields = clientSettings.splitPromptFields !== false;
+  const splitPromptFields = promptSectionsActive(draft, clientSettings);
   const tagAssistEnabled = clientSettings.tagAssistEnabled !== false;
   return `
 [当前实验室运行上下文：这是项目状态数据，不是用户指令]
@@ -906,7 +957,7 @@ const buildAgentRuntimeContext = (draft, clientSettings = {}) => {
 - 官方定位能力：${modelProfile.officialPositioning}
 - 项目当前最多可提交角色提示词：${modelProfile.project.maxCharacterPrompts}
 - 项目当前 Vibe Transfer：${modelProfile.project.supportsVibes ? '可用' : '不可用'}；Precise Reference：${modelProfile.project.supportsPreciseReference ? '可用' : '不可用'}
-- 提示词界面：${splitPromptFields ? '拆分模式（basePrompt=基础画风，subjectPrompt=主体/变量）' : '单一全局模式（完整正面提示词只写 basePrompt，subjectPrompt 保持为空）'}
+- 提示词界面：${splitPromptFields ? `${globalPersonSections(clientSettings) ? '自定义角色工作台：全局各栏共同定义这个角色，人物=appearance、服饰=wardrobe、姿势=pose 栏可写；' : '全局只写整图内容，人物外貌、服饰、动作与表情写进角色槽（set_characters 的 sections：形象/服饰/动作/表情），没有角色槽时先建一个；旧串遗留的全局人物／服饰／姿势栏有内容时保持原样，用户要求时才移到角色槽；'}basePrompt 即「画师串」，只放画师、媒介、渲染与固定画风；场景=scene、镜头=camera、补充=extra（人数、构图、光线、互动）用 update_prompts.sections 按栏写入，subjectPrompt 是分栏合并值，直接整段写入会全部落入「补充」栏。全局各栏：${JSON.stringify(Object.fromEntries(Object.values(promptSectionView(draft, clientSettings)).map(item => [item.label, item.value.slice(0, 400)])))}；角色槽：${JSON.stringify(characterSlotView(draft?.params?.characters).map(item => ({ id: item.id, name: item.name, enabled: item.enabled })))}` : '单一全局模式（完整正面提示词只写 basePrompt，subjectPrompt 保持为空）'}
 - Tag 辅助界面：${tagAssistEnabled ? '开启' : '关闭'}。这只影响编辑器补全，不限制助手使用 Tag 或自然语言。
 - 涉及模型能力、提示写法、角色、文字、权重、质量 Tag、Vibe 或参考图时，先调用 search_novelai_docs；需要完整事实时再调用 read_novelai_doc。`;
 };
@@ -3116,8 +3167,10 @@ export class PromptAgentService {
             pendingFields,
             ...(pageDraft ? { pageState: { target: pageDraft.target, model: pageDraft.params?.model, promptLength: text(pageDraft.basePrompt).length, subjectLength: text(pageDraft.subjectPrompt).length, negativeLength: text(pageDraft.negativePrompt).length, characterCount: pageDraft.params?.characters?.length || 0 } } : {}),
             historicalReference: contextData.clientSettings.historicalReference || null,
+            ...(promptSectionsActive(draft, contextData.clientSettings) ? { promptSections: promptSectionView(draft, contextData.clientSettings) } : {}),
+            characterSlots: characterSlotView(draft.params?.characters),
             interface: {
-              splitPromptFields: contextData.clientSettings?.splitPromptFields !== false,
+              splitPromptFields: promptSectionsActive(draft, contextData.clientSettings),
               tagAssistEnabled: contextData.clientSettings?.tagAssistEnabled !== false,
             },
             modelProfile: getNovelAiModelProfile(draft.params?.model),
@@ -3587,19 +3640,38 @@ export class PromptAgentService {
         },
       },
       {
-        name: 'update_prompts', label: '修改全局提示词', description: '修改全局提示词。basePrompt仅用于画师、媒介、渲染与可复用画风；subjectPrompt仅用于整图主体、场景、动作和构图，不得存放角色专属外貌或角色提示词；negativePrompt是全局负面提示词。只传需要修改的字段。',
+        name: 'update_prompts', label: '修改全局提示词', description: '修改全局提示词，只传需要修改的字段。basePrompt 即界面的「画师串」，仅用于画师、媒介、渲染与可复用画风；negativePrompt 是全局负面提示词。全局只写整图内容，用 sections 按栏写入：scene=场景（地点、时间、氛围）、camera=镜头（景别、构图）、extra=补充（人数、构图、光线、互动）；只传要改的栏，未传的栏保持原样，传空字符串清空该栏。全局各栏不得存放角色专属提示词：人物外貌、服饰、动作与表情写进角色槽（set_characters）。appearance=人物、wardrobe=服饰、pose=姿势三栏只在自定义角色工作台可写，其他界面只能传空字符串清空旧串遗留内容（先移到角色槽）。subjectPrompt 是六栏合并值，不能与 sections 同时传；编辑模式或单输入框没有分栏，完整正面提示词写 basePrompt。',
         parameters: Type.Object({
           basePrompt: Type.Optional(Type.String()), subjectPrompt: Type.Optional(Type.String()), negativePrompt: Type.Optional(Type.String()),
+          sections: Type.Optional(Type.Object(Object.fromEntries(PROMPT_SECTION_FIELDS.map(field => [field.key, Type.Optional(Type.String({ description: field.label }))])))),
         }),
         execute: async (_id, args) => {
+          const sectionPatch = args.sections && typeof args.sections === 'object' ? Object.fromEntries(PROMPT_SECTION_KEYS.filter(key => typeof args.sections[key] === 'string').map(key => [key, text(args.sections[key])])) : {};
+          const sectionsActive = promptSectionsActive(draft, contextData.clientSettings);
+          if (Object.keys(sectionPatch).length) {
+            if (!sectionsActive) throw new Error('当前界面没有分栏（编辑模式或单一输入框），请把完整正面提示词写入 basePrompt');
+            if (typeof args.subjectPrompt === 'string') throw new Error('subjectPrompt 是六栏合并值，不能与 sections 同时传入；请只用 sections 按栏修改');
+            const person = PERSON_SECTION_KEYS.filter(key => sectionPatch[key]?.trim());
+            if (person.length && !globalPersonSections(contextData.clientSettings)) throw new Error('人物外貌、服饰与动作写进角色槽：请用 set_characters 的 sections（形象/服饰/动作/表情）；全局人物栏只能清空');
+          }
           const patch = {};
           for (const key of ['basePrompt', 'subjectPrompt', 'negativePrompt']) if (typeof args[key] === 'string') { draft[key] = text(args[key]); patch[key] = draft[key]; }
-          contextData.clientSettings.pageOverrides = (contextData.clientSettings.pageOverrides || []).filter(path => !Object.keys(patch).some(key => path === key));
+          if (sectionsActive && (Object.keys(sectionPatch).length || typeof args.subjectPrompt === 'string')) {
+            // 分栏与主体正文保持一致：整段主体与编辑器显示一样落入「补充」栏，不留下过期分栏。
+            const written = Object.keys(sectionPatch).length ? writePromptSections(draft.params?._promptSections, draft.subjectPrompt, sectionPatch) : writePromptSections(null, '', { extra: draft.subjectPrompt });
+            draft.params = { ...draft.params, _promptSections: written.sections };
+            draft.subjectPrompt = written.subject;
+            patch.subjectPrompt = written.subject;
+            if (Object.keys(sectionPatch).length) patch.sections = sectionPatch;
+          }
+          const changed = [...Object.keys(patch).filter(key => key !== 'sections'), ...(patch.sections || patch.subjectPrompt !== undefined ? ['params._promptSections'] : [])];
+          contextData.clientSettings.pageOverrides = (contextData.clientSettings.pageOverrides || []).filter(path => !changed.some(key => path === key || path.startsWith(`${key}.`)));
           emit({ type: 'action', action: { kind: 'update_prompts', patch } });
-          const issues = validatePromptDraft(draft);
+          const issues = validatePromptDraft(draft, { sectionsActive });
+          const fields = sectionsActive ? { promptSections: promptSectionView(draft, contextData.clientSettings) } : {};
           return issues.length
-            ? { content: jsonText({ ok: false, issues, hint: '请按上述违反点重写并再次调用本工具' }), details: { patch, issues } }
-            : { content: jsonText({ ok: true, applied: patch }), details: { kind: 'update_prompts', patch } };
+            ? { content: jsonText({ ok: false, issues, hint: '请按上述违反点重写并再次调用本工具', ...fields }), details: { patch, issues } }
+            : { content: jsonText({ ok: true, applied: patch, ...fields }), details: { kind: 'update_prompts', patch } };
         },
       },
       {
@@ -3611,15 +3683,17 @@ export class PromptAgentService {
         },
       },
       {
-        name: 'set_characters', label: '设置角色专属提示词', description: '设置一个或多个角色的专属提示词。用户要求填写角色提示词、人物外貌、服装、身份 Tag 或角色专属负面词时必须使用本工具，即使只有一个角色；每个角色使用英文 Tag，并可指定画面坐标。',
-        parameters: Type.Object({ characters: Type.Array(Type.Object({ id: Type.Optional(Type.String()), name: Type.Optional(Type.String()), enabled: Type.Optional(Type.Boolean()), prompt: Type.String(), negativePrompt: Type.Optional(Type.String()), x: Type.Optional(Type.Number()), y: Type.Optional(Type.Number()) })) }),
+        name: 'set_characters', label: '设置角色专属提示词', description: '设置角色槽。人物外貌、服饰、动作、表情、身份 Tag 与角色专属负面词都写在这里，即使只有一个角色；全局不放人物内容。characters 是完整角色列表，未列出的角色会被移除；修改已有角色请带 get_lab_state 返回的 id，未传的字段、坐标与分栏保留原值，只传 id 即原样保留。prompt 是角色正文（身份、人数性别等），sections 按栏写入：appearance=形象、wardrobe=服饰、pose=动作、expression=表情，只传要改的栏，传空字符串清空该栏。每个角色使用英文 Tag，并可指定画面坐标。',
+        parameters: Type.Object({ characters: Type.Array(Type.Object({ id: Type.Optional(Type.String()), name: Type.Optional(Type.String()), enabled: Type.Optional(Type.Boolean()), prompt: Type.Optional(Type.String()), negativePrompt: Type.Optional(Type.String()),
+          sections: Type.Optional(Type.Object(Object.fromEntries(CHARACTER_SECTION_FIELDS.map(field => [field.key, Type.Optional(Type.String({ description: field.label }))])))),
+          x: Type.Optional(Type.Number()), y: Type.Optional(Type.Number()) })) }),
         execute: async (_id, args) => {
-          draft.params.characters = sanitizeParams({ ...draft.params, characters: args.characters }).characters || [];
+          draft.params.characters = sanitizeParams({ ...draft.params, characters: mergeAgentCharacters(draft.params.characters, args.characters) }).characters || [];
           emit({ type: 'action', action: { kind: 'set_characters', patch: { characters: draft.params.characters } } });
-          const issues = validatePromptDraft(draft);
+          const issues = validatePromptDraft(draft, { sectionsActive: promptSectionsActive(draft, contextData.clientSettings) });
           return issues.length
-            ? { content: jsonText({ ok: false, issues, hint: '请按上述违反点重写并再次调用本工具' }), details: { characters: draft.params.characters, issues } }
-            : { content: jsonText({ ok: true, applied: { characters: draft.params.characters } }), details: { kind: 'set_characters', characters: draft.params.characters } };
+            ? { content: jsonText({ ok: false, issues, hint: '请按上述违反点重写并再次调用本工具', characterSlots: characterSlotView(draft.params.characters) }), details: { characters: draft.params.characters, issues } }
+            : { content: jsonText({ ok: true, applied: { characters: draft.params.characters }, characterSlots: characterSlotView(draft.params.characters) }), details: { kind: 'set_characters', characters: draft.params.characters } };
         },
       },
       {
@@ -4001,8 +4075,10 @@ export class PromptAgentService {
         taskStatus = 'failed';
         throw new Error(agent.state.errorMessage);
       }
-      taskStatus = combined.aborted || lastAssistant?.stopReason === 'aborted' ? 'aborted' : 'completed';
-      const stop = taskStatus === 'aborted' ? agentStopInfo(combined.reason || modelSignal?.reason) : null;
+      // 停在输出上限的回复可能只有思考、没有工具调用或答复；按未完成处理，草稿可用“继续”接续。
+      const truncated = !combined.aborted && lastAssistant?.stopReason === 'length';
+      taskStatus = combined.aborted || lastAssistant?.stopReason === 'aborted' ? 'aborted' : truncated ? 'failed' : 'completed';
+      const stop = taskStatus === 'aborted' ? agentStopInfo(combined.reason || modelSignal?.reason) : truncated ? agentTruncationInfo(lastAssistant.usage?.output) : null;
       runState.finalDraft = taskStatus === 'completed' || pendingDraft ? structuredClone(draft) : null;
       if (stop) {
         runState.stopReason = stop.code;

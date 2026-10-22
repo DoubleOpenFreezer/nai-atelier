@@ -3,6 +3,7 @@ import { normalizeMinimumContextArea } from './imageEdit';
 import { getDefaultStepsForModel } from './naiModels';
 import { clampCharacterCoordinate } from './characterPrompts';
 import { normalizeTransparentWeight } from './transparentBackground.mjs';
+import { mergePromptSectionText } from './promptSections.mjs';
 import { DEFAULT_GENERATION_MEMORY_PREFERENCES, type GenerationMemoryPreferences } from './appearancePreferences';
 
 const SESSION_PREFIX = 'nai-lab-workspace-v1:';
@@ -67,15 +68,8 @@ export const normalizePromptSections = (sections?: Partial<PromptSections> | nul
     return Object.values(next).some(value => String(value).trim()) ? next : undefined;
 };
 
-/** 四栏合并顺序固定为 人物 → 服饰 → 姿势 → 补充，非空栏用「, 」连接；合并值写入 variableValues.subject。 */
-export const mergePromptSections = (sections?: Partial<PromptSections> | null): string => [
-    sections?.appearance,
-    sections?.wardrobe,
-    sections?.pose,
-    sections?.scene,
-    sections?.camera,
-    sections?.extra,
-].map(value => String(value || '').trim()).filter(Boolean).join(', ');
+/** 六栏合并顺序固定为 人物 → 服饰 → 姿势 → 场景 → 镜头 → 补充，非空栏用「, 」连接；合并值写入 variableValues.subject。助手共用同一规则。 */
+export const mergePromptSections = (sections?: Partial<PromptSections> | null): string => mergePromptSectionText(sections);
 
 /** 助手或完整配置可能只改合并文本；无法对应时保留原文，不用旧分栏覆盖新内容。 */
 export const resolvePromptSections = (sections: PromptSections | null | undefined, subject: string): PromptSections => {

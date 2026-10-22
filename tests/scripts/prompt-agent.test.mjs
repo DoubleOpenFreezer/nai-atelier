@@ -1317,3 +1317,119 @@ test('助手仅在显式排队时传递队列位置，待确认恢复保留位�
   await tool.execute('t', {}); assert.equal(action.patch.placement, undefined);
   await assert.rejects(tool.execute('t', { placement: 'interrupt' }), error => error.code === 'invalid_generation_queue');
 }));
+
+const sectionDraft = (mode = 'text-to-image') => ({
+  basePrompt: 'artist:alpha, flat color', subjectPrompt: 'red hair, standing, forest', negativePrompt: 'lowres', modules: [],
+  params: { model: 'nai-diffusion-5-full', _promptSections: { appearance: 'red hair', pose: 'standing', scene: 'forest', sectionMeta: { scene: { source: 'library', entryName: '森林' } }, sectionNegatives: { scene: 'city' } } },
+  target: { chainId: 'c', mode, fingerprint: 'f' },
+});
+
+test('风格串分栏：助手按栏写入人物/服饰/姿势/场景/镜头/补充，画师串与其他栏保持原样', () => isolated(async service => {
+  const draft = sectionDraft(), events = [];
+  const tools = service.createTools(draft, { clientSettings: { splitPromptFields: true, pageOverrides: ['params._promptSections.scene', 'basePrompt'] } }, event => events.push(event));
+  const call = (name, args = {}) => tools.find(tool => tool.name === name).execute('t', args);
+  const state = JSON.parse((await call('get_lab_state')).content[0].text);
+  assert.equal(state.promptSections.basePrompt.label, '画师串');
+  assert.deepEqual([state.promptSections.scene.label, state.promptSections.scene.value], ['场景', 'forest']);
+  const result = JSON.parse((await call('update_prompts', { sections: { scene: 'beach at sunset', camera: 'close-up' } })).content[0].text);
+  assert.equal(result.ok, true);
+  assert.equal(draft.basePrompt, 'artist:alpha, flat color');
+  assert.equal(draft.subjectPrompt, 'red hair, standing, beach at sunset, close-up');
+  assert.equal(draft.params._promptSections.appearance, 'red hair');
+  assert.deepEqual(draft.params._promptSections.sectionMeta, { scene: { source: 'manual' }, camera: { source: 'manual' } });
+  assert.deepEqual(draft.params._promptSections.sectionNegatives, { scene: 'city' });
+  assert.equal(result.promptSections.camera.value, 'close-up');
+  assert.deepEqual(events.at(-1).action.patch.sections, { scene: 'beach at sunset', camera: 'close-up' });
+  const overrides = JSON.parse((await call('get_lab_state')).content[0].text).pageOverrides;
+  assert.deepEqual(overrides, ['basePrompt'], '已按栏改写的页面覆盖项失效，未改字段保留');
+}));
+
+test('分栏写入拒绝与整段主体混用、编辑模式没有分栏；整段主体与界面一样落入「补充」', () => isolated(async service => {
+  const draft = sectionDraft();
+  const tools = service.createTools(draft, { clientSettings: { splitPromptFields: true } }, () => {});
+  const update = args => tools.find(tool => tool.name === 'update_prompts').execute('t', args);
+  await assert.rejects(update({ subjectPrompt: 'x', sections: { scene: 'y' } }), /不能与 sections 同时传入/);
+  await update({ subjectPrompt: 'garden party' });
+  assert.equal(draft.subjectPrompt, 'garden party');
+  assert.equal(draft.params._promptSections.extra, 'garden party');
+  assert.equal(draft.params._promptSections.scene, '');
+  const edit = sectionDraft('inpaint');
+  const editTools = service.createTools(edit, { clientSettings: { splitPromptFields: true } }, () => {});
+  await assert.rejects(editTools.find(tool => tool.name === 'update_prompts').execute('t', { sections: { scene: 'y' } }), /没有分栏/);
+  const editState = JSON.parse((await editTools.find(tool => tool.name === 'get_lab_state').execute('t', {})).content[0].text);
+  assert.equal(editState.promptSections, undefined);
+  assert.equal(editState.interface.splitPromptFields, false);
+}));
+
+test('风格串的人物内容写进角色槽：全局人物栏只能清空，自定义角色工作台仍可写', () => isolated(async service => {
+  const draft = sectionDraft();
+  const tools = service.createTools(draft, { clientSettings: { splitPromptFields: true } }, () => {});
+  const update = async args => JSON.parse((await tools.find(tool => tool.name === 'update_prompts').execute('t', args)).content[0].text);
+  await assert.rejects(update({ sections: { appearance: 'long hair, blue eyes' } }), /写进角色槽/);
+  const view = JSON.parse((await tools.find(tool => tool.name === 'get_lab_state').execute('t', {})).content[0].text).promptSections;
+  assert.deepEqual([view.appearance.label, view.appearance.legacy], ['人物', true], '旧串遗留的人物栏有内容时列出并标记');
+  assert.equal(view.wardrobe, undefined, '空的人物栏不再列入全局');
+  const misplaced = await update({ sections: { scene: 'long hair in the wind' } });
+  assert.equal(misplaced.ok, false);
+  assert.match(misplaced.issues[0], /写进角色槽/);
+  assert.equal((await update({ sections: { appearance: '', scene: 'forest' } })).ok, true);
+  assert.equal(draft.params._promptSections.appearance, '');
+  const workbench = sectionDraft();
+  const workbenchTools = service.createTools(workbench, { clientSettings: { splitPromptFields: true, globalPersonSections: true } }, () => {});
+  const written = JSON.parse((await workbenchTools.find(tool => tool.name === 'update_prompts').execute('t', { sections: { appearance: 'long hair, blue eyes' } })).content[0].text);
+  assert.equal(written.ok, true);
+  assert.equal(written.promptSections.wardrobe.legacy, undefined);
+}));
+
+test('set_characters 按 id／顺序继承未提及的字段：只改一栏不清掉正文、坐标与其他分栏', () => isolated(async service => {
+  const original = [
+    { id: 'a', name: '龙娘', prompt: '1girl, dragon girl', negativePrompt: 'extra arms', x: .2, y: .4, sections: { appearance: 'red horns', wardrobe: 'gothic dress' }, sectionMeta: { wardrobe: { source: 'roll', entryName: '哥特' } }, sectionNegatives: { wardrobe: 'casual' } },
+    { id: 'b', name: '骑士', prompt: '1boy, knight', x: .8, y: .5 },
+  ];
+  const draft = { ...sectionDraft(), params: { model: 'nai-diffusion-5-full', characters: structuredClone(original) } };
+  const tools = service.createTools(draft, { clientSettings: { splitPromptFields: true } }, () => {});
+  const set = async args => JSON.parse((await tools.find(tool => tool.name === 'set_characters').execute('t', args)).content[0].text);
+  const result = await set({ characters: [{ id: 'a', sections: { wardrobe: 'white sundress', expression: 'smile' } }, { id: 'b' }] });
+  const [dragon, knight] = draft.params.characters;
+  assert.deepEqual([dragon.prompt, dragon.x, dragon.y, dragon.sections.appearance], ['1girl, dragon girl', .2, .4, 'red horns']);
+  assert.deepEqual([dragon.sections.wardrobe, dragon.sections.expression], ['white sundress', 'smile']);
+  assert.deepEqual(dragon.sectionMeta, { wardrobe: { source: 'manual' }, expression: { source: 'manual' } });
+  assert.deepEqual(dragon.sectionNegatives, { wardrobe: 'casual' });
+  assert.deepEqual([knight.prompt, knight.x], ['1boy, knight', .8]);
+  assert.deepEqual(result.characterSlots[0].sections, { 形象: 'red horns', 服饰: 'white sundress', 动作: '', 表情: 'smile' });
+  // 与实际会话一致：模型常不带 id 重写整份列表，按顺序对应原角色，不新增重复角色。
+  await set({ characters: [{ prompt: '1girl, dragon girl, wings' }, { prompt: '1boy, knight, armor' }] });
+  assert.deepEqual(draft.params.characters.map(item => [item.id, item.prompt, item.x]), [['a', '1girl, dragon girl, wings', .2], ['b', '1boy, knight, armor', .8]]);
+  assert.equal(draft.params.characters[0].sections.appearance, 'red horns');
+  await set({ characters: [{ name: '骑士' }, { name: '龙娘' }] });
+  assert.deepEqual(draft.params.characters.map(item => [item.id, item.x]), [['b', .8], ['a', .2]], '带名称时按同名对应，可调整顺序');
+  await set({ characters: [{ id: 'b' }, { name: '新角色', sections: { appearance: 'silver hair' } }] });
+  assert.deepEqual(draft.params.characters.map(item => item.name), ['骑士', '新角色'], '未列出的角色移除，未匹配的新增');
+  assert.equal(draft.params.characters[1].prompt, '');
+  assert.notEqual(draft.params.characters[1].id, 'a');
+}));
+
+test('回复停在输出上限时不记为完成：明确提示截断并保留可继续的草稿', () => isolated(async service => {
+  await service.saveCustomProvider({ ...customInput(), apiKey: 'synthetic', select: true });
+  const session = await service.createSession(), previous = globalThis.fetch, events = [];
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls++;
+    if (calls === 1) return syntheticAgentStream({ id: 1, tool: 'update_prompts', args: { negativePrompt: 'blurry' } });
+    // 与用户日志一致：关闭思考仍输出大量思考，用尽上限后没有答复或工具调用。
+    return new Response('data: ' + JSON.stringify({ id: 'synthetic', object: 'chat.completion.chunk', created: 1, model: 'a',
+      choices: [{ index: 0, delta: { role: 'assistant', reasoning_content: '先核对时间顺序……' }, finish_reason: 'length' }],
+      usage: { prompt_tokens: 20000, completion_tokens: 2048, total_tokens: 22048 } }) + '\n\ndata: [DONE]\n\n', { headers: { 'content-type': 'text/event-stream' } });
+  };
+  try {
+    await service.run({ sessionId: session.id, message: '把负面词加上 blurry', draft: { basePrompt: 'style', negativePrompt: '', params: {}, target: { chainId: 'c', mode: 'text-to-image', fingerprint: 'f' } } }, event => events.push(event));
+    const done = events.find(event => event.type === 'done');
+    assert.equal(done.status, 'failed');
+    assert.equal(done.stopReason, 'output_truncated');
+    assert.match(done.error, /单次输出上限（2048 Token）被截断/);
+    assert.match(done.error, /未应用的工作草稿已保留/);
+    assert.equal(done.draft.negativePrompt, 'blurry');
+    const task = JSON.parse(await readFile(service.taskFile(session.id), 'utf8'));
+    assert.equal(task.status, 'failed'); assert.equal(task.stopReason, 'output_truncated'); assert.equal(task.finalDraft.negativePrompt, 'blurry');
+  } finally { globalThis.fetch = previous; }
+}));

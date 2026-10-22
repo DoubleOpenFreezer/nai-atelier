@@ -57,6 +57,7 @@ describe('提示词上下文工具隔离', () => {
     expect(props.copyPromptToClipboard).toHaveBeenCalledWith('original prompt', '画师串');
   });
 
+  // 人物三栏常驻于自定义角色工作台；分栏清空、撤销与合并的机制对所有栏相同。
   it('旧主体首次编辑保留在补充栏，各分栏清空与撤销只改变本栏', () => {
     const Harness = () => {
       const [subject, setSubject] = useState('legacy subject');
@@ -65,7 +66,7 @@ describe('提示词上下文工具隔离', () => {
         prompt: 'artist', setPrompt: vi.fn(), presetSources: {}, tagAssistEnabled: false, canEdit: true,
         copyPromptToClipboard: vi.fn(), markPresetSectionModified: vi.fn(), markChange: vi.fn(),
         activeLabLayout: { order: ['prompt'], collapsed: {} }, mobileEditorTab: 'global' as const,
-      }} sections={sections} setSections={setSections} supplementPrompt={subject} setSupplementPrompt={setSubject} />
+      }} sections={sections} setSections={setSections} supplementPrompt={subject} setSupplementPrompt={setSubject} personSectionsInGlobal />
       <output>{subject}</output></>;
     };
     render(<Harness />);
@@ -82,7 +83,7 @@ describe('提示词上下文工具隔离', () => {
 
   it('助手只改合并文本后，不显示旧分栏；继续编辑也不覆盖助手的新内容', () => {
     const setSubject = vi.fn();
-    setup({ sections: { wardrobe: 'red_dress' }, supplementPrompt: 'blue_dress', setSupplementPrompt: setSubject });
+    setup({ sections: { wardrobe: 'red_dress' }, supplementPrompt: 'blue_dress', setSupplementPrompt: setSubject, personSectionsInGlobal: true });
     expect((screen.getByRole('textbox', { name: '服饰' }) as HTMLTextAreaElement).value).toBe('');
     expect((screen.getByRole('textbox', { name: '补充' }) as HTMLTextAreaElement).value).toBe('blue_dress');
     fireEvent.change(screen.getByRole('textbox', { name: '姿势' }), { target: { value: 'sitting' } });

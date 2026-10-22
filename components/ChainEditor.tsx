@@ -37,7 +37,7 @@ import { DEFAULT_GENERATION_MEMORY_PREFERENCES, type GenerationMemoryPreferences
 import { isActiveOpusSubscription, useNovelaiUsage } from '../services/naiUsage';
 import { applyNaiModelSettings, getRuntimeNaiModelInfo, isNaiMediumModel } from '../services/naiModels';
 import { estimateImageEditCost, estimateV45GenerationCost, applyEstimatorRuntime, formatGenerationCostLabel, useAnlasBudget } from '../services/anlasBudget';
-import { cleanupLabWorkspaceAssets, consumeEditorSessionDiscarded, createLabImageEditDraft, createLabWorkspaceSession, dataUrlToWorkspaceAsset, deleteLabWorkspaceAsset, getLabWorkspaceAssetId, getLabWorkspaceSessionKey, LAB_DEFAULT_PARAMS, mergePromptSections, openLabWorkspaceSession, readLabWorkspaceAsset, saveLabWorkspaceSession, saveLabWorkspaceAsset, blobToDataUrl, getLabModeLabel, normalizeParams } from '../services/labWorkspace';
+import { cleanupLabWorkspaceAssets, consumeEditorSessionDiscarded, createLabImageEditDraft, createLabWorkspaceSession, dataUrlToWorkspaceAsset, deleteLabWorkspaceAsset, getLabWorkspaceAssetId, getLabWorkspaceSessionKey, LAB_DEFAULT_PARAMS, mergePromptSections, openLabWorkspaceSession, readLabWorkspaceAsset, saveLabWorkspaceSession, saveLabWorkspaceAsset, blobToDataUrl, getLabModeLabel, normalizeParams, resolvePromptSections } from '../services/labWorkspace';
 import { DEFAULT_NAI_RUNTIME, useNaiRuntime, isNaiRuntimeSyncUnhealthy, describeNaiRuntimeSyncProblem } from '../services/naiRuntime';
 import { splitNovelAiPrompt } from '../services/promptImport';
 import { decideCurrentPreviewCover } from '../services/chainCover';
@@ -1007,6 +1007,36 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
         const newChar: CharacterParams = { id: createUuid(), prompt: '', x: 0.5, y: 0.5 };
         setParams({ ...params, characters: [...(params.characters || []), newChar] });
         markChange();
+    };
+
+    /** 旧串遗留的全局人物栏移到角色槽对应分栏：追加不覆盖，来源与分类负面随栏转移，原全局栏清空。 */
+    const moveGlobalSectionToCharacter = (key: 'appearance' | 'wardrobe' | 'pose') => {
+        const sections = resolvePromptSections(params._promptSections, subjectPrompt);
+        const value = String(sections[key] || '').trim();
+        if (!value) return;
+        const characters = [...(params.characters || [])];
+        let index = characters.findIndex(character => character.enabled !== false);
+        if (index < 0) index = characters.length ? 0 : -1;
+        if (index < 0) characters.push({ id: createUuid(), prompt: '', x: 0.5, y: 0.5 });
+        if (index < 0) index = characters.length - 1;
+        const target = characters[index];
+        const join = (before: unknown, added: string) => [String(before || '').trim(), added].filter(Boolean).join(', ');
+        const negative = String(sections.sectionNegatives?.[key] || '').trim();
+        const meta = sections.sectionMeta?.[key];
+        characters[index] = {
+            ...target,
+            sections: { ...(target.sections || {}), [key]: join(target.sections?.[key], value) },
+            ...(negative ? { sectionNegatives: { ...(target.sectionNegatives || {}), [key]: join(target.sectionNegatives?.[key], negative) } } : {}),
+            ...(meta && !String(target.sections?.[key] || '').trim() ? { sectionMeta: { ...(target.sectionMeta || {}), [key]: meta } } : {}),
+        };
+        const { [key]: _movedMeta, ...restMeta } = sections.sectionMeta || {};
+        const { [key]: _movedNegative, ...restNegatives } = sections.sectionNegatives || {};
+        const nextSections = { ...sections, [key]: '', sectionMeta: restMeta, sectionNegatives: restNegatives };
+        setParams(previous => ({ ...previous, characters, _promptSections: nextSections }));
+        setSubjectPrompt(mergePromptSections(nextSections));
+        markChange();
+        const label = ({ appearance: '形象', wardrobe: '服饰', pose: '动作' } as const)[key];
+        notify(`已移到「角色 ${index + 1}」的${label}栏`);
     };
 
     const updateCharacter = (idx: number, updates: Partial<CharacterParams>, useCoords?: boolean) => {
@@ -2099,7 +2129,9 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                 canUndo={Boolean(agentUndoSnapshot)}
                 onUndo={() => { if (agentUndoSnapshot) { applyAgentDraft(agentUndoSnapshot); setAgentUndoSnapshot(null); notify('已撤销本次助手修改'); } }}
                 tagAssistEnabled={tagAssistEnabled}
-                splitPromptFields={false}
+                // 文生图为「画师串 + 分栏」界面；编辑模式的单一提示词由服务端按 target.mode 判断。
+                splitPromptFields
+                globalPersonSections={isCharacterMode}
             />
             {agentProposal && <AgentDraftReview current={currentAgentDraft()} proposed={agentProposal} onClose={() => setAgentProposal(null)} onApply={draft => { setAgentUndoSnapshot(currentAgentDraft()); applyAgentDraft(draft); setAgentProposal(null); }}/>}
             {activeGenerationMode === 'text-to-image' ? <>
@@ -2126,6 +2158,8 @@ export const ChainEditor: React.FC<ChainEditorProps> = ({ chain, allChains, onUp
                             markChange={markChange}
                             activeLabLayout={activeLabLayout}
                             mobileEditorTab={mobileEditorTab}
+                            personSectionsInGlobal={isCharacterMode}
+                            onMoveSectionToCharacter={moveGlobalSectionToCharacter}
                         />
 
                         {/* Character Management (New V4.5) */}

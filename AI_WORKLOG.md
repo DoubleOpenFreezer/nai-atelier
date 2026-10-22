@@ -4,6 +4,14 @@
 
 本日志自 2026-08-22 启用；此前的项目修改没有留存 AI 记录，历史改动请查阅 git 提交历史与 `CHANGELOG.md`。
 
+## 2026-10-22
+
+- **Claude Code (Opus 5.5)**：按用户要求汇总本日未提交的创作助手修复与全局／角色分工改动，版本由 1.101.0 递增至 1.102.0，同步包文件、README 徽章与连接器版本；提交门禁交由 pre-commit 执行。
+
+- **Claude Code (Opus 5.5)**：按用户选定的方案 A 理清全局与角色分工：风格串／实验室全局只显示画师串、场景、镜头、补充，旧串遗留且有内容的人物／服饰／姿势栏保留并提供「移到角色」（追加到首个启用角色对应分栏，来源与分类负面随栏转移，无角色时新建），自定义角色工作台人物栏常驻；助手新增 `globalPersonSections` 上下文，非工作台拒绝写入全局人物栏，快照与 `get_lab_state` 返回角色槽视图。修复 `set_characters` 整份替换导致分栏、坐标与正文被重置：改为按 id／同名／顺序继承未提及字段并支持按栏写入，原文未变的栏保留来源。同步 README、产品决策、助手规则与能力文档；助手与网关 Node 测试 210 项、界面 Vitest 341 项通过，`test:gateway` 仍仅有与 HEAD 相同的 4 项 cloud-queue／local-backup 失败。
+
+- **Claude Code (Opus 5.5)**：按用户反馈排查创作助手「经常调用工具失败」：本机 9 个会话 285 次工具调用仅 4 次报错，实际问题是风格串编辑器向助手声明单一输入框（完整提示词写 basePrompt，而界面显示为「画师串」）及 2048 Token 输出上限被推理耗尽后静默完成。新增 `services/promptSections.mjs` 作为编辑器与助手共用的六栏合并规则，`update_prompts` 增加 `sections` 按栏写入，`get_lab_state`／运行快照按界面名称返回各栏，外貌规则 J 不再把「人物」栏计为违规；输出上限提高为 8192／16384，停在上限的回复记为 `output_truncated` 失败并保留草稿可继续。新增分栏模块、工具与截断回归；助手与网关 Node 测试 208 项、界面 Vitest 261 项通过，`test:gateway` 中 cloud-queue／local-backup 的 4 项失败在未改动的 HEAD 上同样出现。
+
 ## 2026-10-21
 
 - **Claude Code (Opus 5.5)**：按用户要求制作 macOS 版本：`build-desktop.mjs` 按本机平台选择目标（下载校验官方 darwin Node、保留对应 ONNX、生成 icns、`--no-bin-links` 安装运行依赖、在 iCloud 目录外组装签名后回拷 DMG），桌面壳补 macOS 应用菜单／⌘Q／菜单栏图标并关闭应用内更新桥，`setAppUserModelId` 限 Windows；修复打包白名单遗漏 `storage-locations.mjs`／`export-locations.mjs` 与运行清单遗漏 `agent-errors.mjs`。新增 macOS 文档与回归测试，版本 1.100.0→1.101.0；桌面定向测试 14 项、多语言测试 22 项通过，Apple 芯片 DMG 实机自检渲染主界面。

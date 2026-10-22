@@ -49,6 +49,8 @@ interface PromptAgentOverlayControllerProps {
     onUndo: () => void;
     tagAssistEnabled: boolean;
     splitPromptFields?: boolean;
+    /** 自定义角色工作台用全局人物栏定义角色本身；其他界面的人物内容写在角色槽 */
+    globalPersonSections?: boolean;
 }
 
 /** Keep the overlay's visibility local so opening it does not rerender the editor. */
@@ -65,6 +67,7 @@ export const PromptAgentOverlayController: React.FC<PromptAgentOverlayController
     onUndo,
     tagAssistEnabled,
     splitPromptFields,
+    globalPersonSections,
 }) => {
   useLanguage();
     const [open, setOpen] = useState(false);
@@ -98,6 +101,7 @@ export const PromptAgentOverlayController: React.FC<PromptAgentOverlayController
             onUndo={onUndo}
             tagAssistEnabled={tagAssistEnabled}
             splitPromptFields={splitPromptFields}
+            globalPersonSections={globalPersonSections}
         /></React.Suspense>
     );
 };

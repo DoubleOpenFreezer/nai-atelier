@@ -64,7 +64,8 @@ export const boundAgentToolResult = result => {
 // 展示/历史接口不发送图片 Base64；模型的原生图片内容仍由运行链路保留。
 export const publicAgentToolContent = content => (content || []).map(part => part.type === 'image' ? { type: 'image', mimeType: part.mimeType, note: '图片正文仅交给当前模型' } : part);
 
-export const agentOutputLimit = (thinkingLevel = 'medium') => ['high', 'xhigh', 'max'].includes(thinkingLevel) ? 8192 : ['off', 'minimal', 'low'].includes(thinkingLevel) ? 2048 : 4096;
+// 推理模型即使选择关闭思考也可能先输出思考，思考同样占用单次输出；预留须容纳思考加一次完整工具调用。
+export const agentOutputLimit = (thinkingLevel = 'medium') => ['high', 'xhigh', 'max'].includes(thinkingLevel) ? 16_384 : 8192;
 
 /** 上下文容量由每次请求的装配器控制；循环保护只统计新输出，不重复累计历史输入。 */
 export const createAgentRunBudget = ({ maxTurns = 64, maxOutputTokens = 131_072 } = {}) => {
@@ -84,6 +85,9 @@ export const createAgentRunBudget = ({ maxTurns = 64, maxOutputTokens = 131_072 
     },
   };
 };
+
+/** 回复停在单次输出上限：没有完成本步，不能记为已完成。 */
+export const agentTruncationInfo = outputTokens => ({ code: 'output_truncated', message: `模型回复达到单次输出上限${Number(outputTokens) > 0 ? `（${Number(outputTokens)} Token）` : ''}被截断，本步没有完成；可以发送“继续”接着处理，或在模型设置中降低思考强度。` });
 
 export const agentStopInfo = reason => {
   if (reason?.name === 'AgentRunLimitError') return { code: reason.code, message: reason.message };

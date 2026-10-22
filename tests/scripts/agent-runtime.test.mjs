@@ -40,7 +40,7 @@ test('浏览器未回应、任务停止及发送失败都会释放页面等待�
   await assert.rejects(bridge.request('a', { action: 'read' }, () => { throw new Error('断开'); }), /断开/);
   assert.equal(bridge.pending.size, 0);
 });
-import { AGENT_TOOL_GROUPS, agentOutputLimit, agentTokenUsage, boundAgentToolResult, compactAuditEntries, compactAgentValue, isProjectImagePath, localTimeInfo } from '../../scripts/agent-runtime.mjs';
+import { AGENT_TOOL_GROUPS, agentOutputLimit, agentTruncationInfo, agentTokenUsage, boundAgentToolResult, compactAuditEntries, compactAgentValue, isProjectImagePath, localTimeInfo } from '../../scripts/agent-runtime.mjs';
 import { agentStopInfo, createAgentRunBudget } from '../../scripts/agent-runtime.mjs';
 
 test('复现日志：重复上下文超过 64k 仍允许继续，保护仅计算新输出', () => {
@@ -100,7 +100,9 @@ test('工具分组只提供能力目录，思考输出预算保留原有边界',
   assert.ok(AGENT_TOOL_GROUPS.maintenance.includes('request_clear_history'));
   assert.ok(AGENT_TOOL_GROUPS.local_files.includes('save_project_image_to_folder'));
   assert.equal(AGENT_TOOL_GROUPS.library.includes('manage_artist_favorite'), false);
-  assert.equal(agentOutputLimit('off'), 2048); assert.equal(agentOutputLimit('medium'), 4096); assert.equal(agentOutputLimit('max'), 8192);
+  // 推理模型关闭思考时仍可能先思考，低档也要留够思考加一次完整工具调用。
+  assert.equal(agentOutputLimit('off'), 8192); assert.equal(agentOutputLimit('medium'), 8192); assert.equal(agentOutputLimit('max'), 16_384);
+  assert.equal(agentTruncationInfo(2048).code, 'output_truncated'); assert.match(agentTruncationInfo(2048).message, /2048 Token.*继续/);
 });
 test('真实时区与夏令时偏移按日期计算', () => {
   const now = new Date('2026-10-03T11:50:00.000Z');
