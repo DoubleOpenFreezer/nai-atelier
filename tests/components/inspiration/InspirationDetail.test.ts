@@ -259,7 +259,7 @@ describe('InspirationDetail 全新重构界面走查', () => {
     expect(screen.getByRole('button', { name: /导入实验室/ })).toBeTruthy();
     expect(screen.queryByRole('button', { name: /提取资产/ })).toBeNull();
     expect(screen.getByRole('button', { name: '下载图片' })).toBeTruthy();
-    expect(screen.getByTitle('复制图片')).toBeTruthy();
+    expect(screen.getByRole('button', { name: '复制图片' })).toBeTruthy();
   });
 
   it('开启清洗后保持两个分享按钮，图片右上竖排且脱离工作区隔离层', () => {
@@ -270,9 +270,9 @@ describe('InspirationDetail 全新重构界面走查', () => {
     }));
     expect(screen.getByRole('button', { name: '下载图片' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: /原图|分享版/ })).toBeNull();
-    expect(screen.getByTitle('复制图片').closest('article')).toBeTruthy();
+    expect(screen.getByRole('button', { name: '复制图片' }).closest('article')).toBeTruthy();
     expect(document.querySelector('.ui-backdrop-enter')).toBeNull();
-    const group = screen.getByTitle('复制图片').parentElement!;
+    const group = screen.getByRole('button', { name: '复制图片' }).parentElement!;
     expect(group.className).toContain('absolute right-2 top-2');
     expect(group.classList.contains('flex-col')).toBe(true);
     expect(group.closest('footer')).toBeNull();

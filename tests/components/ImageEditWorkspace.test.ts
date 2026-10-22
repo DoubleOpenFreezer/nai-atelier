@@ -655,14 +655,15 @@ describe('ImageEditPreview', () => {
     expect(screen.getByText('2 / 21')).toBeTruthy();
     expect(screen.getByRole('button', { name: '上一张历史图' })).toBeTruthy();
     expect(screen.getByRole('button', { name: '下一张历史图' })).toBeTruthy();
-    const remove = screen.getByRole('button', { name: '移除当前图片' });
-    const clear = screen.getByRole('button', { name: '清空当前历史组' });
-    expect(remove.classList.contains('rounded-full')).toBe(true);
-    expect(remove.classList.contains('!bg-red-600/90')).toBe(true);
-    expect(clear.classList.contains('rounded-full')).toBe(true);
-    expect(clear.classList.contains('!bg-gray-900/85')).toBe(true);
-    fireEvent.click(remove);
-    fireEvent.click(clear);
+    // 与文生图共用左上管理菜单：移除当前图片／清空当前历史组。
+    const manage = screen.getByRole('button', { name: '管理预览图片' });
+    expect(manage.classList.contains('rounded-full')).toBe(true);
+    expect(manage.classList.contains('!bg-gray-900/85')).toBe(true);
+    fireEvent.click(manage);
+    expect(screen.getByRole('menuitem', { name: '移除当前图片' }).classList.contains('text-red-300')).toBe(true);
+    fireEvent.click(screen.getByRole('menuitem', { name: '移除当前图片' }));
+    fireEvent.click(manage);
+    fireEvent.click(screen.getByRole('menuitem', { name: '清空当前历史组' }));
     expect(onRemoveCurrentHistory).toHaveBeenCalledOnce();
     expect(onClearHistoryGroup).toHaveBeenCalledOnce();
     expect(onOpenLightbox).not.toHaveBeenCalled();

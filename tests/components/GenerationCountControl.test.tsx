@@ -329,8 +329,12 @@ it('画布未就绪主按钮不发送，菜单仍可查看；空闲恢复生成'
   fireEvent.click(unavailable); expect(generate).not.toHaveBeenCalled(); expect(queue).not.toHaveBeenCalled();
   fireEvent.keyDown(unavailable, { key: 'ArrowDown', altKey: true });
   expect(screen.getByRole('dialog', { name: '生成选项' })).toBeTruthy();
+  // 空队伍（0/0）不再占位；本轮完成后保留结果至下一轮。
   view.rerender(<GenerationCountControl {...props} onGenerate={generate} queueState={{ ...state, busy: false, total: 0, completed: 0 }} />);
+  expect(screen.queryByRole('button', { name: '暂停生成' })).toBeNull();
+  view.rerender(<GenerationCountControl {...props} onGenerate={generate} queueState={{ ...state, busy: false, total: 3, completed: 3 }} />);
   expect(screen.getByRole('button', { name: '暂停生成' })).toHaveProperty('disabled', true);
+  expect(screen.getByRole('button', { name: '暂停生成' }).textContent).toContain('3/3');
   fireEvent.click(screen.getByRole('button', { name: /生成.*3 张.*90 Anlas/ })); expect(generate).toHaveBeenCalledOnce();
 });
 

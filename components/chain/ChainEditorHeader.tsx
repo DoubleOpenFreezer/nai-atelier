@@ -8,6 +8,9 @@ import { MobileBottomSheet } from '../MobileUI';
 import { AnchoredToolbarPopover, TOOLBAR_MENU_CLASS } from '../ToolbarPopover';
 import { ImagePreviewPortal } from '../ImagePreviewPortal';
 
+/** 顶栏达到该宽度时，操作区（占一半）放得下全部图标加简短文字 */
+const HEADER_LABEL_MIN_WIDTH = 1000;
+
 const ActionRow: React.FC<{
     icon: React.ReactNode;
     label: string;
@@ -96,6 +99,8 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
     const saveAnchorRef = useRef<HTMLDivElement>(null);
     const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768);
     const [compact, setCompact] = useState(() => window.innerWidth < 1024);
+    // 操作区占顶栏一半；够宽时在图标旁显示简短文字，窄时只留图标与提示。
+    const [showLabels, setShowLabels] = useState(false);
     const [saveActionsOpen, setSaveActionsOpen] = useState(false);
     const closeSaveActions = React.useCallback(() => setSaveActionsOpen(false), []);
     const entityLabel = isCharacterMode ? '自定义角色' : '风格串';
@@ -120,6 +125,7 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
             const layout = `${mobile}/${nextCompact}`;
             setIsMobile(mobile);
             setCompact(nextCompact);
+            setShowLabels(!nextCompact && header.getBoundingClientRect().width >= HEADER_LABEL_MIN_WIDTH);
             if (previousLayout !== undefined && previousLayout !== layout) {
                 closeActions();
                 closeSaveActions();
@@ -129,8 +135,11 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
         measure();
         const observer = new MutationObserver(measure);
         if (workspace) observer.observe(workspace, { attributes: true, attributeFilter: ['class'] });
+        // 助手面板展开、收起只改变顶栏宽度，不一定触发窗口 resize。
+        const sizeObserver = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
+        sizeObserver?.observe(header);
         window.addEventListener('resize', measure);
-        return () => { observer.disconnect(); window.removeEventListener('resize', measure); };
+        return () => { observer.disconnect(); sizeObserver?.disconnect(); window.removeEventListener('resize', measure); };
     }, [closeActions, closeSaveActions]);
     // 切入编辑模式时关闭保存面板，不能从旧面板提交不完整的底图／蒙版配置。
     React.useEffect(() => { closeActions(); closeSaveActions(); }, [activeGenerationMode, closeActions, closeSaveActions]);
@@ -163,11 +172,12 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
 
             {!compact && <div className="chain-editor-actions flex flex-none items-center justify-end gap-2 ml-auto">
                 {canEdit && <>
-                    <IconButton label={t("导入图片或 JSON 配置")} onClick={() => importInputRef.current?.click()}><FileDown /></IconButton>
-                    <IconButton label={t(translationPending ? "正在翻译提示词" : "翻译所有未翻译提示词")} title={t("使用当前助手模型翻译当前模式所有提示词框里的未翻译 Tag，可能产生模型调用费用")} disabled={translationPending} onClick={onTranslateMissingPrompts}>{translationPending ? <LoaderCircle className="animate-spin" /> : <Languages />}</IconButton>
+                    <IconButton label={t("导入图片或 JSON 配置")} text={showLabels ? '导入' : undefined} onClick={() => importInputRef.current?.click()}><FileDown /></IconButton>
+                    <IconButton label={t(translationPending ? "正在翻译提示词" : "翻译所有未翻译提示词")} text={showLabels ? '翻译' : undefined} title={t("使用当前助手模型翻译当前模式所有提示词框里的未翻译 Tag，可能产生模型调用费用")} disabled={translationPending} onClick={onTranslateMissingPrompts}>{translationPending ? <LoaderCircle className="animate-spin" /> : <Languages />}</IconButton>
                 </>}
                 <IconButton
                     label={tagAssistEnabled ? t("关闭 Tag 辅助") : t("开启 Tag 辅助")}
+                    text={showLabels ? 'Tag 辅助' : undefined}
                     aria-pressed={tagAssistEnabled}
                     onClick={() => {
                         const enabled = !tagAssistEnabled;
@@ -178,10 +188,10 @@ export const ChainEditorHeader: React.FC<ChainEditorHeaderProps> = ({
                 >
                     <span className="relative block"><Tags /><span aria-hidden="true" className="absolute -bottom-1.5 -right-1.5 text-mini font-black leading-none">{tagAssistEnabled ? 'o' : '−'}</span></span>
                 </IconButton>
-                {canEdit && <IconButton label={t("重置当前模式")} tone="danger" onClick={handleReset}><RotateCcw /></IconButton>}
-                {canSaveActiveModeToLibrary && (isPlayground || (!isOwner && !isGuest)) && <IconButton label={isPlayground ? t("保存到库") : t("另存为新串")} disabled={isUploading} onClick={handleFork} className="!border-emerald-300 !bg-emerald-50 !text-emerald-600 hover:!bg-emerald-100 dark:!border-emerald-900/70 dark:!bg-emerald-950/35 dark:!text-emerald-300"><Save /></IconButton>}
+                {canEdit && <IconButton label={t("重置当前模式")} text={showLabels ? '重置' : undefined} tone="danger" onClick={handleReset}><RotateCcw /></IconButton>}
+                {canSaveActiveModeToLibrary && (isPlayground || (!isOwner && !isGuest)) && <IconButton label={isPlayground ? t("保存到库") : t("另存为新串")} text={showLabels ? (isPlayground ? '保存到库' : '另存为新串') : undefined} disabled={isUploading} onClick={handleFork} className="!border-emerald-300 !bg-emerald-50 !text-emerald-600 hover:!bg-emerald-100 dark:!border-emerald-900/70 dark:!bg-emerald-950/35 dark:!text-emerald-300"><Save /></IconButton>}
                 {canSaveActiveModeToLibrary && isOwner && !isPlayground && <div ref={saveAnchorRef} className="flex-none">
-                    <IconButton label={t(saveLabel)} title={saveDetail} disabled={isUploading} aria-haspopup="dialog" aria-expanded={saveActionsOpen} onClick={() => setSaveActionsOpen(value => !value)} className={saveClass}><Save /></IconButton>
+                    <IconButton label={t(saveLabel)} text={showLabels ? (isUploading ? '正在保存' : '保存') : undefined} title={saveDetail} disabled={isUploading} aria-haspopup="dialog" aria-expanded={saveActionsOpen} onClick={() => setSaveActionsOpen(value => !value)} className={saveClass}><Save /></IconButton>
                 </div>}
             </div>}
         </header>

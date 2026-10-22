@@ -152,7 +152,9 @@ export const IconLink: React.FC<React.AnchorHTMLAttributes<HTMLAnchorElement> & 
 export const IconButton: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement> & {
   label: string;
   tone?: 'neutral' | 'primary' | 'save' | 'edit' | 'danger' | 'favorite';
-}> = ({ label, tone = 'neutral', className = '', children, ...props }) => {
+  /** 空间足够时在图标旁显示的简短文字；完整说明仍在提示与无障碍名称中 */
+  text?: string;
+}> = ({ label, tone = 'neutral', className = '', text, children, ...props }) => {
   useLanguage();
   const toneClass = tone === 'primary'
     ? 'border-indigo-600 bg-indigo-600 text-white hover:bg-indigo-500 dark:border-indigo-500/40 dark:bg-indigo-600/90 dark:hover:bg-indigo-500'
@@ -166,8 +168,9 @@ export const IconButton: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement> 
       ? 'border-red-200 bg-red-50 text-red-600 hover:bg-red-100 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300'
       : ICON_NEUTRAL_CLASS;
   return (
-    <button data-appearance="control" data-control-kind="icon" data-tone={tone} type="button" aria-label={t(label)} title={t(label)} className={`${ICON_CONTROL_CLASS} ${toneClass} ${className}`} {...props}>
+    <button data-appearance="control" data-control-kind="icon" data-tone={tone} type="button" aria-label={t(label)} title={t(label)} className={`${ICON_CONTROL_CLASS} ${toneClass} ${text ? '!w-auto gap-1.5 px-3' : ''} ${className}`} {...props}>
       {children}
+      {text && <span aria-hidden="true" className="whitespace-nowrap text-xs font-semibold">{t(text)}</span>}
     </button>
   );
 };

@@ -1807,7 +1807,8 @@ describe('后台任务只提交一次并只观察后端状态', () => {
     await waitFor(() => expect(getGenerationQueue).toHaveBeenCalledWith('next-key'));
     await act(async () => { pendingPause.resolve({ ...old, paused: true }); });
     expect(mobileActions().queryByRole('button', { name: '继续生成' })).toBeNull();
-    expect(mobileActions().getByRole('button', { name: '暂停生成' }).textContent).toBe('0/0');
+    // 新 Key 的空队伍（0/0）不显示进度按钮，旧 Key 的暂停回执也不会冒出来。
+    expect(mobileActions().queryByRole('button', { name: '暂停生成' })).toBeNull();
   });
 
   it.each([['text-to-image', '文生图'], ['image-to-image', '图生图'], ['inpaint', '局部重绘'], ['outpaint', '扩图']] as const)('%s 只 POST 一次后台任务，描述符保留提示词、模块、来源与编辑元数据', async (operation, label) => {

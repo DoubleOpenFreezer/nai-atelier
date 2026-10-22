@@ -93,19 +93,19 @@ describe('四模式的分享入口', () => {
       previewImage: undefined, setLightboxImg: onOpen, isOwner: true, isUploading: false,
       handleSavePreview: onCover, handleUploadCover: vi.fn(), getDownloadFilename: () => 'NAI.png', generationCostLabel: '免费', canManageHistoryGroup: true,
     }));
-    const cover = screen.getByRole('button', { name: '设为封面' });
+    // 设封面与上传封面合为一个按钮，展开后选择；移除／清空收进左上的管理菜单。
+    expect(screen.queryByRole('button', { name: '手动上传封面' })).toBeNull();
+    const cover = screen.getByRole('button', { name: '设置封面' });
     expect(cover.classList.contains('justify-center')).toBe(true);
     expect(cover.classList.contains('rounded-full')).toBe(true);
     expect(cover.classList.contains('!bg-indigo-600/90')).toBe(true);
     expect(cover.classList.contains('min-h-10')).toBe(false);
-    expect(cover.parentElement?.classList.contains('flex-col')).toBe(true);
-    expect(cover.parentElement?.classList.contains('right-4')).toBe(true);
-    expect(cover.parentElement?.classList.contains('w-28')).toBe(false);
-    const remove = screen.getByRole('button', { name: '移除当前图片' });
-    expect(remove.closest('[data-card-action]')?.classList.contains('left-4')).toBe(true);
-    expect(remove.classList.contains('rounded-full')).toBe(true);
-    expect(remove.classList.contains('!bg-red-600/90')).toBe(true);
-    expect(remove.classList.contains('h-11')).toBe(cover.classList.contains('h-11'));
+    expect(cover.closest('[data-card-action]')?.classList.contains('flex-col')).toBe(true);
+    expect(cover.closest('[data-card-action]')?.classList.contains('right-4')).toBe(true);
+    const manage = screen.getByRole('button', { name: '管理预览图片' });
+    expect(manage.closest('[data-card-action]')?.classList.contains('left-4')).toBe(true);
+    expect(manage.classList.contains('rounded-full')).toBe(true);
+    expect(manage.classList.contains('h-11')).toBe(cover.classList.contains('h-11'));
     const download = screen.getByRole('button', { name: '下载图片' });
     expect(download.classList.contains('justify-center')).toBe(true);
     expect(download.classList.contains('rounded-full')).toBe(true);
@@ -115,6 +115,7 @@ describe('四模式的分享入口', () => {
     expect(download.parentElement?.classList.contains('flex-col')).toBe(true);
     expect(download.parentElement?.classList.contains('items-center')).toBe(true);
     fireEvent.click(cover);
+    fireEvent.click(screen.getByRole('menuitem', { name: '设为当前图片' }));
     expect(onCover).toHaveBeenCalledOnce();
     expect(onOpen).not.toHaveBeenCalled();
   });

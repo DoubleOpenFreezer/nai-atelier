@@ -66,7 +66,8 @@ export const GenerationCountControl: React.FC<GenerationCountControlProps> = ({ 
     ? Boolean(queueDisabled)
     : Boolean(disabled) || occupied || paused;
   const primaryUnavailable = Boolean(primaryBlocked && unavailableLabel);
-  const showProgress = continuousGenerationEnabled || paused || waiting.length > 0
+  // 空队伍（0/0）不占位；本轮完成后保留结果至下一轮，暂停与等待中始终显示。
+  const showProgress = (continuousGenerationEnabled && total > 0) || paused || waiting.length > 0
     || total - completed > 1 || Boolean(series && series.total - series.current > 1);
   const hasMenuContent = continuousGenerationEnabled || waiting.length > 0;
   const showCloudQueue = showQueueStatus && cloudQueueEnabled && Boolean(queueStatus && (queueStatus.phase !== 'completed' || queueStatus.cleanupError));

@@ -71,6 +71,8 @@ export const ImageShareActions: React.FC<Props> = ({ imageUrl, filename, notify,
     } finally { busyRef.current = false; setBusy(''); }
   };
   const iconOnly = variant === 'compact' || variant === 'card';
+  // 图片上的圆形按钮没有文字，悬停即显示名称；其他样式沿用 title。
+  const tipProps = (name: string) => variant === 'card' ? { 'data-tip': t(name) } : { title: t(name) };
   const buttonClass = variant === 'card'
     ? IMAGE_CARD_ACTION_CLASS
     : variant === 'overlay'
@@ -82,7 +84,7 @@ export const ImageShareActions: React.FC<Props> = ({ imageUrl, filename, notify,
   ];
   return <div data-card-action="true" aria-busy={Boolean(busy) || favoriteBusy} className={`flex flex-wrap ${variant === 'overlay' ? 'items-stretch' : 'items-center'} gap-2 ${className}`} onClick={event => event.stopPropagation()} onPointerDown={event => event.stopPropagation()} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') event.stopPropagation(); }}>
     <button type="button" data-image-favorite="true" aria-pressed={active}
-      title={t(target.getGroup ? active ? '取消整组收藏' : '收藏整个作品组' : active ? '取消收藏' : '收藏')}
+      {...tipProps(target.getGroup ? active ? '取消整组收藏' : '收藏整个作品组' : active ? '取消收藏' : '收藏')}
       aria-label={t(target.getGroup ? active ? '取消整组收藏' : '收藏整个作品组' : active ? '取消收藏' : '收藏')}
       aria-busy={Boolean(favoriteBusy || favoritePending)} disabled={favoriteBusy || favoritePending} onClick={() => void toggleFavorite()}
       className={`inline-flex shrink-0 items-center justify-center gap-1.5 transition disabled:cursor-wait disabled:opacity-50 ${buttonClass} ${active ? '!border-rose-400 !bg-rose-500 !text-white hover:!bg-rose-400' : ''} ${variant === 'compact' ? '!h-10 !w-10 !px-0' : ''}`}>
@@ -90,7 +92,7 @@ export const ImageShareActions: React.FC<Props> = ({ imageUrl, filename, notify,
       {!iconOnly && <span>{t('收藏')}</span>}
     </button>
     {actions.map(({ action, label, title, Icon }) => <button
-      key={action} type="button" title={t(title)} aria-label={t(title)}
+      key={action} type="button" {...tipProps(title)} aria-label={t(title)}
       disabled={Boolean(busy)} onClick={() => void perform(action)}
       className={`${variant === 'card' ? revealClassName : ''} ${variant === 'overlay' || variant === 'card' ? '' : 'mobile-touch min-h-10'} inline-flex shrink-0 items-center justify-center gap-1.5 whitespace-nowrap transition disabled:cursor-wait disabled:opacity-50 ${buttonClass} ${variant === 'compact' ? '!h-10 !w-10 !px-0' : ''}`}
     >

@@ -23,7 +23,8 @@ describe('共用图片分享操作', () => {
       act(() => setLanguage(language));
       for (const label of ['下载图片', '复制图片']) {
         const translated = t(label); expect(translated).not.toBe(label);
-        expect(screen.getByRole('button', { name: translated }).title).toBe(translated);
+        // 图片上的圆形按钮悬停即显示名称（data-tip），不再依赖延迟出现的 title。
+        expect(screen.getByRole('button', { name: translated }).getAttribute('data-tip')).toBe(translated);
       }
     }
   });
@@ -57,18 +58,18 @@ describe('共用图片分享操作', () => {
     const parentKey = vi.fn();
     const view = render(React.createElement(PressRevealSurface, { onKeyDown: parentKey }, React.createElement(ImageShareOverlay, { imageUrl: '/synthetic.png', filename: 'synthetic.png' })));
     const surface = view.container.firstElementChild!;
-    const group = screen.getByTitle('下载图片').parentElement!;
+    const group = screen.getByRole('button', { name: '下载图片' }).parentElement!;
     expect(group.className).toContain('absolute right-2 top-2');
     expect(group.classList.contains('flex-col')).toBe(true);
     expect(group.classList.contains('hover-reveal-md')).toBe(false);
-    expect(screen.getByTitle('收藏').closest('.hover-reveal-md')).toBeNull();
-    expect(screen.getByTitle('下载图片').classList.contains('hover-reveal-md')).toBe(true);
+    expect(screen.getByRole('button', { name: '收藏' }).closest('.hover-reveal-md')).toBeNull();
+    expect(screen.getByRole('button', { name: '下载图片' }).classList.contains('hover-reveal-md')).toBe(true);
     expect(surface.hasAttribute('data-press-revealed')).toBe(false);
     longPress(surface);
     expect(surface.getAttribute('data-press-revealed')).toBe('true');
-    fireEvent.keyDown(screen.getByTitle('下载图片'), { key: 'Enter' });
+    fireEvent.keyDown(screen.getByRole('button', { name: '下载图片' }), { key: 'Enter' });
     expect(parentKey).not.toHaveBeenCalled();
-    fireEvent.keyDown(screen.getByTitle('下载图片'), { key: 'Escape' });
+    fireEvent.keyDown(screen.getByRole('button', { name: '下载图片' }), { key: 'Escape' });
     expect(parentKey).toHaveBeenCalledOnce();
   });
   it('复制带入当前图片的生成快照，下载仍只输出图片并跟随清洗设置', async () => {

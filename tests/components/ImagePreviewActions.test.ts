@@ -8,7 +8,7 @@ beforeEach(() => localStorage.clear());
 afterEach(cleanup);
 
 describe('小图和全屏大图的共用操作', () => {
-  it.each([false, true])('全屏=%s：辅助操作统一圆形尺寸与材质，保留语义色及左右分组', fullscreen => {
+  it.each([false, true])('全屏=%s：辅助操作统一圆形尺寸与材质，移除／清空收进一个管理菜单，悬停即显示名称', fullscreen => {
     const remove = vi.fn();
     const clear = vi.fn();
     const cover = vi.fn();
@@ -20,43 +20,56 @@ describe('小图和全屏大图的共用操作', () => {
       onRemoveCurrentHistory: remove, onClearHistoryGroup: clear, onSetCover: cover,
       onBack: fullscreen ? back : undefined, backButtonRef,
     })));
-    const removeButton = screen.getByRole('button', { name: '移除当前图片' });
-    const clearButton = screen.getByRole('button', { name: '清空当前历史组' });
+    const manageButton = screen.getByRole('button', { name: '管理预览图片' });
     const coverButton = screen.getByRole('button', { name: '设为封面' });
-    const left = removeButton.closest<HTMLElement>('[data-card-action]')!;
-    const right = coverButton.parentElement!;
+    const left = manageButton.closest<HTMLElement>('[data-card-action]')!;
+    const right = coverButton.closest<HTMLElement>('[data-card-action]')!;
     expect(left.classList.contains('top-4')).toBe(true);
     expect(left.classList.contains('left-4')).toBe(true);
     expect(left.classList.contains(fullscreen ? 'gap-6' : 'gap-2')).toBe(true);
     expect(right.classList.contains('top-4')).toBe(true);
     expect(right.classList.contains('right-4')).toBe(true);
-    expect(right.classList.contains('w-28')).toBe(false);
-    expect(right.classList.contains('md:w-32')).toBe(false);
-    expect(removeButton.parentElement?.classList.contains(fullscreen ? 'hover-reveal-md' : 'hover-reveal-lg')).toBe(true);
-    expect(removeButton.parentElement?.classList.contains('gap-2')).toBe(true);
+    expect(manageButton.parentElement?.classList.contains(fullscreen ? 'hover-reveal-md' : 'hover-reveal-lg')).toBe(true);
+    expect(coverButton.parentElement?.classList.contains(fullscreen ? 'hover-reveal-md' : 'hover-reveal-lg')).toBe(true);
     expect(right.classList.contains('hover-reveal-lg')).toBe(false);
     expect(screen.getByRole('button', { name: '收藏' }).closest('.hover-reveal-lg')).toBeNull();
     expect(right.classList.contains('items-center')).toBe(true);
-    expect(within(right).getAllByRole('button').map(button => button.getAttribute('aria-label') || button.textContent)).toEqual(['收藏', '下载图片', '复制图片', '设为封面']);
-    expect(within(left).getAllByRole('button').map(button => button.getAttribute('aria-label') || button.textContent)).toEqual(fullscreen ? ['返回小图', '移除当前图片', '清空当前历史组'] : ['移除当前图片', '清空当前历史组']);
-    for (const button of [removeButton, clearButton, coverButton, screen.getByRole('button', { name: '下载图片' }), screen.getByRole('button', { name: '复制图片' })]) {
+    expect(within(right).getAllByRole('button').map(button => button.getAttribute('aria-label'))).toEqual(['收藏', '下载图片', '复制图片', '设为封面']);
+    expect(within(left).getAllByRole('button').map(button => button.getAttribute('aria-label'))).toEqual(fullscreen ? ['返回小图', '管理预览图片'] : ['管理预览图片']);
+    for (const button of [manageButton, coverButton, screen.getByRole('button', { name: '下载图片' }), screen.getByRole('button', { name: '复制图片' })]) {
       for (const token of ['rounded-full', 'h-11', 'w-11', 'md:h-8', 'md:w-8', 'mobile-touch', 'mobile-size-locked', 'border-white/60', 'backdrop-blur', 'focus-visible:ring-white', 'justify-center']) expect(button.classList.contains(token)).toBe(true);
       expect(button.textContent).toBe('');
-      expect(button.classList.contains('px-3')).toBe(false);
+      // 图标按钮悬停即显示名称，不再依赖浏览器延迟出现的 title。
+      expect(button.getAttribute('data-tip')).toBeTruthy();
+      expect(button.hasAttribute('title')).toBe(false);
     }
-    expect(removeButton.classList.contains('!bg-red-600/90')).toBe(true);
-    expect(removeButton.classList.contains('hover:!bg-red-500')).toBe(true);
-    expect(removeButton.querySelector('svg.lucide-image-minus')).toBeTruthy();
-    expect(clearButton.classList.contains('!bg-gray-900/85')).toBe(true);
-    expect(clearButton.querySelector('svg.lucide-list-x')).toBeTruthy();
+    expect(manageButton.classList.contains('!bg-gray-900/85')).toBe(true);
+    expect(manageButton.querySelector('svg.lucide-image-minus')).toBeTruthy();
+    expect(manageButton.getAttribute('data-tip')).toContain('历史页保留');
+    expect(manageButton.getAttribute('data-tip-side')).toBe('right');
     expect(coverButton.classList.contains('!bg-indigo-600/90')).toBe(true);
     expect(coverButton.querySelector('svg.lucide-image')).toBeTruthy();
     expect(coverButton.querySelector('svg.lucide-check')).toBeTruthy();
-    expect(removeButton.title).toContain('历史页仍会保留');
-    expect(clearButton.title).toContain('历史页仍会保留');
-    expect(coverButton.title).toBe('设为封面并保存');
-    fireEvent.click(removeButton);
-    fireEvent.click(clearButton);
+    expect(coverButton.getAttribute('data-tip')).toBe('设为封面并保存');
+    expect(coverButton.hasAttribute('aria-haspopup')).toBe(false);
+    expect(manageButton.getAttribute('aria-haspopup')).toBe('menu');
+    expect(manageButton.getAttribute('aria-expanded')).toBe('false');
+    fireEvent.click(manageButton);
+    expect(manageButton.getAttribute('aria-expanded')).toBe('true');
+    const menu = screen.getByRole('menu', { name: '管理预览图片' });
+    expect(within(menu).getAllByRole('menuitem').map(item => item.textContent)).toEqual(['移除当前图片', '清空当前历史组']);
+    expect(within(menu).getByRole('menuitem', { name: '移除当前图片' }).classList.contains('text-red-300')).toBe(true);
+    expect(menu.textContent).toContain('历史页仍会保留');
+    fireEvent.click(within(menu).getByRole('menuitem', { name: '移除当前图片' }));
+    expect(screen.queryByRole('menu')).toBeNull();
+    fireEvent.click(manageButton);
+    fireEvent.click(screen.getByRole('menuitem', { name: '清空当前历史组' }));
+    fireEvent.click(manageButton);
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(screen.queryByRole('menu')).toBeNull();
+    fireEvent.click(manageButton);
+    fireEvent.pointerDown(document.body);
+    expect(screen.queryByRole('menu')).toBeNull();
     fireEvent.click(coverButton);
     expect(remove.mock.calls).toEqual([[]]);
     expect(clear.mock.calls).toEqual([[]]);
@@ -85,38 +98,56 @@ describe('小图和全屏大图的共用操作', () => {
     expect(screen.queryAllByRole('button')).toHaveLength(0);
   });
 
-  it.each([false, true])('全屏=%s：圆形上传入口保留于右下，处理中尺寸与名称稳定且禁止重复操作', fullscreen => {
+  it.each([false, true])('全屏=%s：设封面与上传封面合为一个封面按钮，两项都可用时展开选择，处理中尺寸与名称稳定且禁止重复操作', fullscreen => {
     const upload = vi.fn();
-    const view = render(React.createElement(ImagePreviewActions, {
-      imageUrl: '/image.png', filename: 'NAI.png', onSetCover: vi.fn(), onUploadCover: upload, onBack: fullscreen ? vi.fn() : undefined,
-    }));
-    const button = screen.getByRole('button', { name: '手动上传封面' });
-    const group = button.parentElement!;
-    expect(group.classList.contains('bottom-4')).toBe(true);
+    const setCover = vi.fn();
+    const props = { imageUrl: '/image.png', filename: 'NAI.png', onSetCover: setCover, onUploadCover: upload, onBack: fullscreen ? vi.fn() : undefined };
+    const view = render(React.createElement(ImagePreviewActions, props));
+    expect(screen.queryByRole('button', { name: '手动上传封面' })).toBeNull();
+    const button = screen.getByRole('button', { name: '设置封面' });
+    const group = button.closest<HTMLElement>('[data-card-action]')!;
+    expect(group.classList.contains('top-4')).toBe(true);
     expect(group.classList.contains('right-4')).toBe(true);
-    for (const token of ['rounded-full', 'h-11', 'w-11', 'md:h-8', 'md:w-8', 'mobile-touch', 'border-white/60', '!bg-gray-800/80']) expect(button.classList.contains(token)).toBe(true);
-    expect(button.querySelector('svg.lucide-upload')).toBeTruthy();
-    expect(button.title).toBe('手动上传封面并保存');
+    for (const token of ['rounded-full', 'h-11', 'w-11', 'md:h-8', 'md:w-8', 'mobile-touch', 'border-white/60', '!bg-indigo-600/90']) expect(button.classList.contains(token)).toBe(true);
+    expect(button.getAttribute('data-tip')).toBe('设置封面：当前图片或从电脑上传');
+    expect(button.getAttribute('aria-haspopup')).toBe('menu');
     const originalClasses = button.className;
     const input = group.querySelector('input')!;
     const choose = vi.spyOn(input, 'click');
     fireEvent.click(button);
+    expect(within(screen.getByRole('menu', { name: '设置封面' })).getAllByRole('menuitem').map(item => item.textContent)).toEqual(['设为当前图片', '从电脑上传']);
+    fireEvent.click(screen.getByRole('menuitem', { name: '从电脑上传' }));
     expect(choose).toHaveBeenCalledOnce();
     fireEvent.change(input, { target: { files: [new File(['test'], 'cover.png', { type: 'image/png' })] } });
     expect(upload).toHaveBeenCalledOnce();
-    view.rerender(React.createElement(ImagePreviewActions, {
-      imageUrl: '/image.png', filename: 'NAI.png', onSetCover: vi.fn(), onUploadCover: upload, isUploading: true, onBack: fullscreen ? vi.fn() : undefined,
-    }));
-    for (const name of ['设为封面', '手动上传封面']) {
-      const busy = screen.getByRole('button', { name });
-      expect((busy as HTMLButtonElement).disabled).toBe(true);
-      expect(busy.getAttribute('aria-busy')).toBe('true');
-      expect(busy.title).toBe('封面处理中…');
-      expect(busy.querySelector('svg.animate-spin')).toBeTruthy();
-    }
-    expect(button.className).toBe(originalClasses);
-    fireEvent.click(button); expect(choose).toHaveBeenCalledOnce();
+    fireEvent.click(button);
+    fireEvent.click(screen.getByRole('menuitem', { name: '设为当前图片' }));
+    expect(setCover).toHaveBeenCalledOnce();
+    view.rerender(React.createElement(ImagePreviewActions, { ...props, isUploading: true }));
+    const busy = screen.getByRole('button', { name: '设置封面' });
+    expect((busy as HTMLButtonElement).disabled).toBe(true);
+    expect(busy.getAttribute('aria-busy')).toBe('true');
+    expect(busy.getAttribute('data-tip')).toBe('封面处理中…');
+    expect(busy.querySelector('svg.animate-spin')).toBeTruthy();
+    expect(busy.className).toBe(originalClasses);
+    fireEvent.click(busy);
+    expect(screen.queryByRole('menu')).toBeNull();
+    expect(choose).toHaveBeenCalledOnce();
     expect(screen.getByRole('button', { name: '复制图片' }).hasAttribute('disabled')).toBe(false);
+  });
+
+  it('只有上传可用时（还没有生成图）直接打开文件选择，不展开菜单', () => {
+    const upload = vi.fn();
+    render(React.createElement(ImagePreviewActions, { imageUrl: null, filename: 'NAI.png', onUploadCover: upload }));
+    const button = screen.getByRole('button', { name: '手动上传封面' });
+    expect(button.querySelector('svg.lucide-upload')).toBeTruthy();
+    expect(button.getAttribute('data-tip')).toBe('手动上传封面并保存');
+    expect(button.hasAttribute('aria-haspopup')).toBe(false);
+    const choose = vi.spyOn(button.closest('[data-card-action]')!.querySelector('input')!, 'click');
+    fireEvent.click(button);
+    expect(choose).toHaveBeenCalledOnce();
+    expect(screen.queryByRole('menu')).toBeNull();
+    expect(screen.queryByRole('button', { name: '收藏' })).toBeNull();
   });
 });
 

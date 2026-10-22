@@ -88,6 +88,20 @@ const renderHeader = (props: Partial<Parameters<typeof ChainEditorHeader>[0]> = 
 };
 
 describe('ChainEditorHeader 工具栏', () => {
+  it('顶栏够宽时图标旁显示简短文字，变窄（含助手面板挤占）只留图标，完整名称始终在无障碍名称中', () => {
+    const { container } = renderHeader({ tagAssistEnabled: true });
+    const actions = container.querySelector('.chain-editor-actions') as HTMLElement;
+    const texts = () => Array.from(actions.querySelectorAll('button')).map(button => button.textContent?.trim());
+    expect(texts()).toEqual(['导入', '翻译', 'oTag 辅助', '重置', '保存到库']);
+    expect(within(actions).getAllByRole('button').map(button => button.getAttribute('aria-label'))).toEqual(['导入图片或 JSON 配置', '翻译所有未翻译提示词', '关闭 Tag 辅助', '重置当前模式', '保存到库']);
+    for (const button of within(actions).getAllByRole('button')) expect(button.classList.contains('!w-auto')).toBe(true);
+    resizeWorkspace(900);
+    expect(texts()).toEqual(['', '', 'o', '', '']);
+    expect(within(actions).getByRole('button', { name: '重置当前模式' }).classList.contains('!w-auto')).toBe(false);
+    resizeWorkspace(1200);
+    expect(texts()[0]).toBe('导入');
+  });
+
   it('桌面宽栏直接显示动作，手机收纳且模式导航与更多保持同一行', () => {
     const { container, getByRole } = renderHeader();
     const actions = container.querySelector('.chain-editor-actions') as HTMLElement;
